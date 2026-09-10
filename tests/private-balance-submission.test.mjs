@@ -17,7 +17,6 @@ import {
   broadcastPrivateBalanceAction,
   classifyPrivateActionRecovery,
   pollBroadcastPrivateBalanceTransaction,
-  pollPrivateBalanceCanonicalOutcome,
   recoverPrivateBalanceAction,
   resumeSignedPrivateBalanceActions,
   signReviewedPrivateBalanceAction,
@@ -46,7 +45,7 @@ test('action controllers publish terminal status outside remountable modal state
     new URL('../src/features/private-balance/components/usePrivateActionController.ts', import.meta.url),
     'utf8',
   );
-  assert.match(controller, /const status = await submitAction\(review, relay \?/);
+  assert.match(controller, /const status = await submitAction\(review\)/);
   assert.match(controller, /onSubmission\?\.\(status\)/);
 });
 
@@ -556,6 +555,17 @@ async function persistedSignedFixture(submissionMode = 'direct') {
     createdAt: 2,
     updatedAt: 2,
   };
+  if (submissionMode !== 'direct') {
+    // Seed historical signed bytes directly. New app APIs cannot create/sign this route.
+    fixture.transaction.sign(fixture.signer);
+    await commitPrivateBalanceState(context, storageKey, {
+      ...createEmptyPrivateBalanceState('39'.repeat(32), 1), revision: 1,
+      notes: [{ ...note, status: 'reserved', reservedAt: 2 }],
+      pendingActions: [{ ...pending, status: 'signed', transactionHash: fixture.review.transactionHash,
+        signedEnvelopeXdr: fixture.transaction.toXdr(), expiresAtSeconds: fixture.review.expiresAt, updatedAt: 4 }],
+    }, 0, driver);
+    return { context, storageKey, driver, fixture, pending };
+  }
   await reservePrivateBuildReservation(context, storageKey, 0, {
     id: pending.id,
     kind: pending.kind,
@@ -663,18 +673,6 @@ test('persisted signed spends resume through broadcast but envelope expiry canno
   assert.equal(recovered.state.notes[0].status, 'reserved');
 });
 
-test('relayed outcome polling waits for canonical reconciliation without transaction metadata', async () => {
-  let scans = 0;
-  const delays = [];
-  assert.equal(await pollPrivateBalanceCanonicalOutcome({
-    reconcile: async () => { if (++scans === 1) throw new Error('offline'); return scans === 3; },
-    delays: [1, 2, 3, 4], sleep: async delay => { delays.push(delay); },
-  }), 'reconciled');
-  assert.deepEqual(delays, [1, 2, 3]);
-  assert.equal(await pollPrivateBalanceCanonicalOutcome({
-    reconcile: async () => false, delays: [0], sleep: async () => {},
-  }), 'pending');
-});
 
 for (const mode of ['relay', 'legacy']) {
   test(`${mode} signed recovery never sends or looks up a transaction through sender RPC`, async () => {
@@ -720,15 +718,19 @@ for (const mode of ['relay', 'legacy']) {
 }
 
 for (const rpcStatus of ['PENDING', 'ERROR']) {
-  test(`relayed ${rpcStatus} broadcast stays on its approved route during recovery`, async () => {
-    const { context, storageKey, driver, fixture, pending } = await persistedSignedFixture('relay');
-    const broadcast = await broadcastPrivateBalanceAction({
-      context, storageKey, expectedRevision: 4, actionId: pending.id,
+  test(`legacy relayed ${rpcStatus} record stays reconcile-only during recovery`, async () => {
+    const { context, storageKey, driver, pending } = await persistedSignedFixture('relay');
+    const state = await loadPrivateBalanceState(context, storageKey, driver);
+    await assert.rejects(broadcastPrivateBalanceAction({
+      context, storageKey, expectedRevision: state.revision, actionId: pending.id,
       networkPassphrase, submissionMode: 'relay', storageDriver: driver,
-      rpc: { async sendTransaction() { return { status: rpcStatus, hash: fixture.review.transactionHash }; } },
-    });
-    assert.equal(broadcast.state.pendingActions[0].submissionMode, 'relay');
-    assert.equal(broadcast.state.pendingActions[0].status, rpcStatus === 'PENDING' ? 'broadcast' : 'ambiguous');
+      rpc: { async sendTransaction() { assert.fail('No new relay submission'); } },
+    }), /Peer relaying has been removed/);
+    const historical = await transitionPrivatePendingAction(context, storageKey, state.revision, pending.id, {
+      from: 'signed', to: rpcStatus === 'PENDING' ? 'broadcast' : 'ambiguous',
+      latestRpcStatus: rpcStatus, updatedAt: 5,
+    }, driver);
+    assert.equal(historical.pendingActions[0].submissionMode, 'relay');
     const recovery = await recoverPrivateBalanceAction({
       context, storageKey, actionId: pending.id, storageDriver: driver,
       rpc: { async getTransaction() { assert.fail('relay recovery must not reveal the hash'); } },

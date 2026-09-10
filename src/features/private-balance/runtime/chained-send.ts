@@ -1,4 +1,5 @@
 import { parsePrivateAmount } from './coin-selection';
+import { assertDirectPrivateSubmission } from './direct-submission';
 import type { PreparedPrivateActionReview, PrivateActionDraft } from './action-flow';
 
 export const PRIVATE_CHAINED_APPROVAL_WINDOW_SECONDS = 15 * 60;
@@ -22,7 +23,7 @@ export interface PrivateChainedSendApproval {
 export interface PrivateChainedSendProgress {
   step: number;
   totalSteps: number;
-  stage: 'choosing-peer' | 'preparing' | 'confirming' | 'waiting';
+  stage: 'preparing' | 'confirming' | 'waiting';
 }
 
 export interface PrivateChainedSendResult {
@@ -128,6 +129,8 @@ export interface RunPrivateChainedSendInput {
 export async function runPrivateChainedSend(
   input: RunPrivateChainedSendInput,
 ): Promise<PrivateChainedSendResult> {
+  assertDirectPrivateSubmission(input.approval);
+  assertDirectPrivateSubmission(input.draft);
   const now = input.now ?? Date.now;
   const totalSteps = input.approval.steps;
   if (!Number.isSafeInteger(totalSteps) || totalSteps < 2) {
@@ -161,6 +164,7 @@ export async function runPrivateChainedSend(
     const review = await input.prepare(isFinal ? { ...input.draft } : { kind: 'consolidate' });
     let stepFee: bigint;
     try {
+      assertDirectPrivateSubmission(review);
       if (isFinal) {
         if (
           review.kind !== 'transfer' ||

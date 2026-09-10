@@ -1,5 +1,9 @@
 # Private Payments privacy hardening
 
+> Historical record: peer relaying and helper earnings were removed on 2026-09-10.
+> Relay instructions, measurements, and proposals below are not current functionality.
+> See [the current whitepaper](private-balance.md) for direct submission and legacy recovery.
+
 Started 2026-09-04; implementation review continued 2026-09-05. This is client hardening of the existing Testnet development
 protocol, not a new pool deployment, proving ceremony, or independent cryptographic audit.
 

@@ -1,5 +1,9 @@
 # Earn by relaying — product redesign
 
+> Historical record: peer relaying and helper earnings were removed on 2026-09-10.
+> Relay instructions, measurements, and proposals below are not current functionality.
+> See [the current whitepaper](private-balance.md) for direct submission and legacy recovery.
+
 Date: 2026-09-05. Base: `b59c7c4`. Branch: `design/earn-relay`.
 
 Scope correction, 2026-09-06: the user preferred the existing Home entry. Its original compact gift-icon row, spacing, copy and status label have been restored; the redesigned modal and its safety/interaction improvements remain unchanged. The measurements below describe the original redesign delivery, before this Home-only correction.

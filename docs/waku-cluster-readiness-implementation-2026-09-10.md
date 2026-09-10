@@ -1,5 +1,9 @@
 # Waku Cluster Readiness Implementation Plan
 
+> Historical record: peer relaying and helper earnings were removed on 2026-09-10.
+> Relay instructions, measurements, and proposals below are not current functionality.
+> See [the current whitepaper](private-balance.md) for direct submission and legacy recovery.
+
 > Implement this plan task-by-task.
 
 **Goal:** Prevent false Waku readiness and endless mismatch retries, make saved network changes effective, and demonstrate the fix with isolated E2E tests.

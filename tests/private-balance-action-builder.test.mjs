@@ -329,27 +329,23 @@ test('full seed scans preserve balances and spends when future outgoing details 
   const initialNote = initial.notes[0];
   const tree = await MerkleNodeStore.fromCommitments(deposit.action.outputs.map(output => output.cm));
   const merklePath = await tree.getPath(initialNote.leafIndex);
-  for (const [name, kind, amount, fee, self] of [
-    ['send with change', 'transfer', '60', 0n, false],
-    ['send without change', 'transfer', '100', 0n, false],
-    ['relayed send', 'transfer', '60', 1n, false],
-    ['withdrawal', 'withdraw', '60', 0n, false],
-    ['relayed withdrawal', 'withdraw', '60', 1n, false],
-    ['self transfer', 'transfer', '100', 0n, true],
-    ['relayed self transfer', 'transfer', '99', 1n, true],
+  for (const [name, kind, amount, self] of [
+    ['send with change', 'transfer', '60', false],
+    ['send without change', 'transfer', '100', false],
+    ['withdrawal', 'withdraw', '60', false],
+    ['self transfer', 'transfer', '100', true],
   ]) {
     await t.test(name, async () => {
       const results = [];
       for (const outgoingHistory of ['recoverable', 'minimized']) {
         const common = { assetIndex: 0, assetContractId, selectedNoteIds: [initialNote.id],
-          anchorRoot: tree.currentRoot, anchorExpiresAtLedger: 2000, outgoingHistory,
-          ...(fee ? { peerFee: { amount: String(fee), recipientAddress } } : {}) };
+          anchorRoot: tree.currentRoot, anchorExpiresAtLedger: 2000, outgoingHistory };
         const intent = kind === 'transfer'
           ? { ...common, kind, amount, recipientAddress: self ? ownAddress : recipientAddress, memo: new TextEncoder().encode('test memo') }
           : { ...common, kind, publicValue: amount, publicRecipient: { kind: 0, payload: bytes(12) } };
         const prepared = await preparePrivateAction({ esk: owner, keyContext, availableNotes: [initialNote], merklePaths: [merklePath], intent });
         const result = await scan([deposit.action, prepared.action]);
-        const debit = self ? fee : BigInt(amount) + fee;
+        const debit = self ? 0n : BigInt(amount);
         assert.equal(result.notes.find(note => note.id === initialNote.id).status, 'spent');
         assert.equal(result.notes.filter(note => note.status === 'unspent').reduce((sum, note) => sum + BigInt(note.value), 0n), 100n - debit);
         const activity = result.activities.at(-1);
@@ -358,7 +354,7 @@ test('full seed scans preserve balances and spends when future outgoing details 
         if (outgoingHistory === 'minimized') {
           assert.equal(activity.recipientFingerprint, undefined);
           assert.equal(activity.memoHex, undefined);
-        } else if (kind === 'transfer' && !self && !fee) {
+        } else if (kind === 'transfer' && !self) {
           assert.ok(activity.recipientFingerprint);
           assert.equal(activity.memoHex, Buffer.from('test memo').toString('hex'));
         }

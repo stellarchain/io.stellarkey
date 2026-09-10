@@ -395,7 +395,7 @@ export class PrivateBalanceWorkerClient {
     return { ownerCommitmentHex: response.ownerCommitmentHex, address: response.address };
   }
 
-  /** Derives a one-time relay fee address without rotating the receive address. */
+  /** Derives a one-time recovery address without rotating the receive address. */
   public async deriveAddressForDiversifier(
     diversifier: Uint8Array,
   ): Promise<{ ownerCommitmentHex: string; address: string }> {
@@ -404,7 +404,7 @@ export class PrivateBalanceWorkerClient {
       throw new Error('Private Balance worker session is not initialized.');
     }
     if (diversifier.length !== 4 || diversifier.every(byte => byte === 0)) {
-      throw new Error('Private relay diversifier must be four nonzero bytes.');
+      throw new Error('Private address diversifier must be four bytes and nonzero.');
     }
     const copied = diversifier.slice();
     const req: WorkerRequest = {
@@ -421,38 +421,12 @@ export class PrivateBalanceWorkerClient {
       this.deploymentBindingHash,
     );
     if (decoded.diversifier.some((byte, index) => byte !== diversifier[index])) {
-      throw new Error('Private Balance worker derived the wrong relay diversifier.');
+      throw new Error('Private Balance worker derived the wrong recovery diversifier.');
     }
     if (response.address === this.currentAddress) {
-      throw new Error('Private relay fee address must not reuse the current receive address.');
+      throw new Error('Private recovery address must not reuse the current receive address.');
     }
     return { ownerCommitmentHex: response.ownerCommitmentHex, address: response.address };
-  }
-
-  public async verifyRelayFee(input: {
-    actionNonce: Uint8Array;
-    outputs: Array<{ commitment: Uint8Array; recipientEnvelope: Uint8Array }>;
-    assetIndex: number;
-    feeAtomic: string;
-    actionDiversifier: Uint8Array;
-  }): Promise<void> {
-    this.assertNotFailed();
-    if (!this.sessionId) throw new Error('Private Balance worker session is not initialized.');
-    const req: WorkerRequest = {
-      messageVersion: PRIVATE_BALANCE_WORKER_MESSAGE_VERSION,
-      id: this.createId('operation'),
-      sessionId: this.sessionId,
-      type: 'VERIFY_RELAY_FEE',
-      actionNonce: input.actionNonce.slice(),
-      outputs: input.outputs.map(output => ({
-        commitment: output.commitment.slice(),
-        recipientEnvelope: output.recipientEnvelope.slice(),
-      })),
-      assetIndex: input.assetIndex,
-      feeAtomic: input.feeAtomic,
-      actionDiversifier: input.actionDiversifier.slice(),
-    };
-    await this.request<Extract<WorkerResponse, { type: 'RELAY_FEE_VERIFIED' }>>(req);
   }
 
   public async scanPage(input: {

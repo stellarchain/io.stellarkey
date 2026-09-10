@@ -778,21 +778,7 @@ test('live discovery rearms completed identity revocation after a direct vault r
   await expect(page.getByTestId('discovery-syncing')).toHaveText('false');
 });
 
-test('default relay recipient is blocked before session creation and can be corrected locally', async ({ page }) => {
-  await markShell(page);
-  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
-  await page.getByRole('button', { name: 'Try default synthetic recipient' }).click();
-  await expect(page.getByRole('dialog')).toContainText('A new recipient address is needed');
-  await expect(page.getByTestId('relay-creations')).toHaveText('0');
-  await expect(page.getByTestId('relay-requests')).toHaveText('0');
-  await stableShell(page);
-  await page.getByRole('button', { name: 'Use fresh synthetic recipient' }).click();
-  await expect(page.getByTestId('relay-requests')).toHaveText('1');
-  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
-  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeEnabled();
-});
-
-test('relay preflight preserves the direct form and distinguishes the earlier-payment blocker', async ({ page, browserName }) => {
+test('direct preflight preserves the form and distinguishes the earlier-payment blocker', async ({ page, browserName }) => {
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Open synthetic private send' }).click();
   await markShell(page);
@@ -801,13 +787,10 @@ test('relay preflight preserves the direct form and distinguishes the earlier-pa
   await amount.fill('1'); await memo.fill('Synthetic memo');
   const review = page.getByRole('button', { name: 'Review Private Send', exact: true });
   await expect(review).toBeEnabled();
-  await page.getByRole('button', { name: 'Privacy relay', exact: true }).click();
-  await expect(review).toBeDisabled();
-  await expect(page.getByRole('dialog')).toContainText('Ask the recipient to open Receive');
+  await expect(page.getByRole('button', { name: 'Privacy relay', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'My account', exact: true })).toHaveCount(0);
   await expect(page.getByTestId('recipient-preparations')).toHaveText('0');
   await stableShell(page);
-  await page.getByRole('button', { name: 'My account', exact: true }).click();
-  await expect(review).toBeEnabled();
   await review.click();
   await expect(page.getByRole('dialog')).toContainText('Blocked by an earlier payment');
   await expect(page.getByRole('dialog')).toContainText('This new action has not started');
@@ -826,7 +809,7 @@ test('relay preflight preserves the direct form and distinguishes the earlier-pa
   await expect(page.getByRole('button', { name: 'Open synthetic private send' })).toBeFocused();
 });
 
-test('a stale direct recipient validation cannot enable relay review', async ({ page }) => {
+test('a stale recipient validation cannot enable a replacement direct review', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Open synthetic private send' }).click();
@@ -834,300 +817,12 @@ test('a stale direct recipient validation cannot enable relay review', async ({ 
   const review = page.getByRole('button', { name: 'Review Private Send', exact: true });
   await expect(review).toBeEnabled();
   await syntheticDelivery(page, 'Delay recipient validation');
-  await page.getByRole('button', { name: 'Privacy relay', exact: true }).click();
+  await page.getByLabel('Private Recipient', { exact: true }).fill('synthetic-delayed-private-destination');
   await expect(review).toBeDisabled();
   await syntheticDelivery(page, 'Finish recipient validation');
   await expect(review).toBeDisabled();
-  await syntheticDelivery(page, 'Resume recipient validation');
-  await expect(page.getByRole('dialog')).toContainText('Ask the recipient to open Receive');
-  await expect(review).toBeDisabled();
-  await page.getByRole('button', { name: 'My account', exact: true }).click();
+  await syntheticDelivery(page, 'Finish newest recipient validation');
   await expect(review).toBeEnabled();
-  await syntheticDelivery(page, 'Finish recipient validation');
-  await expect(review).toBeEnabled();
-});
-
-async function openHelperApproval(page: Page) {
-  await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Open synthetic helper', exact: true }).click();
-  await expect(page.getByTestId('helper-phase')).toHaveText('ready');
-  await syntheticDelivery(page, 'Deliver helper request');
-  await syntheticDelivery(page, 'Deliver helper selection');
-  await expect(page.getByTestId('helper-phase')).toHaveText('payout');
-  // One job: the helper simulates and reviews it before asking for approval.
-  await syntheticDelivery(page, 'Deliver helper job');
-  await expect(page.getByRole('dialog', { name: 'Relay a private payment?' })).toBeVisible();
-  // An alert has no close control; the shell focuses the dialog itself.
-  await expect(page.getByRole('dialog', { name: 'Relay a private payment?' }).locator('[data-modal-shell]')).toBeFocused();
-  await markShell(page);
-}
-
-for (const reducedMotion of ['reduce', 'no-preference'] as const) test(`helper approval details reflow at narrow width without obscuring labels or values (${reducedMotion})`, async ({ page }) => {
-  await page.emulateMedia({ reducedMotion });
-  await page.setViewportSize({ width: 320, height: 568 });
-  await openHelperApproval(page);
-  const approval = page.getByRole('dialog', { name: 'Relay a private payment?' });
-  for (const reducedViewport of [false, true, false]) {
-    await page.evaluate(reduced => {
-      const viewport = window.visualViewport!;
-      if (reduced) {
-        Object.defineProperty(viewport, 'height', { configurable: true, value: 360 });
-        Object.defineProperty(viewport, 'offsetTop', { configurable: true, value: 40 });
-      } else {
-        Reflect.deleteProperty(viewport, 'height');
-        Reflect.deleteProperty(viewport, 'offsetTop');
-      }
-      viewport.dispatchEvent(new Event('resize'));
-      viewport.dispatchEvent(new Event('scroll'));
-    }, reducedViewport);
-    await expect.poll(() => approval.evaluate((node, reduced) => {
-      const overlay = node.getBoundingClientRect();
-      const shell = node.querySelector<HTMLElement>('[data-modal-shell]')!.getBoundingClientRect();
-      const style = getComputedStyle(node);
-      const viewportMatches = reduced
-        ? Math.abs(overlay.top - 40) <= 1 && Math.abs(overlay.height - 360) <= 1
-        : Math.abs(overlay.top) <= 1 && Math.abs(overlay.height - innerHeight) <= 1;
-      return viewportMatches && shell.top >= overlay.top + parseFloat(style.paddingTop) - 1 &&
-        shell.bottom <= overlay.bottom - parseFloat(style.paddingBottom) + 1;
-    }, reducedViewport)).toBe(true);
-    await page.keyboard.press('Tab');
-    await stableShell(page);
-  }
-  await expect.poll(() => approval.locator('dl').evaluate(node => {
-    const bounds = node.getBoundingClientRect();
-    return node.scrollWidth <= node.clientWidth + 1 && bounds.left >= 0 && bounds.right <= innerWidth &&
-      [...node.children].every(row => {
-        const term = row.querySelector('dt')!.getBoundingClientRect();
-        const value = row.querySelector('dd')!.getBoundingClientRect();
-        return term.right <= value.left + 1 || term.bottom <= value.top + 1;
-      });
-  })).toBe(true);
-  const accessibility = await new AxeBuilder({ page }).include('[data-modal-shell]').analyze();
-  expect(accessibility.violations.map(violation => ({ id: violation.id, impact: violation.impact, nodes: violation.nodes.length }))).toEqual([]);
-  await approval.getByRole('button', { name: 'Reject', exact: true }).focus();
-  await approval.getByRole('button', { name: 'Reject', exact: true }).press('Enter');
-  await expect(approval).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => document.body.style.overflow !== 'hidden' &&
-    !document.querySelector('main')?.closest('[inert]'))).toBe(true);
-});
-
-test('helper signs, submits once and reports the outcome after approval', async ({ page }) => {
-  await openHelperApproval(page);
-  await page.getByRole('button', { name: 'Approve and submit', exact: true }).click();
-  await expect(page.getByTestId('helper-signs')).toHaveText('1');
-  await syntheticDelivery(page, 'Finish synthetic signing');
-  await expect(page.getByTestId('helper-submits')).toHaveText('1');
-  await stableShell(page);
-  await syntheticDelivery(page, 'Finish synthetic submission');
-  await expect(page.getByTestId('helper-phase')).toHaveText('outcome-pending');
-  await syntheticDelivery(page, 'Acknowledge synthetic outcome');
-  await expect(page.getByRole('dialog')).toBeHidden();
-  // A second job for the same quote is refused while the outcome is fresh.
-  await syntheticDelivery(page, 'Deliver second helper job');
-  await expect(page.getByTestId('helper-signs')).toHaveText('1');
-  await expect(page.getByTestId('helper-submits')).toHaveText('1');
-});
-
-test('helper duplicate approval clicks sign only once', async ({ page }) => {
-  await openHelperApproval(page);
-  await page.getByRole('button', { name: 'Approve and submit', exact: true }).evaluate(element => {
-    (element as HTMLButtonElement).click(); (element as HTMLButtonElement).click();
-  });
-  await expect(page.getByTestId('helper-signs')).toHaveText('1');
-});
-
-test('helper reports an uncertain RPC outcome as an error and never resubmits', async ({ page }) => {
-  await openHelperApproval(page);
-  await page.getByRole('button', { name: 'Approve and submit', exact: true }).click();
-  await syntheticDelivery(page, 'Finish synthetic signing');
-  await expect(page.getByTestId('helper-submits')).toHaveText('1');
-  await syntheticDelivery(page, 'Fail synthetic submission');
-  await expect(page.getByTestId('helper-phase')).toHaveText('outcome-error');
-  await syntheticDelivery(page, 'Acknowledge synthetic outcome');
-  await expect(page.getByRole('dialog')).toBeHidden();
-  await syntheticDelivery(page, 'Deliver second helper job');
-  await expect(page.getByTestId('helper-submits')).toHaveText('1');
-});
-
-test('lost outcome acknowledgement preserves the submission and never invites another approval', async ({ page, browserName }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await openHelperApproval(page);
-  const approve = page.getByRole('button', { name: 'Approve and submit', exact: true });
-  await approve.focus(); await page.keyboard.press('Enter');
-  await expect(page.getByTestId('helper-signs')).toHaveText('1');
-  await syntheticDelivery(page, 'Finish synthetic signing');
-  await expect(page.getByTestId('helper-submits')).toHaveText('1');
-  await syntheticDelivery(page, 'Finish synthetic submission');
-  await expect(page.getByTestId('helper-phase')).toHaveText('outcome-pending');
-  await syntheticDelivery(page, 'Lose outcome acknowledgement');
-  const alert = page.getByRole('dialog').getByRole('alert');
-  await expect(alert).toContainText('signed and submitted');
-  await expect(alert).toContainText('may still confirm');
-  await expect(alert).not.toContainText('not signed');
-  await expect(approve).toBeDisabled();
-  await stableShell(page);
-  // Scan the settled enabled state, not the prior disabled-opacity frame.
-  await expect(page.getByRole('button', { name: 'Dismiss', exact: true })).toHaveCSS('opacity', '1');
-  const axe = await new AxeBuilder({ page }).include('[role="dialog"]')
-    .disableRules(browserName === 'webkit' ? ['color-contrast'] : []).analyze();
-  expect(axe.violations.filter(item => ['critical', 'serious'].includes(item.impact ?? ''))).toEqual([]);
-  await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
-  await expect(page.getByRole('dialog')).toBeHidden();
-  await syntheticDelivery(page, 'Deliver second helper job');
-  await expect(page.getByTestId('helper-submits')).toHaveText('1');
-  await expect(page.getByTestId('helper-signs')).toHaveText('1');
-});
-
-test('helper account replacement cannot be undone by a late outcome acknowledgement', async ({ page }) => {
-  await openHelperApproval(page);
-  await page.getByRole('button', { name: 'Approve and submit', exact: true }).click();
-  await syntheticDelivery(page, 'Finish synthetic signing');
-  await syntheticDelivery(page, 'Finish synthetic submission');
-  await expect(page.getByTestId('helper-phase')).toHaveText('outcome-pending');
-  await syntheticDelivery(page, 'Replace synthetic helper account');
-  await expect(page.getByRole('dialog')).toBeHidden();
-  await syntheticDelivery(page, 'Acknowledge synthetic outcome');
-  await syntheticDelivery(page, 'Deliver second helper job');
-  await expect(page.getByTestId('helper-signs')).toHaveText('1');
-  await expect(page.getByTestId('helper-submits')).toHaveText('1');
-});
-
-test('live Nostr selection skips comparison without closing the selected session', async ({ page, browserName }) => {
-  await markShell(page);
-  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
-  await page.getByRole('button', { name: 'Find synthetic helpers' }).click();
-  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
-  const first = page.getByRole('button', { name: /Choose peer 1/ });
-  await expect(first).toBeEnabled();
-  await first.evaluate(element => { (element as HTMLElement).dataset.syntheticPeer = 'first'; });
-  await first.focus();
-  await page.getByRole('button', { name: 'Deliver cheaper synthetic offer' }).evaluate(element => (element as HTMLButtonElement).click());
-  await expect(first).toHaveAttribute('data-synthetic-peer', 'first');
-  await expect(first).toBeFocused();
-  await expect(first).not.toContainText('Lowest fee');
-  await expect(page.getByRole('button', { name: /Choose peer 2/ })).toContainText('Lowest fee');
-  await page.getByRole('button', { name: 'Replace first synthetic quote' }).evaluate(element => (element as HTMLButtonElement).click());
-  await expect(first).toHaveAttribute('data-synthetic-peer', 'first');
-  await expect(first).toBeFocused();
-  const axe = await new AxeBuilder({ page }).include('[role="dialog"]')
-    .disableRules(browserName === 'webkit' ? ['color-contrast'] : []).analyze();
-  expect(axe.violations.filter(item => ['critical', 'serious'].includes(item.impact ?? ''))).toEqual([]);
-  await page.keyboard.press('Enter');
-  await expect(page.getByTestId('relay-selections')).toHaveText('1');
-  await expect(page.getByTestId('relay-collection-stopped')).toHaveText('true');
-  await expect(page.getByTestId('relay-closed-at-selection')).toHaveText('false');
-  await expect(page.getByTestId('relay-session-closed')).toHaveText('false');
-  await expect(first).toBeDisabled();
-  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
-  await expect(page.getByTestId('relay-selections')).toHaveText('1');
-  await page.getByRole('button', { name: 'Cancel synthetic discovery' }).click();
-  await expect(page.getByTestId('relay-session-closed')).toHaveText('true');
-  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
-  await expect(first).toBeHidden();
-  await stableShell(page);
-});
-
-test('expired Nostr rows keep their slot while remaining helpers stay selectable', async ({ page }) => {
-  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
-  await page.getByRole('button', { name: 'Find synthetic helpers' }).click();
-  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
-  await page.getByRole('button', { name: 'Deliver cheaper synthetic offer' }).click();
-  const first = page.getByRole('button', { name: /Choose peer 1/ });
-  const second = page.getByRole('button', { name: /Choose peer 2/ });
-  await first.evaluate(element => { (element as HTMLElement).dataset.syntheticPeer = 'first'; });
-  await second.evaluate(element => { (element as HTMLElement).dataset.syntheticPeer = 'second'; });
-  await page.getByRole('button', { name: 'Expire first synthetic offer' }).click();
-  await expect(first).toHaveAttribute('data-synthetic-peer', 'first');
-  await expect(first).toBeDisabled();
-  await expect(second).toHaveAttribute('data-synthetic-peer', 'second');
-  await expect(second).toBeEnabled();
-  await second.click();
-  await expect(page.getByTestId('relay-selections')).toHaveText('1');
-});
-
-test('Nostr discovery replacement and account changes invalidate old choices', async ({ page }) => {
-  await markShell(page);
-  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
-  await page.getByRole('button', { name: 'Find synthetic helpers' }).click();
-  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
-  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeEnabled();
-  await page.getByRole('button', { name: 'Find synthetic helpers' }).click();
-  await expect(page.getByTestId('relay-requests')).toHaveText('2');
-  await page.getByRole('button', { name: 'Deliver stale synthetic offer' }).click();
-  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeHidden();
-  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
-  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeEnabled();
-  await page.getByRole('button', { name: 'Switch synthetic relay account' }).click();
-  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeHidden();
-  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
-  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeHidden();
-  await expect(page.getByTestId('relay-selections')).toHaveText('0');
-  await stableShell(page);
-  await page.getByRole('tab', { name: 'Recovery', exact: true }).click();
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
-  await expect(page.getByRole('dialog')).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Open privacy controls' })).toBeFocused();
-});
-
-test('cancelling Nostr discovery before session creation closes the late session without publishing', async ({ page }) => {
-  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
-  await page.getByRole('button', { name: 'Delay synthetic session creation' }).click();
-  await page.getByRole('button', { name: 'Find synthetic helpers' }).click();
-  await page.getByRole('button', { name: 'Cancel synthetic discovery' }).click();
-  await page.getByRole('button', { name: 'Finish synthetic session creation' }).click();
-  await expect(page.getByTestId('relay-session-closed')).toHaveText('true');
-  await expect(page.getByTestId('relay-requests')).toHaveText('0');
-  await expect(page.getByRole('button', { name: /Choose peer/ })).toBeHidden();
-});
-
-test('the real chain controller accepts one live choice per step and ignores duplicate taps', async ({ page }) => {
-  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
-  await page.getByRole('button', { name: 'Prepare synthetic relay chain' }).click();
-  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
-  await page.getByRole('button', { name: /Choose peer 1/ }).click();
-  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeHidden();
-  await page.getByRole('button', { name: 'Start approved synthetic chain' }).click();
-  await expect(page.getByTestId('relay-requests')).toHaveText('2');
-  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
-  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeEnabled();
-  await page.getByRole('button', { name: 'Double choose first synthetic peer' }).click();
-  await expect(page.getByTestId('relay-selections')).toHaveText('1');
-  await expect(page.getByTestId('relay-error')).toHaveText('none');
-  await page.getByRole('button', { name: 'Finish synthetic payout' }).click();
-  await page.getByRole('button', { name: 'Advance synthetic chain step' }).click();
-  await expect(page.getByTestId('relay-requests')).toHaveText('3');
-  await page.getByRole('button', { name: 'Deliver stale synthetic offer' }).click();
-  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeHidden();
-  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
-  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeEnabled();
-  await page.getByRole('button', { name: /Choose peer 1/ }).click();
-  await expect(page.getByTestId('relay-selections')).toHaveText('2');
-  await page.getByRole('button', { name: 'Cancel synthetic discovery' }).click();
-  await expect(page.getByTestId('relay-session-closed')).toHaveText('true');
-});
-
-test('the bounded native socket exchanges only synthetic local messages and survives its setup deadline', async ({ page }) => {
-  let connection: Parameters<Parameters<typeof page.routeWebSocket>[1]>[0] | undefined;
-  let closed = false;
-  await page.routeWebSocket('**/synthetic-nostr', socket => {
-    connection = socket;
-    socket.onMessage(message => {
-      if (message === JSON.stringify(['REQ', 'synthetic-native', { kinds: [20004], limit: 1 }])) {
-        socket.send(JSON.stringify(['EOSE', 'synthetic-native']));
-      }
-    });
-    socket.onClose(() => { closed = true; });
-  });
-  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
-  await page.getByRole('button', { name: 'Open synthetic native socket' }).click();
-  await expect(page.getByTestId('relay-native-socket')).toHaveText('exchanged');
-  // Prove the CONNECTING deadline does not become an established-session TTL.
-  await page.waitForTimeout(100);
-  connection!.send(JSON.stringify(['EOSE', 'synthetic-after-deadline']));
-  await expect(page.getByTestId('relay-native-socket')).toHaveText('after deadline');
-  await page.getByRole('button', { name: 'Close synthetic native socket' }).click();
-  await expect(page.getByTestId('relay-native-socket')).toHaveText('closed');
-  await expect.poll(() => closed).toBe(true);
 });
 
 test('recovery requires separate consent, survives stale account completion, and keeps the shell', async ({ page, browserName }) => {
@@ -1161,7 +856,7 @@ test('recovery requires separate consent, survives stale account completion, and
   await expect.poll(() => page.evaluate(() => document.body.style.overflow)).not.toBe('hidden');
 });
 
-test('each chain step has an enabled explicit picker and cancellation keeps the shell stable', async ({ page, browserName }) => {
+test('direct chain review keeps its shell stable during rapid switching and progress', async ({ page, browserName }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await markShell(page);
   const tabs = page.getByRole('tablist', { name: 'Privacy check panels' });
@@ -1170,28 +865,26 @@ test('each chain step has an enabled explicit picker and cancellation keeps the 
     await tabs.getByRole('tab', { name: 'Recovery', exact: true }).click();
   }
   await tabs.getByRole('tab', { name: 'Chain', exact: true }).click();
-  const choose = page.getByRole('button', { name: /Choose peer 1/ });
-  await expect(choose).toBeEnabled();
-  await expect(page.getByText('Your private fee cap')).toBeVisible();
-  // Check settled contrast, not an intermediate color in the rapid-tab test.
+  const confirm = page.getByRole('button', { name: 'Send privately', exact: true });
+  await expect(confirm).toBeEnabled();
+  await expect(page.getByText('Your private fee cap')).toHaveCount(0);
+  await expect(page.getByText('Your Stellar account is public as the submitting account and pays network fees.')).toBeVisible();
   await tabs.evaluate(async element => {
     await Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
   });
   const axe = await new AxeBuilder({ page }).include('[role="dialog"]')
     .disableRules(browserName === 'webkit' ? ['color-contrast'] : []).analyze();
-  expect(axe.violations.filter(item => ['critical', 'serious'].includes(item.impact ?? ''))).toEqual([]);
-  await choose.focus();
+  expect(axe.violations.filter(item => ['critical', 'serious'].includes(item.impact ?? '')).map(item => ({ id: item.id, nodes: item.nodes.length }))).toEqual([]);
+  await confirm.focus();
   await page.keyboard.press('Enter');
-  await expect(choose).toBeHidden();
+  await expect(confirm).toBeDisabled();
   await page.getByRole('button', { name: 'Deliver canonical synthetic result' }).click();
-  await expect(choose).toBeEnabled();
-  await choose.click();
-  await page.getByRole('button', { name: 'Cancel Chain' }).click();
-  await expect(page.getByText('Chain stopped locally')).toBeVisible();
-  await page.getByRole('button', { name: 'Review another chain' }).click();
-  await expect(choose).toBeEnabled();
-  await choose.focus();
+  await expect(page.getByText('Step 2 of 2 · Confirming…')).toBeVisible();
   await stableShell(page);
+  await page.getByRole('button', { name: 'Deliver canonical synthetic result' }).click();
+  await expect(page.getByText('Chain finished', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Review another chain' }).click();
+  await expect(confirm).toBeEnabled();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Open privacy controls' })).toBeFocused();
@@ -1220,7 +913,7 @@ test('proof sharing waits for exact explicit consent and durable reservation bef
   await expect(authorize).toBeEnabled();
   await expect(page.getByTestId('proof-events')).toHaveText('none');
   await expect(page.getByText(/Sharing authorizes the exact payment above/)).toBeVisible();
-  await expect(page.getByText('Balance After', { exact: true }).locator('..').getByText('0.99999 XLM', { exact: true })).toBeVisible();
+  await expect(page.getByText('Balance After', { exact: true }).locator('..').getByText('1 XLM', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Change synthetic amount' }).click();
   await expect(authorize).toBeDisabled();
   await expect(page.getByTestId('proof-events')).toHaveText('none');

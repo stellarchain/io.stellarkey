@@ -30,9 +30,9 @@ const LANDING_ENTRY = "index.html";
 /** Incremental bytes needed to enter each named journey. */
 export const JOURNEY_BUDGETS = Object.freeze({
   initial: { rawBytes: INITIAL_JS_RAW_BUDGET, gzipBytes: INITIAL_JS_GZIP_BUDGET },
-  // v1.4 adds authenticated asset-registry discovery and explicit relay
-  // controls to the unlocked shell. Proving, relay transport, full merchant,
-  // and hardware code remain independently lazy and budgeted below.
+  // v1.4 adds authenticated asset-registry discovery to the unlocked shell.
+  // Proving, full merchant, and hardware code remain independently lazy
+  // and budgeted below. Relay controls and transport have been removed.
   // Re-baselined 2026-09-07 for the shared dialog shell (sheet presentation,
   // drag-to-dismiss, alerts, body/footer/confirm primitives) and the static
   // dialog shells that now ship with the wallet so a first open never waits

@@ -1,5 +1,9 @@
 # Relay startup implementation plan
 
+> Historical record: peer relaying and helper earnings were removed on 2026-09-10.
+> Relay instructions, measurements, and proposals below are not current functionality.
+> See [the current whitepaper](private-balance.md) for direct submission and legacy recovery.
+
 Stored directly in `docs/` to follow the release-tree policy, which excludes `docs/plans/`.
 
 > Use the systematic-debugging and test-driven-development skills for each step.

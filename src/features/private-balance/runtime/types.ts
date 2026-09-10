@@ -1,4 +1,4 @@
-import type { PrivateRelayChainJournal } from './relay-chain-policy';
+import type { LegacyPrivateRelayChainJournal } from './legacy-relay-state';
 import type { PrivateOutgoingHistoryMode } from './outgoing-history';
 
 export interface DeploymentContext {
@@ -121,6 +121,7 @@ export interface PrivatePendingAction {
   journalId?: string;
   recipientFingerprint?: string;
   memoHex?: string;
+  /** Archived relay metadata; never authorizes a new submission. */
   relayChain?: {
     approvalId: string;
     step: number;
@@ -184,7 +185,7 @@ export interface PrivateBalanceDurableState {
   spendRecovery?: PrivateSpendRecovery;
   recentPrivateRecipients?: PrivateRecentRecipient[];
   chainedApproval?: PrivateChainedApproval; // One-shot multi-step send consent
-  relayChainedApproval?: PrivateRelayChainJournal;
+  relayChainedApproval?: LegacyPrivateRelayChainJournal;
 }
 
 export interface PrivateSpendRecovery {

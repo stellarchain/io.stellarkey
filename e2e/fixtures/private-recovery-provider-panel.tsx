@@ -14,10 +14,10 @@ import { IndexedDbEncryptedRecordDriver } from '@/lib/indexed-db';
 import { lockVault, unlockVault, withPrivacySessionRoot } from '@/lib/vault';
 import type { AccountMeta } from '@/lib/types';
 import type { PrivateBalanceManifest } from '@/lib/private-balance-manifest';
-import { createRelayRecoveryScenario } from './relay-recovery-scenario';
+import { createPrivateRecoveryScenario } from './private-recovery-scenario';
 import development from '../../protocol/private-balance/manifests/development.json';
 
-type Scenario = Awaited<ReturnType<typeof createRelayRecoveryScenario>>;
+type Scenario = Awaited<ReturnType<typeof createPrivateRecoveryScenario>>;
 const asset = { ...development.assets[0], kind: 'native' as const, status: 'active' as const };
 const deployment = { ...initialPrivateBalanceRuntimeData.deployment };
 const password = 'synthetic recovery correct horse battery staple';
@@ -44,7 +44,7 @@ function Controls({ scenario }: { scenario: Scenario }) {
   </>;
 }
 
-export function RelayRecoveryProviderFixture() {
+export function PrivateRecoveryProviderFixture() {
   const wallet = useWallet();
   const [account, setAccount] = useState<AccountMeta | null>(null);
   const [scenario, setScenario] = useState<Scenario | null>(null);
@@ -66,11 +66,11 @@ export function RelayRecoveryProviderFixture() {
       wallet.completeSetup();
       boundary = 'scenario';
       const prepared = await withPrivacySessionRoot(created.account.id, development, async (root, storageKey) =>
-        createRelayRecoveryScenario(development as PrivateBalanceManifest, new IndexedDbEncryptedRecordDriver(), {
+        createPrivateRecoveryScenario(development as PrivateBalanceManifest, new IndexedDbEncryptedRecordDriver(), {
           bob: { accountId: created.account.id, publicKey: created.account.publicKey, root, storageKey },
         }));
       boundary = 'hold';
-      try { await prepared.prepare('helper-reject'); } catch (error) {
+      try { await prepared.prepare('rpc-reject'); } catch (error) {
         if (!(error instanceof Error) || error.name !== 'PrivateProofExposedError') throw error;
       }
       boundary = 'transport';

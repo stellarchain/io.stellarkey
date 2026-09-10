@@ -32,7 +32,7 @@ Consensus and operational review decisions are recorded in
 [`0002-private-note-key-agreement.md`](decisions/0002-private-note-key-agreement.md),
 [`0008-governed-asset-private-pool.md`](decisions/0008-governed-asset-private-pool.md), and
 [`0004-poseidon2-capacity-domain.md`](decisions/0004-poseidon2-capacity-domain.md),
-with the relayer, association-set, and stealth-subsystem boundaries in
+with the historical relayer, association-set, and stealth-subsystem boundaries in
 [`0009-browser-peer-relay.md`](decisions/0009-browser-peer-relay.md),
 [`0006-association-sets.md`](decisions/0006-association-sets.md), and
 [`0007-stealth-subsystem.md`](decisions/0007-stealth-subsystem.md).
@@ -50,7 +50,7 @@ action appends exactly three commitments.
 A zero-value output is a dummy note, not an absent slot. Its commitment, randomness, keys,
 diversifier, recipient envelope, and outgoing envelope are freshly constructed in the same format
 as a real output. The private `outputReal` selector is derived in-circuit as `value != 0`; it is not
-independent witness data. The wallet randomizes recipient, change, peer-fee, and dummy lane ordering.
+independent witness data. The wallet randomizes recipient, change, and dummy lane ordering. Historical fee-note lanes remain readable.
 All three recipient envelopes in an action carry the same clear four-byte action diversifier. This
 removes the prior clear-diversifier lane-role fingerprint, but it does not hide that diversifier or
 make repeated use of one receive address unlinkable across actions.
@@ -114,10 +114,10 @@ relayer or relayer-fee field. Its explicit non-zero circuit constraint gives it 
 input coefficient; mutating it invalidates a proof. The contract derives that field itself and
 independently validates canonical non-zero, distinct slots before accepting the proof.
 
-A relayed transfer or withdrawal pays its selected peer with one ordinary encrypted same-asset
-output note. The fee is therefore part of `sum(outputs)`, not a public value leg or token call. The
-fee recipient and fee amount are proof-bound inside that output. Direct submission uses a
-zero-value dummy in the otherwise available lane.
+Historical relayed transfers or withdrawals used one ordinary encrypted same-asset
+output note for a peer fee, included in `sum(outputs)` rather than a public value leg.
+The application no longer constructs peer-fee outputs. Direct submission uses a
+zero-value dummy in the otherwise available lane; the consensus format is unchanged.
 
 ## 7. Encryption and recovery transcript
 
@@ -176,25 +176,18 @@ enforce only origin and ledger-view separation; a custom primary under common co
 witness defeats the operator-diversity assumption. Multiple endpoints learn more of the client's
 access pattern; that privacy tradeoff is explicit.
 
-## 10. Optional browser peer relay
+## 10. Direct-only application submission
 
-Private transfers and withdrawals can be prepared for either direct submission or an explicit
-privacy relay. Deposits remain direct because the public source must authorize the token transfer.
-The client never silently falls back from relay mode to direct mode.
+The application prepares transfers, withdrawals, and deposits for direct submission
+from the user's Stellar account through the selected RPC. The public source and
+network fee remain visible. Relay discovery, quotes, helper approval, private fee
+construction, and Waku/Nostr transports have been removed; stale relayed reviews
+are rejected, never silently converted to direct payments.
 
-Discovery uses a bounded request published to at least two configured public Nostr relay origins.
-The sender and helper use ephemeral Nostr identities; messages after discovery are NIP-44 v2
-encrypted to the selected peer. No StellarKey backend, indexer, custodian, or operated relayer is
-involved. The public Nostr services still observe connection IP addresses, timing, and public
-requests, and the selected helper learns the action asset, quoted fee, proof, and exact transaction.
-NIP-44 does not provide forward secrecy or post-quantum confidentiality.
-
-Helping is a separate explicit opt-in. Before presenting approval, the helper validates the exact
-unsigned transaction, network, source, method, pool, time bounds and fee caps, verifies the three
-matched envelope diversifiers, decrypts exactly one real fee note for its quote key, and simulates
-the exact transaction against its configured RPC. The helper manually approves signing; the signed
-XDR is compared to the reviewed transaction before the helper submits it. The peer's Stellar
-account is the public transaction source and pays the Stellar network fee.
+Historical encrypted records retain route and proof-exposure metadata for
+conservative canonical recovery. Legacy relayed or unknown-route actions cannot
+be signed or rebroadcast. Retiring obsolete chain consent never releases held
+inputs. The contract, proof, action, and archive formats are unchanged.
 
 ## 11. Replacement and ceremony rule
 

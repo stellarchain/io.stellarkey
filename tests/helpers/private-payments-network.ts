@@ -2,11 +2,11 @@
 // (Alice, Bob, Charlie) that share one in-process pool archive. Preparation,
 // encrypted storage, signing classification, broadcast bookkeeping, recovery
 // and the canonical scanner run unchanged; only the prover, the archive
-// transport, the helper's preparation service and the RPC are controlled.
+// transport and the RPC are controlled.
 // No network, no funded accounts, no valid spend proofs.
 import { Account, Address, Contract, FeeBumpTransaction, Keypair, SorobanDataBuilder, StrKey, Transaction, TransactionBuilder, nativeToScVal, scValToNative, xdr, rpc as SorobanRpc } from '@stellar/stellar-sdk';
 import { appendCommitments, computeContextField, computeContextHash, computeGenesisRecordHash,
-  computeRecordHash, createEmptyTree, decodePrivateAddress, deriveDiversifiedAddressKeys, deriveExpandedSpendingKey,
+  computeRecordHash, createEmptyTree, deriveDiversifiedAddressKeys, deriveExpandedSpendingKey,
   derivePrivateAddressDeploymentTag, encodePrivateAddress, toViewingKey,
   type ActionModel, type ArchiveRecordModel } from '@stellarkey/private-balance';
 import { computeSha256 } from '../../src/lib/private-balance-artifacts';
@@ -26,15 +26,15 @@ import { broadcastPrivateBalanceAction, recoverPrivateBalanceAction, signReviewe
   type PrivateRecoveryResult } from '../../src/features/private-balance/runtime/submission';
 import { parsePrivateAmount } from '../../src/features/private-balance/runtime/coin-selection';
 import type { AuthorizePrivateProofDisclosure } from '../../src/features/private-balance/runtime/proof-disclosure';
-import { SyntheticRecordDriver } from '../../e2e/fixtures/relay-recovery-scenario';
+import { SyntheticRecordDriver } from '../../e2e/fixtures/private-recovery-scenario';
 
 export { SyntheticRecordDriver };
 
 export type ActorName = 'alice' | 'bob' | 'charlie';
 export const ACTORS: readonly ActorName[] = ['alice', 'bob', 'charlie'];
 
-/** How the helper (relay) and the prover behave while a payment is prepared. */
-export type PrepareMode = 'approve' | 'cancel' | 'proof-failure' | 'quote-expired' | 'helper-reject' | 'helper-timeout';
+/** How consent, the prover and the direct RPC behave during preparation. */
+export type PrepareMode = 'approve' | 'cancel' | 'proof-failure' | 'consent-expired' | 'rpc-reject' | 'rpc-timeout';
 /** How the RPC answers the signed envelope. `skip` leaves the action reviewed but unsent. */
 export type SubmitMode = 'PENDING' | 'ERROR' | 'timeout' | 'signer-reject' | 'skip';
 
@@ -42,8 +42,7 @@ export interface ActionHandle {
   id: string;
   actor: ActorName;
   kind: PrivateActionDraft['kind'];
-  relay: ActorName | null;
-  /** Null when the proof was shared but the flow failed before review (a helper failure). */
+  /** Null when the proof was shared but the flow failed before review (an RPC failure). */
   review: PreparedPrivateActionReview | null;
   /** The exact action the real builder produced; canonical inclusion appends it. */
   action: ActionModel;
@@ -149,7 +148,8 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
   const hashes = new Map<string, ActionHandle>();
   let submissions = 0;
   let simulations = 0;
-  let senderLookups = 0;
+  let rpcLookups = 0;
+  const preparationModes = new Map<string, { mode: PrepareMode }>();
   const archivePrototype = PrivateBalanceArchiveClient.prototype;
   const rpcPrototype = SorobanRpc.Server.prototype;
   const saved = {
@@ -196,6 +196,10 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
   };
   rpcPrototype.simulateTransaction = async transaction => {
     simulations++;
+    const source = transaction instanceof FeeBumpTransaction ? transaction.innerTransaction.source : transaction.source;
+    const mode = preparationModes.get(source)?.mode;
+    if (mode === 'rpc-reject') throw new Error('Synthetic RPC rejected proof simulation');
+    if (mode === 'rpc-timeout') throw new Error('Synthetic RPC proof simulation timed out');
     return { _parsed: true, id: 'synthetic', latestLedger: head().latestLedger, events: [],
       transactionData: new SorobanDataBuilder().setResourceFee('500'), minResourceFee: '500',
       result: { auth: depositAuthorization(transaction), retval: xdr.ScVal.scvVoid() } };
@@ -247,53 +251,32 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
     } as unknown as PrivateBalanceWorkerClient;
   };
 
-  /** Prepares an action through the real flow. Returns the handle even when the helper or prover fails, so callers can inspect journals. */
-  const prepare = async (name: ActorName, draft: PrivateActionDraft, options: { mode?: PrepareMode; relay?: ActorName;
-    feeAtomic?: string; authorize?: AuthorizePrivateProofDisclosure; recoveryActionId?: string; signal?: AbortSignal;
+  /** Prepares through the real flow; onBuilt can inspect a captured action after preparation fails. */
+  const prepare = async (name: ActorName, draft: PrivateActionDraft, options: { mode?: PrepareMode;
+    authorize?: AuthorizePrivateProofDisclosure; recoveryActionId?: string; signal?: AbortSignal;
     /** Receives a handle for an action whose proof was shared even though preparation then failed. */
     onBuilt?: (handle: ActionHandle) => void } = {}) => {
     const mode = options.mode ?? 'approve';
     const sender = actor(name);
-    const helper = options.relay ? actor(options.relay) : null;
     let built: Awaited<ReturnType<typeof preparePrivateAction>> | undefined;
-    const expiresAt = Math.floor(Date.now() / 1000) + 240;
-    const relayPreparation = helper ? { expiresAt, prepare: async (request: { operationXdr: string; maxTime: number; classicFeeStroops: string }) => {
-      if (mode === 'helper-reject') throw new Error('Synthetic helper rejected preparation');
-      if (mode === 'helper-timeout') throw new Error('Synthetic helper preparation timed out');
-      const transaction = new TransactionBuilder(new Account(helper.publicKey, '7'), { fee: request.classicFeeStroops,
-        networkPassphrase: manifest.networkPassphrase, timebounds: { minTime: 0, maxTime: request.maxTime } })
-        .addOperation(xdr.Operation.fromXDR(request.operationXdr, 'base64'))
-        .setSorobanData(new SorobanDataBuilder().setResourceFee('500').build()).build();
-      return { preparedEnvelopeXdr: transaction.toXdr(), accountSequence: '7', simulationLedger: head().latestLedger };
-    } } : undefined;
-    // The live helper derives its payout address for the sender's action
-    // diversifier: the recipient's for a transfer, the sender's own for a
-    // consolidation, and a fresh one for a withdrawal.
-    const feeAddress = async () => {
-      const diversifier = draft.kind === 'transfer' ? (await decodePrivateAddress(draft.recipientAddress, 'tskpay_', base.deploymentBindingHash)).diversifier
-        : draft.kind === 'consolidate' ? (await decodePrivateAddress(sender.address, 'tskpay_', base.deploymentBindingHash)).diversifier
-        : Uint8Array.of(0, 0, 0, 9);
-      return (await workerFor(helper!.name, mode, () => {}).deriveAddressForDiversifier(diversifier)).address;
-    };
-    const relay = helper ? { feeAtomic: options.feeAtomic ?? '30000000', privateFeeAddress: await feeAddress(), sourceAccount: helper.publicKey,
-      requestId: '51'.repeat(32), quoteId: '52'.repeat(32), peerPublicKey: '53'.repeat(32) } : undefined;
-    const withRelay = relay && draft.kind !== 'deposit' ? { ...draft, relay } : draft;
+    const preparation = { mode };
     const flow = () => preparePrivateBalanceActionFlow({ manifest, accountPublicKey: sender.publicKey, privateAddress: sender.address,
       storageContext: sender.scope, storageKey: sender.storageKey, storageDriver: driver,
       worker: workerFor(name, mode, value => { built = value; }), rpcUrl: 'http://127.0.0.1:1', classicFeeStroops: 100n,
       assetContractId, assetIndex: 0, registryAssets: base.assets, assetCode: 'XLM', assetDecimals: 7,
-      draft: withRelay, relayPreparation, recoveryActionId: options.recoveryActionId, signal: options.signal,
+      draft, recoveryActionId: options.recoveryActionId, signal: options.signal,
       authorizeDisclosure: async request => {
         if (mode === 'cancel') throw new DOMException('Synthetic consent cancelled', 'AbortError');
         await options.authorize?.(request);
-        if (mode === 'quote-expired' && relayPreparation) relayPreparation.expiresAt = Math.floor(Date.now() / 1000) - 1;
+        if (mode === 'consent-expired') throw new Error('Synthetic proof-sharing consent expired');
       } });
     let result: Awaited<ReturnType<typeof preparePrivateBalanceActionFlow>>;
+    preparationModes.set(sender.publicKey, preparation);
     try { result = await flow(); } catch (error) {
       const shared = built && (await load(name)).pendingActions.find(action => action.actionField === hex(built!.actionField));
       if (built && options.onBuilt) {
         const pendingId = shared?.id ?? `unreviewed-${handles.size}`;
-        const handle: ActionHandle = { id: pendingId, actor: name, kind: draft.kind, relay: options.relay ?? null, review: null, action: built.action,
+        const handle: ActionHandle = { id: pendingId, actor: name, kind: draft.kind, review: null, action: built.action,
           amountStroops: draft.kind === 'deposit' || draft.kind === 'transfer' || draft.kind === 'withdraw' ? parsePrivateAmount(draft.amount, 7) : 0n,
           publicRecipient: draft.kind === 'withdraw' ? ACTORS.find(candidate => actor(candidate).publicKey === draft.publicRecipient) ?? null : null,
           transactionHash: null, included: false, failed: false };
@@ -301,9 +284,11 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
         options.onBuilt(handle);
       }
       throw error;
+    } finally {
+      if (preparationModes.get(sender.publicKey) === preparation) preparationModes.delete(sender.publicKey);
     }
     if (!built) throw new Error('Synthetic builder produced no action');
-    const handle: ActionHandle = { id: result.review.id, actor: name, kind: draft.kind, relay: options.relay ?? null, review: result.review,
+    const handle: ActionHandle = { id: result.review.id, actor: name, kind: draft.kind, review: result.review,
       action: built.action, amountStroops: BigInt(result.review.amountStroops),
       publicRecipient: draft.kind === 'withdraw' ? ACTORS.find(candidate => actor(candidate).publicKey === draft.publicRecipient) ?? null : null,
       transactionHash: null, included: false, failed: false };
@@ -322,11 +307,11 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
       sign: async request => {
         if (mode === 'signer-reject') throw new Error('Synthetic signer rejected');
         const transaction = TransactionBuilder.fromXdr(request.envelopeXdr, manifest.networkPassphrase);
-        transaction.sign(handle.relay ? actor(handle.relay).signer : sender.signer);
+        transaction.sign(sender.signer);
         return transaction.toXdr();
       } });
     return broadcastPrivateBalanceAction({ context: sender.scope, storageKey: sender.storageKey, expectedRevision: signed.revision,
-      actionId: handle.id, networkPassphrase: manifest.networkPassphrase, submissionMode: handle.relay ? 'relay' : 'direct', storageDriver: driver,
+      actionId: handle.id, networkPassphrase: manifest.networkPassphrase, submissionMode: 'direct', storageDriver: driver,
       rpc: { sendTransaction: async transaction => {
         submissions++;
         if (mode === 'timeout') throw new Error('Synthetic uncertain RPC outcome');
@@ -378,7 +363,7 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
         storageDriver: driver, networkPassphrase: manifest.networkPassphrase, now: () => now,
         rpc: { getTransaction: async transactionHash => {
           const handle = hashes.get(transactionHash);
-          if (handle?.relay) { senderLookups++; throw new Error('Synthetic relay must never disclose a hash to the sender RPC'); }
+          rpcLookups++;
           return { status: handle?.included ? 'SUCCESS' : handle?.failed ? 'FAILED' : 'NOT_FOUND', txHash: transactionHash,
             latestLedgerCloseTime: seconds(now) };
         } },
@@ -422,14 +407,14 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
 
   return {
     manifest, driver, actors, records,
-    get submissions() { return submissions; }, get simulations() { return simulations; }, get senderLookups() { return senderLookups; },
+    get submissions() { return submissions; }, get simulations() { return simulations; }, get rpcLookups() { return rpcLookups; },
     address: (name: ActorName) => actor(name).address,
     publicKey: (name: ActorName) => actor(name).publicKey,
     pauseDeposits(paused: boolean) { depositsPaused = paused; },
     state: load, sync, prepare, submit, include, fail, recover, balances, freshScan, forget, restore,
     /** Prepare, sign and broadcast in one step; `mode` controls the RPC answer. */
-    async send(name: ActorName, draft: PrivateActionDraft, options: { relay?: ActorName; feeAtomic?: string; prepare?: PrepareMode; submit?: SubmitMode } = {}) {
-      const handle = await prepare(name, draft, { relay: options.relay, feeAtomic: options.feeAtomic, mode: options.prepare });
+    async send(name: ActorName, draft: PrivateActionDraft, options: { prepare?: PrepareMode; submit?: SubmitMode } = {}) {
+      const handle = await prepare(name, draft, { mode: options.prepare });
       await submit(handle, options.submit ?? 'PENDING');
       return handle;
     },

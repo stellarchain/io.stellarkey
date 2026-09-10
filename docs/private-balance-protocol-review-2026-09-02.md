@@ -1,5 +1,9 @@
 # Private Balance Protocol Review — SOTA / Efficiency / Simplicity / Correctness / Speed
 
+> Historical record: peer relaying and helper earnings were removed on 2026-09-10.
+> Relay instructions, measurements, and proposals below are not current functionality.
+> See [the current whitepaper](private-balance.md) for direct submission and legacy recovery.
+
 **Date:** 2026-09-02
 **Revision reviewed:** `cc45d23` (main, clean tree)
 **Scope:** `protocol/private-balance/` (circuits, `crates/protocol`, `contracts/pool`, `packages/browser`) and `src/features/private-balance/runtime/`

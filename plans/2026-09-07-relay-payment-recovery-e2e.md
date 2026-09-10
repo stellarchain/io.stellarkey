@@ -1,5 +1,9 @@
 # Relay payment recovery diagnostic test plan
 
+> Historical diagnostic record. Peer relaying was removed on 2026-09-10.
+> The retained recovery tests now use direct RPC scenarios and the renamed files
+> linked below; the old helper behavior and accounting results are not current functionality.
+
 **Goal:** Reproduce and distinguish a failed Alice/Bob/Charlie relay payment from a lost or reserved original deposit, with Alice charging exactly 3 XLM.
 
 **Architecture:** Isolated, non-usable synthetic deployment. Exercise production action preparation, note encryption, Merkle verification, encrypted state transitions, signing/submission classification, canonical sync and recovery. Replace only proof generation, archive transport and helper/RPC responses. Browser checks exercise this pipeline with real IndexedDB; existing helper/controller browser checks cover their controls separately. This is not live three-wallet network E2E and must not be reported as such.
@@ -8,9 +12,9 @@
 
 ## Tasks
 
-1. Add `tests/private-balance-relay-recovery.test.mjs` with success/change, exact spend, two inputs, insufficient fee coverage, pre-disclosure cancellation, post-disclosure rejection/timeout, pending/uncertain submission and canonical recovery assertions. First run establishes missing harness; no production implementation change is authorized.
-2. Add shared test-only `e2e/fixtures/relay-recovery-scenario.ts`. Construct real synthetic deposits and encrypted outputs for Alice, Bob and Charlie; call `preparePrivateBalanceActionFlow`, signing/broadcast functions and `syncPrivateBalance`. Assert balances using production selectors and independently decrypted transcript output values, never hard-code runtime outcomes in the fixture.
-3. Add `e2e/fixtures/relay-recovery-panel.tsx` and `e2e/relay-recovery.spec.ts`; wire the existing exclusive temporary-fixture runner. Persist with real IndexedDB and prove reload retains reservations/change. No wallet import, real funds, keys, network services, screenshots, videos or traces.
+1. Add `tests/private-balance-recovery.test.mjs` with success/change, exact spend, two inputs, insufficient fee coverage, pre-disclosure cancellation, post-disclosure rejection/timeout, pending/uncertain submission and canonical recovery assertions. First run establishes missing harness; no production implementation change is authorized.
+2. Add shared test-only `e2e/fixtures/private-recovery-scenario.ts`. Construct real synthetic deposits and encrypted outputs for Alice, Bob and Charlie; call `preparePrivateBalanceActionFlow`, signing/broadcast functions and `syncPrivateBalance`. Assert balances using production selectors and independently decrypted transcript output values, never hard-code runtime outcomes in the fixture.
+3. Add `e2e/fixtures/private-recovery-panel.tsx` and `e2e/private-recovery.spec.ts`; wire the existing exclusive temporary-fixture runner. Persist with real IndexedDB and prove reload retains reservations/change. No wallet import, real funds, keys, network services, screenshots, videos or traces.
 4. Run focused Node tests, browser matrix on both engines, typecheck, lint and fixture-clean gate. Run existing relay interaction cases alongside the new checks. Document expected safety holds separately from bugs; preserve a reproducible diagnostic assertion if the original deposit becomes unavailable indefinitely.
 5. Record findings and exact verification in this plan. Do not implement a recovery/security change, release, merge, tag or push. A new proof sharing/recovery policy requires explicit user direction.
 
@@ -23,11 +27,11 @@
 
 ## Verification commands
 
-`node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/private-balance-relay-recovery.test.mjs`
+`node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/private-balance-recovery.test.mjs`
 
-`E2E_PORT=3297 npm run test:e2e:private-components -- relay-recovery.spec.ts`
+`E2E_PORT=3297 npm run test:e2e:private-components -- private-recovery.spec.ts`
 
-`npm run typecheck` / `npx tsc --noEmit -p e2e/tsconfig.relay-recovery.json` / `npx eslint e2e/fixtures/relay-recovery-scenario.ts e2e/fixtures/relay-recovery-panel.tsx e2e/relay-recovery.spec.ts` / `npm run check:fixture-clean`
+`npm run typecheck` / `npx tsc --noEmit -p e2e/tsconfig.private-recovery.json` / `npx eslint e2e/fixtures/private-recovery-scenario.ts e2e/fixtures/private-recovery-panel.tsx e2e/private-recovery.spec.ts` / `npm run check:fixture-clean`
 
 ## Baseline
 
@@ -71,7 +75,7 @@ This is an availability/recovery limitation, with a security reason: a spend pro
 - Baseline: 1,716 Node tests passed.
 - Final full Node suite: 1,733 passed, zero failures/skips/todos (`npm test`).
 - Focused preparation/submission/proof-exposure/relay-chain/sync matrix: 69 passed, zero failures/skips.
-- Browser command: `E2E_PORT=3297 npm run test:e2e:private-components -- relay-recovery.spec.ts private-components.spec.ts --grep 'three-wallet relay|relay|helper|proof sharing'` — 46 passed, zero failures/skips.
+- Browser command: `E2E_PORT=3297 npm run test:e2e:private-components -- private-recovery.spec.ts private-components.spec.ts --grep 'three-wallet relay|relay|helper|proof sharing'` — 46 passed, zero failures/skips.
 - Dedicated fixture TypeScript check and application typecheck passed; focused lint passed without warnings.
 - Temporary fixture source/export cleanup and `git diff --check` passed.
 - Independent test-fidelity review completed. Added exact failure-stage/cause assertions, returned and durable submission classifications, and counted sender-RPC lookup assertions (zero calls).

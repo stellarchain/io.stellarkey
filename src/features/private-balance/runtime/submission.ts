@@ -12,6 +12,7 @@ import {
   type PrivateStorageContext,
 } from './storage';
 import { hasExposedPrivateSpend } from './proof-exposure';
+import { assertDirectPrivateSubmission } from './direct-submission';
 import type { PrivateBalanceDurableState, PrivatePendingAction } from './types';
 import type { PrivateBalanceTransactionReview } from './transaction-review';
 
@@ -25,27 +26,6 @@ export class PrivateActionReviewExpiredError extends Error {
     super('This payment review expired. Review it again to continue.');
     this.name = 'PrivateActionReviewExpiredError';
   }
-}
-
-/** Relayed payments poll only the common archive; never disclose a payment hash. */
-export async function pollPrivateBalanceCanonicalOutcome(input: {
-  reconcile(): Promise<boolean>;
-  delays?: readonly number[];
-  sleep?: (milliseconds: number) => Promise<void>;
-}): Promise<'reconciled' | 'pending'> {
-  const sleep = input.sleep ?? (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)));
-  for (const delay of input.delays ?? PRIVATE_BROADCAST_POLL_DELAYS_MS) {
-    if (!Number.isSafeInteger(delay) || delay < 0) {
-      throw new Error('Private Balance broadcast polling delay is invalid');
-    }
-    await sleep(delay);
-    try {
-      if (await input.reconcile()) return 'reconciled';
-    } catch {
-      // An unavailable archive never establishes finality or releases notes.
-    }
-  }
-  return 'pending';
 }
 
 /**
@@ -188,6 +168,7 @@ export async function signReviewedPrivateBalanceAction(input: {
   if (!action || action.status !== 'reviewed' || action.transactionHash !== input.review.transactionHash) {
     throw new Error('Private Balance action does not match the reviewed transaction');
   }
+  assertDirectPrivateSubmission({ ...action, submissionMode: action.submissionMode ?? null });
   const unsigned = TransactionBuilder.fromXdr(input.review.envelopeXdr, input.networkPassphrase);
   if (
     unsigned instanceof FeeBumpTransaction ||
@@ -370,11 +351,12 @@ export async function broadcastPrivateBalanceAction(input: {
   expectedRevision: number;
   actionId: string;
   networkPassphrase: string;
-  submissionMode: 'direct' | 'relay';
+  submissionMode: 'direct';
   rpc: PrivateBalanceRpcSender;
   storageDriver?: PrivateRecordDriver;
   now?: () => number;
 }): Promise<PrivateBroadcastResult> {
+  assertDirectPrivateSubmission(input);
   const state = await loadPrivateBalanceState(input.context, input.storageKey, input.storageDriver);
   if (!state || state.revision !== input.expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');

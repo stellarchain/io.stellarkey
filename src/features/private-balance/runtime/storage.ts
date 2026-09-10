@@ -4,8 +4,8 @@ import { assertPrivateRecoveryReplacement, isPrivateSpendRecovery, MAX_PRIVATE_R
 import { privateOutgoingHistoryMode, type PrivateOutgoingHistoryMode } from './outgoing-history';
 import { decryptBytesWithKey, encryptBytesWithKey, type RawKeyEncryptedPayload } from '../../../lib/crypto';
 import { IndexedDbEncryptedRecordDriver } from '../../../lib/indexed-db';
-import { advancePrivateRelayChain, assertPrivateRelayChainApproval, isPrivateRelayChainJournal, privateRelayChainContextKey, resolvePrivateRelayChainInputs,
-  type PrivateRelayChainApproval, type PrivateRelayChainStep } from './relay-chain-policy';
+import { isLegacyPrivateRelayChainJournal, legacyPrivateRelayChainContextKey } from './legacy-relay-state';
+import { assertDirectPrivateSubmission } from './direct-submission';
 import {
   privateBalanceSensitivePrefix,
   privateBalanceStateRecordKey,
@@ -449,7 +449,7 @@ function isDurableState(
     )) ||
     !(state.chainedApproval === undefined || isChainedApproval(state.chainedApproval)) ||
     !(state.spendRecovery === undefined || isPrivateSpendRecovery(state.spendRecovery)) ||
-    !(state.relayChainedApproval === undefined || (isPrivateRelayChainJournal(state.relayChainedApproval) && state.relayChainedApproval.approval.contextKey === privateRelayChainContextKey(context, state.relayChainedApproval.approval.assetContractId))) ||
+    !(state.relayChainedApproval === undefined || (isLegacyPrivateRelayChainJournal(state.relayChainedApproval) && state.relayChainedApproval.approval.contextKey === legacyPrivateRelayChainContextKey(context, state.relayChainedApproval.approval.assetContractId))) ||
     !Array.isArray(state.notes) ||
     !state.notes.every(isNote) ||
     new Set(state.notes.map(note => note.id)).size !== state.notes.length ||
@@ -609,6 +609,7 @@ export async function commitPrivateBuildReservation(
   pendingAction: PrivatePendingAction,
   candidate?: PrivateRecordDriver,
 ): Promise<PrivateBalanceDurableState> {
+  assertDirectPrivateSubmission(pendingAction);
   if (pendingAction.status !== 'prepared' || !isPendingAction(pendingAction)) {
     throw new Error('Private Balance pending action is invalid.');
   }
@@ -638,18 +639,6 @@ export async function commitPrivateBuildReservation(
     buildReservations: current.buildReservations.filter(item => item.id !== reservationId),
     pendingActions: [...current.pendingActions, { ...pendingAction }],
   };
-  // A relay has spend authority as soon as it sees the operation, before it
-  // returns simulation data. Reserve the independently chosen MAXIMUM XLM
-  // budget, not a later helper-provided simulated amount, in this same CAS.
-  if (pendingAction.proofExposure === 'shared' && pendingAction.relayChain) {
-    const binding = pendingAction.relayChain;
-    const step: PrivateRelayChainStep = { actionId: pendingAction.id, actionField: pendingAction.actionField,
-      step: binding.step, inputNoteIds: [...pendingAction.reservedNoteIds], outputCommitment: binding.recipientOutputCommitment,
-      amountAtomic: pendingAction.amountStroops!, recipientAddress: binding.recipientAddress, privateFeeAtomic: binding.feeAtomic,
-      networkFeeStroops: (BigInt(pendingAction.classicFeeCapStroops) + BigInt(pendingAction.resourceFeeCapStroops)).toString(),
-      quoteId: binding.quoteId, requestId: binding.requestId, sourceAccount: binding.sourceAccount, expiresAtSeconds: binding.expiresAtSeconds };
-    next.relayChainedApproval = authorizedPrivateRelayChain(next, binding.approvalId, step, Math.floor(pendingAction.updatedAt / 1000));
-  }
   if (pendingAction.proofExposure === 'shared' && pendingAction.directChainApprovalId) {
     const approval = current.chainedApproval;
     const fee = BigInt(pendingAction.classicFeeCapStroops) + BigInt(pendingAction.resourceFeeCapStroops);
@@ -817,14 +806,8 @@ export async function recordPrivateOutgoingHistoryMode(
   return next;
 }
 
-export async function recordPrivateBalanceInternalAddress(
-  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number, privateAddress: string, candidate?: PrivateRecordDriver, chainApprovalId?: string,
-): Promise<PrivateBalanceDurableState> {
-  return recordPrivateAddressIssuance(context, key, expectedRevision, privateAddress, false, candidate, chainApprovalId);
-}
-
 async function recordPrivateAddressIssuance(
-  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number, privateAddress: string, replaceDisplay: boolean, candidate?: PrivateRecordDriver, chainApprovalId?: string,
+  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number, privateAddress: string, replaceDisplay: boolean, candidate?: PrivateRecordDriver,
 ): Promise<PrivateBalanceDurableState> {
   const diversifier = await assertPrivateAddress(privateAddress, context);
   const current = await loadPrivateBalanceState(context, key, candidate);
@@ -841,14 +824,11 @@ async function recordPrivateAddressIssuance(
     throw new Error('Private address rotation reached its local safety limit. Existing addresses still receive payments.');
   }
   issued.add(diversifier);
-  const chain = chainApprovalId ? current.relayChainedApproval : null;
-  if (chainApprovalId && (!chain || chain.approval.id !== chainApprovalId || chain.selfAddresses.length !== chain.authorized.length || chain.selfAddresses.length >= chain.approval.steps - 1)) throw new Error('Private relay address issuance is out of order.');
   const next: PrivateBalanceDurableState = {
     ...current,
     revision: current.revision + 1,
     ...(replaceDisplay ? { privateAddress } : {}),
     issuedAddressDiversifiers: [...issued],
-    ...(chain ? { relayChainedApproval: { ...chain, selfAddresses: [...chain.selfAddresses, privateAddress] } } : {}),
   };
   await commitPrivateBalanceState(context, key, next, current.revision, candidate);
   return next;
@@ -921,72 +901,18 @@ export async function commitPrivateBalanceState(
   if (!result.ok) throw new Error('Private Balance state changed in another wallet session.');
 }
 
-/**
- * Journals the one-shot approval that authorizes a whole consolidation chain.
- * A previous approval must be finished, dead, or expired; the driver never
- * resumes an interrupted chain without fresh consent.
- */
-export async function beginPrivateRelayChainApproval(
-  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number, approval: PrivateRelayChainApproval, nowSeconds: number, candidate?: PrivateRecordDriver,
-): Promise<PrivateBalanceDurableState> {
-  assertPrivateRelayChainApproval(approval);
-  if (approval.contextKey !== privateRelayChainContextKey(context, approval.assetContractId) || nowSeconds >= approval.expiresAtSeconds) throw new Error('Private relay chain context changed or approval expired.');
+/** Retire obsolete consent only. Exposed inputs and pending records remain held.
+ * The normal encrypted-state CAS rejects concurrent changes, so an old reader
+ * cannot overwrite a newer action or release its reservations. */
+export async function retireLegacyPrivateRelayConsent(
+  context: PrivateStorageContext, key: Uint8Array, candidate?: PrivateRecordDriver,
+): Promise<PrivateBalanceDurableState | null> {
   const current = await loadPrivateBalanceState(context, key, candidate);
-  if (!current || current.revision !== expectedRevision) throw new Error('Private Balance state changed in another wallet session.');
-  if ((current.relayChainedApproval && current.relayChainedApproval.approval.expiresAtSeconds > nowSeconds) || current.chainedApproval || current.pendingActions.length || current.buildReservations.length) throw new Error('Another Private Balance action is already open.');
-  const journal = { approval: structuredClone(approval), authorized: [], privateFeeAtomic: '0', networkFeeStroops: '0', selfAddresses: [] };
-  // Check all original inputs, not just the first pair, before accepting consent.
-  for (const original of approval.plan.inputNotes) {
-    if (!current.notes.some(note => note.id === original.id && note.commitment === original.commitment && note.value === original.value && note.assetIndex === approval.assetIndex && note.assetContractId === approval.assetContractId && note.status === 'unspent')) throw new Error('An approved private relay input changed.');
-  }
-  resolvePrivateRelayChainInputs(journal, current);
-  const next = { ...current, revision: current.revision + 1, relayChainedApproval: journal };
-  await commitPrivateBalanceState(context, key, next, current.revision, candidate);
-  return next;
-}
-
-export async function authorizePrivateRelayChainStep(
-  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number, approvalId: string, step: PrivateRelayChainStep, nowSeconds: number, candidate?: PrivateRecordDriver,
-): Promise<PrivateBalanceDurableState> {
-  const current = await loadPrivateBalanceState(context, key, candidate);
-  if (!current || current.revision !== expectedRevision) throw new Error('Private Balance state changed in another wallet session.');
-  const next = { ...current, revision: current.revision + 1, relayChainedApproval: authorizedPrivateRelayChain(current, approvalId, step, nowSeconds) };
-  await commitPrivateBalanceState(context, key, next, current.revision, candidate);
-  return next;
-}
-
-function authorizedPrivateRelayChain(current: PrivateBalanceDurableState, approvalId: string, step: PrivateRelayChainStep, nowSeconds: number) {
-  const journal = current.relayChainedApproval;
-  const pending = current.pendingActions.find(action => action.id === step.actionId);
-  const binding = pending?.relayChain;
-  if (!journal || journal.approval.id !== approvalId || !pending || !['prepared', 'reviewed'].includes(pending.status) || pending.submissionMode !== 'relay' || pending.assetContractId !== journal.approval.assetContractId || pending.assetIndex !== journal.approval.assetIndex ||
-    !binding || binding.approvalId !== approvalId || binding.step !== step.step || binding.feeAtomic !== step.privateFeeAtomic || binding.quoteId !== step.quoteId || binding.requestId !== step.requestId || binding.sourceAccount !== step.sourceAccount || binding.expiresAtSeconds !== step.expiresAtSeconds ||
-    binding.recipientAddress !== step.recipientAddress || binding.recipientOutputCommitment !== step.outputCommitment || pending.actionField !== step.actionField || !pending.outputCommitments.includes(step.outputCommitment) || pending.amountStroops !== step.amountAtomic ||
-    JSON.stringify(pending.reservedNoteIds) !== JSON.stringify(step.inputNoteIds) ||
-    (BigInt(pending.classicFeeCapStroops) + BigInt(pending.resourceFeeCapStroops)).toString() !== step.networkFeeStroops) throw new Error('Private relay authorization differs from the reviewed step or route.');
-  if (step.step < journal.approval.steps - 1 && journal.selfAddresses[step.step] !== step.recipientAddress) throw new Error('Private relay consolidation address was not issued for this step.');
-  return advancePrivateRelayChain(journal, step, nowSeconds, current);
-}
-
-export async function clearPrivateRelayChainApproval(
-  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number, approvalId: string, candidate?: PrivateRecordDriver,
-): Promise<PrivateBalanceDurableState> {
-  const current = await loadPrivateBalanceState(context, key, candidate);
-  if (!current || current.revision !== expectedRevision) throw new Error('Private Balance state changed in another wallet session.');
-  if (current.relayChainedApproval?.approval.id !== approvalId) return current;
+  if (!current?.relayChainedApproval) return current;
   const next = { ...current, revision: current.revision + 1 };
   delete next.relayChainedApproval;
   await commitPrivateBalanceState(context, key, next, current.revision, candidate);
   return next;
-}
-
-export async function releaseExpiredPrivateRelayChainApproval(
-  context: PrivateStorageContext, key: Uint8Array, nowSeconds: number, candidate?: PrivateRecordDriver,
-): Promise<PrivateBalanceDurableState | null> {
-  if (!Number.isSafeInteger(nowSeconds) || nowSeconds < 0) throw new Error('Private relay chain expiry time is invalid.');
-  const current = await loadPrivateBalanceState(context, key, candidate);
-  if (!current?.relayChainedApproval || current.relayChainedApproval.approval.expiresAtSeconds > nowSeconds) return current;
-  return clearPrivateRelayChainApproval(context, key, current.revision, current.relayChainedApproval.approval.id, candidate);
 }
 
 export async function beginPrivateChainedApproval(

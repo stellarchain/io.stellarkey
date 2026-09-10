@@ -98,7 +98,7 @@ test('an expired review re-prepares once and visibly diffs the changed rows', ()
   const review = read('src/features/private-balance/components/PrivateActionReview.tsx');
 
   assert.match(controller, /cause instanceof PrivateActionReviewExpiredError/);
-  assert.match(controller, /await prepare\(draftRef\.current, submissionModeRef\.current\)/);
+  assert.match(controller, /await prepare\(draftRef\.current\)/);
   // An identical re-prepared review swaps in seamlessly; a changed fee or
   // change pulses its row and briefly holds confirm.
   assert.match(review, /diff\.fee !== fee/);
@@ -116,51 +116,12 @@ test('the first-ever private send celebrates exactly once', () => {
   assert.match(source, /explorerTxUrl/);
 });
 
-test('private send makes peer relay an explicit choice and never silently falls back', () => {
+test('private send uses only direct preparation and keeps recipient validation scoped to current input', () => {
   const source = read('src/features/private-balance/components/SendPrivate.tsx');
   const controller = read('src/features/private-balance/components/usePrivateActionController.ts');
-  const choice = read('src/features/private-balance/components/PrivateRelaySubmissionChoice.tsx');
-
-  assert.match(source, /PrivateRelaySubmissionChoice/);
-  assert.match(source, /flow\.prepare\([\s\S]*submissionMode/);
-  assert.match(choice, /Privacy relay/);
-  assert.match(choice, /My account/);
-  assert.match(choice, /No StellarKey relay\s*server/);
-  assert.match(controller, /No privacy relay peer answered/);
-  assert.match(controller, /same Stellar account/);
-  assert.doesNotMatch(controller, /catch[\s\S]{0,200}prepareAction\(draft/);
-});
-
-test('private relay shows every quote and waits for the person to select a peer', () => {
-  const controller = read('src/features/private-balance/components/usePrivateActionController.ts');
-  const review = read('src/features/private-balance/components/PrivateActionReview.tsx');
-  const picker = read('src/features/private-balance/components/PrivateRelayQuotePicker.tsx');
-  const send = read('src/features/private-balance/components/SendPrivate.tsx');
-  const withdraw = read('src/features/private-balance/components/WithdrawPrivate.tsx');
-
-  assert.match(controller, /relayQuotes/);
-  assert.match(controller, /selectRelayQuote/);
-  assert.match(controller, /relaySelectionRef/);
-  assert.match(controller, /excludePeerAccounts.*publicAddress/s);
-  assert.match(controller, /onQuotes:\s*quotes\s*=>/);
-  assert.match(controller, /onIneligiblePeerAccounts:[\s\S]{0,180}setRelayProgress\('same-account-peer'\)/);
-  assert.match(controller, /setRelayProgress\('comparing-fees'\)/);
-  assert.match(controller, /catch \(cause: unknown\)[\s\S]{0,180}submissionMode === 'relay'[\s\S]{0,100}setRelayQuotes\(\[\]\)/);
-  assert.doesNotMatch(controller, /quotes\[0\]/);
-  assert.match(review, /PrivateRelayQuotePicker/);
-  assert.match(review, /onSelectRelayQuote/);
-  assert.match(review, /relayProgress === 'comparing-fees'/);
-  assert.match(review, /relayProgress === 'same-account-peer'/);
-  assert.match(review, /different Stellar account/);
-  assert.match(review, /Comparing relay fees/);
-  assert.match(review, /comparing=\{preparing && relayProgress === 'comparing-fees'\}/);
-  assert.match(picker, /Available peers/);
-  assert.doesNotMatch(picker, /aria-busy=\{comparing\}/);
-  assert.match(picker, /Choose now, or wait briefly for more offers/);
-  assert.match(picker, /quote\.peerAccount/);
-  assert.match(picker, /quote\.feeAtomic/);
-  assert.match(picker, /Choose peer/);
-  assert.match(picker, /Lowest fee/);
-  assert.match(send, /relayQuotes=\{flow\.relayQuotes\}/);
-  assert.match(withdraw, /relayQuotes=\{flow\.relayQuotes\}/);
+  assert.doesNotMatch(source, /PrivateRelay|submissionMode|loadPrivateRelayPreferences/);
+  assert.doesNotMatch(controller, /PrivateRelay|requestQuotes|requestSignature/);
+  assert.match(source, /recipientValidation\?\.address === trimmedRecipient/);
+  assert.match(source, /recipientValidation\.networkLabel === networkLabel/);
+  assert.match(source, /if \(current\) setRecipientValidation/);
 });

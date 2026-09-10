@@ -1,5 +1,9 @@
 # Immediate Nostr Helper Selection Implementation Plan
 
+> Historical record: peer relaying and helper earnings were removed on 2026-09-10.
+> Relay instructions, measurements, and proposals below are not current functionality.
+> See [the current whitepaper](private-balance.md) for direct submission and legacy recovery.
+
 > **For the implementing agent:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Allow explicit selection of an authenticated helper during discovery for payments and every consolidation step, without changing network privacy or proof authorization.

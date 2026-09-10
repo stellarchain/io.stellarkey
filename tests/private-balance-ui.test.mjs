@@ -332,16 +332,6 @@ test('the review balance simulation stays protocol-true before and after inputs 
   );
 });
 
-test('relay proof-sharing and prepared balance previews subtract the private fee exactly once', async () => {
-  const { privateReviewBalanceSimulation } = await import('../src/features/private-balance/components/PrivateReviewSimulation.ts');
-  const expected = { beforeStroops: 1000n, afterStroops: 400n };
-  assert.deepEqual(privateReviewBalanceSimulation({ kind: 'transfer', liveUnspentStroops: 1000n, amountStroops: 500n, privateFeeStroops: 100n, review: null }), expected);
-  assert.deepEqual(privateReviewBalanceSimulation({ kind: 'transfer', liveUnspentStroops: 200n, amountStroops: 500n, privateFeeStroops: 100n,
-    review: { kind: 'transfer', amountStroops: '500', changeValueStroops: '200', relay: { feeAtomic: '100' } } }), expected);
-  assert.deepEqual(privateReviewBalanceSimulation({ kind: 'withdraw', liveUnspentStroops: 200n, amountStroops: 500n, privateFeeStroops: 100n,
-    review: { kind: 'withdraw', amountStroops: '500', changeValueStroops: '200', relay: { feeAtomic: '100' } } }), expected);
-});
-
 test('private spend review discloses its atomic idle-pool refresh', () => {
   const review = read('src/features/private-balance/components/PrivateActionReview.tsx');
 

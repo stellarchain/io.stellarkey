@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { createRelayRecoveryScenario, SyntheticRecordDriver } from '../e2e/fixtures/relay-recovery-scenario.ts';
+import { createPrivateRecoveryScenario, SyntheticRecordDriver } from '../e2e/fixtures/private-recovery-scenario.ts';
 import { initialPrivateBalanceState, privateBalanceReducer } from '../src/features/private-balance/runtime/reducer.ts';
 import { initializeVault, withPrivacySessionRoot, lockVault, unlockVault } from '../src/lib/vault.ts';
 import { Keypair } from '@stellar/stellar-sdk';
@@ -45,8 +45,8 @@ test('submission cleanup rechecks authority after its durable state read', async
 });
 
 test('recovery rejects replacement input, value, asset, route and nullifier tampering', async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver());
-  await assert.rejects(scenario.prepare('helper-reject'));
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
+  await assert.rejects(scenario.prepare('rpc-reject'));
   const original = (await scenario.state()).pendingActions[0];
   await scenario.prepare('approve', undefined, true);
   // The replacement validator runs at disclosure, before envelope review.
@@ -93,10 +93,10 @@ test('real vault-derived Bob identity can seed the recovery provider fixture', a
   globalThis.window = { localStorage: { getItem: key => entries.get(key) ?? null, setItem: (key, value) => entries.set(key, value), removeItem: key => entries.delete(key) } };
   try {
     const { account } = await initializeVault('synthetic recovery correct horse battery staple', { secret: Keypair.random().secret() });
-    const scenario = await withPrivacySessionRoot(account.id, manifest, (root, storageKey) => createRelayRecoveryScenario(manifest, new SyntheticRecordDriver(), {
+    const scenario = await withPrivacySessionRoot(account.id, manifest, (root, storageKey) => createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver(), {
       bob: { accountId: account.id, publicKey: account.publicKey, root, storageKey },
     }));
-    await assert.rejects(scenario.prepare('helper-reject'), error => error.name === 'PrivateProofExposedError');
+    await assert.rejects(scenario.prepare('rpc-reject'), error => error.name === 'PrivateProofExposedError');
     await scenario.prepare('approve', undefined, true);
     await scenario.confirm(true);
     assert.deepEqual(await scenario.balances(), expected('100'));
@@ -112,8 +112,8 @@ test('runtime hydration publishes recovery lineage and clears it on reset', () =
 });
 
 test('caught-up sync resolves lineage left pending by an older client', async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver());
-  await assert.rejects(scenario.prepare('helper-reject'));
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
+  await assert.rejects(scenario.prepare('rpc-reject'));
   await scenario.prepare('approve', undefined, true);
   await scenario.confirm(true);
   await scenario.changeState(state => ({ ...state, spendRecovery: { ...state.spendRecovery, outcome: 'pending' } }));
@@ -122,9 +122,9 @@ test('caught-up sync resolves lineage left pending by an older client', async ()
 });
 
 test('bounded recovery history never disables retry after repeated simulation failures', async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver());
-  await assert.rejects(scenario.prepare('helper-reject'));
-  await assert.rejects(scenario.prepare('helper-reject', undefined, true), error => error.name === 'PrivateProofExposedError');
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
+  await assert.rejects(scenario.prepare('rpc-reject'));
+  await assert.rejects(scenario.prepare('rpc-reject', undefined, true), error => error.name === 'PrivateProofExposedError');
   await scenario.changeState(state => ({ ...state, spendRecovery: { ...state.spendRecovery,
     recoveryActionFields: [...Array.from({ length: 31 }, (_, index) => (index + 1).toString(16).padStart(64, '0')), state.pendingActions[0].actionField] } }));
   await scenario.prepare('approve', undefined, true);
@@ -134,8 +134,8 @@ test('bounded recovery history never disables retry after repeated simulation fa
 });
 
 for (const originalWins of [false, true]) test(`held input recovery: ${originalWins ? 'original payment' : 'self recovery'} confirms first`, async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver());
-  await assert.rejects(scenario.prepare('helper-reject'), error => error.name === 'PrivateProofExposedError');
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
+  await assert.rejects(scenario.prepare('rpc-reject'), error => error.name === 'PrivateProofExposedError');
   const original = (await scenario.state()).pendingActions[0];
   await scenario.prepare('approve', async request => {
     assert.equal(request.privateFeeAtomic, '0');
@@ -149,32 +149,32 @@ for (const originalWins of [false, true]) test(`held input recovery: ${originalW
   assert.equal(recovered.nullifiers.filter(value => original.nullifiers.includes(value)).length, 1);
   assert.deepEqual(await scenario.balances(), expected('0', '100', '0', '0', 1));
   await scenario.confirm(!originalWins);
-  assert.deepEqual(await scenario.balances(), originalWins ? expected('87', '0', '3', '10') : expected('100'));
+  assert.deepEqual(await scenario.balances(), originalWins ? expected('90', '0', '0', '10') : expected('100'));
   assert.equal((await scenario.state()).spendRecovery.outcome, originalWins ? 'original-confirmed' : 'recovered');
   await scenario.sync();
-  assert.deepEqual(await scenario.freshScanBalances(), originalWins ? { bob: '87', alice: '3', charlie: '10' } : { bob: '100', alice: '0', charlie: '0' });
+  assert.deepEqual(await scenario.freshScanBalances(), originalWins ? { bob: '90', alice: '0', charlie: '10' } : { bob: '100', alice: '0', charlie: '0' });
 });
 
 for (const mode of ['cancel', 'proof-failure']) test(`held input recovery ${mode} preserves the original hold`, async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver());
-  await assert.rejects(scenario.prepare('helper-reject'), error => error.name === 'PrivateProofExposedError');
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
+  await assert.rejects(scenario.prepare('rpc-reject'), error => error.name === 'PrivateProofExposedError');
   const original = await scenario.state();
   await assert.rejects(scenario.prepare(mode, undefined, true), mode === 'cancel' ? /Synthetic consent cancelled/ : /Synthetic prover failure/);
   assert.deepEqual(await scenario.state(), original);
 });
 
 test('original payment wins before recovery disclosure: stale CAS shares no recovery proof', async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver());
-  await assert.rejects(scenario.prepare('helper-reject'));
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
+  await assert.rejects(scenario.prepare('rpc-reject'));
   await assert.rejects(scenario.prepare('approve', () => scenario.confirm(), true), /recovery state changed/);
   assert.equal(scenario.shared, 1);
-  assert.deepEqual(await scenario.balances(), expected('87', '0', '3', '10'));
+  assert.deepEqual(await scenario.balances(), expected('90', '0', '0', '10'));
   assert.equal((await scenario.state()).spendRecovery, undefined);
 });
 
 test('competing tabs can build locally but only one recovery disclosure CAS wins', async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver());
-  await assert.rejects(scenario.prepare('helper-reject'));
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
+  await assert.rejects(scenario.prepare('rpc-reject'));
   let firstReady;
   const ready = new Promise(resolve => { firstReady = resolve; });
   let releaseFirst;
@@ -185,15 +185,15 @@ test('competing tabs can build locally but only one recovery disclosure CAS wins
   const winner = (await scenario.state()).pendingActions[0];
   releaseFirst();
   await assert.rejects(first, /recovery state changed/);
-  assert.equal(scenario.shared, 2); // Original helper plus exactly one recovery.
+  assert.equal(scenario.shared, 2); // Original preparation plus exactly one recovery.
   assert.deepEqual((await scenario.state()).pendingActions, [winner]);
   await scenario.confirm(true);
   assert.deepEqual(await scenario.balances(), expected('100'));
 });
 
 test('two-input recovery preserves the entire held value and leaves unrelated notes alone', async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver(), { deposits: ['20', '20', '5'], amount: '30' });
-  await assert.rejects(scenario.prepare('helper-reject'));
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver(), { deposits: ['20', '20', '5'], amount: '30' });
+  await assert.rejects(scenario.prepare('rpc-reject'));
   const original = (await scenario.state()).pendingActions[0];
   await scenario.prepare('approve', undefined, true);
   const replacement = (await scenario.state()).pendingActions[0];
@@ -206,8 +206,8 @@ test('two-input recovery preserves the entire held value and leaves unrelated no
 });
 
 test('legacy exposed hold can recover without inferring its old submission route', async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver());
-  await assert.rejects(scenario.prepare('helper-reject'));
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
+  await assert.rejects(scenario.prepare('rpc-reject'));
   await scenario.changeState(state => {
     delete state.pendingActions[0].proofExposure;
     delete state.pendingActions[0].submissionMode;
@@ -220,8 +220,8 @@ test('legacy exposed hold can recover without inferring its old submission route
 });
 
 test('backup restore retains exposed recovery inputs and lineage before canonical reconciliation', async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver());
-  await assert.rejects(scenario.prepare('helper-reject'));
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
+  await assert.rejects(scenario.prepare('rpc-reject'));
   await scenario.prepare('approve', undefined, true);
   const pending = (await scenario.state()).pendingActions[0];
   await scenario.restoreBackup();
@@ -234,8 +234,8 @@ test('backup restore retains exposed recovery inputs and lineage before canonica
 });
 
 for (const mode of ['PENDING', 'ERROR', 'timeout', 'signer-reject']) test(`direct recovery ${mode} is never ledger confirmation`, async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver());
-  await assert.rejects(scenario.prepare('helper-reject'));
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
+  await assert.rejects(scenario.prepare('rpc-reject'));
   await scenario.prepare('approve', undefined, true);
   if (mode === 'signer-reject') await assert.rejects(scenario.submit(mode), /rejected signing/);
   else assert.equal((await scenario.submit(mode)).status, mode === 'PENDING' ? 'broadcast' : 'ambiguous');
@@ -248,12 +248,12 @@ for (const mode of ['PENDING', 'ERROR', 'timeout', 'signer-reject']) test(`direc
 });
 
 for (const [name, deposits, amount, change] of [
-  ['one deposit with change', ['100'], '10', '87'],
-  ['exact payment plus fee', ['13'], '10', '0'],
-  ['two deposits with change', ['20', '20'], '30', '7'],
-  ['fractional payment and change', ['20.5'], '10.125', '7.375'],
-]) test(`Alice charges 3 XLM: ${name}`, async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver(), { deposits, amount });
+  ['one deposit with change', ['100'], '10', '90'],
+  ['exact payment', ['10'], '10', '0'],
+  ['two deposits with change', ['20', '20'], '30', '10'],
+  ['fractional payment and change', ['20.5'], '10.125', '10.375'],
+]) test(`Direct payment: ${name}`, async () => {
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver(), { deposits, amount });
   await scenario.prepare('approve');
   const submitted = await scenario.submit('PENDING');
   assert.equal(submitted.status, 'broadcast');
@@ -261,15 +261,15 @@ for (const [name, deposits, amount, change] of [
   assert.equal(scenario.submissions, 1);
   assert.deepEqual(await scenario.balances(), expected('0', String(deposits.reduce((n, value) => n + Number(value), 0)), '0', '0', 1));
   await scenario.confirm();
-  assert.deepEqual(await scenario.balances(), expected(change, '0', '3', amount));
+  assert.deepEqual(await scenario.balances(), expected(change, '0', '0', amount));
   await scenario.sync();
-  assert.deepEqual(await scenario.balances(), expected(change, '0', '3', amount));
-  assert.deepEqual(await scenario.freshScanBalances(), { bob: change, alice: '3', charlie: amount });
+  assert.deepEqual(await scenario.balances(), expected(change, '0', '0', amount));
+  assert.deepEqual(await scenario.freshScanBalances(), { bob: change, alice: '0', charlie: amount });
 });
 
 for (const [mode, error] of [['cancel', /Synthetic consent cancelled/], ['proof-failure', /Synthetic prover failure/],
-  ['quote-expired', /helper quote expired before proof sharing/]]) test(`before sharing: ${mode} preserves Bob's spendable deposit`, async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver());
+  ['consent-expired', /Synthetic consent expired before proof sharing/]]) test(`before sharing: ${mode} preserves Bob's spendable deposit`, async () => {
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
   await assert.rejects(scenario.prepare(mode), error);
   assert.deepEqual(await scenario.balances(), expected('100'));
   assert.equal(scenario.shared, 0);
@@ -278,15 +278,15 @@ for (const [mode, error] of [['cancel', /Synthetic consent cancelled/], ['proof-
   assert.deepEqual(await scenario.journal(), { builds: 0, pending: [] });
 });
 
-test('payment fits but payment plus Alice fee does not: no input is reserved or shared', async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver(), { deposits: ['12'] });
+test('insufficient private funds: no input is reserved or shared', async () => {
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver(), { deposits: ['9'] });
   await assert.rejects(scenario.prepare('approve'), /insufficient/i);
-  assert.deepEqual(await scenario.balances(), expected('12'));
+  assert.deepEqual(await scenario.balances(), expected('9'));
   assert.equal(scenario.shared, 0);
 });
 
-for (const [mode, message] of [['helper-reject', 'Synthetic helper rejected preparation'], ['helper-timeout', 'Synthetic helper preparation timed out']]) test(`reproduction: ${mode} leaves the entire deposit reserved without any payment`, async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver());
+for (const [mode, message] of [['rpc-reject', 'Synthetic RPC rejected preparation'], ['rpc-timeout', 'Synthetic RPC preparation timed out']]) test(`reproduction: ${mode} leaves the entire deposit reserved without any payment`, async () => {
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
   await assert.rejects(scenario.prepare(mode), error => error.name === 'PrivateProofExposedError' && error.cause?.message === message);
   assert.deepEqual(await scenario.balances(), expected('0', '100', '0', '0', 1));
   assert.equal(scenario.shared, 1);
@@ -297,12 +297,12 @@ for (const [mode, message] of [['helper-reject', 'Synthetic helper rejected prep
   assert.deepEqual(await scenario.balances(), expected('0', '100', '0', '0', 1));
   await assert.rejects(scenario.prepare('approve'), error => error.name === 'PrivateActionInFlightError');
   await scenario.confirm();
-  assert.deepEqual(await scenario.balances(), expected('87', '0', '3', '10'));
+  assert.deepEqual(await scenario.balances(), expected('90', '0', '0', '10'));
 });
 
-test('a helper failure holds the selected deposit but does not delete an unrelated deposit', async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver(), { deposits: ['100', '5'] });
-  await assert.rejects(scenario.prepare('helper-reject'), error => error.name === 'PrivateProofExposedError');
+test('an RPC failure holds the selected deposit but does not delete an unrelated deposit', async () => {
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver(), { deposits: ['100', '5'] });
+  await assert.rejects(scenario.prepare('rpc-reject'), error => error.name === 'PrivateProofExposedError');
   assert.deepEqual(await scenario.balances(), expected('5', '100', '0', '0', 1));
   await scenario.expireAndRecover();
   assert.deepEqual(await scenario.balances(), expected('5', '100', '0', '0', 1));
@@ -310,27 +310,27 @@ test('a helper failure holds the selected deposit but does not delete an unrelat
 });
 
 test('three-input payment requires consolidation before any proof sharing or reservation', async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver(), { deposits: ['20', '20', '20'], amount: '50' });
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver(), { deposits: ['20', '20', '20'], amount: '50' });
   await assert.rejects(scenario.prepare('approve'), error => error.name === 'PrivateConsolidationRequiredError');
   assert.deepEqual(await scenario.balances(), expected('60'));
   assert.deepEqual(await scenario.journal(), { builds: 0, pending: [] });
   assert.equal(scenario.shared, 0);
 });
 
-test('minimized outgoing history still recovers Bob change, Alice fee and Charlie payment', async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver(), { outgoingHistory: 'minimized' });
+test('minimized outgoing history still recovers Bob change and Charlie payment', async () => {
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver(), { outgoingHistory: 'minimized' });
   await scenario.prepare('approve');
   await scenario.submit('PENDING');
   await scenario.confirm();
-  assert.deepEqual(await scenario.balances(), expected('87', '0', '3', '10'));
-  assert.deepEqual(await scenario.freshScanBalances(), { bob: '87', alice: '3', charlie: '10' });
+  assert.deepEqual(await scenario.balances(), expected('90', '0', '0', '10'));
+  assert.deepEqual(await scenario.freshScanBalances(), { bob: '90', alice: '0', charlie: '10' });
 });
 
 for (const [status, classification, rpcStatus] of [['PENDING', 'broadcast', 'PENDING'], ['ERROR', 'ambiguous', 'ERROR'],
   ['timeout', 'ambiguous', 'UNAVAILABLE'], ['signer-reject', 'reviewed', null]]) test(`${status} never invents confirmation, and canonical inclusion recovers all three outputs`, async () => {
-  const scenario = await createRelayRecoveryScenario(manifest, new SyntheticRecordDriver());
+  const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
   await scenario.prepare('approve');
-  if (status === 'signer-reject') await assert.rejects(scenario.submit(status), /Synthetic Alice rejected signing/);
+  if (status === 'signer-reject') await assert.rejects(scenario.submit(status), /Synthetic sender rejected signing/);
   else {
     const result = await scenario.submit(status);
     assert.equal(result.status, classification);
@@ -344,6 +344,6 @@ for (const [status, classification, rpcStatus] of [['PENDING', 'broadcast', 'PEN
   assert.equal(scenario.senderLookups, 0);
   assert.deepEqual(await scenario.balances(), expected('0', '100', '0', '0', 1));
   await scenario.confirm();
-  assert.deepEqual(await scenario.balances(), expected('87', '0', '3', '10'));
-  assert.deepEqual(await scenario.freshScanBalances(), { bob: '87', alice: '3', charlie: '10' });
+  assert.deepEqual(await scenario.balances(), expected('90', '0', '0', '10'));
+  assert.deepEqual(await scenario.freshScanBalances(), { bob: '90', alice: '0', charlie: '10' });
 });

@@ -88,11 +88,10 @@ Private Payments must remain `development`, Testnet-only, and explicitly disclos
 
 Direct mode self-submits a shielded transfer or withdrawal from the user's public Stellar account,
 which is visible on chain and can deanonymise the spend. Fee-bump sponsorship does not remove the
-inner source. Optional privacy-relay mode uses an explicitly opted-in peer wallet, public Nostr
-discovery, ephemeral identities, and an encrypted proof-bound fee note; StellarKey operates no
-relay backend. The client must never silently fall back to direct submission. Non-development
-promotion remains blocked until real multi-peer availability, adversarial-job, privacy-metadata,
-fee-economics, shutdown, and physical-browser evidence exists.
+inner source. The wallet supports direct submission only; peer relaying, helper earnings,
+and Waku/Nostr infrastructure have been removed. Stale relayed reviews are rejected rather
+than converted to direct payments. Encrypted legacy records remain readable and reconcile-only
+under their original route; removing obsolete consent never releases exposed inputs.
 
 Do not add `Cross-Origin-Embedder-Policy` based on desktop estimates. Cross-origin isolation may
 enable multithreaded proving, but it can also break wallet and hardware integrations whose resources

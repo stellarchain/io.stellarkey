@@ -6,8 +6,6 @@ import {
   derivePrivateAddressDeploymentTag,
   deriveDiversifiedAddressKeys,
   deriveExpandedSpendingKey,
-  computeAssetField,
-  openRecipientEnvelope,
   randomBytes32,
   type ExpandedSpendingKey,
 } from '@stellarkey/private-balance';
@@ -17,7 +15,6 @@ import { redactSensitiveData } from './redaction';
 import { wipePrivateBalanceSpendingKey } from './key-hygiene';
 import { scanArchiveRecords } from '../runtime/scanner';
 import { preparePrivateAction, type PreparedPrivateAction } from './action-builder';
-import { StrKey } from '@stellar/stellar-sdk';
 
 let currentEsk: ExpandedSpendingKey | null = null;
 let currentSessionId: string | null = null;
@@ -82,7 +79,7 @@ function activeSession(req: WorkerRequest): {
 }
 
 function freshAddressDiversifier(): Uint8Array {
-  // Zero is the legacy default, which cannot be used for a relay payout.
+  // Zero is the legacy default; new addresses use a fresh diversifier.
   // Bound rejection sampling so unavailable/broken entropy cannot wedge a worker.
   for (let attempt = 0; attempt < 64; attempt += 1) {
     const entropy = randomBytes32();
@@ -206,7 +203,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         const diversifier = req.diversifier.slice();
         try {
           if (diversifier.length !== 4 || diversifier.every(byte => byte === 0)) {
-            throw new Error('Private relay diversifier must be four nonzero bytes');
+            throw new Error('Private address diversifier must be four bytes and nonzero');
           }
           const identity = await selectAddressIdentity(esk, keyContext, diversifier, false);
           self.postMessage({
@@ -220,75 +217,6 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         } finally {
           diversifier.fill(0);
         }
-        break;
-      }
-
-      case 'VERIFY_RELAY_FEE': {
-        const { esk, keyContext } = activeSession(req);
-        if (
-          req.actionNonce.length !== 32 ||
-          req.actionDiversifier.length !== 4 ||
-          req.actionDiversifier.every(byte => byte === 0) ||
-          req.outputs.length !== 3 ||
-          !/^(?:[1-9][0-9]{0,20})$/u.test(req.feeAtomic)
-        ) {
-          throw new Error('Private relay fee proof input is malformed');
-        }
-        const asset = keyContext.assets.find(candidate => candidate.index === req.assetIndex);
-        if (!asset || !StrKey.isValidContract(asset.contractId)) {
-          throw new Error('Private relay fee asset is not registered');
-        }
-        const assetField = computeAssetField({
-          kind: 1,
-          payload: new Uint8Array(StrKey.decodeContract(asset.contractId)),
-        });
-        const contextHash = computeContextHash(
-          keyContext.protocolVersion,
-          keyContext.networkId,
-          keyContext.realmId,
-          keyContext.poolId,
-        );
-        let matchingNotes = 0;
-        for (const [outputIndex, relayOutput] of req.outputs.entries()) {
-          if (relayOutput.commitment.length !== 32 || relayOutput.recipientEnvelope.length !== 181) {
-            throw new Error('Private relay output is malformed');
-          }
-          const note = await openRecipientEnvelope(
-            esk.hpkePrivateKey,
-            relayOutput.recipientEnvelope,
-            contextHash,
-            keyContext.contextField,
-            assetField,
-            relayOutput.commitment,
-            req.actionNonce,
-            outputIndex,
-            esk.baseOwnerCommitment,
-          );
-          if (!note) continue;
-          try {
-            if (
-              note.flags !== 0 ||
-              note.value.toString() !== req.feeAtomic ||
-              note.assetIndex !== req.assetIndex ||
-              note.diversifier.some((byte, index) => byte !== req.actionDiversifier[index])
-            ) {
-              throw new Error('Private relay payment does not match the quote');
-            }
-            matchingNotes += 1;
-          } finally {
-            note.rho.fill(0);
-            note.memo.fill(0);
-          }
-        }
-        if (matchingNotes !== 1) {
-          throw new Error('Private relay transaction does not contain exactly one quoted fee note');
-        }
-        self.postMessage({
-          messageVersion: PRIVATE_BALANCE_WORKER_MESSAGE_VERSION,
-          id: req.id,
-          sessionId: req.sessionId,
-          type: 'RELAY_FEE_VERIFIED',
-        } satisfies WorkerResponse);
         break;
       }
 

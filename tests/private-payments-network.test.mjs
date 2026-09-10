@@ -8,12 +8,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { TransactionBuilder } from '@stellar/stellar-sdk';
 import { ACTORS, createPrivatePaymentsNetwork, format } from './helpers/private-payments-network.ts';
 
 const manifest = JSON.parse(readFileSync(new URL('../protocol/private-balance/manifests/development.json', import.meta.url), 'utf8'));
 const MINUTES = 60_000;
 const xlm = value => BigInt(Math.round(Number(value) * 10_000_000));
-const FEE = '30000000'; // 3 XLM, the helper's private fee in every relayed scenario.
 
 async function network(options) {
   return createPrivatePaymentsNetwork(manifest, options);
@@ -46,7 +46,7 @@ async function selfRecover(net, name) {
   const held = (await net.state(name)).pendingActions[0];
   assert.ok(held, `${name} has a held action to recover`);
   const recovery = await net.prepare(name, { kind: 'consolidate' }, { recoveryActionId: held.id });
-  assert.equal(recovery.relay, null, 'recovery is always direct');
+  assert.equal((await net.state(name)).pendingActions[0].submissionMode, 'direct', 'recovery is always direct');
   assert.notEqual(recovery.id, held.id);
   assert.deepEqual((await net.state(name)).pendingActions.map(action => action.id), [recovery.id], 'the recovery replaces the hold in one step');
   assert.equal((await net.state(name)).spendRecovery?.outcome, 'pending');
@@ -54,7 +54,7 @@ async function selfRecover(net, name) {
 }
 
 // ---------------------------------------------------------------------------
-// Happy paths: deposits, direct and relayed payments in every direction
+// Happy paths: deposits and direct payments in every direction
 // ---------------------------------------------------------------------------
 
 test('deposits: every wallet funds its private balance and the ledger, journals and fresh scans agree', async () => {
@@ -83,82 +83,83 @@ test('direct transfer: Alice pays Bob, Bob receives, Alice keeps her change', as
   } finally { net.restore(); }
 });
 
-test('relayed transfer: Alice pays Bob through Charlie, who receives the private fee', async () => {
+test('direct source: Alice submits and no uninvolved wallet receives a reward', async () => {
   const net = await network();
   try {
     await fund(net);
-    const payment = await net.send('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }, { relay: 'charlie', feeAtomic: FEE });
-    assert.equal(payment.relay, 'charlie');
+    const payment = await net.send('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') });
+    assert.equal((await net.state('alice')).pendingActions[0].submissionMode, 'direct');
+    assert.equal(TransactionBuilder.fromXdr(payment.review.transaction.envelopeXdr, net.manifest.networkPassphrase).source, net.publicKey('alice'));
     await net.include(payment);
-    assert.equal(await spendable(net, 'alice'), '87', 'payment plus the 3 XLM relay fee leave Alice');
+    assert.equal(await spendable(net, 'alice'), '90', 'only the approved private payment leaves Alice');
     assert.equal(await spendable(net, 'bob'), '60');
-    assert.equal(await spendable(net, 'charlie'), '23', 'Charlie is paid privately for relaying');
-    assert.equal(net.senderLookups, 0, 'a relayed payment never sends its hash to the sender RPC');
+    assert.equal(await spendable(net, 'charlie'), '20', 'an uninvolved wallet receives no private fee');
+    assert.equal(net.rpcLookups, 0, 'a confirmed direct payment needs no separate transaction lookup');
     await net.assertSettled();
   } finally { net.restore(); }
 });
 
-test('round trip: A pays B via C, B pays C directly, C pays A via B, and every wallet agrees with the ledger', async () => {
+test('round trip: A pays B, B pays C, C pays A, and every direct wallet agrees with the ledger', async () => {
   const net = await network();
   try {
     await fund(net);
-    await net.include(await net.send('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }, { relay: 'charlie', feeAtomic: FEE }));
+    await net.include(await net.send('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }));
     await net.include(await net.send('bob', { kind: 'transfer', amount: '15', recipientAddress: net.address('charlie') }));
-    await net.include(await net.send('charlie', { kind: 'transfer', amount: '5', recipientAddress: net.address('alice') }, { relay: 'bob', feeAtomic: '10000000' }));
-    assert.equal(await spendable(net, 'alice'), '92');   // 100 - 10 - 3 + 5
-    assert.equal(await spendable(net, 'bob'), '46');     // 50 + 10 - 15 + 1
-    assert.equal(await spendable(net, 'charlie'), '32'); // 20 + 3 + 15 - 5 - 1
-    assert.equal(net.senderLookups, 0);
+    await net.include(await net.send('charlie', { kind: 'transfer', amount: '5', recipientAddress: net.address('alice') }));
+    assert.equal(await spendable(net, 'alice'), '95');   // 100 - 10 + 5
+    assert.equal(await spendable(net, 'bob'), '45');     // 50 + 10 - 15
+    assert.equal(await spendable(net, 'charlie'), '30'); // 20 + 15 - 5
+    assert.equal(net.rpcLookups, 0);
     await net.assertSettled();
   } finally { net.restore(); }
 });
 
-test('relay variations: the recipient relays its own incoming payment, and one helper serves two senders in a row', async () => {
+test('direct variations: recipients can pay back and two senders transact in sequence', async () => {
   const net = await network();
   try {
     await fund(net);
-    await net.include(await net.send('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }, { relay: 'bob', feeAtomic: FEE }));
-    assert.equal(await spendable(net, 'alice'), '87');
-    assert.equal(await spendable(net, 'bob'), '63', 'Bob receives the payment and his own relay fee');
-    await net.include(await net.send('bob', { kind: 'transfer', amount: '20', recipientAddress: net.address('alice') }, { relay: 'charlie', feeAtomic: FEE }));
-    await net.include(await net.send('alice', { kind: 'transfer', amount: '7', recipientAddress: net.address('bob') }, { relay: 'charlie', feeAtomic: FEE }));
-    assert.equal(await spendable(net, 'alice'), '97');   // 87 + 20 - 7 - 3
-    assert.equal(await spendable(net, 'bob'), '47');     // 63 - 20 - 3 + 7
-    assert.equal(await spendable(net, 'charlie'), '26'); // 20 + 3 + 3
-    assert.equal(net.senderLookups, 0);
+    await net.include(await net.send('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }));
+    assert.equal(await spendable(net, 'alice'), '90');
+    assert.equal(await spendable(net, 'bob'), '60', 'Bob receives only the payment');
+    await net.include(await net.send('bob', { kind: 'transfer', amount: '20', recipientAddress: net.address('alice') }));
+    await net.include(await net.send('alice', { kind: 'transfer', amount: '7', recipientAddress: net.address('bob') }));
+    assert.equal(await spendable(net, 'alice'), '103');   // 90 + 20 - 7
+    assert.equal(await spendable(net, 'bob'), '47');     // 60 - 20 + 7
+    assert.equal(await spendable(net, 'charlie'), '20'); // no payment to Charlie
+    assert.equal(net.rpcLookups, 0);
     await net.assertSettled();
   } finally { net.restore(); }
 });
 
-test('exact amounts: paying the whole balance plus fee leaves no change note, and fractional payments conserve every stroop', async () => {
+test('exact amounts: paying the whole balance leaves no change note, and fractional payments conserve every stroop', async () => {
   const net = await network();
   try {
     await fund(net);
-    await net.include(await net.send('alice', { kind: 'transfer', amount: '97', recipientAddress: net.address('bob') }, { relay: 'charlie', feeAtomic: FEE }));
+    await net.include(await net.send('alice', { kind: 'transfer', amount: '100', recipientAddress: net.address('bob') }));
     assert.equal(await spendable(net, 'alice'), '0');
-    assert.equal(await spendable(net, 'bob'), '147');
-    assert.equal(await spendable(net, 'charlie'), '23');
+    assert.equal(await spendable(net, 'bob'), '150');
+    assert.equal(await spendable(net, 'charlie'), '20');
     await net.include(await net.send('bob', { kind: 'transfer', amount: '10.1234567', recipientAddress: net.address('alice') }));
     assert.equal((await net.balances('alice')).spendable, xlm('10.1234567'));
-    assert.equal((await net.balances('bob')).spendable, xlm('136.8765433'));
+    assert.equal((await net.balances('bob')).spendable, xlm('139.8765433'));
     await net.assertSettled();
   } finally { net.restore(); }
 });
 
-test('withdrawals: direct to another public account and relayed to the sender\'s own account move value out of the pool exactly once', async () => {
+test('withdrawals: direct to another public account and to the sender\'s own account move value out of the pool exactly once', async () => {
   const net = await network();
   try {
     await fund(net);
     await net.include(await net.send('alice', { kind: 'withdraw', amount: '20', publicRecipient: net.publicKey('bob') }));
     assert.equal(await spendable(net, 'alice'), '80');
     assert.equal(await publicBalance(net, 'bob'), '970');
-    const relayed = await net.send('alice', { kind: 'withdraw', amount: '10', publicRecipient: net.publicKey('alice') }, { relay: 'charlie', feeAtomic: FEE });
-    assert.equal(relayed.relay, 'charlie');
-    await net.include(relayed);
-    assert.equal(await spendable(net, 'alice'), '67');
+    const ownWithdrawal = await net.send('alice', { kind: 'withdraw', amount: '10', publicRecipient: net.publicKey('alice') });
+    assert.equal((await net.state('alice')).pendingActions[0].submissionMode, 'direct');
+    await net.include(ownWithdrawal);
+    assert.equal(await spendable(net, 'alice'), '70');
     assert.equal(await publicBalance(net, 'alice'), '910');
-    assert.equal(await spendable(net, 'charlie'), '23');
-    assert.equal(net.senderLookups, 0);
+    assert.equal(await spendable(net, 'charlie'), '20');
+    assert.equal(net.rpcLookups, 0);
     await net.assertSettled();
   } finally { net.restore(); }
 });
@@ -190,37 +191,39 @@ test('consolidation: a payment needing more than two inputs is refused until Bob
 });
 
 // ---------------------------------------------------------------------------
-// Relay failures: before the proof is shared nothing is held; after, the
+// Direct preparation failures: before the proof is shared nothing is held; after, the
 // hold is kept until the ledger or a self-recovery resolves it.
 // ---------------------------------------------------------------------------
 
-for (const mode of ['cancel', 'proof-failure', 'quote-expired']) test(`relay ${mode} before sharing: Alice keeps her whole balance spendable`, async () => {
+for (const mode of ['cancel', 'proof-failure', 'consent-expired']) test(`direct ${mode} before sharing: Alice keeps her whole balance spendable`, async () => {
   const net = await network();
   try {
     await fund(net);
     const submissions = net.submissions;
-    await assert.rejects(net.prepare('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }, { relay: 'charlie', feeAtomic: FEE, mode }));
+    const simulations = net.simulations;
+    await assert.rejects(net.prepare('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }, { mode }));
     assert.equal(await spendable(net, 'alice'), '100');
     assert.equal(net.submissions, submissions, 'nothing reached any RPC');
+    assert.equal(net.simulations, simulations, 'the spend proof was not disclosed to simulation');
     await net.assertSettled();
     // The very next payment works without any cleanup.
-    await net.include(await net.send('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }, { relay: 'charlie', feeAtomic: FEE }));
-    assert.equal(await spendable(net, 'alice'), '87');
+    await net.include(await net.send('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }));
+    assert.equal(await spendable(net, 'alice'), '90');
     await net.assertSettled();
   } finally { net.restore(); }
 });
 
-for (const mode of ['helper-reject', 'helper-timeout']) test(`relay ${mode} after sharing: the deposit is held, never lost, and self-recovery frees it`, async () => {
+for (const mode of ['rpc-reject', 'rpc-timeout']) test(`direct ${mode} after sharing: the deposit is held, never lost, and self-recovery frees it`, async () => {
   const net = await network();
   try {
     await fund(net);
-    await assert.rejects(net.prepare('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }, { relay: 'charlie', feeAtomic: FEE, mode }),
+    await assert.rejects(net.prepare('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }, { mode }),
       error => error.name === 'PrivateProofExposedError');
     await assertHeld(net, 'alice', '100');
     // Time and retries do not release a shared proof.
     const outcomes = await net.recover('alice', { now: Date.now() + 60 * MINUTES });
-    assert.deepEqual(outcomes.map(outcome => outcome.outcome), ['held'], 'a proof the helper saw is neither released nor confirmed by time');
-    assert.equal(net.senderLookups, 0, 'recovery of a relayed action never asks the sender RPC for a hash');
+    assert.deepEqual(outcomes.map(outcome => outcome.outcome), ['held'], 'a proof the RPC saw is neither released nor confirmed by time');
+    assert.equal(net.rpcLookups, 0, 'an unsigned exposed action has no transaction hash to look up');
     await assertHeld(net, 'alice', '100');
     // A second payment cannot start while the hold is unresolved.
     await assert.rejects(net.prepare('alice', { kind: 'transfer', amount: '1', recipientAddress: net.address('bob') }), error => error.name === 'PrivateActionInFlightError');
@@ -235,32 +238,32 @@ for (const mode of ['helper-reject', 'helper-timeout']) test(`relay ${mode} afte
   } finally { net.restore(); }
 });
 
-test('relay helper-reject after sharing: the original payment can still land, and then recovery yields to it', async () => {
+test('direct RPC rejection after sharing: the original payment can still land, and then recovery yields to it', async () => {
   const net = await network();
   try {
     await fund(net);
     let shared;
     await assert.rejects(net.prepare('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') },
-      { relay: 'charlie', feeAtomic: FEE, mode: 'helper-reject', onBuilt: handle => { shared = handle; } }), error => error.name === 'PrivateProofExposedError');
+      { mode: 'rpc-reject', onBuilt: handle => { shared = handle; } }), error => error.name === 'PrivateProofExposedError');
     assert.ok(shared, 'the engine hands back the shared action');
     const recovery = await selfRecover(net, 'alice');
     await net.submit(recovery);
-    // The helper submitted after all; the ledger includes the original.
+    // The RPC submitted the exposed proof after all; the ledger includes the original.
     await net.include(shared);
     assert.equal((await net.state('alice')).spendRecovery?.outcome, 'original-confirmed');
-    assert.equal(await spendable(net, 'alice'), '87');
+    assert.equal(await spendable(net, 'alice'), '90');
     assert.equal(await spendable(net, 'bob'), '60');
-    assert.equal(await spendable(net, 'charlie'), '23');
+    assert.equal(await spendable(net, 'charlie'), '20');
     await net.assertSettled();
   } finally { net.restore(); }
 });
 
-test('relay helper refuses to sign: the shared proof is held until Alice recovers it herself', async () => {
+test('direct signer refuses to sign: the shared proof is held until Alice recovers it herself', async () => {
   const net = await network();
   try {
     await fund(net);
     const submissions = net.submissions;
-    const payment = await net.prepare('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }, { relay: 'charlie', feeAtomic: FEE });
+    const payment = await net.prepare('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') });
     await assert.rejects(net.submit(payment, 'signer-reject'));
     await assertHeld(net, 'alice', '100');
     assert.equal(net.submissions, submissions, 'an unsigned job never reaches the RPC');
@@ -272,20 +275,20 @@ test('relay helper refuses to sign: the shared proof is held until Alice recover
   } finally { net.restore(); }
 });
 
-for (const mode of ['ERROR', 'timeout']) test(`relay submission ${mode}: nothing is confirmed, the hold survives, and inclusion later resolves it`, async () => {
+for (const mode of ['ERROR', 'timeout']) test(`direct submitted proof ${mode}: nothing is confirmed, the hold survives, and inclusion later resolves it`, async () => {
   const net = await network();
   try {
     await fund(net);
-    const payment = await net.prepare('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }, { relay: 'charlie', feeAtomic: FEE });
+    const payment = await net.prepare('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') });
     const submitted = await net.submit(payment, mode);
     assert.equal(submitted.status, 'ambiguous');
     await assertHeld(net, 'alice', '100');
     assert.deepEqual((await net.recover('alice')).map(outcome => outcome.outcome), ['ambiguous']);
-    assert.equal(net.senderLookups, 0);
+    assert.equal(net.rpcLookups, 0, 'exposed spends resolve only from the canonical transcript, not transaction-status claims');
     await net.include(payment);
-    assert.equal(await spendable(net, 'alice'), '87');
+    assert.equal(await spendable(net, 'alice'), '90');
     assert.equal(await spendable(net, 'bob'), '60');
-    assert.equal(await spendable(net, 'charlie'), '23');
+    assert.equal(await spendable(net, 'charlie'), '20');
     await net.assertSettled();
   } finally { net.restore(); }
 });
@@ -400,6 +403,7 @@ test('deposit outcomes: ERROR and timeout are not confirmation, expiry releases 
     assert.equal(await spendable(net, 'alice'), '100');
     assert.equal(await publicBalance(net, 'alice'), '900', 'the public balance is untouched until the ledger executes');
     assert.deepEqual((await net.recover('alice')).map(outcome => outcome.outcome), ['ambiguous'], 'before expiry the deposit may still land');
+    assert.equal(net.rpcLookups, 1, 'a local deposit may query its submitted transaction at the direct RPC');
     assert.deepEqual((await net.recover('alice', { now: Date.now() + 10 * MINUTES })).map(outcome => outcome.outcome), ['release']);
     assert.equal((await net.balances('alice')).pending, 0);
     await net.assertSettled();
@@ -464,30 +468,30 @@ test('recipient offline: Bob sees the payment only when he syncs, and nothing de
   const net = await network();
   try {
     await fund(net);
-    const payment = await net.send('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }, { relay: 'charlie', feeAtomic: FEE });
+    const payment = await net.send('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') });
     await net.include(payment, { sync: false });
     await net.sync('alice');
-    assert.equal(await spendable(net, 'alice'), '87');
+    assert.equal(await spendable(net, 'alice'), '90');
     assert.equal(await spendable(net, 'bob'), '50');
     assert.equal(await spendable(net, 'charlie'), '20');
     await net.sync('bob');
     assert.equal(await spendable(net, 'bob'), '60');
     await net.sync('charlie');
-    assert.equal(await spendable(net, 'charlie'), '23');
+    assert.equal(await spendable(net, 'charlie'), '20');
     await net.assertSettled();
   } finally { net.restore(); }
 });
 
-test('minimized outgoing history: every wallet still recovers change, fees and payments from the archive alone', async () => {
+test('minimized outgoing history: every wallet still recovers change and payments from the archive alone', async () => {
   const net = await network({ outgoingHistory: 'minimized' });
   try {
     await fund(net);
-    await net.include(await net.send('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }, { relay: 'charlie', feeAtomic: FEE }));
+    await net.include(await net.send('alice', { kind: 'transfer', amount: '10', recipientAddress: net.address('bob') }));
     await net.include(await net.send('bob', { kind: 'withdraw', amount: '5', publicRecipient: net.publicKey('charlie') }));
     for (const name of ACTORS) await net.forget(name);
-    assert.equal(await spendable(net, 'alice'), '87');
+    assert.equal(await spendable(net, 'alice'), '90');
     assert.equal(await spendable(net, 'bob'), '55');
-    assert.equal(await spendable(net, 'charlie'), '23');
+    assert.equal(await spendable(net, 'charlie'), '20');
     assert.equal(await publicBalance(net, 'charlie'), '985');
     await net.assertSettled();
   } finally { net.restore(); }
@@ -527,26 +531,21 @@ for (const seed of [1, 2, 3]) test(`mixed traffic (seed ${seed}): forty random a
     for (let step = 1; step <= 40; step++) {
       const sender = pick(ACTORS);
       const others = ACTORS.filter(name => name !== sender);
-      const wantsRelay = random() < 0.5 ? pick(others) : undefined;
-      const wantedFee = wantsRelay ? stroops(xlm('2')) : 0n;
       const available = (await net.balances(sender)).spendable;
-      const depositing = random() < 0.2 || available <= wantedFee + 1n;
-      const relay = depositing ? undefined : wantsRelay;
-      const fee = depositing ? 0n : wantedFee;
+      const depositing = random() < 0.2 || available <= 1n;
       let draft;
       if (depositing) {
         draft = { kind: 'deposit', amount: format(stroops(xlm('30'))) };
       } else if (random() < 0.75) {
-        draft = { kind: 'transfer', amount: format(stroops(available - fee)), recipientAddress: net.address(pick(others)) };
+        draft = { kind: 'transfer', amount: format(stroops(available)), recipientAddress: net.address(pick(others)) };
       } else {
-        draft = { kind: 'withdraw', amount: format(stroops(available - fee)), publicRecipient: net.publicKey(pick(ACTORS)) };
+        draft = { kind: 'withdraw', amount: format(stroops(available)), publicRecipient: net.publicKey(pick(ACTORS)) };
       }
-      const options = depositing ? {} : { relay, feeAtomic: fee.toString() };
       const roll = random();
-      const mode = draft.kind !== 'deposit' && roll < 0.1 ? pick(['cancel', 'proof-failure']) : relay && roll < 0.3 ? pick(['helper-reject', 'helper-timeout']) : 'approve';
+      const mode = draft.kind !== 'deposit' && roll < 0.1 ? pick(['cancel', 'proof-failure', 'consent-expired']) : draft.kind !== 'deposit' && roll < 0.3 ? pick(['rpc-reject', 'rpc-timeout']) : 'approve';
       let handle;
       try {
-        handle = await net.prepare(sender, draft, { ...options, mode });
+        handle = await net.prepare(sender, draft, { mode });
       } catch (error) {
         if (error.name === 'PrivateConsolidationRequiredError') {
           await net.include(await net.send(sender, { kind: 'consolidate' }));
@@ -573,13 +572,12 @@ for (const seed of [1, 2, 3]) test(`mixed traffic (seed ${seed}): forty random a
       const amount = handle.amountStroops;
       const recipient = draft.kind === 'transfer' ? ACTORS.find(name => net.address(name) === draft.recipientAddress) : null;
       if (draft.kind === 'deposit') { model[sender].shielded += amount; model[sender].public -= amount; }
-      if (draft.kind === 'transfer') { model[sender].shielded -= amount + fee; model[recipient].shielded += amount; }
-      if (draft.kind === 'withdraw') { model[sender].shielded -= amount + fee; model[handle.publicRecipient].public += amount; }
-      if (relay) model[relay].shielded += fee;
+      if (draft.kind === 'transfer') { model[sender].shielded -= amount; model[recipient].shielded += amount; }
+      if (draft.kind === 'withdraw') { model[sender].shielded -= amount; model[handle.publicRecipient].public += amount; }
       await check(step);
     }
     assert.ok(outcomes.included >= 20 && outcomes.refused >= 1 && outcomes.held >= 1, `the mix exercised every path: ${JSON.stringify(outcomes)}`);
-    assert.equal(net.senderLookups, 0);
+    assert.equal(net.rpcLookups, 0);
     await net.assertSettled();
     for (const name of ACTORS) await net.forget(name);
     await check('after reinstall');

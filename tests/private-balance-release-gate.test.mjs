@@ -15,7 +15,7 @@ test('CI and release require isolated phone/desktop components and nested browse
   assert.match(read('../.github/workflows/ci.yml'), /npm run verify:application/);
   assert.match(read('../.github/workflows/release.yml'), /npm run release:verify/);
   const isolated = read('../playwright.private-components.config.ts');
-  for (const suite of ['private-components', 'ux-primitives', 'qr-freshness', 'relay-earn', 'relay-startup']) {
+  for (const suite of ['private-components', 'ux-primitives', 'qr-freshness', 'private-direct', 'private-recovery']) {
     assert.ok(isolated.includes(`${suite}.spec.ts`), `${suite} must execute in the isolated gate`);
   }
   assert.match(isolated, /desktop-chromium/);

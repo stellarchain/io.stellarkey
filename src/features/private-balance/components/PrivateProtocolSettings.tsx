@@ -15,7 +15,6 @@ import {
 } from '@/hooks/usePrivateBalanceRuntime';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { PrivateAssetRegistryAdmin } from './PrivateAssetRegistryAdmin';
-import { PrivateRelaySettings } from './PrivateRelaySettings';
 import { PrivateOutgoingHistorySettings } from './PrivateOutgoingHistorySettings';
 import { useReportToOwner } from './useReportToOwner';
 
@@ -91,8 +90,7 @@ function DisclosureButton({
 
 /**
  * Advanced privacy renders as a step inside the Private Payments dialog. The
- * owning shell shows its header, stays busy during verification or removal,
- * and guards dismissal while relay settings hold unfinished edits.
+ * owning shell shows its header and stays busy during verification or removal.
  */
 export function PrivateProtocolSettingsContent({
   onClose,
@@ -135,6 +133,7 @@ export function PrivateProtocolSettingsContent({
   const [showRemoval, setShowRemoval] = useState(false);
   const [confirmation, setConfirmation] = useState('');
   useReportToOwner(onBusyChange, working !== null, false);
+  useReportToOwner(onDirtyChange, false, false);
 
   const verify = async () => {
     setWorking('verify');
@@ -171,8 +170,6 @@ export function PrivateProtocolSettingsContent({
   return (
     <ModalBody gap={5}>
         <PrivateAssetRegistryAdmin />
-
-        <PrivateRelaySettings onDirtyChange={onDirtyChange} />
 
         <PrivateOutgoingHistorySettings
           scope={JSON.stringify([publicAddress, deployment.networkId, deployment.poolContractId, deployment.manifestHash])}

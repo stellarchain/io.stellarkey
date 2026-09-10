@@ -28,7 +28,7 @@ import {
   type PrivateRecordDriver,
 } from './storage';
 import { PrivateBalanceTransactionBuilder, type ContractProof } from './transaction-builder';
-import { prepareReviewedPrivateBalanceTransaction, type PrivateRelayPreparationCallbacks } from './action-transaction';
+import { prepareReviewedPrivateBalanceTransaction } from './action-transaction';
 import { hasExposedPrivateSpend, PrivateProofExposedError } from './proof-exposure';
 import { disclosePrivateProof, type AuthorizePrivateProofDisclosure } from './proof-disclosure';
 import type { PrivateBalanceTransactionReview } from './transaction-review';
@@ -39,34 +39,19 @@ import type {
 } from './types';
 import type { PrivateBalanceWorkerClient } from '../worker/client';
 import { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
-import { validatePrivateRelayChainPreparation } from './relay-chain-preparation';
 import { privateOutgoingHistoryMode, type PrivateOutgoingHistoryMode } from './outgoing-history';
 import { assertPrivateRecoveryReplacement, selectPrivateRecoveryInputs } from './spend-recovery';
+import { assertDirectPrivateSubmission } from './direct-submission';
 
 export { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
 const MAX_RESOURCE_FEE_STROOPS = MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS;
 const HEX_PROOF_BYTES = (64 + 128 + 64) * 2;
 
-export interface PrivateActionRelayBinding {
-  feeAtomic: string;
-  privateFeeAddress: string;
-  sourceAccount: string;
-  requestId: string;
-  quoteId: string;
-  peerPublicKey: string;
-}
-
 export type PrivateActionDraft =
   | { kind: 'deposit'; amount: string }
-  | { kind: 'transfer'; amount: string; recipientAddress: string; memo?: string; relay?: PrivateActionRelayBinding }
-  | { kind: 'withdraw'; amount: string; publicRecipient: string; relay?: PrivateActionRelayBinding }
-  | { kind: 'consolidate'; relay?: PrivateActionRelayBinding };
-
-export interface PrivateRelayChainPreparation {
-  approvalId: string;
-  step: number;
-  selfAddress?: string;
-}
+  | { kind: 'transfer'; amount: string; recipientAddress: string; memo?: string }
+  | { kind: 'withdraw'; amount: string; publicRecipient: string }
+  | { kind: 'consolidate' };
 
 export type PrivateActionProgressStage =
   | 'checking-chain'
@@ -95,7 +80,6 @@ export interface PreparedPrivateActionReview {
   /** Journaled private memo (hex of the trimmed draft memo), transfers only. */
   memoHex: string | null;
   publicRecipient: string | null;
-  relay: PrivateActionRelayBinding | null;
   anchorExpiresAtLedger: number;
   latestLedger: number;
   transaction: PrivateBalanceTransactionReview;
@@ -353,8 +337,6 @@ export async function preparePrivateBalanceActionFlow(input: {
   assetDecimals: number;
   draft: PrivateActionDraft;
   signal?: AbortSignal;
-  relayPreparation?: PrivateRelayPreparationCallbacks;
-  relayChainStep?: PrivateRelayChainPreparation;
   authorizeDisclosure?: AuthorizePrivateProofDisclosure;
   directChainApprovalId?: string;
   recoveryActionId?: string;
@@ -362,31 +344,16 @@ export async function preparePrivateBalanceActionFlow(input: {
   onProgress?(stage: PrivateActionProgressStage): void;
   now?: () => number;
 }): Promise<{ review: PreparedPrivateActionReview; state: PrivateBalanceDurableState }> {
+  assertDirectPrivateSubmission(input);
+  assertDirectPrivateSubmission(input.draft);
   const now = input.now ?? Date.now;
   const actionId = globalThis.crypto?.randomUUID?.() ?? `private-${now().toString(36)}`;
   const createdAt = now();
-  if (input.recoveryActionId && (input.draft.kind !== 'consolidate' || input.draft.relay || input.relayChainStep || input.directChainApprovalId)) {
+  if (input.recoveryActionId && (input.draft.kind !== 'consolidate' || input.directChainApprovalId)) {
     throw new Error('Private recovery must be an explicit direct self-transfer.');
   }
   if (!StrKey.isValidContract(input.assetContractId)) {
     throw new Error('Private Balance asset contract is invalid.');
-  }
-  const relay = input.draft.kind === 'transfer' || input.draft.kind === 'withdraw' || input.draft.kind === 'consolidate'
-    ? input.draft.relay
-    : undefined;
-  if (relay) {
-    if (input.draft.kind === 'consolidate' && !input.relayChainStep) throw new Error('Relayed consolidation requires a reviewed chain.');
-    if (!input.relayPreparation) throw new Error('Private relay preparation is unavailable. Find a helper again.');
-    if (
-      !StrKey.isValidEd25519PublicKey(relay.sourceAccount) ||
-      !/^[0-9a-f]{64}$/u.test(relay.requestId) ||
-      !/^[0-9a-f]{64}$/u.test(relay.quoteId) ||
-      !/^[0-9a-f]{64}$/u.test(relay.peerPublicKey) ||
-      !/^[1-9][0-9]{0,20}$/u.test(relay.feeAtomic)
-    ) {
-      throw new Error('Private relay binding is invalid.');
-    }
-    await validatePrivateTransferRecipient(relay.privateFeeAddress, input.manifest);
   }
   const manifestAsset = input.registryAssets[input.assetIndex];
   if (
@@ -420,13 +387,6 @@ export async function preparePrivateBalanceActionFlow(input: {
       action.id !== recovery?.pending.id && (hasExposedPrivateSpend(action) || action.status === 'signed' || action.broadcastAttempts > 0))) {
       throw new PrivateActionInFlightError();
     }
-    if (state.relayChainedApproval && !input.relayChainStep) throw new Error('Finish or cancel the approved private relay chain first.');
-    const chainSelection = input.relayChainStep ? await validatePrivateRelayChainPreparation({
-      state, scope: input.storageContext, assetContractId: input.assetContractId, assetIndex: input.assetIndex,
-      assetDecimals: input.assetDecimals, networkPassphrase: input.manifest.networkPassphrase,
-      draft: input.draft, chain: input.relayChainStep, nowSeconds: Math.floor(now() / 1000),
-      deriveOwnAddress: async diversifier => (await input.worker.deriveAddressForDiversifier(diversifier)).address,
-    }) : null;
     throwIfAborted(input.signal);
     const depositAmount = input.draft.kind === 'deposit'
       ? parsePrivateAmount(input.draft.amount, input.assetDecimals)
@@ -499,13 +459,13 @@ export async function preparePrivateBalanceActionFlow(input: {
         throw new Error('Private Balance root refresh exceeds the supported ledger range.');
       }
       if (input.draft.kind === 'consolidate') {
-        const selected = recovery ? { amount: recovery.amount, noteIds: recovery.pending.reservedNoteIds } : chainSelection ?? consolidationSelection(
+        const selected = recovery ? { amount: recovery.amount, noteIds: recovery.pending.reservedNoteIds } : consolidationSelection(
           state.notes.filter(note => note.assetContractId === input.assetContractId),
         );
         amount = selected.amount;
         selectedNoteIds = selected.noteIds;
         recipientFingerprint = (await validatePrivateTransferRecipient(
-          recoveryAddress ?? chainSelection?.recipientAddress ?? input.privateAddress,
+          recoveryAddress ?? input.privateAddress,
           input.manifest,
         )).fingerprint;
         intent = {
@@ -513,18 +473,16 @@ export async function preparePrivateBalanceActionFlow(input: {
           assetIndex: input.assetIndex,
           assetContractId: input.assetContractId,
           amount: amount.toString(),
-          recipientAddress: recoveryAddress ?? chainSelection?.recipientAddress ?? input.privateAddress,
+          recipientAddress: recoveryAddress ?? input.privateAddress,
           selectedNoteIds,
           anchorRoot: head.tree.currentRoot,
           anchorExpiresAtLedger,
-          ...(relay ? { peerFee: { amount: relay.feeAtomic, recipientAddress: relay.privateFeeAddress } } : {}),
         };
       } else {
         amount = parsePrivateAmount(input.draft.amount, input.assetDecimals);
-        const relayFee = relay ? BigInt(relay.feeAtomic) : 0n;
-        const selection = chainSelection ? { kind: 'selected' as const, noteIds: chainSelection.noteIds } : selectPrivateNotes(
+        const selection = selectPrivateNotes(
           state.notes.filter(note => note.assetContractId === input.assetContractId),
-          amount + relayFee,
+          amount,
         );
         if (selection.kind === 'insufficient') {
           throw new Error('Private Balance is insufficient for this amount.');
@@ -554,12 +512,6 @@ export async function preparePrivateBalanceActionFlow(input: {
           anchorRoot: head.tree.currentRoot,
           anchorExpiresAtLedger,
           memo,
-          ...(relay ? {
-            peerFee: {
-              amount: relay.feeAtomic,
-              recipientAddress: relay.privateFeeAddress,
-            },
-          } : {}),
         };
       } else if (input.draft.kind === 'withdraw') {
         publicRecipient = input.draft.publicRecipient;
@@ -572,12 +524,6 @@ export async function preparePrivateBalanceActionFlow(input: {
           selectedNoteIds,
           anchorRoot: head.tree.currentRoot,
           anchorExpiresAtLedger,
-          ...(relay ? {
-            peerFee: {
-              amount: relay.feeAtomic,
-              recipientAddress: relay.privateFeeAddress,
-            },
-          } : {}),
         };
       }
     }
@@ -650,9 +596,6 @@ export async function preparePrivateBalanceActionFlow(input: {
       !prepared.action.outputs.some(output => hex(output.cm) === prepared.recipientOutputCommitment))) {
       throw new Error('Private recovery worker returned a different self-transfer.');
     }
-    if (input.relayChainStep && (!prepared.recipientOutputCommitment || !prepared.action.outputs.some(output => hex(output.cm) === prepared.recipientOutputCommitment) ||
-      JSON.stringify(prepared.reservedNoteIds) !== JSON.stringify(selectedNoteIds) ||
-      (input.draft.kind === 'consolidate' && prepared.changeValue !== '0'))) throw new Error('Private relay worker returned a different approved step.');
     progress('loading-artifacts');
     const artifacts = await loadCircuitArtifacts(input.manifest);
     progress('proving-locally');
@@ -697,7 +640,7 @@ export async function preparePrivateBalanceActionFlow(input: {
       assetIndex: input.assetIndex,
       assetContractId: input.assetContractId,
       status: 'prepared',
-      submissionMode: relay ? 'relay' : 'direct',
+      submissionMode: 'direct',
       proofExposure: 'shared',
       outgoingHistoryMode,
       ...(input.directChainApprovalId ? { directChainApprovalId: input.directChainApprovalId } : {}),
@@ -713,12 +656,6 @@ export async function preparePrivateBalanceActionFlow(input: {
       amountStroops: amount.toString(),
       changeValueStroops: prepared.changeValue,
       broadcastAttempts: 0,
-      ...(input.relayChainStep && relay && chainSelection && prepared.recipientOutputCommitment ? { relayChain: {
-        approvalId: input.relayChainStep.approvalId, step: input.relayChainStep.step, feeAtomic: relay.feeAtomic,
-        quoteId: relay.quoteId, requestId: relay.requestId, sourceAccount: relay.sourceAccount,
-        recipientAddress: chainSelection.recipientAddress, recipientOutputCommitment: prepared.recipientOutputCommitment,
-        expiresAtSeconds: input.relayPreparation!.expiresAt,
-      } } : {}),
       ...(input.draft.kind === 'transfer' && recipientFingerprint
         ? { recipientFingerprint }
         : {}),
@@ -729,20 +666,18 @@ export async function preparePrivateBalanceActionFlow(input: {
       updatedAt,
     };
     if (recovery) assertPrivateRecoveryReplacement(recovery.pending, pendingAction, recovery.amount);
-    const recipientAddress = recoveryAddress ?? chainSelection?.recipientAddress ?? (input.draft.kind === 'transfer' ? input.draft.recipientAddress : input.draft.kind === 'consolidate' ? input.privateAddress : null);
+    const recipientAddress = recoveryAddress ?? (input.draft.kind === 'transfer' ? input.draft.recipientAddress : input.draft.kind === 'consolidate' ? input.privateAddress : null);
     const reviewKind = recovery ? 'transfer' : input.draft.kind;
     const transaction = await disclosePrivateProof({
       request: { kind: reviewKind, actionId, actionField: prepared.actionFieldHex, assetContractId: input.assetContractId,
         ...(recovery ? { recoveryOfActionId: recovery.pending.id } : {}),
         amountStroops: amount.toString(), recipientAddress,
-        publicRecipient, memoHex: localMemoHex ?? null, privateFeeAtomic: relay?.feeAtomic ?? '0',
-        maximumNetworkFeeStroops: (input.classicFeeStroops + MAX_RESOURCE_FEE_STROOPS).toString(), submissionMode: relay ? 'relay' : 'direct' },
+        publicRecipient, memoHex: localMemoHex ?? null, privateFeeAtomic: '0',
+        maximumNetworkFeeStroops: (input.classicFeeStroops + MAX_RESOURCE_FEE_STROOPS).toString(), submissionMode: 'direct' },
       signal: input.signal,
       authorize: input.authorizeDisclosure,
       assertContext: input.assertContext,
-      persistedRelayChainConsent: !!input.relayChainStep,
       commit: async () => {
-        if (relay && input.relayPreparation!.expiresAt * 1000 <= now()) throw new Error('The helper quote expired before proof sharing. Choose a helper again.');
         pendingAction.updatedAt = Math.max(createdAt, now());
         durable = recovery
           ? await commitPrivateSpendRecovery(input.storageContext, input.storageKey, durable.revision, recovery.pending.id, pendingAction, recoveryAddress!, input.storageDriver)
@@ -753,10 +688,10 @@ export async function preparePrivateBalanceActionFlow(input: {
         progress('simulating');
         const endpoint = new URL(input.rpcUrl);
         const allowHttp = endpoint.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
-        const rpc = relay ? undefined : new SorobanRpc.Server(endpoint.toString(), { allowHttp });
-        return prepareReviewedPrivateBalanceTransaction({ rpc, submissionMode: relay ? 'relay' : 'direct', relayPreparation: input.relayPreparation,
+        const rpc = new SorobanRpc.Server(endpoint.toString(), { allowHttp });
+        return prepareReviewedPrivateBalanceTransaction({ rpc, submissionMode: 'direct',
           signal: input.signal, operation, manifest: { networkPassphrase: input.manifest.networkPassphrase, poolContractId: input.manifest.poolContractId, assets: input.registryAssets },
-          source: relay?.sourceAccount ?? input.accountPublicKey, classicFeeStroops: input.classicFeeStroops, maximumResourceFeeStroops: MAX_RESOURCE_FEE_STROOPS });
+          source: input.accountPublicKey, classicFeeStroops: input.classicFeeStroops, maximumResourceFeeStroops: MAX_RESOURCE_FEE_STROOPS });
       },
     });
     durable = await transitionPrivatePendingAction(
@@ -795,7 +730,6 @@ export async function preparePrivateBalanceActionFlow(input: {
         recipientFingerprint,
         memoHex: input.draft.kind === 'transfer' ? localMemoHex ?? null : null,
         publicRecipient,
-        relay: relay ?? null,
         anchorExpiresAtLedger,
         latestLedger: head.latestLedger,
         transaction: transaction.review,

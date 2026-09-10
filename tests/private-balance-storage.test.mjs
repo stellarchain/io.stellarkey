@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import * as storage from '../src/features/private-balance/runtime/storage.ts';
 import {
   derivePrivateAddressDeploymentTag,
   encodePrivateAddress,
 } from '@stellarkey/private-balance';
-import * as storage from '../src/features/private-balance/runtime/storage.ts';
 import {
   advancePrivateChainedApprovalFee,
   beginPrivateChainedApproval,
@@ -84,19 +84,6 @@ const checkpoint = {
   updatedAt: 2,
 };
 
-test('internal relay address issuance never rotates the displayed receive address', async () => {
-  assert.equal(typeof storage.recordPrivateBalanceInternalAddress, 'function');
-  const driver = new MemoryDriver();
-  const address = d => encodePrivateAddress({ deploymentTag: derivePrivateAddressDeploymentTag(new Uint8Array(32).fill(5)),
-    diversifier: new Uint8Array([0, 0, 0, d]), ownerCommitment: new Uint8Array(32).fill(9), hpkePublicKey: new Uint8Array(32).fill(10) }, 'tskpay_');
-  const initial = { ...createEmptyPrivateBalanceState(manifestHash, 1), privateAddress: address(1) };
-  await commitPrivateBalanceState(context, key, initial, null, driver);
-  const next = await storage.recordPrivateBalanceInternalAddress(context, key, initial.revision, address(2), driver);
-  assert.equal(next.privateAddress, address(1));
-  assert.deepEqual(next.issuedAddressDiversifiers, ['00000001', '00000002']);
-  await assert.rejects(storage.recordPrivateBalanceInternalAddress(context, key, next.revision, address(2), driver), /already issued/);
-  await assert.rejects(storage.recordPrivateBalanceInternalAddress(context, key, initial.revision, address(3), driver), /changed/);
-});
 
 test('private state is encrypted, context-bound, and reserved with atomic CAS', async () => {
   const driver = new MemoryDriver();
@@ -146,7 +133,7 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
     classicFeeCapStroops: '1000',
     resourceFeeCapStroops: '500000',
     amountStroops: '4000000',
-    submissionMode: 'relay',
+    submissionMode: 'direct',
     changeValueStroops: '1000000',
     broadcastAttempts: 0,
     createdAt: 3,
@@ -183,11 +170,11 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
     key,
     2,
     pendingAction.id,
-    { from: 'prepared', to: 'reviewed', submissionMode: 'direct', transactionHash: '11'.repeat(32), updatedAt: 4 },
+    { from: 'prepared', to: 'reviewed', submissionMode: 'relay', transactionHash: '11'.repeat(32), updatedAt: 4 },
     driver,
   );
   assert.equal(reviewed.pendingActions[0].status, 'reviewed');
-  assert.equal(reviewed.pendingActions[0].submissionMode, 'relay');
+  assert.equal(reviewed.pendingActions[0].submissionMode, 'direct');
   assert.equal(reviewed.pendingActions[0].transactionHash, '11'.repeat(32));
 
   await assert.rejects(
@@ -211,13 +198,13 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
       to: 'signed',
       signedEnvelopeXdr: 'AAAA',
       expiresAtSeconds: 1_700_000_300,
-      submissionMode: 'direct',
+      submissionMode: 'relay',
       updatedAt: 5,
     },
     driver,
   );
   assert.equal(signed.pendingActions[0].status, 'signed');
-  assert.equal(signed.pendingActions[0].submissionMode, 'relay');
+  assert.equal(signed.pendingActions[0].submissionMode, 'direct');
   assert.equal(signed.pendingActions[0].signedEnvelopeXdr, 'AAAA');
   assert.equal(signed.pendingActions[0].expiresAtSeconds, 1_700_000_300);
   assert.equal(signed.pendingActions[0].amountStroops, '4000000');
@@ -239,11 +226,11 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
     key,
     4,
     pendingAction.id,
-    { from: 'signed', to: 'ambiguous', submissionMode: 'direct', latestRpcStatus: 'NOT_FOUND', updatedAt: 6 },
+    { from: 'signed', to: 'ambiguous', submissionMode: 'relay', latestRpcStatus: 'NOT_FOUND', updatedAt: 6 },
     driver,
   );
   assert.equal(ambiguous.pendingActions[0].status, 'ambiguous');
-  assert.equal(ambiguous.pendingActions[0].submissionMode, 'relay');
+  assert.equal(ambiguous.pendingActions[0].submissionMode, 'direct');
   assert.equal(ambiguous.pendingActions[0].broadcastAttempts, 1);
   assert.equal(ambiguous.notes[0].status, 'reserved');
 

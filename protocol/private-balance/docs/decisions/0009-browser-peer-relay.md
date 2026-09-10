@@ -2,7 +2,11 @@
 
 ## Status
 
-Accepted for Testnet development
+Superseded by direct-only submission (2026-09-10)
+
+Peer relaying and helper earnings have been removed from the application.
+The following records the historical decision, not supported functionality.
+The protocol's three output lanes and historical fee-note recovery are unchanged.
 
 ## Context
 

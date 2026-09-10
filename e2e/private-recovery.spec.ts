@@ -11,15 +11,15 @@ test.beforeEach(async ({ page, baseURL }) => {
     else socket.close();
   });
   await page.goto('/private-component-fixture');
-  await page.getByRole('button', { name: 'Test relay recovery', exact: true }).click();
+  await page.getByRole('button', { name: 'Test private recovery', exact: true }).click();
 });
 
 async function balances(page: Page, values: { bob: string; reserved: string; alice: string; charlie: string; pending: string }) {
-  for (const [name, value] of Object.entries(values)) await expect(page.getByTestId(`relay-recovery-${name}`)).toHaveText(value);
+  for (const [name, value] of Object.entries(values)) await expect(page.getByTestId(`private-recovery-${name}`)).toHaveText(value);
 }
 const held = { bob: '0', reserved: '100', alice: '0', charlie: '0', pending: '1' };
 const initial = { bob: '100', reserved: '0', alice: '0', charlie: '0', pending: '0' };
-const paid = { bob: '87', reserved: '0', alice: '3', charlie: '10', pending: '0' };
+const paid = { bob: '90', reserved: '0', alice: '0', charlie: '10', pending: '0' };
 
 async function realProvider(page: Page) {
   await page.getByRole('button', { name: 'Test real recovery provider', exact: true }).click();
@@ -46,7 +46,7 @@ for (const winner of ['recovery', 'original'] as const) test(`held balance recov
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByRole('button', { name: `Deliver real provider ${winner} record`, exact: true }).click();
   await expect(page.getByTestId('recovery-provider-outcome')).toHaveText(winner === 'recovery' ? 'recovered' : 'original-confirmed');
-  await expect(page.getByTestId('recovery-provider-balance')).toHaveText(winner === 'recovery' ? '1000000000' : '870000000');
+  await expect(page.getByTestId('recovery-provider-balance')).toHaveText(winner === 'recovery' ? '1000000000' : '900000000');
   await expect(page.getByTestId('recovery-provider-pending')).toHaveText('0');
 });
 
@@ -94,8 +94,8 @@ test('held balance recovery: retired provider cannot sign after password approva
 
 for (const reducedMotion of ['reduce', 'no-preference'] as const) test(`held balance recovery: ${reducedMotion} shell survives repeated cancel, review and close`, async ({ page }) => {
   await page.emulateMedia({ reducedMotion });
-  await start(page, 'helper-reject'); await share(page);
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('exposed');
+  await start(page, 'rpc-reject'); await share(page);
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('exposed');
   const opener = page.getByRole('button', { name: 'Open held balance recovery', exact: true });
   await opener.click();
   const dialog = page.getByRole('dialog', { name: 'Recovery', exact: true });
@@ -129,8 +129,8 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) test(`held bal
 
 test('held balance recovery: settings navigation retains the shell and clears unshared consent', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await start(page, 'helper-reject'); await share(page);
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('exposed');
+  await start(page, 'rpc-reject'); await share(page);
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('exposed');
   await page.getByRole('button', { name: 'Open held balance recovery', exact: true }).click();
   const dialog = page.getByRole('dialog');
   const shell = await dialog.locator('[data-modal-shell]').elementHandle();
@@ -152,8 +152,8 @@ test('held balance recovery: settings navigation retains the shell and clears un
 });
 
 for (const winner of ['recovery', 'original'] as const) test(`held balance recovery: ${winner} outcome survives IndexedDB reload`, async ({ page }) => {
-  await start(page, 'helper-reject'); await share(page);
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('exposed');
+  await start(page, 'rpc-reject'); await share(page);
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('exposed');
   await page.getByRole('button', { name: 'Open held balance recovery', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Recovery', exact: true });
   await dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true }).click();
@@ -162,7 +162,7 @@ for (const winner of ['recovery', 'original'] as const) test(`held balance recov
   await expect(dialog.getByText('Recovery submitted; waiting for ledger confirmation.', { exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByRole('button', { name: winner === 'recovery' ? 'Deliver canonical synthetic recovery' : 'Deliver canonical synthetic payment', exact: true }).click();
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('confirmed');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('confirmed');
   await reloadAndInspect(page);
   await balances(page, winner === 'recovery' ? initial : paid);
   await page.getByRole('button', { name: 'Open held balance recovery', exact: true }).click();
@@ -171,9 +171,9 @@ for (const winner of ['recovery', 'original'] as const) test(`held balance recov
 });
 
 test('held balance recovery: real modal requires explicit proof consent and ledger confirmation', async ({ page }) => {
-  await start(page, 'helper-reject');
+  await start(page, 'rpc-reject');
   await share(page);
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('exposed');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('exposed');
   await page.getByRole('button', { name: 'Open held balance recovery', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'Recovery', exact: true })).toBeVisible();
@@ -186,10 +186,10 @@ test('held balance recovery: real modal requires explicit proof consent and ledg
 });
 
 test('held balance recovery: a past recovery cannot label a new held payment recovered', async ({ page }) => {
-  await start(page, 'helper-reject'); await share(page);
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('exposed');
+  await start(page, 'rpc-reject'); await share(page);
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('exposed');
   await page.getByRole('button', { name: 'Seed unrelated prior recovery', exact: true }).click();
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('prior-recovery-seeded');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('prior-recovery-seeded');
   await page.getByRole('button', { name: 'Open held balance recovery', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByText('Recovery confirmed. The held value is back in your private balance.', { exact: true })).toHaveCount(0);
@@ -198,8 +198,8 @@ test('held balance recovery: a past recovery cannot label a new held payment rec
 });
 
 test('held balance recovery: keyboard approval retains focus inside the original shell', async ({ page }) => {
-  await start(page, 'helper-reject'); await share(page);
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('exposed');
+  await start(page, 'rpc-reject'); await share(page);
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('exposed');
   await page.getByRole('button', { name: 'Open held balance recovery', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true }).click();
@@ -212,108 +212,108 @@ test('held balance recovery: keyboard approval retains focus inside the original
 async function start(page: Page, mode = 'approve') {
   await page.getByLabel('Synthetic preparation response').selectOption(mode);
   await page.getByRole('button', { name: 'Create synthetic deposits', exact: true }).click();
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('seeded');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('seeded');
   await page.getByRole('button', { name: 'Review Bob payment', exact: true }).click();
 }
 async function share(page: Page) {
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('consent');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('consent');
   await page.getByRole('button', { name: 'Authorize Proof Sharing', exact: true }).click();
 }
 async function reloadAndInspect(page: Page) {
   await page.reload();
-  await page.getByRole('button', { name: 'Test relay recovery', exact: true }).click();
+  await page.getByRole('button', { name: 'Test private recovery', exact: true }).click();
   await page.getByRole('button', { name: 'Inspect persisted synthetic balances', exact: true }).click();
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('restored');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('restored');
 }
 
 for (const [name, deposits, amount, change] of [
-  ['with change', '100', '10', '87'], ['exact spend', '13', '10', '0'], ['two inputs', '20,20', '30', '7'],
-  ['fractional change', '20.5', '10.125', '7.375'],
-]) test(`three-wallet relay ${name}: canonical payment conserves value and survives reload`, async ({ page }) => {
+  ['with change', '100', '10', '90'], ['exact spend', '10', '10', '0'], ['two inputs', '20,20', '30', '10'],
+  ['fractional change', '20.5', '10.125', '10.375'],
+]) test(`three-wallet direct payment ${name}: canonical payment conserves value and survives reload`, async ({ page }) => {
   await page.getByLabel('Synthetic Bob deposits').fill(deposits);
   await page.getByLabel('Synthetic Charlie payment').fill(amount);
   await start(page);
   await share(page);
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('reviewed');
-  await page.getByRole('button', { name: 'Submit through Alice', exact: true }).click();
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('broadcast');
-  await expect(page.getByTestId('relay-recovery-pending')).toHaveText('1');
-  await expect(page.getByTestId('relay-recovery-alice')).toHaveText('0');
-  await expect(page.getByTestId('relay-recovery-charlie')).toHaveText('0');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('reviewed');
+  await page.getByRole('button', { name: 'Submit directly', exact: true }).click();
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('broadcast');
+  await expect(page.getByTestId('private-recovery-pending')).toHaveText('1');
+  await expect(page.getByTestId('private-recovery-alice')).toHaveText('0');
+  await expect(page.getByTestId('private-recovery-charlie')).toHaveText('0');
   await page.getByRole('button', { name: 'Deliver canonical synthetic payment', exact: true }).click();
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('confirmed');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('confirmed');
   const result = { ...paid, bob: change, charlie: amount };
   await balances(page, result);
   await page.getByRole('button', { name: 'Verify fresh three-wallet scan', exact: true }).click();
-  await expect(page.getByTestId('relay-recovery-fresh')).toHaveText('verified');
+  await expect(page.getByTestId('private-recovery-fresh')).toHaveText('verified');
   await reloadAndInspect(page);
   await balances(page, result);
 });
 
-for (const mode of ['helper-reject', 'helper-timeout']) test(`three-wallet relay ${mode}: reproduce whole-deposit reservation before submission`, async ({ page }) => {
+for (const mode of ['rpc-reject', 'rpc-timeout']) test(`three-wallet direct payment ${mode}: reproduce whole-deposit reservation before submission`, async ({ page }) => {
   await start(page, mode);
   await share(page);
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('exposed');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('exposed');
   await balances(page, held);
-  await expect(page.getByTestId('relay-recovery-submissions')).toHaveText('0');
+  await expect(page.getByTestId('private-recovery-submissions')).toHaveText('0');
   await page.getByRole('button', { name: 'Expire and reconcile synthetic payment', exact: true }).click();
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('reconciled');
-  await expect(page.getByTestId('relay-recovery-sender-lookups')).toHaveText('0');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('reconciled');
+  await expect(page.getByTestId('private-recovery-sender-lookups')).toHaveText('0');
   await balances(page, held);
   await reloadAndInspect(page);
   await balances(page, held);
 });
 
-test('three-wallet relay: cancelling the real proof consent restores the original deposit', async ({ page }) => {
+test('three-wallet direct payment: cancelling the real proof consent restores the original deposit', async ({ page }) => {
   await start(page);
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('consent');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('consent');
   await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('cancelled');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('cancelled');
   await balances(page, initial);
-  await expect(page.getByTestId('relay-recovery-shared')).toHaveText('0');
+  await expect(page.getByTestId('private-recovery-shared')).toHaveText('0');
   await reloadAndInspect(page);
   await balances(page, initial);
 });
 
-for (const [mode, outcome] of [['proof-failure', 'failed'], ['quote-expired', 'failed']]) test(`three-wallet relay ${mode}: no proof leaves Bob`, async ({ page }) => {
+for (const [mode, outcome] of [['proof-failure', 'failed'], ['consent-expired', 'failed']]) test(`three-wallet direct payment ${mode}: no proof leaves Bob`, async ({ page }) => {
   await start(page, mode);
-  if (mode === 'quote-expired') await share(page);
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText(outcome);
+  if (mode === 'consent-expired') await share(page);
+  await expect(page.getByTestId('private-recovery-status')).toHaveText(outcome);
   await balances(page, initial);
-  await expect(page.getByTestId('relay-recovery-shared')).toHaveText('0');
+  await expect(page.getByTestId('private-recovery-shared')).toHaveText('0');
 });
 
-test('three-wallet relay: insufficient funds for the 3 XLM fee leaves deposits untouched', async ({ page }) => {
-  await page.getByLabel('Synthetic Bob deposits').fill('12');
+test('three-wallet direct payment: insufficient private funds leaves deposits untouched', async ({ page }) => {
+  await page.getByLabel('Synthetic Bob deposits').fill('9');
   await start(page);
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('failed');
-  await balances(page, { ...initial, bob: '12' });
-  await expect(page.getByTestId('relay-recovery-shared')).toHaveText('0');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('failed');
+  await balances(page, { ...initial, bob: '9' });
+  await expect(page.getByTestId('private-recovery-shared')).toHaveText('0');
 });
 
-for (const [mode, outcome] of [['ERROR', 'ambiguous'], ['timeout', 'ambiguous'], ['signer-reject', 'failed']]) test(`three-wallet relay ${mode}: reservation persists until canonical recovery`, async ({ page }) => {
+for (const [mode, outcome] of [['ERROR', 'ambiguous'], ['timeout', 'ambiguous'], ['signer-reject', 'failed']]) test(`three-wallet direct payment ${mode}: reservation persists until canonical recovery`, async ({ page }) => {
   await page.getByLabel('Synthetic submission response').selectOption(mode);
   await start(page);
   await share(page);
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('reviewed');
-  await page.getByRole('button', { name: 'Submit through Alice', exact: true }).click();
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText(outcome);
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('reviewed');
+  await page.getByRole('button', { name: 'Submit directly', exact: true }).click();
+  await expect(page.getByTestId('private-recovery-status')).toHaveText(outcome);
   await balances(page, held);
   await page.getByRole('button', { name: 'Expire and reconcile synthetic payment', exact: true }).click();
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('reconciled');
-  await expect(page.getByTestId('relay-recovery-sender-lookups')).toHaveText('0');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('reconciled');
+  await expect(page.getByTestId('private-recovery-sender-lookups')).toHaveText('0');
   await balances(page, held);
   await page.getByRole('button', { name: 'Deliver canonical synthetic payment', exact: true }).click();
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('confirmed');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('confirmed');
   await balances(page, paid);
 });
 
-test('three-wallet relay: proof consent has labelled controls and keyboard cancellation', async ({ page }) => {
+test('three-wallet direct payment: proof consent has labelled controls and keyboard cancellation', async ({ page }) => {
   await start(page);
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('consent');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('consent');
   const audit = await new AxeBuilder({ page }).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
   expect(audit.violations.map(({ id, impact, nodes }) => ({ id, impact, count: nodes.length }))).toEqual([]);
   await page.getByRole('button', { name: 'Back', exact: true }).press('Enter');
-  await expect(page.getByTestId('relay-recovery-status')).toHaveText('cancelled');
+  await expect(page.getByTestId('private-recovery-status')).toHaveText('cancelled');
   await balances(page, initial);
 });

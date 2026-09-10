@@ -52,18 +52,6 @@ test('wallet runner rejects capture overrides, unsafe reporters, and usable wall
   assert.throws(() => assertLiveWalletTestingSafe(), /Live wallet.*failure snapshots/i);
 });
 
-test('local Waku integration requires both fixture ownership and explicit network intent', () => {
-  const source = readFileSync(new URL('e2e/relay-waku-live.spec.ts', root), 'utf8');
-  const fixtureGuard = source.indexOf('test.skip(!process.env.PRIVATE_COMPONENT_FIXTURE_SHA256,');
-  const networkGuard = source.indexOf("test.skip(process.env.E2E_WAKU_LOCAL_NODES !== '1',");
-  const setup = source.indexOf("test('real local SDK");
-  assert.ok(fixtureGuard >= 0 && networkGuard >= 0 && fixtureGuard < setup && networkGuard < setup);
-  const fixture = readFileSync(new URL('e2e/fixtures/relay-waku-panel.tsx', root), 'utf8');
-  assert.doesNotMatch(fixture, /PrivateRelayMessenger\.create\s*=/);
-  assert.match(fixture, /Live connection check cannot publish/);
-  assert.match(fixture, /crypto\.randomUUID\(\)/);
-});
-
 test('Testnet runner refuses before build, funding, and browser import', async () => {
   const { runTestnetE2e } = await import('../protocol/private-balance/scripts/run-testnet-e2e.mjs');
   await assert.rejects(runTestnetE2e(['--fixture', 'does-not-exist']), /Live wallet.*failure snapshots/i);

@@ -27,7 +27,7 @@ const description =
 
 const highlights = [
   "Private: the asset, amount, recipient, and memo of an internal transfer stay encrypted. Public: money moving in or out, the submitting account, its network fee, and timing.",
-  "Proofs are created on this device. There is no StellarKey backend, operated relay, indexer, or hosted key service; optional peers meet through public Nostr infrastructure.",
+  "Proofs are created on this device. There is no StellarKey backend, operated relay, indexer, or hosted key service; payments submit directly through your selected Stellar RPC.",
   "One live Testnet development pool for XLM and USDC, validated by deployment and registry evidence. It is not safe for real value; Mainnet remains blocked.",
 ] as const;
 
@@ -265,7 +265,7 @@ export default function PrivatePaymentsPage() {
         <tr><td className="g">private memo</td><td>Encrypted. Up to 32 bytes, and it survives recovery.</td></tr>
         <tr><td className="g">which notes were spent</td><td>Encrypted. The ledger stores commitments and ciphertext; spend selection stays on the device.</td></tr>
         <tr><td className="g">money moving in or out</td><td>Public. Deposits and withdrawals show their amount, endpoint, and timing, like any Stellar payment.</td></tr>
-        <tr><td className="g">the transaction source and fee</td><td>Public. Direct mode uses your account; optional relay mode uses the selected peer&apos;s account. Fee sponsorship alone does not hide an inner source.</td></tr>
+        <tr><td className="g">the transaction source and fee</td><td>Public. Direct submission uses your account. Fee sponsorship alone does not hide an inner source.</td></tr>
         <tr><td className="g">timing and activity</td><td>Public. When the shared pool was used, and how often, is visible to anyone.</td></tr>
         </tbody></table></div>
         <div className="tbl" style={{ padding: "1.25rem" }}><SplitDiagram /></div></section>
@@ -283,7 +283,7 @@ export default function PrivatePaymentsPage() {
         <ol className="prose-list">
         <li>The wallet selects the notes to spend. The proof anchors to any pool root from the last 1,440 ledgers, roughly the last two hours, so the transaction does not reveal how fresh your notes are.</li>
         <li>An isolated worker builds the Groth16 proof on this device: the spent notes sit in the tree under the anchor root, the nullifiers are correctly derived, one private asset is conserved, and all three output commitments are well-formed. The circuit is 15,114 constraints with 11 public inputs, and no private proof witness is uploaded.</li>
-        <li>You explicitly choose direct submission or a privacy relay. Direct mode exposes your account as source. Relay mode uses another opted-in wallet discovered through public Nostr services, includes its encrypted same-asset fee note in the proof, and never silently falls back to your account. The pool checks both nullifiers, appends all three commitments, and records the encrypted output packages.</li>
+        <li>You review direct submission from your own public Stellar account. Peer relaying is no longer available. The pool checks both nullifiers, appends all three commitments, and records the encrypted output packages.</li>
         <li>The recipient&apos;s wallet scans the pool&apos;s public record and trial-decrypts each envelope with its incoming viewing key. The one addressed to them opens; the rest are noise. There is no notification service, because a notification service would have to know.</li>
         </ol>
         <div className="tbl" style={{ padding: "1.25rem" }}><SendPipelineDiagram /></div>
@@ -319,7 +319,7 @@ export default function PrivatePaymentsPage() {
         <li>The mathematics: Groth16 and its one-time trusted-setup ceremony — the multi-party ritual that creates the proof parameters, sound if even one participant was honest and the transcript is public.</li>
         </ul></div>
         <div className="col no"><h3><DocAlert />You must not trust</h3><ul>
-        <li>Us. At runtime no StellarKey server sees a request, holds a key, or relays a payment. Optional peer mode uses public Nostr servers and another wallet, with the metadata limits disclosed here.</li>
+        <li>Us. At runtime no StellarKey server sees a request, holds a key, or relays a payment. Payments go directly through your selected Stellar RPC, with the metadata limits disclosed here.</li>
         <li>A hosted prover. Proofs are built on your device; anything else would break the claim they make.</li>
         <li>Obscurity. What stays public — fees, timing, deposits, withdrawals — is written on this page so you can plan around it.</li>
         </ul></div>
@@ -329,11 +329,11 @@ export default function PrivatePaymentsPage() {
         <section id="private-faq"><h2><DocQuestion />The awkward questions</h2>
         <div className="faq">
         <details><summary>Why is my deposit public?</summary><p>A deposit spends from your public Stellar account, and a public account cannot spend without the ledger recording the amount, the source, and the timing. What the ledger never learns is what happens next: the notes the deposit created, and every private transfer after them.</p></details>
-        <details><summary>What does the fee account reveal?</summary><p>Every private send is submitted by a Stellar account that pays the network fee, and that account, its fee, and the moment it acted are public. Direct mode uses your account. Optional privacy-relay mode uses a selected peer account instead, but the peer sees the job and public Nostr services see discovery metadata. The client never silently falls back between them.</p></details>
+        <details><summary>What does the fee account reveal?</summary><p>Every private send is submitted by a Stellar account that pays the network fee, and that account, its fee, and the moment it acted are public. Direct submission uses your account. Peer relaying has been removed, so your submitting account is public even when the transfer details remain encrypted.</p></details>
         <details><summary>How private is it, really?</summary><p>Contextual. A transfer among many transfers made by many independent people is hard to single out; the same transfer in a quiet week, between two accounts that always act within the same minute, invites guessing. Correlation through timing, repeated endpoints, address reuse, or a compromised browser remains possible. Privacy grows with more independent activity. It is context, not a guarantee, and we will not sell it as one.</p></details>
         <details><summary>Why testnet first?</summary><p>Because the evidence is not finished: the proof parameters need a completed public ceremony and the contract and circuit need independent review, and neither is recorded yet. Until both exist, the preview stays on a network where balances have no monetary value. Preview first, promotion after the evidence — that is an order we can defend.</p></details>
         <details><summary>What if I lose this device?</summary><p>The recovery phrase rebuilds the private balance on any device by rescanning the public record, exactly as the recovery section describes. Restoration can cost network fees, shown before you approve them, and the labels on sent payments live only in your encrypted backup — so keep one.</p></details>
-        <details><summary>Can StellarKey see my private balance?</summary><p>No — the records are encrypted on your device, the proving happens on your device, and requests go directly to the Stellar RPC endpoint you configured. That endpoint&apos;s operator can see your IP address and request timing. In optional relay mode, public Nostr operators see discovery metadata and the selected peer learns the asset, fee, proof, and exact transaction.</p></details>
+        <details><summary>Can StellarKey see my private balance?</summary><p>No — the records are encrypted on your device, the proving happens on your device, and requests go directly to the Stellar RPC endpoint you configured. That endpoint&apos;s operator can see your IP address and request timing. The RPC also receives the proof and exact transaction for simulation and submission.</p></details>
         </div></section>
     </LegalPage>
   );

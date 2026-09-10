@@ -19,8 +19,6 @@ import type {
   PrivateChainedSendProgress,
   PrivateChainedSendResult,
 } from '@/features/private-balance/runtime/chained-send';
-import type { PrivateRelayChainApproval } from '@/features/private-balance/runtime/relay-chain-policy';
-import type { SelectPrivateRelayChainPeer } from '@/features/private-balance/runtime/relay-chained-send';
 import type { AuthorizePrivateProofDisclosure } from '@/features/private-balance/runtime/proof-disclosure';
 import type { PrivateOutgoingHistoryMode } from '@/features/private-balance/runtime/outgoing-history';
 import type { IncomingPrivateTransferSummary } from '@/features/private-balance/runtime/sync-machine';
@@ -35,10 +33,6 @@ import type { PrivateArchiveRestorationProgress } from '@/features/private-balan
 import type { PrivateBalanceAsset } from '@/lib/private-balance-assets';
 import type { PrivatePortfolioEntry } from '@/features/private-balance/runtime/portfolio';
 import type { StealthOwnedPayment } from '@/features/private-balance/runtime/stealth-cache';
-import type { PrivateRelayJobReview } from '@/features/private-balance/relay/review';
-import type { PrivateRelayPreparationCallbacks } from '@/features/private-balance/runtime/action-transaction';
-import type { PrivateRelayPreparationContext } from '@/features/private-balance/relay/preparation';
-import type { PrivateRelayPreparedEnvelope } from '@/features/private-balance/relay/prepared-envelope';
 
 export type PrivateBalanceRuntimePhase =
   | 'disabled'
@@ -115,21 +109,6 @@ export interface PreparedStealthSweep {
   review: PreparedPrivateActionReview;
 }
 
-export interface PrivateRelaySubmissionCallbacks {
-  requestSignature(input: {
-    envelopeXdr: string;
-    transactionHash: string;
-    networkPassphrase: string;
-  }): Promise<string>;
-  requestSubmission(input: {
-    signedEnvelopeXdr: string;
-    transactionHash: string;
-  }): Promise<{
-    status: 'PENDING' | 'DUPLICATE' | 'TRY_AGAIN_LATER' | 'ERROR';
-    hash: string;
-  }>;
-}
-
 export interface PrivateBalanceRuntimeDataValue {
   phase: PrivateBalanceRuntimePhase;
   configured: boolean;
@@ -182,7 +161,6 @@ export interface PrivateBalanceRuntimeDataValue {
     draft: PrivateActionDraft,
     onProgress?: (stage: PrivateActionProgressStage) => void,
     signal?: AbortSignal,
-    relayPreparation?: PrivateRelayPreparationCallbacks,
     authorizeDisclosure?: AuthorizePrivateProofDisclosure,
   ): Promise<PreparedPrivateActionReview>;
   cancelAction(actionId: string): Promise<void>;
@@ -194,32 +172,8 @@ export interface PrivateBalanceRuntimeDataValue {
   ): Promise<PreparedPrivateActionReview>;
   submitAction(
     review: PreparedPrivateActionReview,
-    relay?: PrivateRelaySubmissionCallbacks,
   ): Promise<'broadcast' | 'ambiguous'>;
-  derivePrivateRelayPayout(input: {
-    assetIndex: number;
-    actionDiversifier: string;
-  }): Promise<string>;
-  reviewPrivateRelayJob(input: {
-    unsignedEnvelopeXdr: string;
-    transactionHash: string;
-    sourceAccount: string;
-    assetIndex: number;
-    actionDiversifier: string;
-    feeAtomic: string;
-  }): Promise<PrivateRelayJobReview>;
-  preparePrivateRelayJob(input: PrivateRelayPreparationContext, signal?: AbortSignal): Promise<PrivateRelayPreparedEnvelope>;
-  signPrivateRelayJob(review: PrivateRelayJobReview): Promise<string>;
-  submitPrivateRelayJob(input: {
-    signedEnvelopeXdr: string;
-    transactionHash: string;
-  }): Promise<{
-    status: 'PENDING' | 'DUPLICATE' | 'TRY_AGAIN_LATER' | 'ERROR';
-    hash: string;
-  }>;
   prepareChainedSend(draft: PrivateChainedSendDraft): Promise<PrivateChainedSendApproval>;
-  prepareRelayChainedSend(draft: PrivateChainedSendDraft, feeAtomic: string): Promise<PrivateRelayChainApproval | null>;
-  submitRelayChainedSend(approval: PrivateRelayChainApproval, selectPeer: SelectPrivateRelayChainPeer, signal: AbortSignal, onProgress?: (progress: PrivateChainedSendProgress) => void): Promise<PrivateChainedSendResult>;
   submitChainedSend(
     approval: PrivateChainedSendApproval,
     draft: PrivateChainedSendDraft,
@@ -263,25 +217,6 @@ const unavailableStealthSweep = async (): Promise<PreparedStealthSweep> => {
 };
 
 const unavailableSubmission = async (): Promise<'broadcast' | 'ambiguous'> => {
-  throw new Error('Private Balance is unavailable.');
-};
-
-const unavailableRelayPayout = async (): Promise<string> => {
-  throw new Error('Private Balance is unavailable.');
-};
-
-const unavailableRelayReview = async (): Promise<PrivateRelayJobReview> => {
-  throw new Error('Private Balance is unavailable.');
-};
-
-const unavailableRelaySign = async (): Promise<string> => {
-  throw new Error('Private Balance is unavailable.');
-};
-
-const unavailableRelaySubmit = async (): Promise<{
-  status: 'PENDING' | 'DUPLICATE' | 'TRY_AGAIN_LATER' | 'ERROR';
-  hash: string;
-}> => {
   throw new Error('Private Balance is unavailable.');
 };
 
@@ -360,14 +295,7 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   prepareSpendRecovery: unavailableReview,
   cancelAction: unavailable,
   submitAction: unavailableSubmission,
-  derivePrivateRelayPayout: unavailableRelayPayout,
-  reviewPrivateRelayJob: unavailableRelayReview,
-  preparePrivateRelayJob: async () => { throw new Error('Private Balance is unavailable.'); },
-  signPrivateRelayJob: unavailableRelaySign,
-  submitPrivateRelayJob: unavailableRelaySubmit,
   prepareChainedSend: unavailableChainedApproval,
-  prepareRelayChainedSend: unavailableChainedApproval as () => Promise<never>,
-  submitRelayChainedSend: unavailableChainedSubmission,
   submitChainedSend: unavailableChainedSubmission,
   onIncomingPrivatePayment: () => () => {},
   takeoverLeadership: () => {},

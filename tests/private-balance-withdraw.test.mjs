@@ -81,10 +81,9 @@ test('private withdrawal follows an in-modal asset selection instead of waiting 
   );
 });
 
-test('private withdrawal exposes the same explicit privacy relay choice', () => {
+test('private withdrawal has a single direct path and retains the review shell', () => {
   const source = read('src/features/private-balance/components/WithdrawPrivate.tsx');
-
-  assert.match(source, /PrivateRelaySubmissionChoice/);
-  assert.match(source, /flow\.prepare\([\s\S]*submissionMode/);
-  assert.match(source, /relayProgress=\{flow\.relayProgress\}/);
+  assert.doesNotMatch(source, /PrivateRelay|submissionMode|loadPrivateRelayPreferences/);
+  assert.match(source, /flow\.prepare\(/);
+  assert.match(source, /<PrivateActionReview/);
 });

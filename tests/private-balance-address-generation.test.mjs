@@ -11,7 +11,6 @@ import {
 } from '@stellarkey/private-balance';
 import { PrivateBalanceWorkerClient } from '../src/features/private-balance/worker/client.ts';
 import { wipePrivateBalanceSpendingKey } from '../src/features/private-balance/worker/key-hygiene.ts';
-import { privateRelayRecipientDiversifier } from '../src/features/private-balance/relay/recipient.ts';
 import {
   commitPrivateBalanceState, createEmptyPrivateBalanceState,
   loadPrivateBalanceState, recordPrivateBalanceAddress,
@@ -81,14 +80,14 @@ async function identityFor(t, manifest, diversifier) {
   };
 }
 
-test('initial receive address passes real relay preflight on the supported network', async t => {
+test('initial receive address is freshly diversified on the supported network', async t => {
   const { client } = await workerHarness(t);
   const manifest = networkManifest();
   const identity = await client.initSession(manifest, account, root());
   const prefix = 'tskpay_';
   const decoded = await decodePrivateAddress(identity.address, prefix, bytes(manifest.deploymentBindingHash));
   assert.equal(decoded.diversifier.some(byte => byte !== 0), true, 'initial receive identity must not use the legacy zero diversifier');
-  assert.equal((await privateRelayRecipientDiversifier(identity.address, prefix)) !== '00000000', true);
+  assert.equal((Buffer.from((await decodePrivateAddress(identity.address, prefix)).diversifier).toString('hex')) !== '00000000', true);
 });
 
 test('address generation retains the unsupported-network deployment gate', async t => {
@@ -119,7 +118,7 @@ test('legacy receive address migrates once through encrypted issuance while old 
   await commitPrivateBalanceState(context, storageKey, initial, null, driver);
   const replacement = await client.initSession(manifest, account, root(), initial.privateAddress);
   assert.equal(replacement.address !== legacy.address, true, 'legacy display address must be replaced before publication');
-  assert.equal((await privateRelayRecipientDiversifier(replacement.address, legacy.prefix)) !== '00000000', true);
+  assert.equal((Buffer.from((await decodePrivateAddress(replacement.address, legacy.prefix)).diversifier).toString('hex')) !== '00000000', true);
   const persisted = await recordPrivateBalanceAddress(context, storageKey, initial.revision, replacement.address, driver);
   assert.equal(persisted.issuedAddressDiversifiers.includes('00000000'), true);
   assert.equal(persisted.issuedAddressDiversifiers.length, 2);
@@ -149,7 +148,7 @@ test('nonzero stored receive addresses restore exactly without rotation', async 
   const { client } = await workerHarness(t);
   const result = await client.initSession(manifest, account, root(), known.address);
   assert.equal(result.address === known.address, true);
-  assert.equal(await privateRelayRecipientDiversifier(result.address, known.prefix), '01020304');
+  assert.equal(Buffer.from((await decodePrivateAddress(result.address, known.prefix)).diversifier).toString('hex'), '01020304');
 });
 
 test('rotation retries zero and current diversifiers and clears rejected entropy', async t => {
@@ -192,7 +191,7 @@ test('unusable entropy fails within a bound and preserves the current worker ses
   assert.equal(calls > 0 && calls <= 128, true);
   assert.match(response.error, /fresh private address/i);
   const next = await client.generateAddress();
-  assert.equal((await privateRelayRecipientDiversifier(next.address, known.prefix)) !== '00000000', true);
+  assert.equal((Buffer.from((await decodePrivateAddress(next.address, known.prefix)).diversifier).toString('hex')) !== '00000000', true);
 });
 
 for (const operation of ['initialize', 'rotate']) test(`client rejects a zero-diversifier worker response during ${operation}`, async t => {

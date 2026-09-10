@@ -76,3 +76,44 @@
 - Existing private funds/history/backup records remain readable and exposed or uncertain actions retain canonical recovery protections.
 - Direct UI, runtime, protocol, safe synthetic browser, build, bundle, and generated-manifest checks pass; no unrelated verification gate is removed.
 
+## Execution record — 2026-09-10
+
+**Status:** Relay removal is implemented and independently reviewed. Integration is blocked by the browser failures below; the branch is not merged and the aggregate application/release gate is not green.
+
+### Implemented
+
+- Removed peer/Earn controls, helper participation and approvals, relay selection and fees, runtime relay entry points, Waku/Nostr networking, and relay-only tooling and tests. Converted shared recovery and multi-wallet tests to direct RPC scenarios instead of deleting their safety coverage.
+- Added direct-only rejection boundaries before preparation, proof disclosure, signing, storage, and submission. Kept explicit public submitting-account disclosure and direct chained sends.
+- Retained validated legacy encrypted journals and canonical recovery. Retiring obsolete relay-chain consent does not release exposed inputs, pending actions, or issued-address history.
+- Removed four direct dependencies and 172 installed package entries. No packages were added and retained package versions, integrity values, and resolved URLs are unchanged.
+- Refreshed only dependency-provenance hashes and their authenticated manifest/catalogue pins. Published protocol, proving artifacts, contracts, and deployment bindings are unchanged. Published changelog entries for 1.4.1 and older are byte-identical to the base branch.
+- Independent runtime and UI spec/quality reviews completed. Fixed review findings around duplicate confirmation ownership, busy-state focus, immediate Escape handling, and direct-review contrast; added focused regressions and real-control synthetic browser coverage.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `npm test` | 1,721 passed; zero failures or skips |
+| `npm run typecheck` | Passed |
+| `npm run lint` | Zero errors; three existing marketing-image warnings |
+| `npm run test:private-protocol` | 58 passed; zero failures or skips |
+| `npm run private:check-generated` | Passed; all three proof vectors verified |
+| `npm run audit:prod` | Gate passed; ten low-severity package findings from one remaining elliptic advisory in the Trezor dependency tree |
+| `npm run test:e2e:reporter` | Two passed; capture and safe-reporting restrictions verified |
+| Required private UI / overlay / manifest browser suite | 16 passed across Chromium and iPhone WebKit; zero skips |
+| Direct-only component scenarios | 20 passed across Chromium and iPhone WebKit; zero skips |
+| Full component suite, default one worker | 563 passed, one failed, zero skips |
+| Unchanged Select case, 12 repetitions per browser | 24 passed; zero retries or skips |
+| Full component suite, supplemental two-worker run | 561 passed, three failed, zero skips |
+| Exported-site Playwright suite | 122 passed, two failed; 303 existing fixture-, environment-, or project-specific skips |
+| Production build, fixture cleanup, bundle tests and budgets | Passed; five bundle tests passed |
+
+The required synthetic component and private UI gates remain wired into shared CI and release verification. No failing assertion, accessibility rule, deadline, capture restriction, or required gate was removed to obtain these results.
+
+### Verification blockers requiring follow-up
+
+1. `e2e/restore-feedback.spec.ts` fails at the busy-state assertions in its keyboard/retry and stale-read-error cases. `Onboarding.tsx` changes the Restore description during a file read but does not expose `aria-busy` or the named reading status expected by these tests. The component and tests are unchanged from the base branch. The cancellation and oversized-file cases pass. Approval was requested for a separate, small accessibility fix; no unrelated onboarding change is included here.
+2. The default component run fails the Select Tab-continuation focus assertion in `e2e/ux-primitives.spec.ts`. All 24 isolated repetitions pass, but the supplemental full run fails the same case while waiting for its listbox to close. The underlying cause is not established; isolated passes do not clear this failure.
+3. The supplemental two-worker run additionally fails the Add Account modal accessibility audit in `e2e/modal-ownership.spec.ts` and one tooltip pointer-transfer case in `e2e/ux-primitives.spec.ts`. Both pass in the default run. Their shared production primitives and tests are unchanged; these failures remain recorded rather than waived.
+
+All browser checks used isolated non-usable synthetic fixtures with screenshots, traces, and video disabled. No real wallet or external relay service was inspected, stopped, or removed. Human VoiceOver/NVDA checks, physical-device pinch testing, live-funded protocol checks, and separate Rust/circuit release jobs are not claimed by this application verification. No release, tag, push, or deployment was performed.
