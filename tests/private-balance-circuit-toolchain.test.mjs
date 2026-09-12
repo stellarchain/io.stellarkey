@@ -26,6 +26,43 @@ test('private reproducibility rebuild pins the same O2 compiler mode', () => {
   assert.match(invocation[1], /['"]--O2['"]/, 'reproducibility must rebuild the shipped O2 circuit');
 });
 
+test('every pool build selects the pinned Rust toolchain and retains isolated outputs', () => {
+  const script = readFileSync(
+    join(process.cwd(), 'protocol/private-balance/scripts/build-private-balance-artifacts.mjs'),
+    'utf8',
+  );
+  const toolchain = readFileSync(
+    join(process.cwd(), 'protocol/private-balance/rust-toolchain.toml'),
+    'utf8',
+  ).match(/^channel = "([^"]+)"$/m)?.[1];
+  assert.equal(toolchain, '1.97.1');
+  const implementation = script.match(/^function buildPool\([^]*?^\}/m)?.[0];
+  assert.ok(implementation, 'the actual pool build boundary must be exercised');
+  const calls = [];
+  const environment = { PATH: '/synthetic/bin', RUSTUP_TOOLCHAIN: 'synthetic-default' };
+  const buildPool = new Function('run', 'process', `${implementation}; return buildPool;`)(
+    (...args) => calls.push(args), { env: environment },
+  );
+
+  buildPool();
+  buildPool('/synthetic/pool', {
+    env: { CARGO_TARGET_DIR: '/synthetic/cargo-target', RUSTUP_TOOLCHAIN: 'synthetic-override' },
+  });
+
+  for (const [file, args, options] of calls) {
+    assert.equal(file, 'stellar');
+    assert.deepEqual(args.slice(0, 2), ['contract', 'build']);
+    assert.ok(args.includes('--locked'));
+    assert.equal(options.env?.RUSTUP_TOOLCHAIN, toolchain,
+      'Stellar must launch Cargo with the toolchain that owns the installed Wasm target');
+    assert.equal(options.env.PATH, environment.PATH);
+  }
+  assert.equal(calls[0][2].env.CARGO_TARGET_DIR, undefined);
+  assert.equal(calls[1][2].env.CARGO_TARGET_DIR, '/synthetic/cargo-target');
+  assert.deepEqual(calls[1][1].slice(-2), ['--out-dir', '/synthetic/pool']);
+  assert.equal(environment.RUSTUP_TOOLCHAIN, 'synthetic-default', 'do not mutate the caller environment');
+});
+
 test('private action circuit performs one range decomposition for equal totals', () => {
   const actionCircuit = readFileSync(join(circuitsDir, 'circom/action.circom'), 'utf8');
   const totalRangeChecks = actionCircuit.match(

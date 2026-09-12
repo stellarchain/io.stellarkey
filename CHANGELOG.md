@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Private contract artifact builds explicitly use the pinned Rust toolchain, including isolated reproducibility checks on clean CI runners.
+
 ### Security
 
 - Receipt SMS and email drafts encode recipient input so it cannot append draft parameters, replace receipt text or introduce URI fragments.

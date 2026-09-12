@@ -38,7 +38,12 @@ function buildPool(outputDirectory, options = {}) {
     '--optimize=false',
   ];
   if (outputDirectory) args.push('--out-dir', outputDirectory);
-  run('stellar', args, options);
+  // Cargo resolves toolchains from its working directory, not --manifest-path.
+  // This entrypoint runs at the app root, outside the protocol's toolchain file.
+  run('stellar', args, {
+    ...options,
+    env: { ...process.env, ...options.env, RUSTUP_TOOLCHAIN: '1.97.1' },
+  });
 }
 
 if (!checkReproducible) {
