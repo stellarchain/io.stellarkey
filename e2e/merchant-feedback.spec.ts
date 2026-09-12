@@ -670,6 +670,27 @@ test('customer reward failure retains the full card and retries one redemption',
   await expect(redeem).toBeFocused();
 });
 
+for (const appearance of ['light', 'dark'] as const) {
+  test(`${appearance} supplementary toasts retain accessible resting contrast`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: appearance });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', appearance);
+    await control(page, 'First toast');
+    const notification = page.locator('.app-safe-toast > div');
+    await expect(notification).toHaveCount(1);
+    // Hold only this fixture's known toast-expiry timers while axe measures its
+    // resting surface. The separate lifecycle test retains real expiry coverage.
+    await page.evaluate(() => {
+      for (const timer of [...window.__merchantToastTimers.owned]) window.clearTimeout(timer);
+    });
+    await notification.evaluate(node => Promise.all(node.getAnimations().map(animation => animation.finished.catch(() => undefined))));
+    const audit = await new AxeBuilder({ page }).include('.app-safe-toast')
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+    expect(audit.violations.map(violation => ({ rule: violation.id, impact: violation.impact, count: violation.nodes.length }))).toEqual([]);
+    await notification.click();
+    await expect(notification).toHaveCount(0);
+  });
+}
+
 test('supplementary toasts announce only additions, retain nodes, wrap and expire without moving focus', async ({ page }) => {
   const region = page.locator('.app-safe-toast');
   await expect(region).toHaveAttribute('aria-live', 'polite');

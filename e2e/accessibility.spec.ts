@@ -28,6 +28,10 @@ async function expectAccessibleSurface(
   expect(scrollWidth, `${label} must not overflow horizontally`).toBeLessThanOrEqual(clientWidth);
   expect(viewport).not.toContain("maximum-scale=1");
   expect(viewport).not.toContain("user-scalable=no");
+  // An auto-dismissal can begin after settleMotion snapshots active animations.
+  // Page audits wait for notification expiry; the component gate separately
+  // audits visible resting toasts in both themes and tests their full lifecycle.
+  await expect(page.locator('.app-safe-toast > div')).toHaveCount(0);
   const disabledRules: string[] = [];
   if (browserName === "webkit") {
     // axe/WebKit resolves transparent blurred backgrounds as opaque light
