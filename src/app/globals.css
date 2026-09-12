@@ -50,8 +50,8 @@
   --color-raised: #ffffff;
   --color-line: rgba(60, 60, 67, 0.29);
   --color-line-strong: rgba(60, 60, 67, 0.5);
-  --color-ink: #1c1c1e;
-  --color-muted: rgba(60, 60, 67, 0.62);
+  --color-ink: #000000;
+  --color-muted: rgba(60, 60, 67, 0.6);
   --color-faint: rgba(60, 60, 67, 0.5);
   --color-accent: #007aff;
   --color-accent-2: #0a84ff;
@@ -61,7 +61,7 @@
 
   /* App-surface tokens (used by the custom component classes below). */
   --color-elevated: rgba(255, 255, 255, 0.86);
-  --color-fill: rgba(120, 120, 128, 0.12);
+  --color-fill: rgba(118, 118, 128, 0.12);
   --color-fill-strong: rgba(120, 120, 128, 0.2);
   --color-hairline: rgba(0, 0, 0, 0.1);
   --color-hairline-strong: rgba(0, 0, 0, 0.16);
@@ -70,10 +70,12 @@
   --color-primary-fill: #007aff;
   --color-primary-fill-hover: #0071eb;
   --color-scrim: 248, 248, 250;
+  --shadow-strong: rgba(0, 0, 0, 0.16);
+  --shadow-medium: rgba(0, 0, 0, 0.1);
 
   /* Tailwind base palette, flipped. text-white -> dark ink, bg-white/x -> a
      dark tint, border-white/x -> a dark hairline, bg-black -> light. */
-  --color-white: #1c1c1e;
+  --color-white: #000000;
   --color-neutral-50: #1c1c1e;
   --color-neutral-100: #1c1c1e;
   --color-neutral-200: #2c2c2e;
@@ -119,6 +121,8 @@
   --color-primary-fill-hover: #005fbe;
   --color-scrim: 18, 18, 20;
   --color-oncolor: #ffffff;
+  --shadow-strong: rgba(0, 0, 0, 0.9);
+  --shadow-medium: rgba(0, 0, 0, 0.7);
 }
 
 .app-safe-top {
@@ -650,7 +654,7 @@ body::after {
     border-radius: 16px;
     box-shadow:
       inset 0 0 0 0.5px var(--color-hairline-strong),
-      0 24px 60px -18px rgba(0, 0, 0, 0.9);
+      0 24px 60px -18px var(--shadow-strong);
     overflow: hidden;
   }
 
@@ -753,7 +757,7 @@ body::after {
     box-shadow:
       inset 0 0 0 0.5px var(--color-hairline-strong),
       inset 0 1px 0 var(--color-hairline),
-      0 24px 60px -12px rgba(0, 0, 0, 0.95);
+      0 24px 60px -12px var(--shadow-strong);
   }
   .tab-item {
     display: flex;

@@ -1089,7 +1089,7 @@ export function PosTerminal({
           above the floating tab bar rather than behind it. */}
       {!empty && (
         <div className="sticky bottom-[calc(90px+env(safe-area-inset-bottom))] z-30 mt-3 md:hidden">
-          <div className="panel shadow-[0_18px_50px_-12px_rgba(0,0,0,0.95)]">
+          <div className="panel shadow-[0_18px_50px_-12px_var(--shadow-strong)]">
             {chargeBlockedReason && (
               <p className="border-b border-white/[0.08] px-4 py-2 text-center text-[11.5px] leading-relaxed text-[#FF9F0A]">
                 {chargeBlockedReason}

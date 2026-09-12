@@ -3812,7 +3812,7 @@ function ActionButton({
         className={`flex h-12 w-12 items-center justify-center rounded-full pointer-coarse:h-[clamp(48px,16vw,60px)] pointer-coarse:w-[clamp(48px,16vw,60px)] transition-[background-color,border-color,transform,filter] duration-[var(--motion-duration-emphasized)] ease-[cubic-bezier(0.34,1.4,0.64,1)] group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.84] group-active:duration-[var(--motion-duration-fast)] ${
           primary
             ? "bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-[var(--color-oncolor)] shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-1px_1px_rgba(0,0,0,0.15),0_10px_26px_-8px_rgba(10,132,255,0.6)] group-hover:brightness-110"
-            : "border border-white/[0.1] bg-white/[0.07] text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_22px_-12px_rgba(0,0,0,0.7)] backdrop-blur-xl group-hover:border-white/[0.16] group-hover:bg-white/[0.12]"
+            : "border border-white/[0.1] bg-white/[0.07] text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_22px_-12px_var(--shadow-medium)] backdrop-blur-xl group-hover:border-white/[0.16] group-hover:bg-white/[0.12]"
         } ${disabled ? "opacity-30" : ""}`}
       >
         {icon}
