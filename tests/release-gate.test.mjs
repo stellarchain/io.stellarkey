@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
@@ -118,11 +118,50 @@ test("every CLI-consuming CI job installs the checksum-verified complete CLI", (
     const jobs = read(file)
       .split(/\n(?= {2}[a-z][a-z0-9-]*:\s*\n)/)
       .filter((job) => /uses: \.\/\.github\/actions\/setup-stellar-cli/.test(job));
-    assert.equal(jobs.length, 2, `${file} must cover both application and circuit jobs`);
+    assert.equal(jobs.length, 2, `${file} must cover both application and artifact jobs`);
 
     for (const job of jobs) {
-      assert.match(job, /runs-on: ubuntu-latest/);
+      assert.match(job, /runs-on: (?:ubuntu-latest|macos-15)/);
       assert.doesNotMatch(job, /cargo[^\n]*install stellar-cli|--no-default-features/);
+    }
+  }
+});
+
+test("Gate A requires Linux circuit analysis and canonical macOS ARM64 reproduction", () => {
+  for (const file of [".github/workflows/ci.yml", ".github/workflows/release.yml"]) {
+    const workflow = read(file);
+    const job = (name) => workflow.split(`\n  ${name}:\n`)[1]?.split(/\n {2}[a-z][a-z0-9-]*:\n/)[0];
+    const circuits = job("private-circuits");
+    const artifacts = job("private-artifacts");
+    const aggregate = job("private-gate-a");
+    assert.ok(circuits && artifacts && aggregate, "keep distinct circuit, artifact and required aggregate jobs");
+    assert.match(circuits, /runs-on: ubuntu-latest/);
+    assert.match(circuits, /npm run private:gate-a/);
+    assert.match(circuits, /circomspect --version 0\.9\.0 --locked/);
+    assert.match(circuits, /audit --audit-level=high/);
+    assert.doesNotMatch(circuits, /private:check-reproducible/);
+    assert.match(artifacts, /runs-on: macos-15/);
+    assert.match(artifacts, /rustup toolchain install 1\.97\.1 --profile minimal/);
+    assert.match(artifacts, /rustup target add wasm32v1-none --toolchain 1\.97\.1/);
+    assert.match(artifacts, /--tag v2\.2\.3 --locked circom/);
+    assert.match(artifacts, /uses: \.\/\.github\/actions\/setup-stellar-cli/);
+    assert.match(artifacts, /npm run private:check-reproducible/);
+    assert.match(aggregate, /name: Private Balance Gate A/);
+    assert.match(aggregate, /needs: \[private-circuits, private-artifacts\]/);
+    assert.match(aggregate, /if: \$\{\{ always\(\) \}\}/);
+    assert.match(aggregate, /CIRCUIT_RESULT: \$\{\{ needs\.private-circuits\.result \}\}/);
+    assert.match(aggregate, /ARTIFACT_RESULT: \$\{\{ needs\.private-artifacts\.result \}\}/);
+    assert.doesNotMatch(aggregate, /continue-on-error/);
+    const command = aggregate.match(/ {8}run: \|\n((?: {10}.+\n?)+)/)?.[1];
+    assert.ok(command, "execute the actual fail-closed aggregation script");
+    for (const circuit of ["success", "failure", "cancelled", "skipped", ""]) {
+      for (const artifact of ["success", "failure", "cancelled", "skipped", ""]) {
+        const result = spawnSync("bash", ["-e", "-c", command], {
+          env: { ...process.env, CIRCUIT_RESULT: circuit, ARTIFACT_RESULT: artifact },
+        });
+        assert.equal(result.status === 0, circuit === "success" && artifact === "success",
+          `${file}: circuit=${circuit || "missing"} artifact=${artifact || "missing"}`);
+      }
     }
   }
 });

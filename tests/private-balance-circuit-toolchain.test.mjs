@@ -63,6 +63,39 @@ test('every pool build selects the pinned Rust toolchain and retains isolated ou
   assert.equal(environment.RUSTUP_TOOLCHAIN, 'synthetic-default', 'do not mutate the caller environment');
 });
 
+test('exact reproduction rejects noncanonical operating systems, architectures and Rust hosts before builds', () => {
+  const script = readFileSync(
+    join(process.cwd(), 'protocol/private-balance/scripts/build-private-balance-artifacts.mjs'), 'utf8',
+  );
+  const implementation = script.match(/^function assertCanonicalReproductionHost\([^]*?^\}/m)?.[0];
+  assert.ok(implementation, 'provide the canonical-host guard');
+  assert.match(script, /if \(checkReproducible\) assertCanonicalReproductionHost\(\);/);
+  assert.ok(script.indexOf('if (checkReproducible) assertCanonicalReproductionHost();') < script.indexOf("execFileSync('circom'"));
+  for (const [platform, arch, host, accepted] of [
+    ['darwin', 'arm64', 'aarch64-apple-darwin', true],
+    ['darwin', 'arm64', 'x86_64-apple-darwin', false],
+    ['darwin', 'x64', 'aarch64-apple-darwin', false],
+    ['linux', 'arm64', 'aarch64-unknown-linux-gnu', false],
+    ['linux', 'x64', 'x86_64-unknown-linux-gnu', false],
+    ['darwin', 'arm64', '', false],
+  ]) {
+    const calls = [];
+    const check = new Function('execFileSync', 'process', `${implementation}; return assertCanonicalReproductionHost;`)(
+      (...args) => { calls.push(args); return `rustc 1.97.1\nhost: ${host}\n`; },
+      { platform, arch },
+    );
+    if (accepted) assert.doesNotThrow(check);
+    else assert.throws(check, /canonical.*macOS ARM64/i);
+    for (const [file, args] of calls) {
+      assert.equal(file, 'rustc');
+      assert.deepEqual(args, ['+1.97.1', '--version', '--verbose']);
+    }
+  }
+  assert.match(script, /for \(const output of \[first, second\]\)/);
+  assert.match(script, /CARGO_TARGET_DIR: join\(output, 'cargo-target'\)/);
+  assert.match(script, /if \(trackedPoolHash !== rebuiltPoolHash\)/);
+});
+
 test('private action circuit performs one range decomposition for equal totals', () => {
   const actionCircuit = readFileSync(join(circuitsDir, 'circom/action.circom'), 'utf8');
   const totalRangeChecks = actionCircuit.match(
