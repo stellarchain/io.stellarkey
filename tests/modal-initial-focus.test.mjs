@@ -21,28 +21,71 @@ const effects = modal.body.statements.flatMap(node => {
 });
 assert.equal(effects.length, 3, 'scroll lock, stack registration and initial focus stay separate owned effects');
 
-function opening({ initialFocus = null, pointerOpening = false } = {}) {
+function opening({ initialFocus = null, pointerOpening = false, nested = false } = {}) {
   const frames = new Map();
   let nextFrame = 0;
   const document = { activeElement: null, body: null };
   class Element {
-    isConnected = true;
-    constructor(label) { this.label = label; }
-    focus() { if (this.isConnected) document.activeElement = this; }
-    matches() { return false; }
+    connected = true;
+    attributes = new Set();
+    children = [];
+    disabled = false;
+    ariaDisabled = false;
+    inert = false;
+    constructor(label, parentElement = null) {
+      this.label = label;
+      this.parentElement = parentElement;
+      parentElement?.children.push(this);
+    }
+    get isConnected() { return this.connected && (!this.parentElement || this.parentElement.isConnected); }
+    focus() { if (this.isConnected && !this.disabled && !this.closest('[inert]')) document.activeElement = this; }
+    matches(selectors) {
+      return selectors.split(',').some(value => {
+        const selector = value.trim();
+        if (selector === ':disabled') return this.disabled;
+        if (selector === '[inert]') return this.inert;
+        if (/^\[aria-disabled=['"]true['"]\]$/.test(selector)) return this.ariaDisabled;
+        return this.attributes.has(selector);
+      });
+    }
+    closest(selector) {
+      for (let node = this; node; node = node.parentElement) if (node.matches(selector)) return node;
+      return null;
+    }
+    contains(node) {
+      for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) if (ancestor === this) return true;
+      return false;
+    }
+    querySelector(selector) {
+      for (const child of this.children) {
+        if (child.matches(selector)) return child;
+        const descendant = child.querySelector(selector);
+        if (descendant) return descendant;
+      }
+      return null;
+    }
+    remove() {
+      if (this.contains(document.activeElement)) document.activeElement = document.body;
+      if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(child => child !== this);
+      this.parentElement = null;
+      this.connected = false;
+    }
   }
-  const opener = new Element('opener');
-  const first = new Element('first-control');
-  const panel = new Element('panel');
-  const backdrop = new Element('backdrop');
   const body = new Element('body');
-  const previousPanel = new Element('previous-panel');
-  panel.contains = node => node === panel || node === first;
-  panel.querySelector = () => first;
+  const returnOwner = nested ? new Element('previous-backdrop', body) : null;
+  returnOwner?.attributes.add('[data-modal-backdrop]');
+  const previousPanel = new Element('previous-panel', returnOwner ?? body);
+  const opener = new Element('opener', nested ? previousPanel : body);
+  const backdrop = new Element('backdrop', body);
+  backdrop.attributes.add('[data-modal-backdrop]');
+  const panel = new Element('panel', backdrop);
+  const first = new Element('first-control', panel);
   document.activeElement = pointerOpening ? previousPanel : opener;
   document.body = body;
   let locks = 0;
-  let top = null;
+  const modalStack = returnOwner ? [returnOwner] : [];
+  const syncInertness = () => { for (const entry of modalStack) entry.inert = entry !== modalStack.at(-1); };
+  const registerModal = value => { if (!modalStack.includes(value)) modalStack.push(value); syncInertness(); };
   const context = vm.createContext({
     open: true, mounted: true, document, HTMLElement: Element, latestPointerTarget: pointerOpening ? opener : null,
     panelRef: { current: panel }, backdropRef: { current: backdrop },
@@ -53,8 +96,13 @@ function opening({ initialFocus = null, pointerOpening = false } = {}) {
       cancelAnimationFrame(id) { frames.delete(id); },
     },
     lockBodyScroll() { locks += 1; }, unlockBodyScroll() { locks -= 1; },
-    registerModal(value) { top = value; }, unregisterModal() { top = null; },
-    isTopModal(value) { return value === top; },
+    modalStack, registerModal,
+    unregisterModal(value) {
+      const index = modalStack.indexOf(value);
+      if (index >= 0) modalStack.splice(index, 1);
+      value.inert = false; syncInertness();
+    },
+    isTopModal(value) { return value === modalStack.at(-1); },
   });
   const cleanups = [];
   const runEffects = kind => {
@@ -70,14 +118,66 @@ function opening({ initialFocus = null, pointerOpening = false } = {}) {
     const current = [...frames.values()]; frames.clear();
     for (const callback of current) callback(0);
   };
-  return { document, opener, first, panel, frame, runEffects, get locks() { return locks; }, close() {
+  return { document, opener, first, panel, previousPanel, returnOwner, frame, runEffects, registerModal,
+    element: (label, parent = body) => new Element(label, parent),
+    get locks() { return locks; }, close(beforeReturn = () => {}) {
     for (const item of cleanups.filter(item => item.kind === 'useLayoutEffect')) item.cleanup();
-    panel.isConnected = false; first.isConnected = false; backdrop.isConnected = false;
-    document.activeElement = body;
+    backdrop.remove();
     for (const item of cleanups.filter(item => item.kind === 'useEffect')) item.cleanup();
+    beforeReturn();
     frame();
   } };
 }
+
+test('Modal return preserves a newer focus choice before its restoration frame', () => {
+  const view = opening();
+  view.runEffects('useLayoutEffect'); view.frame();
+  const newer = view.element('newer-focus');
+  view.close(() => newer.focus());
+  assert.equal(view.document.activeElement, newer);
+});
+
+test('Modal returns to an explicit result in the original parent when its opener was removed', () => {
+  const view = opening({ nested: true });
+  view.runEffects('useLayoutEffect'); view.frame();
+  const result = view.element('result', view.previousPanel);
+  result.attributes.add('[data-modal-return-focus]');
+  view.opener.remove();
+  view.close();
+  assert.equal(view.document.activeElement, result);
+});
+
+for (const unavailable of ['disabled', 'inert', 'removed-owner', 'missing-target']) test(`Modal return rejects an unavailable continuation: ${unavailable}`, () => {
+  const view = opening({ nested: true });
+  view.runEffects('useLayoutEffect'); view.frame();
+  const result = view.element('result', view.previousPanel);
+  if (unavailable !== 'missing-target') result.attributes.add('[data-modal-return-focus]');
+  view.opener.remove();
+  view.close(() => {
+    if (unavailable === 'disabled') result.disabled = true;
+    if (unavailable === 'inert') view.previousPanel.inert = true;
+    if (unavailable === 'removed-owner') view.returnOwner.remove();
+  });
+  assert.equal(view.document.activeElement, view.document.body);
+});
+
+test('Modal return retains an aria-disabled opener that intentionally stays focusable', () => {
+  const view = opening({ nested: true });
+  view.runEffects('useLayoutEffect'); view.frame();
+  view.opener.ariaDisabled = true;
+  view.close();
+  assert.equal(view.document.activeElement, view.opener);
+});
+
+test('Modal return cannot reach its original parent behind a newer top dialog', () => {
+  const view = opening({ nested: true });
+  view.runEffects('useLayoutEffect'); view.frame();
+  const result = view.element('result', view.previousPanel);
+  result.attributes.add('[data-modal-return-focus]');
+  view.opener.remove();
+  view.close(() => view.registerModal(view.element('newer-modal')));
+  assert.equal(view.document.activeElement, view.document.body);
+});
 
 test('Modal restores a pointer opener when WebKit leaves focus in the previous dialog', () => {
   const view = opening({ pointerOpening: true });
