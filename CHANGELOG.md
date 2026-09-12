@@ -7,16 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Verify short dialog exits at the closing commit as well as rendered frames, retaining animation and geometry checks.
-
-### Fixed
-
-- Return keyboard focus to the payment result after a fast signing approval without overriding a newer focus choice.
-- Keep locked-screen legal links on one desktop row across system fonts without widening the unlock form.
-- Keep the receiving-account label and address readable beside long account names on narrow merchant settings screens.
-
 ## [1.5.0] - 2026-09-12
 
 ### Added
@@ -29,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Verify short dialog exits at the closing commit as well as rendered frames, retaining animation and geometry checks.
 - Synthetic component checks run in two isolated browser workers while retaining the complete Chromium/WebKit matrix and one exclusive fixture owner.
 - CI installs checksum-verified official Stellar CLI archives, validates cache hits before use, and runs generated-file verification once within the complete application gate.
 - Exact contract reproduction uses a canonical macOS ARM64 Rust host in parallel with Linux circuit analysis; the required gate accepts only success from both jobs, without changing shipped artifact hashes.
@@ -49,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Return keyboard focus to the payment result after a fast signing approval without overriding a newer focus choice.
+- Keep locked-screen legal links on one desktop row across system fonts without widening the unlock form.
+- Keep the receiving-account label and address readable beside long account names on narrow merchant settings screens.
 - Dialog exits retain the shell's current geometry even when layout changes immediately before private fields are cleared.
 - Select and menu opening focus no longer overtakes rapid Tab navigation to the next control.
 - Sheet drag handles no longer select text and intercept a later drag with the browser's native text-drag gesture; body text selection and pinch zoom remain available.
