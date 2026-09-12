@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { AccountMark } from '@/components/AccountMark';
 import { IconExternal } from '@/components/icons';
-import { Button, ModalBody, Notice } from '@/components/ui';
+import { SectionHeader, Button, ModalBody, Notice } from '@/components/ui';
 import { NETWORKS, privateBalanceExplorerTxHash } from '@/lib/stellar';
 import type { NetworkKey } from '@/lib/types';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
@@ -115,7 +115,7 @@ export function PrivateActivityDetails({
   return (
     <ModalBody>
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Private activity</p>
+        <SectionHeader>Private activity</SectionHeader>
         <h3 className="mt-1 text-[20px] font-bold text-white">{title}</h3>
       </div>
       <dl className="list-group">

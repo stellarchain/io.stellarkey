@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, ModalBody, ModalFooter } from "./ui";
+import { SectionHeader } from "@/components/ui";
 import { IconKeyboard } from "./icons";
 
 interface ShortcutItem {
@@ -36,9 +37,7 @@ const SHORTCUTS: ShortcutItem[] = [
 function ShortcutGroup({ heading, items }: { heading: string; items: ShortcutItem[] }) {
   return (
     <div>
-      <h4 className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 mb-2 px-1">
-        {heading}
-      </h4>
+      <SectionHeader as="h4" className="mb-2 px-1">{heading}</SectionHeader>
       <div className="space-y-1.5 rounded-2xl bg-white/[0.02] border border-white/[0.06] p-2">
         {items.map((s) => (
           <div

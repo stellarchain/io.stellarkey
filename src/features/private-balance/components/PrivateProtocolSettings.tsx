@@ -8,7 +8,7 @@ import {
   IconRefresh,
   IconTrash,
 } from '@/components/icons';
-import { Button, Field, ModalBody, ModalFooter, Notice, Toggle } from '@/components/ui';
+import { SectionHeader, Button, Field, ModalBody, ModalFooter, Notice, Toggle } from '@/components/ui';
 import {
   usePrivateBalanceRuntime,
   usePrivateBalanceRuntimeData,
@@ -179,9 +179,7 @@ export function PrivateProtocolSettingsContent({
         />
 
         <section aria-labelledby="private-maintenance-title">
-          <h3 id="private-maintenance-title" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-            Maintenance
-          </h3>
+          <SectionHeader as="h3" id="private-maintenance-title" className="mb-2 px-1">Maintenance</SectionHeader>
           <div className="list-group">
             <button
               type="button"
@@ -233,9 +231,7 @@ export function PrivateProtocolSettingsContent({
         </div>
 
         <section aria-labelledby="private-local-state-title">
-          <h3 id="private-local-state-title" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-            On this device
-          </h3>
+          <SectionHeader as="h3" id="private-local-state-title" className="mb-2 px-1">On this device</SectionHeader>
           <dl className="list-group">
             <SettingsRow label="Encrypted local data" value={bytes(encryptedStorageBytes)} />
             <SettingsRow label="Primary RPC" value={selectedRpc ?? 'Not configured'} mono />
@@ -244,9 +240,7 @@ export function PrivateProtocolSettingsContent({
         </section>
 
         <section aria-labelledby="private-network-checks-title">
-          <h3 id="private-network-checks-title" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-            Network checks
-          </h3>
+          <SectionHeader as="h3" id="private-network-checks-title" className="mb-2 px-1">Network checks</SectionHeader>
           <div className="list-group">
             <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
               <div className="min-w-0">

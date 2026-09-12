@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useWalletContacts,
   useWalletIdentity,
@@ -633,9 +634,7 @@ export function MultiSigStudioModalBody({
 
               {/* Signers */}
               <div>
-                <p className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                  Authorized Signers ({info?.signers.length ?? 1})
-                </p>
+                <SectionHeader className="px-1 pb-2">Authorized Signers ({info?.signers.length ?? 1})</SectionHeader>
                 <div className="list-group">
                   {(info?.signers ?? []).map((s, i) => (
                     <div
@@ -740,19 +739,15 @@ export function MultiSigStudioModalBody({
               </div>
               {signerChanges.length > 0 && (
                 <div>
-                  <p className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                    Exact signer changes
-                  </p>
+                  <SectionHeader className="px-1 pb-2">Exact signer changes</SectionHeader>
                   <div className="list-group divide-y divide-white/[0.08]">
                     {signerChanges.map((change) => (
                       <div className="px-4 py-3" key={`${change.kind}:${change.key}`}>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                          {change.kind === "add"
+                        <SectionHeader>{change.kind === "add"
                             ? `Add at weight ${change.toWeight}`
                             : change.kind === "remove"
                               ? `Remove signer (was weight ${change.fromWeight})`
-                              : `Change weight ${change.fromWeight} → ${change.toWeight}`}
-                        </p>
+                              : `Change weight ${change.fromWeight} → ${change.toWeight}`}</SectionHeader>
                         <p className="mono mt-1 break-all text-[12px] leading-relaxed text-white">
                           {change.key}
                         </p>
@@ -783,9 +778,7 @@ export function MultiSigStudioModalBody({
             <>
               {/* Signers editor */}
               <div>
-                <p className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                  Signers & Weights
-                </p>
+                <SectionHeader className="px-1 pb-2">Signers & Weights</SectionHeader>
                 <div className="list-group">
                   {/* Own key */}
                   <div className="flex items-center gap-3 px-4 py-3">
@@ -902,9 +895,7 @@ export function MultiSigStudioModalBody({
 
               {/* Threshold presets */}
               <div>
-                <p className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                  Approval Threshold
-                </p>
+                <SectionHeader className="px-1 pb-2">Approval Threshold</SectionHeader>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {(
                     [

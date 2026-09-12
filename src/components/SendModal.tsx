@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import { SectionHeader } from "@/components/ui";
 import dynamic from "next/dynamic";
 import { Federation } from "@stellar/stellar-sdk";
 import {
@@ -1031,9 +1032,7 @@ function SendInner({
 
             {/* Pre-Flight Balance Delta Simulator */}
             <div className="panel-inset mt-3 p-3.5 space-y-1.5 text-[12px]">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                Pre-Flight Balance Simulation
-              </p>
+              <SectionHeader>Pre-Flight Balance Simulation</SectionHeader>
               <div className="flex justify-between text-neutral-300">
                 <span>Balance Before</span>
                 <span className="mono">{fmtAmount(reviewedBalance)} {reviewedAsset?.code}</span>

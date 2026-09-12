@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { SectionHeader } from "@/components/ui";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { useWallet } from "@/hooks/useWallet";
@@ -3165,9 +3166,7 @@ export function Dashboard() {
                   {groupedActivity.map((group) => (
                     <div key={group.title}>
                       <div className="flex items-center justify-between px-2 pb-1.5">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                          {group.title}
-                        </p>
+                        <SectionHeader>{group.title}</SectionHeader>
                         <span className="text-[11px] text-neutral-500 hidden sm:inline">
                           {group.items.length} transaction{group.items.length > 1 ? "s" : ""}
                         </span>
@@ -3967,9 +3966,7 @@ function AccountMenu({
     >
       {(close) => (
         <div className="p-1 space-y-1">
-          <p className="px-3 pb-1 pt-2 text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
-            Switch Account
-          </p>
+          <SectionHeader className="px-3 pb-1 pt-2 text-[10.5px] font-bold">Switch Account</SectionHeader>
           {accounts.map((acct) => {
             const isActive = acct.id === activeAccount.id;
             return (

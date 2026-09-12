@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { SectionHeader } from "@/components/ui";
 import { fetchBalances } from "@/lib/api";
 import { POPULAR_ASSETS } from "@/lib/assets";
 import {
@@ -1025,9 +1026,7 @@ function StepMoney({
         )}
 
         <div className="panel-inset mt-3 px-3.5 py-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            Reserve impact
-          </p>
+          <SectionHeader>Reserve impact</SectionHeader>
           <p className="mt-1.5 text-[12px] leading-relaxed text-neutral-300">
             Each trustline adds one subentry to this account. Stellar&rsquo;s current base reserve,
             every other subentry, liabilities, and the transaction fee are checked again in the
@@ -1321,9 +1320,7 @@ function StepTill({
           onChange={(textSize) => patch({ textSize })}
         />
         <div className="panel-inset mt-3 px-4 py-4 text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            Total
-          </p>
+          <SectionHeader>Total</SectionHeader>
           <p
             className={`mono mt-1 font-semibold leading-none text-white ${TEXT_SIZE_TOTAL[draft.textSize]}`}
           >

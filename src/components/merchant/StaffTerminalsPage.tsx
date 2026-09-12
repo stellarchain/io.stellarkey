@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useMerchantConfiguration,
   useMerchantRecords,
@@ -201,12 +202,8 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
           <section aria-labelledby="on-shift-title">
             <div className="flex items-baseline justify-between px-1 pb-2">
               <div className="flex items-baseline gap-2">
-                <h2
-                  id="on-shift-title"
-                  className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
-                >
-                  On this shift
-                </h2>
+                <SectionHeader as="h2"
+                  id="on-shift-title">On this shift</SectionHeader>
                 <span className="text-[11px] text-neutral-500">{onShiftStaff.length}</span>
               </div>
               {onShiftStaff.length > 0 && (
@@ -337,9 +334,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
 
           <section>
             <div className="flex items-baseline justify-between px-1 pb-2">
-              <h2 className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                Staff
-              </h2>
+              <SectionHeader as="h2">Staff</SectionHeader>
               <Button
                 variant="ghost"
                 className="btn-sm"
@@ -1045,9 +1040,7 @@ function StaffEditor({
         </div>
 
         <section>
-          <h3 className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-            On the till
-          </h3>
+          <SectionHeader as="h3" className="px-1 pb-2">On the till</SectionHeader>
           <div className="list-group">
             {PERMISSION_ROWS.map((row, i) => (
               <div
@@ -1077,9 +1070,7 @@ function StaffEditor({
         </section>
 
         <section>
-          <h3 className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-            Refund ceiling
-          </h3>
+          <SectionHeader as="h3" className="px-1 pb-2">Refund ceiling</SectionHeader>
           <div className="panel p-4">
             <Select
               ariaLabel={`Refund ceiling for ${member.name}`}
@@ -1103,9 +1094,7 @@ function StaffEditor({
         </section>
 
         <section>
-          <h3 className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-            PIN
-          </h3>
+          <SectionHeader as="h3" className="px-1 pb-2">PIN</SectionHeader>
           <div className="panel space-y-3 p-4">
             <p className="text-[12.5px] leading-relaxed text-neutral-400">
               A salted digest kept inside encrypted merchant storage. It authorises this till and
@@ -1319,12 +1308,8 @@ function ThisDevice({
 }) {
   return (
     <section aria-labelledby="device-title">
-      <h2
-        id="device-title"
-        className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
-      >
-        This device
-      </h2>
+      <SectionHeader as="h2"
+        id="device-title" className="px-1 pb-2">This device</SectionHeader>
 
       <div className="list-group">
         <div className="flex w-full items-center gap-3.5 px-4 py-3.5">

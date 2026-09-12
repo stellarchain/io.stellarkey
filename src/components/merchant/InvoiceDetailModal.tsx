@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { SectionHeader } from "@/components/ui";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
 import {
@@ -567,9 +568,7 @@ function InvoiceDocument({
         {/* ---------- who to who ---------- */}
         <div className="panel-inset grid gap-4 p-4 sm:grid-cols-2">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              From
-            </p>
+            <SectionHeader>From</SectionHeader>
             <p className="mt-1 text-[13.5px] font-semibold text-white">
               {shopName || "Your shop"}
             </p>
@@ -590,9 +589,7 @@ function InvoiceDocument({
           </div>
 
           <div className="min-w-0 border-t border-white/[0.08] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Billed to
-            </p>
+            <SectionHeader>Billed to</SectionHeader>
             <p className="mt-1 text-[13.5px] font-semibold text-white">{invoice.customerName}</p>
             <p className="text-[12.5px] text-neutral-400">
               {invoice.customerEmail ?? "No email on file"}
@@ -729,18 +726,14 @@ function InvoiceDocument({
 
         {invoice.note && (
           <div className="panel-inset px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Note
-            </p>
+            <SectionHeader>Note</SectionHeader>
             <p className="mt-1 text-[13px] leading-relaxed text-neutral-300">{invoice.note}</p>
           </div>
         )}
 
         {/* ---------- how it gets paid ---------- */}
         <div className="panel-inset space-y-3.5 p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            Payment
-          </p>
+          <SectionHeader>Payment</SectionHeader>
 
           <div>
             <p className="text-[12px] text-neutral-400">
@@ -996,9 +989,7 @@ function InvoiceDocument({
 
         {/* ---------- how it got here ---------- */}
         <div className="panel-inset p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            Timeline
-          </p>
+          <SectionHeader>Timeline</SectionHeader>
           <ol className="mt-3">
             {steps.map((step, i) => (
               <li key={step.key} className="relative flex gap-3 pb-4 last:pb-0">

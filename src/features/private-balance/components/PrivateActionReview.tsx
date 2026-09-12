@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AccountMark } from '@/components/AccountMark';
 import { FiatValue } from '@/components/FiatValue';
 import { XlmFeeFiatValue } from '@/components/XlmFeeFiatValue';
-import { Button, HashValue, ModalBody, ModalFooter, Notice } from '@/components/ui';
+import { SectionHeader, Button, HashValue, ModalBody, ModalFooter, Notice } from '@/components/ui';
 import { fmtAmount } from '@/lib/format';
 import { triggerHaptic } from '@/lib/haptics';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
@@ -347,9 +347,7 @@ export function PrivateActionReview({
 
       {simulation !== null && simulation.afterStroops >= 0n ? (
         <div className="panel-inset space-y-1.5 p-3.5 text-[12px]">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            Private balance after
-          </p>
+          <SectionHeader>Private balance after</SectionHeader>
           <div className="flex justify-between text-neutral-300">
             <span>Balance Before</span>
             <span className="mono">{privateAmount(simulation.beforeStroops)}</span>

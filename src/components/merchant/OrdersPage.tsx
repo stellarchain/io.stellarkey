@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useMerchantConfiguration,
   useMerchantRecords,
@@ -408,9 +409,7 @@ export function OrdersPage() {
           <div className="space-y-5">
             {days.map((group) => (
               <div key={group[0].id}>
-                <p className="px-2 pb-1.5 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                  {dayLabel(group[0].createdAt)}
-                </p>
+                <SectionHeader className="px-2 pb-1.5">{dayLabel(group[0].createdAt)}</SectionHeader>
                 <div className="list-group">
                   {group.map((order, i) => (
                     <OrderRow

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { triggerHaptic } from "@/lib/haptics";
 import {
   useMerchantStaff,
@@ -101,9 +102,7 @@ function TenderKeypad({
 
   return (
     <div>
-      <p className="pb-2 text-center text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-        Received · {fmtMinor(minor, currency)}
-      </p>
+      <SectionHeader className="pb-2 text-center">Received · {fmtMinor(minor, currency)}</SectionHeader>
       <div className="mx-auto grid w-full max-w-[420px] grid-cols-3 gap-2">
         {KEYPAD_KEYS.map((key) => (
           <button
@@ -350,9 +349,7 @@ function CashTenderSheetInner({
         {choice === "cash" && (
           <div className="space-y-4">
             <div className="panel-inset px-4 py-3.5 text-center">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                {cashShort ? "Still owed" : "Change due"}
-              </p>
+              <SectionHeader>{cashShort ? "Still owed" : "Change due"}</SectionHeader>
               <p
                 className="mono mt-1 text-[34px] font-semibold leading-none"
                 style={{ color: cashShort ? "#FF9F0A" : "#ffffff" }}
@@ -448,9 +445,7 @@ function CashTenderSheetInner({
         {choice === "split" && (
           <div className="space-y-4">
             <div className="panel-inset px-4 py-3.5 text-center">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                Still to cover
-              </p>
+              <SectionHeader>Still to cover</SectionHeader>
               <p className="mono mt-1 text-[34px] font-semibold leading-none text-white">
                 {fmtMinor(remainingMinor, currency)}
               </p>

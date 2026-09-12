@@ -2515,6 +2515,28 @@ export function QuickAmountChips({
 }
 
 /** An empty list explains what will appear and, when useful, offers the first step. */
+/**
+ * A grouped-list section header: the small uppercase label above a panel or
+ * list-group. One place for the type ramp so every section reads the same.
+ * Padding and the element tag stay per-use via `as` and `className`.
+ */
+export function SectionHeader({
+  children,
+  as: As = "p",
+  className = "",
+  ...rest
+}: {
+  children: React.ReactNode;
+  as?: "p" | "h2" | "h3" | "h4";
+  className?: string;
+} & React.HTMLAttributes<HTMLElement>) {
+  return (
+    <As className={`text-[12px] font-semibold uppercase tracking-wider text-neutral-400 ${className}`} {...rest}>
+      {children}
+    </As>
+  );
+}
+
 export function EmptyState({
   icon,
   title,

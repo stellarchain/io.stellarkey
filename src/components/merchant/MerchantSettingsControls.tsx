@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { SectionHeader } from "@/components/ui";
 import { ModalBody } from "../ui";
 
 export function SettingsSection({
@@ -12,9 +13,7 @@ export function SettingsSection({
 }) {
   return (
     <section className="space-y-2">
-      <h2 className="px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-        {title}
-      </h2>
+      <SectionHeader as="h2" className="px-1">{title}</SectionHeader>
       {children}
     </section>
   );

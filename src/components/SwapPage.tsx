@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useWalletIdentity,
   useWalletLedger,
@@ -584,9 +585,7 @@ export function SwapPage({
           {/* Route Analytics — inline once a route is found */}
           {currentQuote && (
             <div className="panel-inset p-4 space-y-2.5 text-[12.5px]">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 mb-1">
-                Routing & Execution Analytics
-              </p>
+              <SectionHeader className="font-bold mb-1">Routing & Execution Analytics</SectionHeader>
               <button
                 type="button"
                 onClick={() => {
@@ -670,9 +669,7 @@ export function SwapPage({
                 </Notice>
               )}
               <div className="panel-inset p-4 space-y-2.5 text-[13px]">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-                  Review Swap Details & Routing
-                </p>
+                <SectionHeader className="font-bold">Review Swap Details & Routing</SectionHeader>
 
                 {/* Visual Route Flow */}
                 <div className="rounded-xl bg-white/[0.03] border border-white/10 p-2.5 flex items-center justify-between text-[12px]">

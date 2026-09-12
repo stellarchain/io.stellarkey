@@ -89,6 +89,7 @@ import {
   ModalFooter,
   ModalHeader,
   Notice,
+  SectionHeader,
   SegmentedControl,
   Spinner,
   Toggle,
@@ -870,12 +871,8 @@ export function SettingsPage({
             {/* Column 1: Recovery, security, signing, and privacy */}
             <div className="space-y-6">
               <section aria-labelledby="settings-recovery-title">
-                <h2
-                  id="settings-recovery-title"
-                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
-                >
-                  Recovery
-                </h2>
+                <SectionHeader as="h2"
+                  id="settings-recovery-title" className="px-1 pb-2">Recovery</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     icon={<IconLock size={16} />}
@@ -926,12 +923,8 @@ export function SettingsPage({
               </section>
 
               <section aria-labelledby="settings-device-security-title">
-                <h2
-                  id="settings-device-security-title"
-                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
-                >
-                  Device Security
-                </h2>
+                <SectionHeader as="h2"
+                  id="settings-device-security-title" className="px-1 pb-2">Device Security</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     icon={<IconFingerprint size={16} />}
@@ -970,12 +963,8 @@ export function SettingsPage({
               </section>
 
               <section aria-labelledby="settings-signing-security-title">
-                <h2
-                  id="settings-signing-security-title"
-                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
-                >
-                  Signing Security
-                </h2>
+                <SectionHeader as="h2"
+                  id="settings-signing-security-title" className="px-1 pb-2">Signing Security</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     icon={<IconShield size={16} />}
@@ -1017,12 +1006,8 @@ export function SettingsPage({
               </section>
 
               <section aria-labelledby="settings-appearance-title">
-                <h2
-                  id="settings-appearance-title"
-                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
-                >
-                  Appearance
-                </h2>
+                <SectionHeader as="h2"
+                  id="settings-appearance-title" className="px-1 pb-2">Appearance</SectionHeader>
                 <div className="list-group space-y-3 p-3">
                   <div className="flex items-center gap-3 px-1 pt-1">
                     <span
@@ -1060,12 +1045,8 @@ export function SettingsPage({
               </section>
 
               <section aria-labelledby="settings-privacy-feedback-title">
-                <h2
-                  id="settings-privacy-feedback-title"
-                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
-                >
-                  Privacy &amp; Feedback
-                </h2>
+                <SectionHeader as="h2"
+                  id="settings-privacy-feedback-title" className="px-1 pb-2">Privacy &amp; Feedback</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     as="div"
@@ -1091,9 +1072,7 @@ export function SettingsPage({
             {/* Column 2: Accounts & Tools */}
             <div className="space-y-6">
               <div>
-                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                  Accounts
-                </p>
+                <SectionHeader className="px-1 pb-2">Accounts</SectionHeader>
                 <div className="list-group">
                   {activeAccount && (
                     <RowButton
@@ -1125,9 +1104,7 @@ export function SettingsPage({
 
               {/* Merchant — a counter runs from the same account, so it sits with them */}
               <div>
-                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                  Merchant
-                </p>
+                <SectionHeader className="px-1 pb-2">Merchant</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     as="div"
@@ -1182,9 +1159,7 @@ export function SettingsPage({
 
               {/* Network — its own section */}
               <div>
-                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                  Network
-                </p>
+                <SectionHeader className="px-1 pb-2">Network</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     icon={<IconCompass size={16} />}
@@ -1201,9 +1176,7 @@ export function SettingsPage({
               </div>
 
               <div>
-                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                  App
-                </p>
+                <SectionHeader className="px-1 pb-2">App</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     icon={<IconBook size={16} />}
@@ -1230,9 +1203,7 @@ export function SettingsPage({
               </div>
 
               <div>
-                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                  Danger Zone
-                </p>
+                <SectionHeader className="px-1 pb-2">Danger Zone</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     icon={<IconTrash size={16} />}
@@ -1280,9 +1251,7 @@ export function SettingsPage({
           </section>
 
           <section aria-labelledby="settings-legal-title">
-            <h2 id="settings-legal-title" className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-              Trust Center
-            </h2>
+            <SectionHeader as="h2" id="settings-legal-title" className="px-1 pb-2">Trust Center</SectionHeader>
             <div className="list-group">
               {[
                 { label: "About StellarKey", sub: "Architecture and independence", href: PUBLIC_ROUTES.about },
@@ -1311,9 +1280,7 @@ export function SettingsPage({
           </section>
 
           <section aria-labelledby="settings-source-title">
-            <h2 id="settings-source-title" className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-              Open Source &amp; Verification
-            </h2>
+            <SectionHeader as="h2" id="settings-source-title" className="px-1 pb-2">Open Source &amp; Verification</SectionHeader>
             <div className="list-group">
               {[
                 {
@@ -1502,9 +1469,7 @@ export function SettingsPage({
           {/* Archived / Deleted Accounts Section */}
           {archivedAccounts.length > 0 && (
             <div className="mt-6">
-              <p className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                Deleted / Archived Accounts
-              </p>
+              <SectionHeader className="px-1 pb-2">Deleted / Archived Accounts</SectionHeader>
               <div className="list-group">
                 {archivedAccounts.map((acct, i) => (
                   <div
@@ -1661,9 +1626,7 @@ export function SettingsPage({
 
             {accounts.filter((a) => a.id !== activeAccount?.id).length > 0 && (
               <div>
-                <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-2">
-                  Or select one of your accounts
-                </p>
+                <SectionHeader className="mb-2">Or select one of your accounts</SectionHeader>
                 <div className="space-y-1.5">
                   {accounts
                     .filter((a) => a.id !== activeAccount?.id)
@@ -1984,9 +1947,7 @@ export function SettingsPage({
           {/* Connected Hardware Accounts */}
           {accounts.some((a) => a.hardware) && (
             <div>
-              <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                Connected Hardware Accounts
-              </p>
+              <SectionHeader className="px-1 pb-2">Connected Hardware Accounts</SectionHeader>
               <div className="list-group">
                 {accounts
                   .filter((a) => a.hardware)
@@ -2021,9 +1982,7 @@ export function SettingsPage({
 
           {/* Security Best Practices */}
           <div className="panel-inset p-4 space-y-2 text-[12px] text-neutral-300">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-              Hardware Security Checklist
-            </p>
+            <SectionHeader className="font-bold">Hardware Security Checklist</SectionHeader>
             <div className="flex items-center gap-2">
               <span className="text-[#30D158]">✓</span>
               <span>Always verify the destination address and amount on the physical device screen.</span>
@@ -2124,9 +2083,7 @@ export function SettingsPage({
           />
 
           <div className="panel-inset space-y-2.5 p-4 text-[12.5px]">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Live Network Health
-            </p>
+            <SectionHeader>Live Network Health</SectionHeader>
             <div className="flex justify-between text-neutral-300">
               <span>Status</span>
               <span className={`flex items-center gap-1.5 font-medium ${endpointHealth.horizon ? "text-[#30D158]" : "text-neutral-400"}`}>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import QRCode from "qrcode";
 import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import {
@@ -604,9 +605,7 @@ function ReceiptSheetInner({
 
               {/* The hash is the receipt. Everything above it is bookkeeping. */}
               <div className="border-t border-white/[0.08] px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                  Paid by {tenderLabel(order).toLowerCase()}
-                </p>
+                <SectionHeader>Paid by {tenderLabel(order).toLowerCase()}</SectionHeader>
                 {transactionHash ? (
                   <>
                     <div className="mt-2 flex items-center justify-between gap-3">
@@ -842,9 +841,7 @@ function Row({ label, value }: { label: string; value: string }) {
 function DraftPreview({ body }: { body: string }) {
   return (
     <div className="panel-inset max-h-[180px] overflow-y-auto px-3.5 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-        What it carries
-      </p>
+      <SectionHeader>What it carries</SectionHeader>
       <pre className="mono mt-1.5 whitespace-pre-wrap break-words text-[11.5px] leading-relaxed text-neutral-300">
         {body}
       </pre>

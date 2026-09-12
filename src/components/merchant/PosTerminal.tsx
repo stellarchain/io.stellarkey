@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { triggerHaptic } from "@/lib/haptics";
 import {
   useMerchantConfiguration,
@@ -1097,9 +1098,7 @@ export function PosTerminal({
             )}
             <div className="flex items-center gap-3 py-2.5 pl-4 pr-2.5">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                  Total · {itemCount} {itemCount === 1 ? "item" : "items"}
-                </p>
+                <SectionHeader className="truncate">Total · {itemCount} {itemCount === 1 ? "item" : "items"}</SectionHeader>
                 <p className="till-total mono truncate text-[17px] font-semibold leading-tight text-white">
                   {fmtMinor(ticketTotals.totalMinor, currency)}
                 </p>

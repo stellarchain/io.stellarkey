@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useMerchantConfiguration,
   useMerchantReporting,
@@ -318,9 +319,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                 )}
 
                 <div className="border-t border-white/[0.08]">
-                  <p className="px-4 pb-1.5 pt-3.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                    Tax by rate
-                  </p>
+                  <SectionHeader className="px-4 pb-1.5 pt-3.5">Tax by rate</SectionHeader>
                   {taxRows.map((row, index) => {
                     const share = taxTotalMinor > 0 ? (row.minor / taxTotalMinor) * 100 : 0;
                     return (
@@ -837,7 +836,7 @@ function Figure({
 }) {
   return (
     <div className="min-w-0 bg-[var(--color-panel)] px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">{label}</p>
+      <SectionHeader>{label}</SectionHeader>
       <p
         className={`mono mt-0.5 truncate text-[16px] font-semibold ${
           tone === "neg" ? "text-[#FF453A]" : "text-white"

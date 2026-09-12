@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { useWalletContacts } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
 import type { Contact } from "@/lib/contacts";
@@ -181,9 +182,7 @@ export function AddressBookPage({
           {/* Alphabetical sections */}
           {sections.map(([letter, list]) => (
             <div key={letter} className="pt-5 first:pt-0">
-              <p className="px-2 pb-1.5 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                {letter}
-              </p>
+              <SectionHeader className="px-2 pb-1.5">{letter}</SectionHeader>
               <div className="list-group">
                 {list.map((c, i) => (
                   <ContactRow

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { IconChevronDown, IconRefresh, IconShield } from '@/components/icons';
-import { Modal, ModalBody, ModalHeader } from '@/components/ui';
+import { SectionHeader, Modal, ModalBody, ModalHeader } from '@/components/ui';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { PrivacyDisclosure } from './PrivacyDisclosure';
 import { HumanizedErrorNotice, PrivateBalanceStatus } from './PrivateBalanceStatus';
@@ -96,25 +96,19 @@ export function PrivatePaymentsDetailsContent({
   return (
     <ModalBody gap={5}>
       <section aria-labelledby="private-details-status">
-        <h3 id="private-details-status" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-          Current status
-        </h3>
+        <SectionHeader as="h3" id="private-details-status" className="mb-2 px-1">Current status</SectionHeader>
         <PrivateBalanceStatus detailed />
       </section>
 
       <section aria-labelledby="private-details-privacy">
-        <h3 id="private-details-privacy" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-          What stays public
-        </h3>
+        <SectionHeader as="h3" id="private-details-privacy" className="mb-2 px-1">What stays public</SectionHeader>
         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
           <PrivacyDisclosure />
         </div>
       </section>
 
       <section aria-labelledby="private-details-tools">
-        <h3 id="private-details-tools" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-          Manage
-        </h3>
+        <SectionHeader as="h3" id="private-details-tools" className="mb-2 px-1">Manage</SectionHeader>
         <div className="list-group">
           <ManageRow
             icon={<IconRefresh size={17} className={working ? 'animate-spin' : ''} />}

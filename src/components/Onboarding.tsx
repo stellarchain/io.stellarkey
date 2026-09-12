@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { useWalletLifecycleActions } from "@/hooks/useWallet";
 import { createLatestRequestLane } from "@/hooks/useWalletResources";
 import { isEncryptedBackup, looksLikeMnemonic, validateStellarSecret } from "@/lib/vault";
@@ -402,9 +403,7 @@ export function Onboarding() {
                   </p>
                 </div>
               )}
-              <p className="px-1 pb-4 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                {prioritizeRestore ? "Continue your wallet" : "Get started"}
-              </p>
+              <SectionHeader className="px-1 pb-4">{prioritizeRestore ? "Continue your wallet" : "Get started"}</SectionHeader>
               <div className="space-y-2.5">
                 {prioritizeRestore && restorePath}
                 <OnboardPath
@@ -777,9 +776,7 @@ export function Onboarding() {
       </div>
 
       <div>
-        <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-          Word Bank
-        </p>
+        <SectionHeader className="mb-2 px-1">Word Bank</SectionHeader>
         <div className="flex flex-wrap gap-2">
           {wordBank.map((w) => {
             const isPicked = selectedWords.includes(w);

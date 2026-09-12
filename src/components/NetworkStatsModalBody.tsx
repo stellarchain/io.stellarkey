@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useWalletActivity,
   useWalletIdentity,
@@ -105,17 +106,13 @@ export function NetworkStatsModalBody({ onClose, onHeaderChange }: NetworkStatsM
         /* 4-Stat Grid */
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Horizon Response
-            </p>
+            <SectionHeader>Horizon Response</SectionHeader>
             <p className="mono text-[18px] font-bold sm:text-[22px] text-white mt-1">{latencyMs === null ? "—" : `${latencyMs}ms`}</p>
             <p className="text-[11px] text-neutral-400 mt-0.5">Measured from this browser</p>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Accepted Base Fee
-            </p>
+            <SectionHeader>Accepted Base Fee</SectionHeader>
             <p className="mono text-[18px] font-bold sm:text-[22px] text-white mt-1">
               {acceptedFeeXlm ?? "—"} XLM
             </p>
@@ -126,17 +123,13 @@ export function NetworkStatsModalBody({ onClose, onHeaderChange }: NetworkStatsM
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Loaded Activity
-            </p>
+            <SectionHeader>Loaded Activity</SectionHeader>
             <p className="mono text-[18px] font-bold sm:text-[22px] text-white mt-1">{totalTxCount}</p>
             <p className="text-[11px] text-neutral-400 mt-0.5">Operations loaded in this session</p>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Smart Contracts Engine
-            </p>
+            <SectionHeader>Smart Contracts Engine</SectionHeader>
             <p className="mt-1 text-[18px] font-bold text-white sm:text-[22px]">Soroban</p>
             <p className="text-[11px] text-purple-400 mt-0.5">Rust WASM Virtual Machine</p>
           </div>
@@ -147,9 +140,7 @@ export function NetworkStatsModalBody({ onClose, onHeaderChange }: NetworkStatsM
 
       {/* Live account reserve */}
       <div className="panel-inset p-4 space-y-2 text-[12.5px]">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-          Active Account Reserve
-        </p>
+        <SectionHeader>Active Account Reserve</SectionHeader>
         <div className="flex justify-between text-neutral-300">
           <span>Current Minimum Balance</span>
           <span className="mono font-semibold text-white">
