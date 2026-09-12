@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
-
-- Refreshed private-manifest toolchain provenance to cover the canonical reproduction host guard; contract and proving artifacts are unchanged.
-
 ## [1.5.0] - 2026-09-12
 
 ### Added
@@ -66,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Refreshed private-manifest toolchain provenance to cover the canonical reproduction host guard; contract and proving artifacts are unchanged.
 - Receipt SMS and email drafts encode recipient input so it cannot append draft parameters, replace receipt text or introduce URI fragments.
 - Enabled immutable GitHub releases so newly published release assets and their tags cannot be replaced.
 - Updated ESLint's YAML parser to js-yaml 4.3.2 and included development dependencies in the application high/critical security gate.
