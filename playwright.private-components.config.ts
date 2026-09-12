@@ -8,6 +8,9 @@ import base from './playwright.config';
 
 export default defineConfig({
   ...base,
+  // Independent files/contexts share one runner-owned server and fixture.
+  // Preserve per-file ordering; never launch concurrent fixture owners here.
+  workers: 2,
   metadata: { ...base.metadata, requiredSyntheticComponents: true },
   testMatch: ['private-components.spec.ts', 'private-direct.spec.ts', 'ux-primitives.spec.ts', 'qr-freshness.spec.ts', 'modal-ownership.spec.ts', 'merchant-feedback.spec.ts', 'private-recovery.spec.ts'],
   globalTeardown: './e2e/fixtures/private-components-teardown.mjs',
