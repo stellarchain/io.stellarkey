@@ -152,6 +152,16 @@ test("generated-artifact checks install their complete toolchain in the same job
   }
 });
 
+test("hosted application gates allow the complete private and public browser matrix", () => {
+  const ciVerify = read(".github/workflows/ci.yml").split("\n  verify:")[1];
+  const release = read(".github/workflows/release.yml").split("\n  release:")[1].split("\n  deploy:")[0];
+  for (const job of [ciVerify, release]) {
+    assert.match(job, /timeout-minutes: 90/,
+      "cold toolchain installs and the complete synthetic browser matrix need a 90-minute job budget");
+    assert.doesNotMatch(job, /continue-on-error:\s*true|--grep-invert|--max-failures/);
+  }
+});
+
 test("the isolated Private Payments Gate A installs its internal browser package", () => {
   const circuits = JSON.parse(
     read("protocol/private-balance/circuits/package.json"),
