@@ -21,6 +21,30 @@ Repository configuration is part of the release boundary even though it cannot b
 
 The checked-in Dependabot configuration and SHA-pinned workflows express intent; they do not prove that these dashboard controls are still active.
 
+#### Configuration read-back — 2026-09-12
+
+GitHub API read-backs confirmed these settings on `stellarchain/io.stellarkey`:
+
+- `main` requires an up-to-date branch and the GitHub Actions checks `verify`,
+  `Private Balance Gate A` and `Private Balance Rust Security` (app 15368).
+  One approving review, approval of the latest push, dismissal of stale reviews,
+  and resolved conversations are required. Administrators are included;
+  force pushes and deletion are disabled.
+- The active [Immutable release tags rule](https://github.com/stellarchain/io.stellarkey/rules/23045616)
+  blocks updates and deletion of `refs/tags/v*`, with no bypass actors.
+- Dependabot alerts and security updates, secret scanning and push protection
+  are enabled. CodeQL default setup is configured on a weekly schedule for
+  JavaScript/TypeScript, Actions and Rust. Its
+  [initial setup analyses](https://github.com/stellarchain/io.stellarkey/actions/runs/34693212497)
+  completed successfully against the then-published default branch.
+- The existing `production` environment remains restricted to `v*` tags.
+  It has no required reviewer; the separate trusted-maintainer approval,
+  hardware/distribution and physical-device requirements above still apply.
+
+This is a dated configuration snapshot, not evidence that an unpublished local
+commit passed hosted CI or that the new release was published. Recheck settings
+and required checks at promotion; this work did not publish a branch or tag.
+
 ## 2. Trezor production gate
 
 The source retains optional Trezor support, but `@trezor/connect-web` is separately licensed. Before distributing a production bundle containing it, obtain and archive written permission or authorization for the intended public distribution, or replace it with a permissibly licensed integration. Confirm the registered Trezor production origin is exactly `https://stellarkey.io`, the popup flow works from that origin, and the current dependency license notice is shipped. This is a release blocker, not a documentation-only check.
