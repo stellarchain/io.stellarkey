@@ -335,6 +335,35 @@ test('post-broadcast polling is a read-only trigger for canonical reconciliation
   assert.deepEqual(failedStatuses, ['FAILED', 'FAILED', 'FAILED', 'FAILED', 'FAILED']);
 });
 
+for (const boundary of ['start', 'sleep', 'rpc', 'rpc-error', 'reconcile', 'reconcile-error']) {
+  test(`broadcast poll revocation at ${boundary} cannot make another request or report confirmation`, async () => {
+    let active = boundary !== 'start';
+    let requests = 0;
+    let reconciliations = 0;
+    const cancelled = new DOMException('Synthetic watcher authority revoked', 'AbortError');
+    await assert.rejects(pollBroadcastPrivateBalanceTransaction({
+      transactionHash: 'ab'.repeat(32),
+      assertCurrent: () => { if (!active) throw cancelled; },
+      delays: [0, 0, 0],
+      sleep: async () => { if (boundary === 'sleep') active = false; },
+      rpc: { getTransaction: async () => {
+        requests++;
+        if (boundary.startsWith('rpc')) active = false;
+        if (boundary === 'rpc-error') throw new Error('Synthetic transport failure');
+        return { status: 'SUCCESS' };
+      } },
+      reconcile: async () => {
+        reconciliations++;
+        active = false;
+        if (boundary === 'reconcile-error') throw new Error('Synthetic canonical sync failure');
+        return true;
+      },
+    }), error => error === cancelled);
+    assert.equal(requests, ['start', 'sleep'].includes(boundary) ? 0 : 1);
+    assert.equal(reconciliations, boundary.startsWith('reconcile') ? 1 : 0);
+  });
+}
+
 test('accepted private broadcasts remain conservatively journaled across a concurrent state revision', async () => {
   class MemoryDriver {
     records = new Map();

@@ -13,6 +13,7 @@ import { PrivateBalanceWorkerClient } from '../src/features/private-balance/work
 import { humanizePrivateError } from '../src/features/private-balance/copy.ts';
 import { assertSamePrivateFeePayer, privateActionClassicFeeStroops, MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from '../src/features/private-balance/runtime/fee-policy.ts';
 import { planPrivateChainedSend } from '../src/features/private-balance/runtime/chained-send.ts';
+import { pollBroadcastPrivateBalanceTransaction } from '../src/features/private-balance/runtime/submission.ts';
 
 const manifest = JSON.parse(readFileSync(new URL('../protocol/private-balance/manifests/development.json', import.meta.url), 'utf8'));
 const source = readFileSync(new URL('../src/features/private-balance/runtime/provider.tsx', import.meta.url), 'utf8');
@@ -85,6 +86,121 @@ async function setup(t) {
     replaceWorker: () => { env.workerRef.current = makeWorker().client; env.workerIdentityRef.current = { address: 'synthetic-replacement-address' }; },
   };
 }
+
+async function setupWatcher(t) {
+  const h = await setup(t);
+  Object.assign(h.state, {
+    outgoingHistoryMode: 'recoverable', notes: [], activities: [],
+    recentPrivateRecipients: [], spendRecovery: null,
+    account: { lastVerifiedActionIndex: 0 },
+  });
+  h.state.pendingActions[0].status = 'ambiguous';
+  Object.assign(h.calls, { lookup: 0, read: 0, recover: 0, commit: 0, publication: 0 });
+  h.boundary = async () => {};
+  h.rpc = { getTransaction: async () => {
+    h.calls.lookup++;
+    await h.boundary('rpc');
+    return { status: 'FAILED' };
+  } };
+  let polling;
+  h.env.pollBroadcastPrivateBalanceTransaction = input => {
+    polling = pollBroadcastPrivateBalanceTransaction({
+      ...input, delays: [0, 0], sleep: async () => h.boundary('sleep'),
+    });
+    return polling;
+  };
+  h.env.performSyncRef.current = async () => { h.calls.sync++; await h.boundary('sync'); };
+  h.env.loadPrivateBalanceState = async () => { h.calls.read++; await h.boundary('read'); return h.state; };
+  h.env.recoverPrivateBalanceAction = async input => {
+    h.calls.recover++;
+    await input.scanCanonicalTranscript();
+    await h.boundary('recovery');
+    // This is an already-authorized canonical journal commit, not UI state.
+    h.state.pendingActions = [];
+    h.calls.commit++;
+    return { state: h.state };
+  };
+  h.env.setOutgoingHistoryModeState = () => { h.calls.publication++; };
+  h.env.dispatch = () => { h.calls.publication++; };
+  h.env.setSnapshot = () => { h.calls.publication++; };
+  h.env.verifiedBalance = () => 0n;
+  h.env.reflectDurableState = callback('reflectDurableState', h.env);
+  h.start = () => {
+    callback('watchBroadcastOutcome', h.env)('synthetic-deposit', 'ab'.repeat(32), h.rpc, manifest, {});
+    return polling;
+  };
+  return h;
+}
+
+async function revokeWatcher(h, reason) {
+  if (reason === 'lock' || reason === 'lock-ABA') {
+    lockVault();
+    if (reason === 'lock-ABA') await unlockVault(h.password);
+  } else if (reason === 'lease' || reason === 'lease-ABA') {
+    h.env.leaderRef.current = false;
+    h.env.runtimeAuthorityEpochRef.current++;
+    if (reason === 'lease-ABA') h.env.leaderRef.current = true;
+  } else if (reason === 'scope') h.env.stealthScopeRef.current = {};
+  else if (reason === 'rpc') h.changeRpc();
+  else if (reason === 'unmount') h.env.providerMountedRef.current = false;
+}
+
+for (const stage of ['sync', 'read', 'recovery']) {
+  for (const reason of ['lock', 'lock-ABA', 'lease', 'lease-ABA', 'scope', 'rpc', 'unmount']) {
+    test(`detached outcome watcher cannot publish after ${reason} during ${stage}`, async t => {
+      const h = await setupWatcher(t);
+      h.boundary = async current => { if (current === stage) await revokeWatcher(h, reason); };
+      await assert.rejects(h.start(), /revoked|context changed/i);
+      assert.equal(h.calls.publication, 0, 'No private reducer, preference or snapshot publication survives revocation');
+      assert.equal(h.calls.read, stage === 'sync' ? 0 : 1);
+      assert.equal(h.calls.recover, stage === 'recovery' ? 1 : 0);
+      assert.equal(h.calls.commit, stage === 'recovery' ? 1 : 0, 'An authorized durable commit is not undone');
+      assert.equal(h.state.pendingActions.length, stage === 'recovery' ? 0 : 1);
+      assert.equal(h.calls.lookup, 1, 'A retired watcher does not poll again');
+    });
+  }
+}
+
+test('detached outcome watcher checks ownership before its next RPC request', async t => {
+  const h = await setupWatcher(t);
+  h.boundary = async stage => { if (stage === 'sleep') await revokeWatcher(h, 'lock-ABA'); };
+  await assert.rejects(h.start(), /revoked|context changed/i);
+  assert.equal(h.calls.lookup + h.calls.read + h.calls.publication, 0);
+  assert.equal(h.state.pendingActions.length, 1);
+});
+
+test('detached recovery waits for the runtime mutex and checks ownership before borrowing a key', async t => {
+  const h = await setupWatcher(t);
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const holder = h.env.mutexRef.current.runExclusive(() => gate);
+  const polling = h.start();
+  // Observe the eventual rejection even while the mutex owner still drains.
+  const rejected = assert.rejects(polling, /revoked|context changed/i);
+  await new Promise(resolve => setImmediate(resolve));
+  await revokeWatcher(h, 'lease-ABA');
+  release();
+  await holder;
+  await rejected;
+  assert.equal(h.calls.read + h.calls.recover + h.calls.publication, 0);
+});
+
+test('a current outcome watcher reconciles once despite a completed proof worker failing', async t => {
+  const h = await setupWatcher(t);
+  h.initial.crash();
+  assert.equal(await h.start(), 'confirmed');
+  assert.equal(h.calls.commit, 1);
+  assert.equal(h.calls.publication, 7);
+  assert.equal(h.state.pendingActions.length, 0);
+});
+
+test('an unavailable canonical synchronizer leaves a submitted action pending', async t => {
+  const h = await setupWatcher(t);
+  h.env.performSyncRef.current = null;
+  assert.equal(await h.start(), 'pending');
+  assert.equal(h.calls.read + h.calls.recover + h.calls.publication, 0);
+  assert.equal(h.state.pendingActions.length, 1);
+});
 
 test('Add funds preserves the actual worker crash and runs recovery without retrying the action', async t => {
   const h = await setup(t);

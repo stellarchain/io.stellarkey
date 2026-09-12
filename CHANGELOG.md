@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Detached private-payment status watchers stop publishing after wallet lock, account or endpoint changes, lost tab ownership, or unmount, while preserving already-authorized canonical transaction tracking.
 - Payment signing uses the exact reviewed transaction and rechecks account, network, session and password policy. Multisig edits use canonical signer state; hardware approvals cannot survive a wallet lock.
 - Lock and session changes revoke pending unlocks, signing, discovery and queued edits. Inactivity locking covers recovery screens and device sleep; full reset clears wallet-owned browser storage.
 - New and changed passwords require a Good or Strong rating; existing passwords still unlock. Vault revisions and password/PIN backoff reject stale writes and throttle repeated guesses.
