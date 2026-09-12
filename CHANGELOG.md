@@ -7,15 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Hosted application checks allow enough time for cold toolchain installation and the complete private and public browser matrix, without skipping verification gates.
-- Private contract artifact builds explicitly use the pinned Rust toolchain, including isolated reproducibility checks on clean CI runners.
-
-### Security
-
-- Receipt SMS and email drafts encode recipient input so it cannot append draft parameters, replace receipt text or introduce URI fragments.
-
 ## [1.5.0] - 2026-09-12
 
 ### Added
@@ -45,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Hosted application checks allow enough time for cold toolchain installation and the complete private and public browser matrix, without skipping verification gates.
+- Private contract artifact builds explicitly use the pinned Rust toolchain, including isolated reproducibility checks on clean CI runners.
 - CI and release runners install the Linux system libraries required to build the pinned Stellar CLI with its default features.
 - Appearance choices survive blocked browser storage and stay synchronized across open tabs; corrected text and control contrast in both themes.
 - Claim-review fee details remain legible in light mode; inactive tab and segmented-control labels have stronger contrast on translucent dark panels.
@@ -63,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Receipt SMS and email drafts encode recipient input so it cannot append draft parameters, replace receipt text or introduce URI fragments.
 - Enabled immutable GitHub releases so newly published release assets and their tags cannot be replaced.
 - Updated ESLint's YAML parser to js-yaml 4.3.2 and included development dependencies in the application high/critical security gate.
 - Enabled repository secret scanning, push protection, Dependabot security fixes and CodeQL analysis; protected main-branch review/CI requirements and immutable release tags.
