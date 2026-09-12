@@ -1330,7 +1330,8 @@ function usePopover({
   }, [closing]);
 
   // Position against the anchor; flip above when space below runs out.
-  useEffect(() => {
+  // Commit the portal before paint so opening focus cannot overtake a later Tab.
+  useLayoutEffect(() => {
     if (!open) return;
     function update() {
       const anchor = anchorRef.current;
