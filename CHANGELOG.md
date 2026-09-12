@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Receipt SMS and email drafts encode recipient input so it cannot append draft parameters, replace receipt text or introduce URI fragments.
+
 ## [1.5.0] - 2026-09-12
 
 ### Added
