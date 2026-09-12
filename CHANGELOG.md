@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- CI and release runners install the Linux system libraries required to build the pinned Stellar CLI with its default features.
+
 ## [1.5.0] - 2026-09-12
 
 ### Added

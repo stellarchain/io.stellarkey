@@ -40,6 +40,10 @@ jobs:
           cargo +1.97.1 build --manifest-path "$RUNNER_TEMP/circom_civer/Cargo.toml" --release -p civer_circom
       - run: cargo +1.97.1 install --git https://github.com/iden3/circom.git --tag v2.2.3 --locked circom
       - run: cargo +1.97.1 install circomspect --version 0.9.0 --locked
+      - name: Install Stellar CLI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends pkg-config libdbus-1-dev libudev-dev
       - run: cargo +1.97.1 install stellar-cli --version 27.0.0 --locked
       - run: rustup target add wasm32v1-none --toolchain 1.97.1
       - run: corepack npm --prefix protocol/private-balance/circuits ci
@@ -77,6 +81,10 @@ jobs:
       - run: corepack npm ci
       - run: corepack npm --prefix protocol/private-balance/circuits ci
       - run: rustup toolchain install 1.97.1 --profile minimal
+      - name: Install Stellar CLI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends pkg-config libdbus-1-dev libudev-dev
       - run: cargo +1.97.1 install stellar-cli --version 27.0.0 --locked
       - run: npm run private:check-generated
       - run: npx playwright install --with-deps chromium webkit
