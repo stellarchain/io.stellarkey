@@ -108,4 +108,3 @@ test('appearance controls and settings retain automated accessibility in both th
     expect(blocking, 'Appearance settings have blocking structural accessibility violations').toEqual([]);
   }
 });
-
