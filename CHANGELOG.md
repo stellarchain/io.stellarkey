@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Hosted application checks allow enough time for cold toolchain installation and the complete private and public browser matrix, without skipping verification gates.
 - Private contract artifact builds explicitly use the pinned Rust toolchain, including isolated reproducibility checks on clean CI runners.
 
 ### Security
