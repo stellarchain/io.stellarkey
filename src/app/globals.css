@@ -32,6 +32,73 @@
   --motion-ease-enter: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/* The app is client-rendered, so a pre-paint script (see the root layout) sets
+   data-theme to the resolved theme. Dark is the base; light overrides the color
+   variables. Every color utility in the app resolves through these variables
+   (Tailwind v4), so flipping them re-themes the whole surface without touching
+   component classes. */
+:root {
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Semantic tokens */
+  --color-bg: #f2f2f7;
+  --color-panel: #ffffff;
+  --color-raised: #ffffff;
+  --color-line: rgba(60, 60, 67, 0.29);
+  --color-line-strong: rgba(60, 60, 67, 0.5);
+  --color-ink: #1c1c1e;
+  --color-muted: rgba(60, 60, 67, 0.62);
+  --color-faint: rgba(60, 60, 67, 0.5);
+  --color-accent: #007aff;
+  --color-accent-2: #0a84ff;
+  --color-pos: #248a3d;
+  --color-neg: #d70015;
+  --color-warn: #b25000;
+
+  /* App-surface tokens (used by the custom component classes below). */
+  --color-elevated: rgba(255, 255, 255, 0.86);
+  --color-fill: rgba(120, 120, 128, 0.12);
+  --color-fill-strong: rgba(120, 120, 128, 0.2);
+  --color-hairline: rgba(0, 0, 0, 0.1);
+  --color-hairline-strong: rgba(0, 0, 0, 0.16);
+  --color-scrim: 248, 248, 250;
+
+  /* Tailwind base palette, flipped. text-white -> dark ink, bg-white/x -> a
+     dark tint, border-white/x -> a dark hairline, bg-black -> light. */
+  --color-white: #1c1c1e;
+  --color-black: #ffffff;
+  --color-neutral-50: #1c1c1e;
+  --color-neutral-100: #1c1c1e;
+  --color-neutral-200: #2c2c2e;
+  --color-neutral-300: #3a3a3c;
+  --color-neutral-400: #6c6c70;
+  --color-neutral-500: #8e8e93;
+  --color-neutral-600: #aeaeb2;
+  --color-neutral-700: #c7c7cc;
+  --color-neutral-800: #e5e5ea;
+  --color-neutral-900: #f2f2f7;
+  --color-neutral-950: #ffffff;
+
+  /* On-colour foreground: stays light so text/icons on a filled accent, positive,
+     negative or warning surface keep their contrast when white is flipped. */
+  --color-oncolor: #ffffff;
+}
+
+/* Dark surface tokens, so the custom classes can reference one set of names. */
+:root {
+  --color-elevated: rgba(44, 44, 46, 0.72);
+  --color-fill: rgba(118, 118, 128, 0.18);
+  --color-fill-strong: rgba(118, 118, 128, 0.24);
+  --color-hairline: rgba(255, 255, 255, 0.08);
+  --color-hairline-strong: rgba(255, 255, 255, 0.14);
+  --color-scrim: 18, 18, 20;
+  --color-oncolor: #ffffff;
+}
+
 .app-safe-top {
   padding-top: var(--app-safe-area-top);
 }

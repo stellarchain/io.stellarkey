@@ -44,6 +44,7 @@ import {
 } from "@/lib/transaction-review";
 import { assertCanAddTransactionSignature } from "@/lib/multisig";
 import { loadSoundPref, saveSoundPref } from "@/lib/sounds";
+import { getStoredThemePreference, setThemePreference, type ThemePreference } from "@/lib/theme";
 import {
   BACKUP_HEALTH_CHANGED_EVENT,
   loadBackupHealth,
@@ -260,6 +261,7 @@ export function SettingsPage({
   }, [sub]);
 
   const [soundEnabled, setSoundEnabled] = useState(() => loadSoundPref());
+  const [themePref, setThemePref] = useState<ThemePreference>(() => getStoredThemePreference());
   const [backupHealth, setBackupHealth] = useState<BackupHealth | null>(null);
   const [passkeyConfigured, setPasskeyConfigured] = useState(() => hasPasskeyUnlock());
   const [passkeyAvailable] = useState(() => canOfferPasskeyUnlock());
@@ -1010,6 +1012,49 @@ export function SettingsPage({
                       navigateToSub("airsigner");
                     }}
                     sep
+                  />
+                </div>
+              </section>
+
+              <section aria-labelledby="settings-appearance-title">
+                <h2
+                  id="settings-appearance-title"
+                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
+                >
+                  Appearance
+                </h2>
+                <div className="list-group space-y-3 p-3">
+                  <div className="flex items-center gap-3 px-1 pt-1">
+                    <span
+                      aria-hidden="true"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
+                      style={{ background: "#5E5CE6" }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
+                        <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" />
+                      </svg>
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[13.5px] font-semibold text-white">Theme</p>
+                      <p className="text-[12px] leading-relaxed text-neutral-400">
+                        Match your device, or always use light or dark.
+                      </p>
+                    </div>
+                  </div>
+                  <SegmentedControl<ThemePreference>
+                    ariaLabel="Appearance"
+                    value={themePref}
+                    onChange={(next) => {
+                      triggerHaptic("selection");
+                      setThemePref(next);
+                      setThemePreference(next);
+                    }}
+                    options={[
+                      { value: "system", label: "System" },
+                      { value: "light", label: "Light" },
+                      { value: "dark", label: "Dark" },
+                    ]}
                   />
                 </div>
               </section>
