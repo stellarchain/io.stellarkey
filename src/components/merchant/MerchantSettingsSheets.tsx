@@ -283,7 +283,7 @@ export function MerchantSettingsSheetContent({
             </Notice>
           )}
           <div className="list-group">
-            <SettingsRow
+            <ChoiceRow
               first
               icon={<IconWallet size={16} />}
               tint="#30D158"
@@ -296,14 +296,14 @@ export function MerchantSettingsSheetContent({
             >
               <Select
                 size="sm"
-                className="shrink-0"
+                className="w-full"
                 value={settings.receivingPublicKey ?? ""}
                 options={accountOptions}
                 placeholder="Choose"
                 ariaLabel="Receiving account"
                 onChange={(receivingPublicKey) => void saveSettings({ receivingPublicKey })}
               />
-            </SettingsRow>
+            </ChoiceRow>
             <NoteRow>
               Changing this account requires your wallet password. Existing unpaid requests stop
               accepting automatic settlement until they are replaced or the original account is
