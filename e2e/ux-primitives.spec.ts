@@ -61,6 +61,16 @@ test('integration safety: sheet surfaces permit pinch zoom', async ({ page }) =>
   expect(permitted.every(Boolean)).toBe(true);
 });
 
+test('integration safety: sheet handles suppress native text drag without disabling body selection', async ({ page }) => {
+  const dialog = await safetySheet(page);
+  for (const handle of await dialog.locator('[data-sheet-handle]').all()) {
+    await expect.poll(() => handle.evaluate(node => ['user-select', '-webkit-user-select']
+      .some(property => getComputedStyle(node).getPropertyValue(property) === 'none'))).toBe(true);
+  }
+  await expect.poll(() => dialog.getByTestId('synthetic-scroll-content').evaluate(node => ['user-select', '-webkit-user-select']
+    .some(property => getComputedStyle(node).getPropertyValue(property) === 'none'))).toBe(false);
+});
+
 test('integration safety: a cancelled confirmation cannot invoke its retained action', async ({ page }) => {
   await safetySheet(page);
   await page.getByRole('button', { name: 'Open synthetic confirmation', exact: true }).click();
