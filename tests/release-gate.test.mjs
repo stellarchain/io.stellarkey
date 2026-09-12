@@ -113,23 +113,16 @@ test("CI, releases, and the scheduled Gate B execute the private Rust models", (
   );
 });
 
-test("every Linux Stellar CLI build installs its system prerequisites in the same job", () => {
+test("every CLI-consuming CI job installs the checksum-verified complete CLI", () => {
   for (const file of [".github/workflows/ci.yml", ".github/workflows/release.yml"]) {
     const jobs = read(file)
       .split(/\n(?= {2}[a-z][a-z0-9-]*:\s*\n)/)
-      .filter((job) => /cargo \+1\.97\.1 install stellar-cli/.test(job));
+      .filter((job) => /uses: \.\/\.github\/actions\/setup-stellar-cli/.test(job));
     assert.equal(jobs.length, 2, `${file} must cover both application and circuit jobs`);
 
     for (const job of jobs) {
       assert.match(job, /runs-on: ubuntu-latest/);
-      const install = job.indexOf("cargo +1.97.1 install stellar-cli --version 27.0.0 --locked");
-      const prerequisites = job.indexOf("name: Install Stellar CLI build dependencies");
-      assert.ok(prerequisites >= 0 && prerequisites < install,
-        `${file}: install Linux prerequisites before building the pinned CLI`);
-      const setup = job.slice(prerequisites, install);
-      assert.match(setup, /sudo apt-get update/);
-      assert.match(setup, /sudo apt-get install --yes --no-install-recommends pkg-config libdbus-1-dev libudev-dev/);
-      assert.doesNotMatch(job, /install stellar-cli[^\n]*--no-default-features/);
+      assert.doesNotMatch(job, /cargo[^\n]*install stellar-cli|--no-default-features/);
     }
   }
 });
@@ -143,12 +136,14 @@ test("generated-artifact checks install their complete toolchain in the same job
   assert.match(ciVerify, /fetch-depth: 0/);
   for (const job of [ciVerify, releaseJob]) {
     assert.match(job, /rustup toolchain install 1\.97\.1 --profile minimal/);
-    assert.match(job, /cargo \+1\.97\.1 install stellar-cli --version 27\.0\.0 --locked/);
+    assert.match(job, /uses: \.\/\.github\/actions\/setup-stellar-cli/);
     assert.match(job, /corepack npm --prefix protocol\/private-balance\/circuits ci/);
     assert.match(
       job,
-      /corepack npm --prefix protocol\/private-balance\/circuits ci[\s\S]*npm run private:check-generated/,
+      /corepack npm --prefix protocol\/private-balance\/circuits ci[\s\S]*npm run (?:verify:application|release:verify)/,
     );
+    assert.doesNotMatch(job, /run: npm run private:check-generated/,
+      "the shared application gate owns the generated-file check exactly once");
   }
 });
 
@@ -271,7 +266,7 @@ test("private proving artifacts are provenance-checked in local, CI, and release
   assert.match(manifestValidator, /parsed\.release\.deploymentTransactions\.length === 0/);
   assert.match(generatedCheck, /protocol\/private-balance\/packages\/browser\/dist/);
   for (const workflow of [ci, release]) {
-    assert.match(workflow, /npm run private:check-generated/);
+    assert.match(workflow, /npm run (?:verify:application|release:verify)/);
     assert.match(workflow, /npm run private:check-reproducible/);
   }
   assert.match(release, /cargo \+1\.97\.1 install cargo-deny --version 0\.20\.2 --locked/);

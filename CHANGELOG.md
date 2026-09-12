@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- CI installs checksum-verified official Stellar CLI archives, validates cache hits before use, and runs generated-file verification once within the complete application gate.
+
 ### Fixed
 
 - Select and menu opening focus no longer overtakes rapid Tab navigation to the next control.
