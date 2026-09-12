@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useState, type RefObject } from "react";
+import { SectionHeader } from "@/components/ui";
 import { useWalletIdentity } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
 import { MAX_ACCOUNT_LABEL_CHARS } from "@/lib/backup-schema";
@@ -75,9 +76,7 @@ export function RenameAccountModalBody({
     >
       <ModalBody>
         <div>
-          <span className="block text-[11.5px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
-            Preset &amp; Emoji
-          </span>
+          <SectionHeader as="span" className="block mb-2">Preset &amp; Emoji</SectionHeader>
           <div className="flex flex-wrap items-center gap-1.5">
             {LABEL_PRESETS.map((preset) => (
               <button

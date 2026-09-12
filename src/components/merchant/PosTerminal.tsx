@@ -160,9 +160,7 @@ function Keypad({
   return (
     <div>
       <div className="flex flex-col items-center py-4">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-          {label}
-        </span>
+        <SectionHeader as="span">{label}</SectionHeader>
         <span className="mono mt-1.5 text-[34px] font-semibold leading-none text-white">
           {fmtMinor(minor, currency)}
         </span>

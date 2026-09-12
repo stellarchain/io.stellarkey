@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { useWalletIdentity } from "@/hooks/useWallet";
 import { hasMnemonic, isValidPublicAddress, validateStellarSecret } from "@/lib/vault";
 import { triggerHaptic } from "@/lib/haptics";
@@ -223,9 +224,7 @@ export function AddAccountModalBody({
       />
 
       <div>
-        <span className="block text-[11.5px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
-          Account Preset & Emoji
-        </span>
+        <SectionHeader as="span" className="block mb-2">Account Preset & Emoji</SectionHeader>
         <div className="flex flex-wrap items-center gap-1.5">
           {LABEL_PRESETS.map((preset) => (
             <button

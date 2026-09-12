@@ -383,9 +383,7 @@ function CashTenderSheetInner({
                     : "bg-white/[0.08] text-white hover:bg-white/[0.13]"
                 }`}
               >
-                <span className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                  Exact
-                </span>
+                <SectionHeader as="span" className="block">Exact</SectionHeader>
                 <span className="mono">{minorToDecimal(totalMinor)}</span>
               </button>
               {quick.map((amount) => (

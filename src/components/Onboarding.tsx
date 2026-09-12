@@ -666,9 +666,7 @@ export function Onboarding() {
 
         <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              {revealedKind === "mnemonic" ? "Recovery Phrase" : "Secret Key"}
-            </span>
+            <SectionHeader as="span">{revealedKind === "mnemonic" ? "Recovery Phrase" : "Secret Key"}</SectionHeader>
             <CopyButton value={revealed ?? ""} label="Copy" sensitive />
           </div>
           {revealedKind === "mnemonic" ? (

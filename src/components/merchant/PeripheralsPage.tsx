@@ -187,9 +187,7 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
       {/* ---------------- header ---------------- */}
       <div className="flex items-center justify-between pb-1 pt-2">
         <IOSBackButton onClick={onBack} label="Back to Merchant settings" />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-          Merchant
-        </span>
+        <SectionHeader as="span">Merchant</SectionHeader>
         <span className="w-11" aria-hidden />
       </div>
 
