@@ -56,9 +56,9 @@ export function LockScreen() {
   return (
     <div
       data-app-surface
-      className="app-safe-top app-safe-top-pad-12 mx-auto flex min-h-screen w-full max-w-sm sm:max-w-md flex-col items-center justify-center px-6 py-12"
+      className="app-safe-top app-safe-top-pad-12 mx-auto flex min-h-screen w-full max-w-3xl flex-col items-center justify-center py-12"
     >
-      <div className={`w-full ${shaking ? "shake" : ""}`}>
+      <div className={`w-full max-w-sm px-6 sm:max-w-md ${shaking ? "shake" : ""}`}>
         <div className="flex flex-col items-center text-center">
           <LogoMark size={56} />
           <h1 className="display-h mt-4 text-[26px] font-bold text-white">{BRAND_NAME}</h1>
@@ -155,7 +155,9 @@ export function LockScreen() {
         open={confirmReset}
         onClose={() => setConfirmReset(false)}
       />
-      <PublicFooter compact showBuildIdentity={false} />
+      <div className="w-full px-6">
+        <PublicFooter compact showBuildIdentity={false} />
+      </div>
     </div>
   );
 }
