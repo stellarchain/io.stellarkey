@@ -2153,7 +2153,7 @@ export function SegmentedControl<T extends string>({
                 ? "cursor-not-allowed text-neutral-400"
                 : active
                 ? "bg-white/[0.18] text-white shadow-sm font-semibold"
-                : "text-neutral-400 hover:text-white"
+                : "text-neutral-300 hover:text-white"
             }`}
           >
             {opt.label}
@@ -2257,7 +2257,7 @@ export function Tabs<T extends string>({
                   ? "cursor-not-allowed text-neutral-400"
                   : active
                     ? "bg-white/[0.18] font-semibold text-white shadow-sm"
-                    : "text-neutral-400 hover:text-white"
+                    : "text-neutral-300 hover:text-white"
               }`}
             >
               {option.label}
