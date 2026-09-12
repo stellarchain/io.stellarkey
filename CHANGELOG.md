@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Expand modal focus regression coverage for delayed returns, unavailable destinations and newer dialogs.
-
 ## [1.5.0] - 2026-09-12
 
 ### Added
@@ -23,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Expand modal focus regression coverage for delayed returns, unavailable destinations and newer dialogs.
 - Verify short dialog exits at the closing commit as well as rendered frames, retaining animation and geometry checks.
 - Synthetic component checks run in two isolated browser workers while retaining the complete Chromium/WebKit matrix and one exclusive fixture owner.
 - CI installs checksum-verified official Stellar CLI archives, validates cache hits before use, and runs generated-file verification once within the complete application gate.
