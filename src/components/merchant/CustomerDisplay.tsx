@@ -246,7 +246,7 @@ function CustomerDisplayInner({
                   aria-label={key === "backspace" ? "Backspace" : key}
                   onClick={() => pressPin(key)}
                   disabled={checking}
-                  className="flex min-h-[56px] items-center justify-center rounded-2xl bg-white/[0.08] text-[26px] font-medium leading-none text-white transition-[transform,background-color] hover:bg-white/[0.13] active:scale-95 disabled:opacity-50"
+                  className="flex min-h-[56px] items-center justify-center rounded-2xl bg-white/[0.08] text-[26px] font-medium leading-none text-[var(--color-oncolor)] transition-[transform,background-color] hover:bg-white/[0.13] active:scale-95 disabled:opacity-50"
                 >
                   {key === "backspace" ? <IconBackspace size={22} /> : key}
                 </button>

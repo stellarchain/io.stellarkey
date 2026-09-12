@@ -1397,7 +1397,7 @@ function WeightInput({
     <div className="flex shrink-0 items-center gap-1 rounded-lg bg-white/[0.06] p-0.5">
       <button
         type="button"
-        className="flex h-11 w-11 items-center justify-center rounded-md text-[16px] text-neutral-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-30"
+        className="flex h-11 w-11 items-center justify-center rounded-md text-[16px] text-neutral-400 transition-colors hover:bg-white/10 hover:text-[var(--color-oncolor)] disabled:opacity-30"
         disabled={value <= 1}
         onClick={() => onChange(Math.max(1, value - 1))}
         aria-label="Decrease weight"
@@ -1409,7 +1409,7 @@ function WeightInput({
       </span>
       <button
         type="button"
-        className="flex h-11 w-11 items-center justify-center rounded-md text-[16px] text-neutral-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-30"
+        className="flex h-11 w-11 items-center justify-center rounded-md text-[16px] text-neutral-400 transition-colors hover:bg-white/10 hover:text-[var(--color-oncolor)] disabled:opacity-30"
         disabled={value >= 255}
         onClick={() => onChange(Math.min(255, value + 1))}
         aria-label="Increase weight"

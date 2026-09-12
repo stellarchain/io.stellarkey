@@ -259,7 +259,7 @@ export function ChoiceRow({
       }`}
     >
       <span
-        className="mb-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm sm:mb-0"
+        className="mb-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--color-oncolor)] shadow-sm sm:mb-0"
         style={{ background: tint }}
       >
         {icon}

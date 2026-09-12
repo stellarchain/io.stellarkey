@@ -550,7 +550,7 @@ export function SwapPage({
             <button
               type="button"
               onClick={flipAssets}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-neutral-900 text-white shadow-lg ring-4 ring-black transition-all duration-200 hover:bg-neutral-800 active:scale-90"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-neutral-900 text-[var(--color-oncolor)] shadow-lg ring-4 ring-black transition-all duration-200 hover:bg-neutral-800 active:scale-90"
               aria-label="Invert Assets"
             >
               <IconSwap size={18} className="rotate-90" />

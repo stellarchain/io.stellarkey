@@ -422,7 +422,7 @@ export function ClaimableBalancesModalBody({
                   type="button"
                   onClick={() => handleDismiss(item.id)}
                   disabled={busy || pendingAirdropClaim}
-                  className="mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-neutral-500 hover:bg-white/[0.06] hover:text-white disabled:text-neutral-700"
+                  className="mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-neutral-500 hover:bg-white/[0.06] hover:text-[var(--color-oncolor)] disabled:text-neutral-700"
                   aria-label={`Dismiss ${fmtAmount(item.amount)} ${item.assetCode} locally`}
                 >
                   <IconEyeOff size={17} aria-hidden="true" />

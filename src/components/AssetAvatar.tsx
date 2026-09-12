@@ -28,7 +28,7 @@ export function AssetAvatar({
       {isNative ? (
         <span
           aria-hidden="true"
-          className="flex items-center justify-center rounded-full border border-white/[0.12] text-white shadow-inner"
+          className="flex items-center justify-center rounded-full border border-white/[0.12] text-[var(--color-oncolor)] shadow-inner"
           style={{ width: size, height: size, background: 'var(--color-raised)' }}
         >
           <IconStellar size={iconSize} />
@@ -47,7 +47,7 @@ export function AssetAvatar({
       ) : (
         <span
           aria-hidden="true"
-          className="mono flex items-center justify-center rounded-full font-bold text-white shadow-inner"
+          className="mono flex items-center justify-center rounded-full font-bold text-[var(--color-oncolor)] shadow-inner"
           style={{ width: size, height: size, background, fontSize }}
         >
           {code.slice(0, 3)}

@@ -131,7 +131,7 @@ export function CurrencyConverterModalBody({
             type="button"
             onClick={handleSwapUnits}
             aria-label="Invert conversion"
-            className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-white shadow-sm transition-transform hover:bg-white/[0.16] active:scale-95"
+            className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-[var(--color-oncolor)] shadow-sm transition-transform hover:bg-white/[0.16] active:scale-95"
           >
             <IconSwap size={16} />
           </button>

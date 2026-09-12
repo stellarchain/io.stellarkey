@@ -1094,7 +1094,7 @@ export function ModalHeader({
             if (modal) modal.requestClose("close", onClose);
             else onClose();
           }}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-white aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:bg-white/10 aria-disabled:hover:text-neutral-400 pointer-coarse:h-11 pointer-coarse:w-11"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-[var(--color-oncolor)] aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:bg-white/10 aria-disabled:hover:text-neutral-400 pointer-coarse:h-11 pointer-coarse:w-11"
           aria-label="Close"
         >
           <IconClose size={14} />
@@ -2736,7 +2736,7 @@ export function QrScannerBox({
           type="button"
           onClick={onClose}
           aria-label="Close scanner"
-          className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-white"
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-[var(--color-oncolor)]"
         >
           <IconClose size={11} />
         </button>

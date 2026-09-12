@@ -408,7 +408,7 @@ function CodeEditor({
                   {fmtMinor(minor, currency)}
                   <button
                     type="button"
-                    className="flex items-center justify-center rounded-full text-neutral-400 transition-colors hover:text-white"
+                    className="flex items-center justify-center rounded-full text-neutral-400 transition-colors hover:text-[var(--color-oncolor)]"
                     aria-label={`Remove ${fmtMinor(minor, currency)}`}
                     onClick={() => setSuggested((previous) => previous.filter((value) => value !== minor))}
                   >

@@ -2031,7 +2031,7 @@ export function SettingsPage({
                 }}
               >
                 <div className="flex items-center gap-3">
-                  <span className="mono flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.08] text-[13px] font-bold text-white">
+                  <span className="mono flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.08] text-[13px] font-bold text-[var(--color-oncolor)]">
                     {curr.symbol}
                   </span>
                   <div>

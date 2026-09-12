@@ -228,7 +228,7 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
                   >
                     <span
                       aria-hidden="true"
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--color-oncolor)] shadow-sm"
                       style={{
                         background:
                           state === "unavailable"

@@ -293,7 +293,7 @@ export function AddAssetPublicPanel({
                     />
                   ) : (
                     <span
-                      className="mono flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-inner"
+                      className="mono flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-[var(--color-oncolor)] shadow-inner"
                       style={{ background: asset.color }}
                     >
                       {asset.code.slice(0, 2)}
@@ -402,7 +402,7 @@ export function AddAssetPublicPanel({
                       />
                     ) : (
                       <span
-                        className="mono flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                        className="mono flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-[var(--color-oncolor)]"
                         style={{ background: known?.color ?? "#5E5CE6" }}
                       >
                         {s.code.slice(0, 2)}

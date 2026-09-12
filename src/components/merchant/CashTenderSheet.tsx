@@ -110,7 +110,7 @@ function TenderKeypad({
             type="button"
             onClick={() => press(key)}
             aria-label={key === "backspace" ? "Backspace" : key}
-            className="flex min-h-[52px] items-center justify-center rounded-2xl bg-white/[0.08] text-[26px] font-medium leading-none text-white transition-[transform,background-color] hover:bg-white/[0.13] active:scale-95"
+            className="flex min-h-[52px] items-center justify-center rounded-2xl bg-white/[0.08] text-[26px] font-medium leading-none text-[var(--color-oncolor)] transition-[transform,background-color] hover:bg-white/[0.13] active:scale-95"
           >
             {key === "backspace" ? <IconBackspace size={24} /> : key}
           </button>
