@@ -7,18 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Synthetic component checks run in two isolated browser workers while retaining the complete Chromium/WebKit matrix and one exclusive fixture owner.
-- CI installs checksum-verified official Stellar CLI archives, validates cache hits before use, and runs generated-file verification once within the complete application gate.
-- Exact contract reproduction uses a canonical macOS ARM64 Rust host in parallel with Linux circuit analysis; the required gate accepts only success from both jobs, without changing shipped artifact hashes.
-
-### Fixed
-
-- Dialog exits retain the shell's current geometry even when layout changes immediately before private fields are cleared.
-- Select and menu opening focus no longer overtakes rapid Tab navigation to the next control.
-- Sheet drag handles no longer select text and intercept a later drag with the browser's native text-drag gesture; body text selection and pinch zoom remain available.
-
 ## [1.5.0] - 2026-09-12
 
 ### Added
@@ -31,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Synthetic component checks run in two isolated browser workers while retaining the complete Chromium/WebKit matrix and one exclusive fixture owner.
+- CI installs checksum-verified official Stellar CLI archives, validates cache hits before use, and runs generated-file verification once within the complete application gate.
+- Exact contract reproduction uses a canonical macOS ARM64 Rust host in parallel with Linux circuit analysis; the required gate accepts only success from both jobs, without changing shipped artifact hashes.
 - Private Payments submit directly through the selected RPC. The public transaction source and fee payer remain visible.
 - Replaced separate Testnet private pools with one XLM/USDC pool that hides the asset in internal transfers. This remains an unaudited Testnet preview, not a Mainnet feature.
 - Shorter checksummed private addresses and a simpler Receive screen with asset, address-type and QR choices.
@@ -48,9 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Dialog exits retain the shell's current geometry even when layout changes immediately before private fields are cleared.
+- Select and menu opening focus no longer overtakes rapid Tab navigation to the next control.
+- Sheet drag handles no longer select text and intercept a later drag with the browser's native text-drag gesture; body text selection and pinch zoom remain available.
 - Hosted application checks allow enough time for cold toolchain installation and the complete private and public browser matrix, without skipping verification gates.
 - Private contract artifact builds explicitly use the pinned Rust toolchain, including isolated reproducibility checks on clean CI runners.
-- CI and release runners install the Linux system libraries required to build the pinned Stellar CLI with its default features.
+- CI and release runners install the Linux runtime libraries required by the pinned Stellar CLI.
 - Appearance choices survive blocked browser storage and stay synchronized across open tabs; corrected text and control contrast in both themes.
 - Claim-review fee details remain legible in light mode; inactive tab and segmented-control labels have stronger contrast on translucent dark panels.
 - Account rows and the combined portfolio include public and saved private balances, with labelled Testnet reference values. Switching accounts no longer changes which funds are counted.
