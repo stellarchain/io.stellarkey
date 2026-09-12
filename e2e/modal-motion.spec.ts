@@ -11,6 +11,7 @@ import {
 
 declare global {
   interface Window {
+    __resumeModalFrames?: () => void;
     __modalExit?: {
       sawClosing: boolean;
       closingFrames: number;
@@ -57,17 +58,28 @@ async function observeExit(dialog: Locator): Promise<void> {
       openAnimation: getComputedStyle(shell).animationName,
     };
     window.__modalExit = record;
-    const sample = () => {
-      if (!backdrop.isConnected) return;
+    const sampleClosing = () => {
       if (backdrop.dataset.overlayState === "closing") {
         record.sawClosing = true;
-        record.closingFrames += 1;
         record.closingAnimation = getComputedStyle(shell).animationName;
         record.min = {
           width: Math.min(record.min.width, shell.offsetWidth),
           height: Math.min(record.min.height, shell.offsetHeight),
         };
       }
+    };
+    // A short crossfade may finish before a busy browser renders another frame.
+    // Observe the actual closing commit as well; frame counts remain RAF-only.
+    const observer = new MutationObserver(() => {
+      if (!backdrop.isConnected) { observer.disconnect(); return; }
+      sampleClosing();
+    });
+    observer.observe(backdrop, { attributes: true, attributeFilter: ['data-overlay-state'] });
+    if (backdrop.parentElement) observer.observe(backdrop.parentElement, { childList: true });
+    const sample = () => {
+      if (!backdrop.isConnected) { observer.disconnect(); return; }
+      if (backdrop.dataset.overlayState === 'closing') record.closingFrames += 1;
+      sampleClosing();
       requestAnimationFrame(sample);
     };
     requestAnimationFrame(sample);
@@ -160,6 +172,38 @@ test.describe("normal motion", () => {
 });
 
 test.describe("reduced motion", () => {
+
+  test("the exit observer retains a close completed before its next frame", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await importTestWallet(page);
+    const dialog = await openSend(page);
+    await page.evaluate(() => {
+      const request = window.requestAnimationFrame;
+      const cancel = window.cancelAnimationFrame;
+      const pending = new Map<number, FrameRequestCallback>();
+      let next = -1;
+      window.requestAnimationFrame = callback => { const id = next--; pending.set(id, callback); return id; };
+      window.cancelAnimationFrame = id => { if (!pending.delete(id)) cancel.call(window, id); };
+      window.__resumeModalFrames = () => {
+        window.requestAnimationFrame = request;
+        window.cancelAnimationFrame = cancel;
+        for (const callback of pending.values()) callback(performance.now());
+        pending.clear();
+      };
+    });
+    try {
+      await observeExit(dialog);
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(dialog).toBeHidden();
+      const exit = await page.evaluate(() => window.__modalExit);
+      expect(exit?.closingFrames).toBe(0);
+      expect(exit?.sawClosing).toBe(true);
+      expect(exit?.closingAnimation).toBe('fadeOut');
+      expect(exit?.min).toEqual(exit?.before);
+    } finally {
+      await page.evaluate(() => { window.__resumeModalFrames?.(); delete window.__resumeModalFrames; });
+    }
+  });
 
   test("Reduce Motion crossfades instead of removing the exit", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
