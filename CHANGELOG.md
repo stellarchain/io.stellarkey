@@ -7,11 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Keep claim-review fee details legible in light mode while preserving the dark appearance.
-- Improve inactive tab and segmented-control label contrast on translucent dark panels.
-
 ## [1.5.0] - 2026-09-12
 
 ### Added
@@ -42,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Appearance choices survive blocked browser storage and stay synchronized across open tabs; corrected text and control contrast in both themes.
+- Claim-review fee details remain legible in light mode; inactive tab and segmented-control labels have stronger contrast on translucent dark panels.
 - Account rows and the combined portfolio include public and saved private balances, with labelled Testnet reference values. Switching accounts no longer changes which funds are counted.
 - Dialogs retain their shell and keyboard focus during tab changes, menu selection and asynchronous actions; closing restores focus to the opener.
 - Late QR, file-read, pagination and dialog results cannot replace newer requests. Loading, copy and error feedback stays beside the relevant action.
