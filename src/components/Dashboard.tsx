@@ -1606,7 +1606,7 @@ export function Dashboard() {
           }`}
         >
           <div className="flex flex-col items-center gap-3 text-center">
-            <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white/10 text-white shadow-2xl">
+            <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white/10 text-[var(--color-oncolor)] shadow-2xl">
               <IconShield size={32} />
             </span>
             <p className="text-[17px] font-bold text-white tracking-tight">Wallet Privacy Shield</p>
@@ -1651,7 +1651,7 @@ export function Dashboard() {
                   triggerHaptic("selection");
                   setSidebarCollapsed(false);
                 }}
-                className="flex h-11 w-11 items-center justify-center rounded-xl text-white transition-colors hover:bg-white/[0.08]"
+                className="flex h-11 w-11 items-center justify-center rounded-xl text-[var(--color-oncolor)] transition-colors hover:bg-white/[0.08]"
                 aria-label="Expand Sidebar"
               >
                 <LogoMark size={30} className="text-white" />
@@ -1716,7 +1716,7 @@ export function Dashboard() {
                   <button
                     type="button"
                     onClick={() => switchMode(mode === "merchant" ? "wallet" : "merchant")}
-                    className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-neutral-300 transition-colors hover:bg-white/[0.08] hover:text-white"
+                    className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-neutral-300 transition-colors hover:bg-white/[0.08] hover:text-[var(--color-oncolor)]"
                     aria-label={mode === "merchant" ? "Switch to Wallet" : "Switch to Merchant"}
                   >
                     {mode === "merchant" ? (
@@ -2110,7 +2110,7 @@ export function Dashboard() {
                     type="button"
                     aria-label="Add Account"
                     onClick={() => setAddAccountOpen(true)}
-                    className="flex h-9 w-9 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors mt-1"
+                    className="flex h-9 w-9 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-[var(--color-oncolor)] hover:bg-white/[0.06] transition-colors mt-1"
                   >
                     <IconPlus size={14} />
                   </button>

@@ -172,7 +172,7 @@ function Keypad({
             type="button"
             onClick={() => press(key)}
             aria-label={key === "backspace" ? "Backspace" : key}
-            className="flex min-h-[64px] items-center justify-center rounded-2xl bg-white/[0.08] text-[28px] font-medium leading-none text-white transition-[transform,background-color] hover:bg-white/[0.13] active:scale-95"
+            className="flex min-h-[64px] items-center justify-center rounded-2xl bg-white/[0.08] text-[28px] font-medium leading-none text-[var(--color-oncolor)] transition-[transform,background-color] hover:bg-white/[0.13] active:scale-95"
           >
             {key === "backspace" ? <BackspaceGlyph /> : key}
           </button>
@@ -510,7 +510,7 @@ function TicketRow({
               triggerHaptic("selection");
               onQuantity(line.quantity - 1);
             }}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-white transition-transform hover:bg-white/[0.14] active:scale-90"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-[var(--color-oncolor)] transition-transform hover:bg-white/[0.14] active:scale-90"
           >
             <MinusGlyph />
           </button>
@@ -524,7 +524,7 @@ function TicketRow({
               triggerHaptic("selection");
               onQuantity(line.quantity + 1);
             }}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-white transition-transform hover:bg-white/[0.14] active:scale-90"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-[var(--color-oncolor)] transition-transform hover:bg-white/[0.14] active:scale-90"
           >
             <IconPlus size={15} />
           </button>
@@ -930,7 +930,7 @@ export function PosTerminal({
                   type="button"
                   aria-label="Dismiss the settled order"
                   onClick={() => setLastSettledOrderId(null)}
-                  className="-mr-1.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-white/[0.06] hover:text-white"
+                  className="-mr-1.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-white/[0.06] hover:text-[var(--color-oncolor)]"
                 >
                   <IconClose size={15} />
                 </button>

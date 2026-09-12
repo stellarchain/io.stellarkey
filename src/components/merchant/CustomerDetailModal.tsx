@@ -358,7 +358,7 @@ function CustomerDetail({
                   <span
                     key={i}
                     aria-hidden="true"
-                    className="flex aspect-square items-center justify-center rounded-full text-white"
+                    className="flex aspect-square items-center justify-center rounded-full text-[var(--color-oncolor)]"
                     style={
                       stamped
                         ? { background: LOYALTY_HUE }
