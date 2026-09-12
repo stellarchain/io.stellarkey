@@ -938,6 +938,8 @@ body::after {
   }
   [data-sheet-handle] {
     touch-action: pinch-zoom;
+    -webkit-user-select: none;
+    user-select: none;
   }
   /* Confirmations: the centred iOS alert settles from slightly above scale. */
   .modal-alert {
