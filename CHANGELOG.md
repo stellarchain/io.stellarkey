@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Verify short dialog exits at the closing commit as well as rendered frames, retaining animation and geometry checks.
+
 ### Fixed
 
 - Return keyboard focus to the payment result after a fast signing approval without overriding a newer focus choice.
