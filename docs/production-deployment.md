@@ -32,6 +32,9 @@ GitHub API read-backs confirmed these settings on `stellarchain/io.stellarkey`:
   force pushes and deletion are disabled.
 - The active [Immutable release tags rule](https://github.com/stellarchain/io.stellarkey/rules/23045616)
   blocks updates and deletion of `refs/tags/v*`, with no bypass actors.
+- Repository release immutability is enabled for future publications. The
+  release assets and associated tag are locked after publication; enabling this
+  setting does not retroactively make existing releases immutable.
 - Dependabot alerts and security updates, secret scanning and push protection
   are enabled. CodeQL default setup is configured on a weekly schedule for
   JavaScript/TypeScript, Actions and Rust. Its
@@ -41,9 +44,9 @@ GitHub API read-backs confirmed these settings on `stellarchain/io.stellarkey`:
   It has no required reviewer; the separate trusted-maintainer approval,
   hardware/distribution and physical-device requirements above still apply.
 
-This is a dated configuration snapshot, not evidence that an unpublished local
-commit passed hosted CI or that the new release was published. Recheck settings
-and required checks at promotion; this work did not publish a branch or tag.
+This is a dated configuration snapshot, not evidence that a particular commit
+passed hosted CI or that a release was published. Recheck settings and required
+checks at promotion.
 
 ## 2. Trezor production gate
 
