@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { Networks } from '@stellar/stellar-sdk';
 import {
   PRIVATE_ADDRESS_PAYLOAD_BYTES,
@@ -348,6 +348,29 @@ test('manifest: generated-file verification reproduces the shipped Testnet catal
     /generate-manifest\.mjs'\s*,\s*'--publish-deployment'/,
     'the generated-file check must not replace live Testnet manifests with the undeployed template',
   );
+});
+
+test('manifest: toolchain provenance is fresh for the actual pinned build inputs', () => {
+  const generator = readFileSync(join(process.cwd(), 'protocol/private-balance/scripts/generate-manifest.mjs'), 'utf8');
+  const inputList = generator.match(/toolchainLockSha256:\s*sha256Files\(\[([\s\S]*?)\]\)/)?.[1];
+  assert.ok(inputList, 'inspect the real manifest build-input boundary');
+  const inputs = [...inputList.matchAll(/join\(process\.cwd\(\), '([^']+)'\)/g)].map(match => match[1]);
+  assert.ok(inputs.length >= 9);
+  assert.ok(inputs.includes('protocol/private-balance/scripts/build-private-balance-artifacts.mjs'));
+  assert.ok(inputs.includes('package-lock.json'));
+  const hash = createHash('sha256');
+  for (const input of inputs.sort()) {
+    const file = join(process.cwd(), input);
+    hash.update(relative(process.cwd(), file));
+    hash.update('\0');
+    hash.update(readFileSync(file));
+    hash.update('\0');
+  }
+  const expected = hash.digest('hex');
+  for (const file of [manifestPath, join(process.cwd(), 'protocol/private-balance/manifests/development.json')]) {
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).release.toolchainLockSha256, expected,
+      'regenerate manifest provenance after changing a pinned build input');
+  }
 });
 
 test('manifest: generator permits at most one verified unified pool in the authenticated catalogue', () => {
