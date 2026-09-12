@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Return keyboard focus to the payment result after a fast signing approval without overriding a newer focus choice.
+- Keep locked-screen legal links on one desktop row across system fonts without widening the unlock form.
 
 ## [1.5.0] - 2026-09-12
 
