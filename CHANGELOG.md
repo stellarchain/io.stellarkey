@@ -7,14 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- CI and release runners install the Linux system libraries required to build the pinned Stellar CLI with its default features.
-
-### Security
-
-- Enabled immutable GitHub releases so newly published release assets and their tags cannot be replaced.
-
 ## [1.5.0] - 2026-09-12
 
 ### Added
@@ -44,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CI and release runners install the Linux system libraries required to build the pinned Stellar CLI with its default features.
 - Appearance choices survive blocked browser storage and stay synchronized across open tabs; corrected text and control contrast in both themes.
 - Claim-review fee details remain legible in light mode; inactive tab and segmented-control labels have stronger contrast on translucent dark panels.
 - Account rows and the combined portfolio include public and saved private balances, with labelled Testnet reference values. Switching accounts no longer changes which funds are counted.
@@ -61,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Enabled immutable GitHub releases so newly published release assets and their tags cannot be replaced.
 - Updated ESLint's YAML parser to js-yaml 4.3.2 and included development dependencies in the application high/critical security gate.
 - Enabled repository secret scanning, push protection, Dependabot security fixes and CodeQL analysis; protected main-branch review/CI requirements and immutable release tags.
 - Detached private-payment status watchers stop publishing after wallet lock, account or endpoint changes, lost tab ownership, or unmount, while preserving already-authorized canonical transaction tracking.
