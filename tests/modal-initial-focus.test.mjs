@@ -49,8 +49,7 @@ function opening({ initialFocus = null, pointerOpening = false, nested = false }
       });
     }
     closest(selector) {
-      for (let node = this; node; node = node.parentElement) if (node.matches(selector)) return node;
-      return null;
+      return this.matches(selector) ? this : this.parentElement?.closest(selector) ?? null;
     }
     contains(node) {
       for (let ancestor = node; ancestor; ancestor = ancestor.parentElement) if (ancestor === this) return true;
