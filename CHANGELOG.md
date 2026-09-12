@@ -204,3 +204,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Introduced password-wrapped vault master keys, scoped secret access, strong new-vault password policy, authenticated merchant records, failure-atomic restore, issuer-domain validation, bounded Stellar TOML responses, encrypted contacts and notes, and staged service-worker updates.
 - Updated ESLint's YAML parser to js-yaml 4.3.2 and included development dependencies in the application high/critical security gate.
+- Enabled repository secret scanning, push protection, Dependabot security fixes and CodeQL analysis; protected main-branch review/CI requirements and immutable release tags.
