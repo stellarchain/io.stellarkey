@@ -22,8 +22,13 @@ parents and are not counts of independent vulnerabilities.
 No major dependency upgrade, cryptographic replacement, hardware removal or
 gate waiver was made. The embedded-browser, remote Trezor core, unpatched
 elliptic and distribution-authorization limits documented below still apply.
-The lockfile provenance pins must be regenerated with the release metadata;
-focused checks alone are not a clean-tree release verification.
+The 1.5.0 lockfile provenance pins were regenerated with the release metadata.
+Field comparison found only `release.toolchainLockSha256` in the development
+and public manifests, the public catalogue's manifest digest, and the two
+generated TypeScript pins changed. A second complete `private:check-generated`
+passed with stable bytes. The generator's publish-deployment option writes local
+files from existing evidence; no contract was deployed or proving artifact changed.
+Focused checks alone are not a clean-tree release verification.
 
 ## Historical evidence — 2026-09-07
 
