@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import { useLiveNow } from "@/hooks/useLiveNow";
 import { useWalletContacts } from "@/hooks/useWallet";
@@ -551,9 +552,7 @@ function Figure({
 }) {
   return (
     <div className={`min-w-0 px-3 py-0.5 ${divider ? "border-l border-white/[0.08]" : ""}`}>
-      <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-        {label}
-      </p>
+      <SectionHeader className="truncate">{label}</SectionHeader>
       <p
         className={`mono mt-0.5 truncate text-[16px] font-semibold ${
           tone === "money" ? "text-[#30D158]" : "text-white"

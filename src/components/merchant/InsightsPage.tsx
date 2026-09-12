@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useMerchantConfiguration,
   useMerchantRecords,
@@ -521,9 +522,7 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
             */}
             {against.base && (
               <div className="mt-4 border-t border-white/[0.08] pt-3.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                  Measured against
-                </p>
+                <SectionHeader>Measured against</SectionHeader>
                 <p className="mt-1 text-[13px] text-neutral-300">
                   last {weekdayName}
                   {against.running && (

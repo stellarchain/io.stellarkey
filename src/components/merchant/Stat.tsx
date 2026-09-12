@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { SectionHeader } from "@/components/ui";
 
 /**
  * The merchant summary strip.
@@ -63,9 +64,7 @@ export function Stat({
 }) {
   return (
     <div className={`min-w-0 px-3 py-2.5 ${divider ? DIVIDER[divider] : ""}`}>
-      <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-        {label}
-      </p>
+      <SectionHeader className="truncate">{label}</SectionHeader>
       {children ?? (
         <p className="mt-0.5 flex items-baseline gap-1.5 truncate">
           <span className={`mono truncate text-[15.5px] font-semibold ${TONE[tone]}`}>{value}</span>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { useMerchantConfiguration, useMerchantTill } from "@/hooks/useMerchant";
 import type { FiatCurrency } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
@@ -234,9 +235,7 @@ export function CataloguePage({ onBack }: { onBack?: () => void }) {
             <div className="mt-4 space-y-5">
               {sections.map(([name, items]) => (
                 <div key={name}>
-                  <p className="px-2 pb-1.5 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                    {name}
-                  </p>
+                  <SectionHeader className="px-2 pb-1.5">{name}</SectionHeader>
                   {view === "rows" ? (
                     <div className="list-group">
                       {items.map((item, index) => (

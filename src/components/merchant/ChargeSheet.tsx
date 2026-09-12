@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import QRCode from "qrcode";
 import { triggerHaptic } from "@/lib/haptics";
 import {
@@ -393,9 +394,7 @@ function ChargeSheetInner({
             </div>
 
             <div className="panel-inset px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                Payment route
-              </p>
+              <SectionHeader>Payment route</SectionHeader>
               <div className="mt-1.5 flex items-center justify-between gap-3">
                 <span className="text-[15px] font-semibold text-white">
                   {requestTransport === "muxed" ? "Included in the address" : "Legacy MEMO_ID"}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { useMerchantConfiguration, useMerchantTill } from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
@@ -211,9 +212,7 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
       <div className="space-y-5">
         {/* ---------------- the four rows ---------------- */}
         <section className="space-y-2">
-          <h2 className="px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-            Hardware
-          </h2>
+          <SectionHeader as="h2" className="px-1">Hardware</SectionHeader>
           <div className="list-group">
             {peripherals.map((peripheral, index) => {
               const state = stateOf(peripheral);
@@ -312,13 +311,9 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
 
                       {peripheral.kind === "display" && displayPreview && (
                         <div className="mt-3 rounded-[14px] border border-white/[0.08] px-4 py-4">
-                          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                            Facing the customer
-                          </p>
+                          <SectionHeader>Facing the customer</SectionHeader>
                           <div className="mt-2 rotate-180 text-center">
-                            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                              Total
-                            </p>
+                            <SectionHeader>Total</SectionHeader>
                             <p className="mono mt-1 text-[28px] font-semibold leading-none text-white">
                               {fmtMinor(480, currency)}
                             </p>
@@ -362,9 +357,7 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
 
         {/* ---------------- till text size ---------------- */}
         <section className="space-y-2">
-          <h2 className="px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-            Till text size
-          </h2>
+          <SectionHeader as="h2" className="px-1">Till text size</SectionHeader>
           <div className="list-group">
             <div className="px-4 py-3.5">
               <div className="sm:max-w-[320px]">
@@ -388,9 +381,7 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
           {/* The preview is a surface, not a settings row, so it sits on its own. */}
           <div className="panel">
             <div className="px-4 py-3.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                Preview
-              </p>
+              <SectionHeader>Preview</SectionHeader>
               <div className="mt-2 rounded-[14px] border border-white/[0.08] px-4 py-3.5">
                 <div className={`mono flex justify-between gap-3 text-neutral-300 ${TEXT_SIZE_LINE[tillTextSize]}`}>
                   <span className="truncate">1 × Flat White</span>
@@ -403,9 +394,7 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
                   <span className="shrink-0">{fmtMinor(160, currency)}</span>
                 </div>
                 <div className="mt-3 border-t border-white/[0.08] pt-3 text-center">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                    Total
-                  </p>
+                  <SectionHeader>Total</SectionHeader>
                   <p
                     className={`mono mt-1 font-semibold leading-none text-white ${TEXT_SIZE_TOTAL[tillTextSize]}`}
                   >

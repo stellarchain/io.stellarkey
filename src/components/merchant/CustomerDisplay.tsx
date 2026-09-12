@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { triggerHaptic } from "@/lib/haptics";
 import { useMerchantConfiguration, useMerchantStaff } from "@/hooks/useMerchant";
 import { fmtMinor } from "@/lib/merchant/money";
@@ -151,9 +152,7 @@ function CustomerDisplayInner({
           <IconReceiptStellar size={18} />
           <span className="text-[15px] font-semibold tracking-tight text-white">{shopName}</span>
         </div>
-        <p className="mt-10 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-          Amount due
-        </p>
+        <SectionHeader className="mt-10">Amount due</SectionHeader>
         <p className="mono mt-2 text-center text-[52px] font-semibold leading-none text-white sm:text-[76px]">
           {fmtMinor(amountMinor, currency)}
         </p>

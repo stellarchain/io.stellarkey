@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import { fmtAmount } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
@@ -258,9 +259,7 @@ function FactRow({
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-      {children}
-    </h3>
+    <SectionHeader as="h3" className="px-1 pb-1.5">{children}</SectionHeader>
   );
 }
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Button, Notice, Toggle } from '@/components/ui';
+import { SectionHeader, Button, Notice, Toggle } from '@/components/ui';
 import type { PrivateOutgoingHistoryMode } from '../runtime/outgoing-history';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 
@@ -60,9 +60,7 @@ function OutgoingHistoryPreference({ mode, disabled, onChange }: OutgoingHistory
 
   return (
     <section ref={sectionRef} aria-labelledby="private-outgoing-history-title" className="space-y-3">
-      <h3 id="private-outgoing-history-title" className="px-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-        Outgoing recovery
-      </h3>
+      <SectionHeader as="h3" id="private-outgoing-history-title" className="px-1">Outgoing recovery</SectionHeader>
       <div className="list-group flex min-h-16 items-center justify-between gap-4 px-4 py-3">
         <div className="min-w-0">
           <p className="text-[13.5px] font-semibold text-white">Recover outgoing payment details</p>

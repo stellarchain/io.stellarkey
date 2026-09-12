@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Button, Field, Notice } from '@/components/ui';
+import { SectionHeader, Button, Field, Notice } from '@/components/ui';
 import {
   usePrivateBalanceRuntime,
   usePrivateBalanceRuntimeData,
@@ -78,9 +78,7 @@ export function PrivateAssetRegistryAdmin() {
 
   return (
     <section aria-labelledby="private-asset-admin-title">
-      <h3 id="private-asset-admin-title" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-        Asset administrator
-      </h3>
+      <SectionHeader as="h3" id="private-asset-admin-title" className="mb-2 px-1">Asset administrator</SectionHeader>
       <div className="list-group">
         <div className="space-y-3 p-4">
           <div>

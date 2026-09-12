@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useMerchantConfiguration,
   useMerchantStaff,
@@ -806,9 +807,7 @@ function Cell({
 }) {
   return (
     <div className="bg-white/[0.02] px-3.5 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-        {label}
-      </p>
+      <SectionHeader>{label}</SectionHeader>
       <p
         className={`mono mt-0.5 truncate text-[17px] font-semibold ${
           tone === "pos" ? "text-[#30D158]" : "text-white"

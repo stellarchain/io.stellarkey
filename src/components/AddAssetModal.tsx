@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useLayoutEffect, useMemo, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useWalletIdentity,
   useWalletLedger,
@@ -255,9 +256,7 @@ export function AddAssetPublicPanel({
 
       {/* Verified assets grid */}
       <div>
-        <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-          Verified Stellar Assets
-        </p>
+        <SectionHeader className="mb-2.5">Verified Stellar Assets</SectionHeader>
         <div className="grid max-h-[180px] grid-cols-2 gap-2.5 overflow-y-auto pr-0.5 sm:grid-cols-3">
           {filteredPopular.map((asset) => {
             const iss = knownAssetIssuer(asset, network) ?? "";
