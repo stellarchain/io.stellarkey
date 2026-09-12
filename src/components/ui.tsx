@@ -782,6 +782,7 @@ export function Modal({
     // WebKit may leave focus in the parent dialog when its opener is tapped.
     const pointerOpener = latestPointerTarget?.isConnected ? latestPointerTarget : null;
     restoreFocusRef.current = pointerOpener ?? activeElement ?? restoreFocusRef.current;
+    const returnOwner = restoreFocusRef.current?.closest<HTMLElement>('[data-modal-backdrop]') ?? null;
     latestPointerTarget = null;
     lockBodyScroll();
     return () => {
@@ -792,9 +793,18 @@ export function Modal({
       // after the underlying surface is interactive again.
       restoreFocusFrameRef.current = window.requestAnimationFrame(() => {
         restoreFocusFrameRef.current = null;
-        if (restoreTarget?.isConnected) {
-          restoreTarget.focus({ preventScroll: true });
-        }
+        // A fast action can replace its opener before this frame arrives. Its
+        // owning dialog may explicitly nominate a result as the continuation.
+        // Never redirect a newer focus choice or reach behind another modal.
+        if (document.activeElement !== document.body) return;
+        const target = restoreTarget?.isConnected
+          ? restoreTarget
+          : returnOwner?.querySelector<HTMLElement>('[data-modal-return-focus]');
+        const top = modalStack.at(-1);
+        if (!target?.isConnected || target.closest('[inert]')
+          || target.matches(':disabled')
+          || (top && !top.contains(target))) return;
+        target.focus({ preventScroll: true });
       });
     };
   }, [mounted]);

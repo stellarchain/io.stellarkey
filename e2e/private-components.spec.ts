@@ -242,6 +242,45 @@ for (const switchAccount of [true, false]) test(`signing context ${switchAccount
   await expect.poll(() => page.evaluate(() => ({ locked: document.body.style.overflow === 'hidden', inert: !!document.querySelector('main')?.closest('[inert]') }))).toEqual({ locked: false, inert: false });
 });
 
+for (const newerFocus of [false, true]) test(`signing result with a delayed approval return frame ${newerFocus ? 'preserves newer focus' : 'receives returned focus'}`, async ({ page }) => {
+  const { approval } = await openSigningApproval(page);
+  await approval.getByLabel('Wallet Password').fill('synthetic signing correct horse battery staple');
+  await page.evaluate(() => {
+    const request = window.requestAnimationFrame;
+    const cancel = window.cancelAnimationFrame;
+    const pending = new Map<number, FrameRequestCallback>();
+    let next = -1;
+    window.requestAnimationFrame = callback => { const id = next--; pending.set(id, callback); return id; };
+    window.cancelAnimationFrame = id => { if (!pending.delete(id)) cancel.call(window, id); };
+    (window as typeof window & { __syntheticSigningFrames?: () => void }).__syntheticSigningFrames = () => {
+      window.requestAnimationFrame = request;
+      window.cancelAnimationFrame = cancel;
+      for (const callback of pending.values()) callback(performance.now());
+      pending.clear();
+    };
+  });
+  try {
+    await approval.getByRole('button', { name: 'Authorize', exact: true }).press('Enter');
+    await expect(approval).toHaveCount(0);
+    const status = page.getByRole('dialog', { name: 'Payment Status', exact: true });
+    const done = status.getByRole('button', { name: 'Done', exact: true });
+    const heading = status.getByRole('heading', { name: 'Submission Status Unknown', exact: true });
+    await expect(done).toBeVisible();
+    await expect(page.getByTestId('signing-signs')).toHaveText('1');
+    await expect(page.getByTestId('signing-posts')).toHaveText('1');
+    if (newerFocus) await done.focus();
+    await page.evaluate(() => (window as typeof window & { __syntheticSigningFrames?: () => void }).__syntheticSigningFrames?.());
+    await expect(newerFocus ? done : heading).toBeFocused();
+    await stableShell(page);
+  } finally {
+    await page.evaluate(() => {
+      const state = window as typeof window & { __syntheticSigningFrames?: () => void };
+      state.__syntheticSigningFrames?.();
+      delete state.__syntheticSigningFrames;
+    });
+  }
+});
+
 for (const switchAccount of [true, false]) test(`signing context ${switchAccount ? 'rejects changed' : 'retains unchanged'} account during real preparation`, async ({ page }) => {
   const { send, approval } = await openSigningApproval(page);
   await page.getByText('Hold signing preparation', { exact: true }).evaluate(element => (element as HTMLButtonElement).click());
