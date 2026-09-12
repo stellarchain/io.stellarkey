@@ -456,31 +456,35 @@ for (const motion of ['reduce', 'no-preference'] as const) {
       }
     }
 
-    test('account modes and claim views preserve the shell through rapid pointer and keyboard changes', async ({ page }) => {
-      await page.getByRole('button', { name: 'Open account modal', exact: true }).click();
-      await markShell(page);
-      for (let index = 0; index < 3; index++) {
-        await page.getByRole('button', { name: 'Watch', exact: true }).click();
-        await page.getByRole('button', { name: 'Import', exact: true }).focus();
-        await page.keyboard.press('Enter');
-      }
-      await stableShell(page);
-      const accountAxe = await new AxeBuilder({ page }).include('[data-modal-backdrop]').analyze();
-      expect(accountAxe.violations.map(violation => ({ id: violation.id, impact: violation.impact, count: violation.nodes.length }))).toEqual([]);
-      await page.keyboard.press('Escape');
-      await closed(page, 'Open account modal');
-      await page.getByRole('button', { name: 'Open claim modal', exact: true }).click();
-      await markShell(page);
-      for (let index = 0; index < 3; index++) {
-        await page.getByRole('button', { name: 'Show dismissed (1)', exact: true }).click();
-        await page.getByRole('button', { name: 'Review available (2)', exact: true }).focus();
-        await page.keyboard.press('Space');
-      }
-      await stableShell(page);
-      const claimAxe = await new AxeBuilder({ page }).include('[data-modal-backdrop]').analyze();
-      expect(claimAxe.violations.map(violation => ({ id: violation.id, impact: violation.impact, count: violation.nodes.length }))).toEqual([]);
-      await outsidePointer(page);
-      await closed(page, 'Open claim modal');
-    });
+    for (const appearance of ['light', 'dark'] as const) {
+      test(`${appearance} account modes and claim views preserve the shell through rapid pointer and keyboard changes`, async ({ page }) => {
+        await page.emulateMedia({ colorScheme: appearance });
+        await expect(page.locator('html')).toHaveAttribute('data-theme', appearance);
+        await page.getByRole('button', { name: 'Open account modal', exact: true }).click();
+        await markShell(page);
+        for (let index = 0; index < 3; index++) {
+          await page.getByRole('button', { name: 'Watch', exact: true }).click();
+          await page.getByRole('button', { name: 'Import', exact: true }).focus();
+          await page.keyboard.press('Enter');
+        }
+        await stableShell(page);
+        const accountAxe = await new AxeBuilder({ page }).include('[data-modal-backdrop]').analyze();
+        expect(accountAxe.violations.map(violation => ({ id: violation.id, impact: violation.impact, count: violation.nodes.length }))).toEqual([]);
+        await page.keyboard.press('Escape');
+        await closed(page, 'Open account modal');
+        await page.getByRole('button', { name: 'Open claim modal', exact: true }).click();
+        await markShell(page);
+        for (let index = 0; index < 3; index++) {
+          await page.getByRole('button', { name: 'Show dismissed (1)', exact: true }).click();
+          await page.getByRole('button', { name: 'Review available (2)', exact: true }).focus();
+          await page.keyboard.press('Space');
+        }
+        await stableShell(page);
+        const claimAxe = await new AxeBuilder({ page }).include('[data-modal-backdrop]').analyze();
+        expect(claimAxe.violations.map(violation => ({ id: violation.id, impact: violation.impact, count: violation.nodes.length }))).toEqual([]);
+        await outsidePointer(page);
+        await closed(page, 'Open claim modal');
+      });
+    }
   });
 }

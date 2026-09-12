@@ -477,7 +477,7 @@ export function ClaimableBalancesModalBody({
         />
       ) : (
         <>
-          <div className="rounded-2xl border border-white/[0.08] bg-black/20 p-3.5">
+          <div className="rounded-2xl border border-white/[0.08] bg-bg/20 p-3.5">
             <div className="flex items-center justify-between gap-3 text-[12px]">
               <span className="text-neutral-400">Selected network fee</span>
               <span className="flex flex-col items-end text-neutral-200">

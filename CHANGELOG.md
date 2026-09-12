@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep claim-review fee details legible in light mode while preserving the dark appearance.
+- Improve inactive tab and segmented-control label contrast on translucent dark panels.
+
 ## [1.5.0] - 2026-09-12
 
 ### Added
