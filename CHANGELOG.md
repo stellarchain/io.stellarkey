@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Dialog exits retain the shell's current geometry even when layout changes immediately before private fields are cleared.
 - Select and menu opening focus no longer overtakes rapid Tab navigation to the next control.
 - Sheet drag handles no longer select text and intercept a later drag with the browser's native text-drag gesture; body text selection and pinch zoom remain available.
 
