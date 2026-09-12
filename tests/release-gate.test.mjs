@@ -113,6 +113,27 @@ test("CI, releases, and the scheduled Gate B execute the private Rust models", (
   );
 });
 
+test("every Linux Stellar CLI build installs its system prerequisites in the same job", () => {
+  for (const file of [".github/workflows/ci.yml", ".github/workflows/release.yml"]) {
+    const jobs = read(file)
+      .split(/\n(?= {2}[a-z][a-z0-9-]*:\s*\n)/)
+      .filter((job) => /cargo \+1\.97\.1 install stellar-cli/.test(job));
+    assert.equal(jobs.length, 2, `${file} must cover both application and circuit jobs`);
+
+    for (const job of jobs) {
+      assert.match(job, /runs-on: ubuntu-latest/);
+      const install = job.indexOf("cargo +1.97.1 install stellar-cli --version 27.0.0 --locked");
+      const prerequisites = job.indexOf("name: Install Stellar CLI build dependencies");
+      assert.ok(prerequisites >= 0 && prerequisites < install,
+        `${file}: install Linux prerequisites before building the pinned CLI`);
+      const setup = job.slice(prerequisites, install);
+      assert.match(setup, /sudo apt-get update/);
+      assert.match(setup, /sudo apt-get install --yes --no-install-recommends pkg-config libdbus-1-dev libudev-dev/);
+      assert.doesNotMatch(job, /install stellar-cli[^\n]*--no-default-features/);
+    }
+  }
+});
+
 test("generated-artifact checks install their complete toolchain in the same job", () => {
   const ci = read(".github/workflows/ci.yml");
   const release = read(".github/workflows/release.yml");
