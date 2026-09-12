@@ -228,7 +228,7 @@ function ReceiveInner({
           </div>
         )}
 
-        <div className="rounded-3xl bg-white p-3.5 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)]">
+        <div className="rounded-3xl bg-[var(--color-oncolor)] p-3.5 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)]">
           {qrDataUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img

@@ -214,7 +214,7 @@ export function PrivateReceiveContent({
         {receiveError && !retrying && state !== 'locked' && state !== 'setup' ? <HumanizedErrorNotice cause={receiveError} className="w-full" /> : null}
       </div> : <>
       <div className="flex justify-center">
-        <div className="w-full max-w-[180px] rounded-[22px] bg-white p-2.5 shadow-[0_16px_38px_-14px_rgba(0,0,0,0.85)]">
+        <div className="w-full max-w-[180px] rounded-[22px] bg-[var(--color-oncolor)] p-2.5 shadow-[0_16px_38px_-14px_rgba(0,0,0,0.85)]">
           {qrDataUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img

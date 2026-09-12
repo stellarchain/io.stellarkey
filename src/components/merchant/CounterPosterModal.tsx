@@ -377,7 +377,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
             {canRenderPaymentArtifact ? (
               face
             ) : (
-              <div className="flex h-full items-center justify-center bg-white p-6 text-center text-[13px] font-semibold text-neutral-700">
+              <div className="flex h-full items-center justify-center bg-[var(--color-oncolor)] p-6 text-center text-[13px] font-semibold text-neutral-700">
                 This payment code is no longer shareable.
               </div>
             )}
