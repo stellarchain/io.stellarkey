@@ -1,4 +1,4 @@
-import { assetPriceKey, type AssetPrices } from "./prices";
+import { assetPriceKey, getRepresentativeUnitPrice, type AssetPrices } from "./prices";
 import type { NetworkKey } from "./stellar";
 import type { AssetBalance } from "./types";
 
@@ -208,4 +208,28 @@ export function aggregatePortfolio({
         ? Math.min(...timestamps)
         : null,
   };
+}
+
+/** Complete account value for the wallet preview; Testnet is reference-only. */
+export function representativePortfolioUsd(input: {
+  portfolio: PortfolioAggregate;
+  network: NetworkKey;
+  xlmPriceUsd: number | null;
+  assetPrices: AssetPrices;
+}): number | null {
+  if (input.portfolio.completeness !== "complete") return null;
+  if (input.network === "mainnet") return input.portfolio.totalUsd;
+  let total = 0;
+  for (const asset of input.portfolio.assets) {
+    const amount = Number(asset.balance);
+    if (!Number.isFinite(amount) || amount < 0) return null;
+    if (amount === 0) continue;
+    const price = getRepresentativeUnitPrice(
+      asset.code, asset.issuer, input.network, asset.isNative,
+      input.xlmPriceUsd, input.assetPrices,
+    );
+    if (price === null || !Number.isFinite(price) || price <= 0) return null;
+    total += amount * price;
+  }
+  return Number.isFinite(total) ? total : null;
 }

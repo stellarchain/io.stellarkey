@@ -51,14 +51,13 @@ import {
 import {
   fetchAssetPriceSamples,
   marketValues,
-  marketDataLabel,
   getRepresentativeUnitPrice,
   getUnitPrice,
   type MarketSamples,
 } from "@/lib/prices";
 import { MOTION_FAST_DURATION_MS } from "@/lib/motion";
 import type { PrivateFlowHeader } from "@/features/private-balance/components/useReportToOwner";
-import { aggregatePortfolio, portfolioSnapshotKey } from "@/lib/portfolio";
+import { aggregatePortfolio, portfolioSnapshotKey, representativePortfolioUsd } from "@/lib/portfolio";
 import { activityAssetPresentation } from "@/lib/transaction-intent";
 import { pendingTransactionPresentation } from "@/lib/submission";
 import {
@@ -82,7 +81,6 @@ import { Sparkline } from "./Sparkline";
 import type { NetworkKey } from "@/lib/stellar";
 import type { SettingsSub } from "./SettingsPage";
 import type { Contact } from "@/lib/contacts";
-import { FiatValue } from "./FiatValue";
 import {
   Button,
   CopyButton,
@@ -352,8 +350,6 @@ export function Dashboard() {
     loadingMore,
     loadMoreError,
     xlmPriceUsd,
-    xlmPriceSample,
-    fiatRateSamples,
     priceData,
     unfunded,
     minimumBalanceXlm,
@@ -362,7 +358,7 @@ export function Dashboard() {
     fiatCurrency,
     fiatRates,
     cycleFiatCurrency,
-    refresh,
+    refresh: refreshWallet,
     loadMoreActivity,
     lock,
     fundFromFriendbot,
@@ -391,7 +387,10 @@ export function Dashboard() {
     selectedDeploymentId: selectedPrivateDeploymentId,
     selectAsset: selectPrivateAsset,
   } = usePrivateBalanceRuntime();
-  const { entries: privatePortfolioEntries } = usePrivateBalancePortfolio();
+  const { entries: privatePortfolioEntries, accountBalances: privateAccountBalances, refreshAccountBalances } = usePrivateBalancePortfolio();
+  const refresh = useCallback(async () => {
+    await Promise.all([refreshWallet(), refreshAccountBalances()]);
+  }, [refreshAccountBalances, refreshWallet]);
   const privatePaymentsAreEnabled =
     privatePaymentsEnabled(privateAvailableAssets) || privatePortfolioEntries.length > 0;
   const privateBalanceRuntime = usePrivateBalanceRuntimeData();
@@ -1103,6 +1102,30 @@ export function Dashboard() {
     [accountPortfolioSnapshots, accounts, assetPrices, network, xlmPriceUsd],
   );
   const allPortfolioReady = allPortfolio.completeness === "complete";
+  // Every row counts public plus saved private balances, regardless of selection.
+  // Unknown private state must not temporarily appear as a smaller public-only total.
+  const accountTotals = useMemo(() => Object.fromEntries(
+    accounts.map(account => {
+      const portfolio = aggregatePortfolio({
+        accounts: [account.publicKey], snapshots: accountPortfolioSnapshots,
+        network, xlmPriceUsd, assetPrices,
+      });
+      const privateBalances = privateAccountBalances[account.id];
+      return [account.publicKey, {
+        xlm: privateBalances == null ? null : portfolioXlmWithPrivateAssets(portfolio.nativeBalance, privateBalances),
+        usd: privateBalances == null ? null : portfolioUsdWithPrivateAssets(
+          representativePortfolioUsd({ portfolio, network, xlmPriceUsd, assetPrices }),
+          privatePortfolioRepresentativeUsd(privateBalances, xlmPriceUsd),
+        ),
+      }];
+    }),
+  ), [accountPortfolioSnapshots, accounts, assetPrices, network, privateAccountBalances, xlmPriceUsd]);
+  const allPrivateBalances = useMemo(() => accounts.some(account => privateAccountBalances[account.id] == null)
+    ? null
+    : accounts.flatMap(account => privateAccountBalances[account.id] ?? []),
+  [accounts, privateAccountBalances]);
+  const allPrivateLoading = accounts.some(account => privateAccountBalances[account.id] === undefined);
+  const allPrivateUnavailable = accounts.some(account => privateAccountBalances[account.id] === null);
   const allRepresentativePublicUsd = useMemo(() => {
     if (!allPortfolioReady) return null;
     if (network === "mainnet") return allPortfolio.totalUsd;
@@ -1131,25 +1154,25 @@ export function Dashboard() {
   );
   const allAccountsTotalUsd = portfolioUsdWithPrivateAssets(
     allRepresentativePublicUsd,
-    privateRepresentativeUsd,
+    allPrivateBalances === null ? null : privatePortfolioRepresentativeUsd(allPrivateBalances, xlmPriceUsd),
   );
   const activeAccountXlm = portfolioXlmWithPrivateAssets(
     xlm?.balance ?? accountBalances[activeAccount?.publicKey ?? ""] ?? 0,
     privatePortfolioEntries,
   );
-  const allAccountsXlm = portfolioXlmWithPrivateAssets(
+  const allAccountsXlm = allPrivateBalances === null ? null : portfolioXlmWithPrivateAssets(
     allPortfolio.nativeBalance,
-    privatePortfolioEntries,
+    allPrivateBalances,
   );
   const heroXlm = portfolioView === "all" ? allAccountsXlm : activeAccountXlm;
   const heroUsd = portfolioView === "all" ? allAccountsTotalUsd : activeAccountTotalUsd;
   const heroLoading = portfolioView === "all"
-    ? allPortfolio.completeness === "loading"
+    ? allPortfolio.completeness === "loading" || allPrivateLoading
     : balances === null && !dataError;
   const heroUnavailable = portfolioView === "all"
-    ? allPortfolio.completeness === "partial"
+    ? allPortfolio.completeness === "partial" || allPrivateUnavailable
     : balances === null && Boolean(dataError);
-  const heroReady = portfolioView === "all" ? allPortfolioReady : balances !== null;
+  const heroReady = portfolioView === "all" ? allPortfolioReady && allPrivateBalances !== null : balances !== null;
   const heroDisplayAmount = privacyMode ? "••••••" : fmtAmount(heroXlm ?? "0.0000000");
   const heroBalanceDensity = heroDisplayAmount.length >= 18
     ? "long"
@@ -2007,9 +2030,8 @@ export function Dashboard() {
                 <div className="space-y-0.5">
                   {accounts.map((acct) => {
                     const isActive = acct.id === activeAccount?.id;
-                    const accountXlm = isActive
-                      ? activeAccountXlm ?? accountBalances[acct.publicKey] ?? 0
-                      : accountBalances[acct.publicKey] ?? 0;
+                    const accountXlm = accountTotals[acct.publicKey]?.xlm ?? null;
+                    const accountUsd = accountTotals[acct.publicKey]?.usd ?? null;
                     return (
                       <button
                         key={acct.id}
@@ -2039,23 +2061,18 @@ export function Dashboard() {
                             <p className="mono truncate text-[10.5px] text-neutral-400 pt-0.5">
                               {privacyMode
                                 ? "••••••"
-                                : `${fmtAmount(accountXlm)} XLM`}
+                                : `${accountXlm === null ? "—" : fmtAmount(accountXlm)} XLM`}
                             </p>
                           </div>
                         </div>
-                        {/* Active account uses its complete public + private portfolio value. */}
-                        {isActive && activeAccountTotalUsd !== null && !privacyMode ? (
-                          <span className="mono shrink-0 pl-2 text-[11.5px] font-semibold text-neutral-300">
-                            {fmtFiat(activeAccountTotalUsd, fiatCurrency, fiatRates)}
-                          </span>
-                        ) : (
-                          <FiatValue
-                            amount={accountXlm}
-                            code="XLM"
-                            prefix=""
+                        {!privacyMode ? (
+                          <span
                             className="mono shrink-0 pl-2 text-[11.5px] font-semibold text-neutral-300"
-                          />
-                        )}
+                            title={accountUsd === null ? "Account value unavailable" : network === "testnet" ? "Testnet reference value — not real money; public + saved private balances" : "Public + saved private balances"}
+                          >
+                            {accountUsd === null ? "—" : fmtFiat(accountUsd, fiatCurrency, fiatRates)}
+                          </span>
+                        ) : null}
                       </button>
                     );
                   })}
@@ -2606,6 +2623,10 @@ export function Dashboard() {
                       </p>
                     ) : portfolioView === "all" && allPortfolio.completeness === "loading" ? (
                       <p className="text-[13px] text-neutral-500">Checking every account…</p>
+                    ) : portfolioView === "all" && allPrivateUnavailable ? (
+                      <p className="text-[13px] text-amber-300">Private balance unavailable · refresh to retry</p>
+                    ) : portfolioView === "all" && allPrivateLoading ? (
+                      <p className="text-[13px] text-neutral-500">Checking saved private balances…</p>
                     ) : portfolioView === "all" && allPortfolio.unpricedAssets.length > 0 ? (
                       <p className="text-[13px] text-amber-300">
                         Total unavailable · {allPortfolio.unpricedAssets.length} asset{allPortfolio.unpricedAssets.length === 1 ? " has" : "s have"} no verified price
@@ -2641,11 +2662,6 @@ export function Dashboard() {
                   </div>
 
                   {/* Portfolio Allocation Distribution Bar & Legend */}
-                  {!privacyMode && heroUsd !== null && (
-                    <p className="mt-1 text-[10px] text-neutral-500">
-                      {marketDataLabel([xlmPriceSample, fiatRateSamples[fiatCurrency], ...Object.values(assetPriceSamples)])}
-                    </p>
-                  )}
                   {allocationShares.length > 0 && !privacyMode && (
                     <div className="mt-4 w-full max-w-[360px]">
                       <div className="h-2 w-full overflow-hidden rounded-full flex bg-white/10">
@@ -4052,7 +4068,6 @@ function PriceCard() {
     network,
     fiatCurrency,
     fiatRates,
-    fiatRateSamples,
   } = useWallet();
   const ranges: PriceRangeT[] = ["1D", "7D", "1M", "1Y"];
   const [chartMode, setChartMode] = useState<"market" | "portfolio">("market");
@@ -4180,13 +4195,11 @@ function PriceCard() {
           )}
         </div>
       </div>
-      <p className="mt-1 text-[10px] text-neutral-500" data-market-freshness>
-        {marketDataLabel([
-          priceData ? { value: priceData.current, observedAt: priceData.observedAt, status: priceError ? "stale" : "fresh" } : null,
-          fiatRateSamples[fiatCurrency],
-        ])}
-        {priceError && " · Chart refresh unavailable"}
-      </p>
+      {priceError && (
+        <p className="mt-1 text-[10px] text-neutral-500" role="status">
+          Chart refresh unavailable{priceData ? " · Showing previous data" : ""}
+        </p>
+      )}
       <div className="mt-3" aria-busy={priceLoading}>
         {mode === "portfolio" && portfolioPoints.length > 1 ? (
           <PriceChart
@@ -4214,7 +4227,6 @@ function PriceCard() {
       {/* The footer owns the remaining space so both desktop summary cards end
           on one optical action line without fixed card heights. */}
       <div data-market-range-selector className="mt-auto pt-3">
-        {priceError && <Button variant="secondary" onClick={() => void changePriceRange(priceRange)}>Retry chart</Button>}
         <div
           aria-label="Chart range"
           className="grid grid-cols-4 gap-1 rounded-xl bg-white/[0.06] p-1"

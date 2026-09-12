@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState, useTransition } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import QRCode from "qrcode";
 import { useWalletIdentity, useWalletLedger } from "@/hooks/useWallet";
@@ -62,7 +62,7 @@ export function ReceiveModal({
       open={open}
       onClose={onClose}
       busy={busy}
-      busyReason="Finish checking the address on your Trezor before closing."
+      busyReason="Wait for the address operation to finish before closing."
     >
       <ModalHeader
         title="Receive Funds"
@@ -87,6 +87,7 @@ function ReceiveInner({
   const { balances } = useWalletLedger();
   const { availableAssets, requestRuntime } = usePrivateBalanceRuntime();
   const [receiveMode, setReceiveMode] = useState<"public" | "private">(initialMode);
+  const [privateBusy, setPrivateBusy] = useState(false);
   const [, startRuntimeTransition] = useTransition();
   const [selectedAssetKey, setSelectedAssetKey] = useState("native");
   const [qrImage, setQrImage] = useState<{ payload: string; url: string } | null>(null);
@@ -113,10 +114,10 @@ function ReceiveInner({
     if (initialMode === "private") requestRuntime();
   }, [initialMode, requestRuntime]);
 
-  useEffect(() => {
-    onBusyChange(trezorPending);
+  useLayoutEffect(() => {
+    onBusyChange(trezorPending || privateBusy);
     return () => onBusyChange(false);
-  }, [onBusyChange, trezorPending]);
+  }, [onBusyChange, trezorPending, privateBusy]);
 
   const selectedAsset = useMemo(
     () => balances?.find((b) => b.key === selectedAssetKey) ?? null,
@@ -380,12 +381,7 @@ function ReceiveInner({
   );
   const panel = receiveMode === "private" ? (
     <PrivatePaymentAccessGate action="receive">
-      <>
-        <div className="flex justify-center px-4 pt-4 sm:px-6">
-          <PrivateAssetSelector />
-        </div>
-        <PrivateReceiveContent />
-      </>
+      <PrivateReceiveContent onBusyChange={setPrivateBusy} assetSelector={<PrivateAssetSelector disabled={privateBusy} />} />
     </PrivatePaymentAccessGate>
   ) : publicPanel;
 
@@ -400,8 +396,8 @@ function ReceiveInner({
       }}
       ariaLabel="Receive address type"
       options={[
-        { value: "public", label: "Public" },
-        { value: "private", label: "Private" },
+        { value: "public", label: "Public", disabled: privateBusy || trezorPending },
+        { value: "private", label: "Private", disabled: privateBusy || trezorPending },
       ]}
       tabListClassName="mx-4 mt-4 sm:mx-6"
       panelClassName="min-h-56"

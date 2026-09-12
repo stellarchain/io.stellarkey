@@ -3,6 +3,7 @@ import type { AssetBalance } from "./types";
 import type { FiatCurrency } from "./format";
 import { lookupKnownAsset } from "./assets";
 import { withAbortDeadline } from "./wallet-refresh";
+import { createSharedMarketRequests } from "./market-requests";
 
 export interface PricedAssetIdentity {
   code: string;
@@ -84,16 +85,23 @@ const COINGECKO_IDS: Record<string, string> = {
   [assetPriceKey("mainnet", "USDC", MAINNET_USDC_ISSUER)]: "usd-coin",
 };
 
-const CACHE_TTL = 60_000;
 const MARKET_REQUEST_TIMEOUT_MS = 8_000;
 
 export type FiatRates = Partial<Record<FiatCurrency, number>> & { USD: 1 };
 
 const FIAT_CODES: FiatCurrency[] = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"];
-type SampleCache = { samples: MarketSamples; request: number; observedBy: Record<string, number> };
-const assetCache: SampleCache = { samples: {}, request: 0, observedBy: {} };
-const fiatCache: SampleCache = { samples: {}, request: 0, observedBy: {} };
-const nativeCache: SampleCache = { samples: {}, request: 0, observedBy: {} };
+type SampleCache = {
+  samples: MarketSamples;
+  request: ReturnType<typeof createSharedMarketRequests<void>>;
+  sequence: number;
+  observedBy: Record<string, number>;
+};
+function sampleCache(): SampleCache {
+  return { samples: {}, request: createSharedMarketRequests<void>(), sequence: 0, observedBy: {} };
+}
+const assetCache = sampleCache();
+const fiatCache = sampleCache();
+const nativeCache = sampleCache();
 
 async function fetchSamples(
   cache: SampleCache,
@@ -104,34 +112,37 @@ async function fetchSamples(
 ): Promise<MarketSamples> {
   const read = () => Object.fromEntries(keys.map((key) => [key, currentSample(cache.samples[key] ?? UNAVAILABLE_MARKET_SAMPLE)]));
   if (keys.length === 0) return {};
-  if (keys.every((key) => cache.samples[key]?.status === "fresh" && isMarketObservationFresh(cache.samples[key].observedAt, Date.now(), CACHE_TTL))) return read();
-  const request = ++cache.request;
+  if (signal?.aborted || keys.every((key) => cache.samples[key]?.status === "fresh" && isMarketObservationFresh(cache.samples[key].observedAt))) return read();
   try {
-    const values = await withAbortDeadline(async (requestSignal) => {
-      const response = await fetch(url, { signal: requestSignal });
-      if (!response.ok) throw new Error("Market data unavailable");
-      const values = parse(await response.json());
-      if (requestSignal.aborted) throw new Error("Market request cancelled");
-      return values;
-    }, { timeoutMs: MARKET_REQUEST_TIMEOUT_MS, label: "Market data", signal });
-    if (!signal?.aborted) {
-      const observedAt = Date.now();
-      for (const key of keys) {
-        // Independent consumers may finish while a later request is still
-        // pending. Only an actual newer observation supersedes this result.
-        if (request < (cache.observedBy[key] ?? 0)) continue;
-        cache.samples[key] = positive(values[key])
-          ? { value: values[key], observedAt, status: "fresh" }
-          : retainedSample(cache.samples[key]);
-        if (positive(values[key])) cache.observedBy[key] = request;
+    await cache.request(url, async sharedSignal => {
+      const request = ++cache.sequence;
+      try {
+        const values = await withAbortDeadline(async (requestSignal) => {
+          const response = await fetch(url, { signal: requestSignal });
+          if (!response.ok) throw new Error("Market data unavailable");
+          const values = parse(await response.json());
+          if (requestSignal.aborted) throw new Error("Market request cancelled");
+          return values;
+        }, { timeoutMs: MARKET_REQUEST_TIMEOUT_MS, label: "Market data", signal: sharedSignal });
+        if (sharedSignal.aborted) return;
+        const observedAt = Date.now();
+        for (const key of keys) {
+          // Different asset batches may overlap; only a newer observation wins.
+          if (request < (cache.observedBy[key] ?? 0)) continue;
+          cache.samples[key] = positive(values[key])
+            ? { value: values[key], observedAt, status: "fresh" }
+            : retainedSample(cache.samples[key]);
+          if (positive(values[key])) cache.observedBy[key] = request;
+        }
+      } catch {
+        if (sharedSignal.aborted) return;
+        for (const key of keys) {
+          if (request >= (cache.observedBy[key] ?? 0)) cache.samples[key] = retainedSample(cache.samples[key]);
+        }
       }
-    }
+    }, signal);
   } catch {
-    if (!signal?.aborted) {
-      for (const key of keys) {
-        if (request >= (cache.observedBy[key] ?? 0)) cache.samples[key] = retainedSample(cache.samples[key]);
-      }
-    }
+    // A departing consumer must not invalidate a surviving consumer's observation.
   }
   return read();
 }
@@ -178,7 +189,7 @@ export async function fetchNativePrice(signal?: AbortSignal): Promise<MarketSamp
 export async function fetchAssetPriceSamples(assets: PricedAssetIdentity[], signal?: AbortSignal): Promise<MarketSamples> {
   const wanted = [...new Set(
     assets.map((asset) => assetPriceKey(asset.network, asset.code, asset.issuer)),
-  )].filter((key) => COINGECKO_IDS[key] !== undefined);
+  )].filter((key) => COINGECKO_IDS[key] !== undefined).sort();
   const ids = [...new Set(wanted.map((key) => COINGECKO_IDS[key]))];
   return fetchSamples(assetCache, wanted,
     `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd`,

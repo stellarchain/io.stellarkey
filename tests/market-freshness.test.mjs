@@ -87,13 +87,17 @@ test("native failures retain an honestly labelled last price and a retry can rec
   assert.deepEqual(await prices.fetchNativePrice(), fresh(0.3, now));
 });
 
-test("late price requests cannot replace a newer observation", async (t) => {
+test("an abandoned late price request cannot replace a newer observation", async (t) => {
   let now = 2_100_000_000_000;
   const pending = [];
   t.mock.method(Date, "now", () => now);
   t.mock.method(globalThis, "fetch", () => new Promise((resolve) => pending.push(resolve)));
   assert.equal(typeof prices.fetchAssetPriceSamples, "function");
-  const old = prices.fetchAssetPriceSamples([asset]);
+  const controller = new AbortController();
+  const old = prices.fetchAssetPriceSamples([asset], controller.signal);
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.abort();
+  await old;
   const latest = prices.fetchAssetPriceSamples([asset]);
   // The deadline boundary schedules the transport in a microtask.
   await new Promise((resolve) => setImmediate(resolve));
@@ -102,12 +106,12 @@ test("late price requests cannot replace a newer observation", async (t) => {
   const current = await latest;
   now += 1_000;
   pending[0](response({ "usd-coin": { usd: 0.9 } }));
-  assert.deepEqual(await old, current);
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(await prices.fetchAssetPriceSamples([asset]), current);
 });
 
 test("charts record successful observation time and reject invalid points", async (t) => {
-  const now = 2_200_000_000_000;
+  let now = 2_200_000_000_000;
   let points = [[now - 60_000, 0.2], [now, 0.25]];
   t.mock.method(Date, "now", () => now);
   t.mock.method(globalThis, "fetch", async () => response({ prices: points }));
@@ -116,10 +120,11 @@ test("charts record successful observation time and reject invalid points", asyn
   assert.equal(prices.isMarketObservationFresh(series.observedAt, now + 30_000), true);
   assert.equal(prices.isMarketObservationFresh(series.observedAt, now + 3600_000), false);
   points = [[now, -1], [now + 1, 0.25]];
+  now += prices.MARKET_MAX_AGE_MS;
   assert.equal(await fetchXlmSeries("7D"), null);
 });
 
-test("independent cold-cache consumers each receive a valid observation while a later request is pending", async (t) => {
+test("independent cold-cache consumers receive the same valid observation from one transport", async (t) => {
   const concurrent = await import("../src/lib/prices.ts?independent-consumers");
   let now = 2_300_000_000_000;
   const pending = [];
@@ -132,30 +137,33 @@ test("independent cold-cache consumers each receive a valid observation while a 
   const firstResult = await first;
   const firstObservedAt = now;
   now += 1_000;
-  pending[1](response({ "usd-coin": { usd: 1.01 } }));
   const secondResult = await second;
+  assert.equal(pending.length, 1);
   assert.deepEqual(firstResult[key], fresh(1.02, firstObservedAt));
-  assert.deepEqual(secondResult[key], fresh(1.01, now));
-  assert.deepEqual((await concurrent.fetchAssetPriceSamples([asset]))[key], fresh(1.01, now));
+  assert.deepEqual(secondResult[key], firstResult[key]);
+  assert.deepEqual((await concurrent.fetchAssetPriceSamples([asset]))[key], firstResult[key]);
 });
 
 for (const finish of ["abort", "failure"]) {
   test(`a later consumer's ${finish} does not erase an earlier successful observation`, async (t) => {
     const concurrent = await import(`../src/lib/prices.ts?independent-${finish}`);
-    const now = 2_400_000_000_000;
+    let now = 2_400_000_000_000;
     const pending = [];
     t.mock.method(Date, "now", () => now);
     t.mock.method(globalThis, "fetch", () => new Promise((resolve) => pending.push(resolve)));
     const controller = new AbortController();
     const first = concurrent.fetchAssetPriceSamples([asset]);
-    const second = concurrent.fetchAssetPriceSamples([asset], controller.signal);
     await new Promise((resolve) => setImmediate(resolve));
     pending[0](response({ "usd-coin": { usd: 1 } }));
     const firstResult = await first;
+    const observedAt = now;
+    now += prices.MARKET_MAX_AGE_MS;
+    const second = concurrent.fetchAssetPriceSamples([asset], controller.signal);
+    await new Promise((resolve) => setImmediate(resolve));
     if (finish === "abort") controller.abort();
     pending[1](response({}, 503));
     const secondResult = await second;
-    assert.deepEqual(firstResult[key], fresh(1, now));
-    assert.deepEqual(secondResult[key], { value: 1, observedAt: now, status: finish === "abort" ? "fresh" : "stale" });
+    assert.deepEqual(firstResult[key], fresh(1, observedAt));
+    assert.deepEqual(secondResult[key], { value: 1, observedAt, status: "stale" });
   });
 }

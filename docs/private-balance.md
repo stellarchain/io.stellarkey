@@ -1,8 +1,8 @@
 # StellarKey Private Balance Whitepaper
 
 - **Protocol:** V1 replacement design
-- **Implementation status:** Live Testnet development deployment, validated in StellarKey; not for real value
-- **Document revision:** 2026-09-10
+- **Implementation status:** Live Testnet development deployment; validation scope and dates in §17; not for real value
+- **Document revision:** 2026-09-11
 
 ## Abstract
 
@@ -46,8 +46,9 @@ The implementation targets five properties:
    RPC corroboration is mandatory for initial or full-history synchronization
    and enabled by default for routine synchronization.
 5. **Deployment and asset binding.** Every key hierarchy, address, artifact set,
-   and local record is bound to a network, realm, and contract. Every note also
-   binds one immutable on-chain registry index and its full asset field.
+   and local record is bound to a network, realm, and contract. Every note commits
+   to its full asset field, which the append-only registry permanently maps to
+   one index.
 
 The design does not hide network metadata, the pool, action timing, the
 transaction source, deposits, withdrawals, or the public action kind. Deposits
@@ -77,13 +78,32 @@ assets or set them `Active`/`ExitOnly`; entries cannot be deleted or reindexed.
 | Static application origin | Serves hash-pinned manifests, circuit Wasm, proving material, and verification data. |
 
 Transfer and withdrawal need no user Soroban authorization: the proof authorizes
-the state transition. Direct mode still signs an inner transaction from the
+the state transition. Direct mode still signs a transaction from the
 user's public Stellar account, so that source links the action to the account.
-A fee-bump sponsor changes the outer fee source but leaves the inner source
-public.
+Private action forms default network fees to that account and can select another
+software account held in the same wallet. This changes only the public XLM fee
+payer, not the deposit source, private identity, selected notes, or recipient.
+Watch-only and unsupported hardware accounts are listed but cannot be selected
+for private fee signing. Both the inner source and alternate fee payer remain
+public; fee sponsorship does not hide either identity.
+
+The unsigned review rejects fee-bump envelopes supplied by another party. For
+an explicitly selected payer, the wallet first signs the exact reviewed inner
+transaction, then locally constructs and signs a constrained fee-bump envelope.
+The payer is bound before proof disclosure and retained in the review, encrypted
+journal, and any multi-step approval. Its spendable public XLM is checked after
+reserves and selling liabilities. The resource fee is charged once; the outer
+envelope adds one inclusion-fee operation. Neither per-step nor cumulative
+approval limits are raised automatically. Deleting or changing the payer fails
+closed without falling back to charging the current account.
+
+Because the inner signature affects the outer hash, signing atomically journals
+the submitted outer hash together with the reviewed inner hash before broadcast.
+Polling, explorer links and resume use the actual submitted envelope and its
+retained payer and fee limits; old ordinary direct records remain compatible.
 
 Peer relaying and helper earnings have been removed. New reviews always use
-the user's account; stale relayed reviews are rejected and never silently fall
+the user's account as the inner source; stale relayed reviews are rejected and never silently fall
 back to direct submission. No public relayer address or fee exists in the
 unchanged contract action or archive. Historical encrypted fee notes remain
 ordinary recoverable outputs.
@@ -111,14 +131,20 @@ reviewed X25519 scan path. It does not hide the diversifier: reusing a receive
 address can still link the whole actions that carry it. Spending authority stays
 common to the account while issued receive addresses can rotate.
 
-Rotation records up to 65,536 issued diversifiers in encrypted local state and
-refuses to reissue a recorded value. It retains the current legacy address when
-starting this history, and keeps it through full verification, failed-verification
-rollback and encrypted backup restore. A random collision fails safely and asks
-for a fresh attempt; reaching the local bound stops rotation without disabling
-existing addresses. This is local reuse prevention, not hidden-diversifier
-cryptography or a guarantee across independent devices, old lost history,
-seed-only recovery, or deliberate local-data removal.
+First setup generates a random non-zero receive diversifier. Session
+initialization replaces a stored legacy zero-diversifier address once, while
+preserving an existing diversified address exactly. The provider records the
+replacement and the old diversifier in encrypted local state before publishing
+the new receive address; older notes remain recoverable.
+
+Issuance records up to 65,536 diversifiers and refuses to reissue a recorded
+value. Rotation excludes the zero diversifier and current address. Full
+verification, failed-verification rollback, and encrypted backup restore
+preserve the issued-address history. A recorded collision fails safely and
+asks for a fresh attempt; reaching the local bound stops issuance without
+disabling existing addresses. This is local reuse prevention, not
+hidden-diversifier cryptography or a guarantee across independent devices, old
+lost history, seed-only recovery, or deliberate local-data removal.
 
 The current Base58 address format is intentionally shorter than the retired
 format. `tskpay_` addresses are exactly 128 ASCII characters on Testnet and
@@ -148,12 +174,14 @@ The implemented V1 suite is:
 | Proof system | Groth16 over the BN254 scalar field |
 | Circuit hash | Poseidon2 over BN254 `Fr`, width 4, rate 3, capacity 1, `x^5`, 8 full rounds and 56 partial rounds |
 | Recipient encryption | RFC 9180 base mode: DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM |
-| Outgoing recovery | Outgoing-viewing-key authenticated encryption with deployment- and output-bound associated data |
+| Outgoing recovery | Outgoing-viewing-key HKDF-SHA256 derivation and AES-128-GCM, with deployment- and output-bound associated data |
 | Archive transcript | SHA-256 hash chain rooted in a deployment-specific genesis value |
 | Address body | Base58 with a prefix-bound SHA-256 checksum and deployment tag |
 
-All field elements are canonical 32-byte big-endian values below `Fr`. Protocol
-integers use fixed-width encodings and private values are bounded to 63 bits.
+Scalar-field elements used by the circuit and public signals are canonical
+32-byte big-endian values below `Fr`; BN254 proof coordinates instead use the
+curve's base field `Fq`. Protocol integers use fixed-width encodings and private
+values are bounded to 63 bits.
 The manifest directly pins the runtime constants and artifact hashes it exposes;
 those hashes transitively bind the remaining circuit, contract, hash, and
 encoding parameters in the authenticated artifacts.
@@ -172,8 +200,10 @@ separate circuit input or note-commitment field.
 
 Every action publishes exactly three non-zero, pairwise-distinct commitments.
 Zero-value dummy notes represent unused outputs; they are never absent or zero
-commitments. Each receives fresh randomness, owner material, diversifier,
-recipient ciphertext, outgoing ciphertext, and a normal-looking commitment.
+commitments. Each receives fresh randomness, owner/key material, recipient
+ciphertext, outgoing ciphertext, and a normal-looking commitment. Dummy lanes
+share the same clear action diversifier as the real lanes, as described in §3;
+they do not carry independent clear diversifiers that would reveal their role.
 The circuit derives `outputReal` from `value != 0`; the wallet does not provide
 output role as independent witness data.
 
@@ -285,10 +315,19 @@ methods, permissionless current-root refresh, guardian-authorized deposit
 pause, and an administrator-authorized append-only asset registry.
 
 Registry indices are permanent and contiguous. The asset administrator can add
-a Stellar Asset Contract, switch it between `Active` and `ExitOnly`, and hand
+a contract address, switch it between `Active` and `ExitOnly`, and hand
 authority to a new administrator through a propose/accept sequence. `ExitOnly`
 blocks deposits but preserves transfers and withdrawals for existing notes.
 The contract cannot delete, replace, or reindex an entry.
+
+Admission checks administrator authorization, contract-address encoding,
+uniqueness, and index capacity; it does not verify a Stellar Asset Contract
+executable or attest token behavior. Boundary transfers expect a compatible
+token interface. The curated XLM and USDC entries are Stellar Asset Contracts,
+but admission alone is not proof of backing or withdrawal availability. Issued
+assets retain their applicable authorization, trustline, and clawback rules;
+shielded notes do not remove those underlying asset risks. See the
+[Stellar Asset Contract semantics](https://developers.stellar.org/docs/tokens/stellar-asset-contract).
 
 For an action, the contract atomically:
 
@@ -373,9 +412,19 @@ mutation breaks recovery.
 A seed-only recovery starts at the deployment genesis, reads records in order,
 recomputes each record hash and action field, rebuilds the incremental tree,
 trial-decrypts transfer envelopes against the corroborated registry, validates
-the encrypted asset index and full commitment, derives owned nullifiers, and reconciles
+the full commitment, derives owned nullifiers, and reconciles
 the final action count, transcript head, frontier, and Merkle root. Only then is
 the recovered balance spendable.
+
+The corroborated registry and commitment-bound asset field are authoritative
+for an owned recipient note. A wrong redundant asset index inside an otherwise
+valid recipient plaintext does not discard that note: the scanner uses the
+matching registry entry's index and contract identity. This narrow recovery
+rule does not forgive canonical archive, registry, transcript, or tree
+corruption, which still fails closed. Neither a recipient-metadata failure nor
+a canonical validation failure releases an exposed proof's reserved inputs.
+
+### Archive-record restoration
 
 Persistent archive records can move into Stellar state archival after their TTL
 expires. Restoration discovers only the contiguous unavailable prefix, derives
@@ -394,6 +443,29 @@ Restoration therefore reduces round trips and signatures without trusting an
 RPC-expanded footprint. It is a liveness and fee dependency: confidentiality
 and ownership remain, but a user who cannot fund restoration may be unable to
 recover old history at that time.
+
+### Shared contract liveness and read-only simulation
+
+The pool's executable code and instance storage have their own TTLs, separate
+from archive-record TTLs. Configuration, tree/frontier, archive head, asset
+count, administrator state, and deposit pause live in instance storage. The
+contract extends persistent archive and registry entries when writing them,
+but does not extend its own code/instance TTL. `touch_root` extends only the
+temporary known-root entry, not the contract's lifetime. Shared contract
+restoration or TTL extension therefore needs separately funded maintenance;
+there is no automatic keepalive service or in-wallet shared-code/instance
+restoration workflow. Stellar documents these distinct operations in its
+[state archival guides](https://developers.stellar.org/docs/build/guides/archival).
+
+For public getters, simulation can temporarily restore archived entries without
+committing them on-chain. The client accepts this as read-only only when the
+bounded write footprint consists entirely of exact persistent/code restoration
+keys, with no authorization and no other state changes. Each restored value
+must match fresh archived ledger data byte-for-byte, including an expired TTL
+and a ledger observation no older than the simulation. Unverifiable responses
+fail closed. This path does not sign, submit, pay for restoration, or retain
+restoration evidence as a reusable freshness grant. A readable getter is not
+proof that a subsequent payment fits the wallet's fee cap.
 
 ## 12. RPC authenticity and client finality
 
@@ -446,7 +518,9 @@ RPC `PENDING`, Horizon acceptance, and timeouts are not ledger confirmation. The
 UI and durable action journal distinguish preparation, signing/submission,
 broadcast or ambiguous pending state, canonical confirmation, rejection or
 failure, and runtime status-unknown. Ambiguous submissions keep their input
-notes reserved until canonical evidence proves confirmation or safe absence.
+notes reserved. For an exposed spend proof, absence alone is never sufficient
+to release them; the separate deposit-envelope recovery rules are described
+below.
 
 New prepared actions persist a direct submission route in encrypted state;
 signing and broadcasting reject any other route, including missing legacy routes. Restart only rebroadcasts explicitly
@@ -472,12 +546,50 @@ or removed pending record alone is not a success receipt.
 
 ## 13. Direct submission and legacy recovery
 
+### Review, fees, and confirmation
+
 Private transfers, withdrawals, and consolidation now submit only from the
 user's own Stellar account through the selected RPC. The review explains that
 the submitting account and public network fee remain visible. Peer discovery,
 quotes, helper approval, helper fee notes, Earn controls, and Waku/Nostr
 transports are removed. A stale relayed draft or review fails closed; it is
 never silently converted into a direct payment.
+
+The browser reviews the exact simulated envelope before signing: source,
+sequence, time bounds, pool call and arguments, authorization, simulation data,
+and fees. A deposit allows exactly its source-account authorization and the
+reviewed token transfer into the pool; transfers and withdrawals reject extra
+authorization entries. The review window is five minutes. An expired deposit
+review can be rebuilt for another explicit confirmation; refreshing the review
+does not submit it automatically.
+
+The current private-action resource-fee cap is 10,000,000 stroops (1 XLM),
+separate from the reviewed classic inclusion fee. A simulated or assembled
+resource fee above that cap is rejected before signing; the wallet does not
+silently raise it. Restoration charges can make an otherwise small payment
+exceed the cap.
+A pre-signing fee-limit failure is not a ledger result, and a spend proof
+already shared during preparation still retains its input holds.
+
+### Held-balance self-recovery
+
+An eligible held payment can be recovered by explicitly authorizing a new
+direct self-transfer of exactly its one or two reserved inputs to a fresh
+address owned by the same wallet. The current flow requires one pending action,
+no build reservation, and no active chained approval. It prepares a new proof
+against a currently usable anchor and separately asks for proof-sharing and
+signing consent. An atomic encrypted-state update replaces the pending attempt
+without making the inputs available in between.
+
+This is a competing spend, not cancellation or instant unlocking. The
+replacement does not revoke the original proof: either can still confirm while
+its anchor is accepted and its real-input nullifiers remain unspent.
+Reconciliation distinguishes recovery confirmation, original-payment
+confirmation, another conflicting spend, and still pending. If neither spend
+confirms, the balance can remain held; the wallet never reports recovery merely
+because the replacement was approved, broadcast, or timed out.
+
+### Legacy records
 
 The published circuit, contract, three-output format, and encrypted archive
 are unchanged. Historical fee notes remain readable as ordinary owned outputs.
@@ -507,6 +619,22 @@ worker for a later retry. RPC-authentication disagreement retains the last
 authenticated snapshot in memory but disables actions and reports
 status-unknown. One scoped browser tab holds the synchronization lease;
 followers receive only redacted state and may take over after lease expiry.
+
+Worker readiness is distinct from wallet/session authority. A failed worker can
+be recreated without reporting a wallet switch or discarding an already
+submitted action's durable tracking. Add funds waits for in-flight sync before
+preparation; worker recovery does not automatically retry a payment. Preparation
+and signing check wallet/session ownership across asynchronous steps. Revoking
+that ownership does not undo an already authorized durable commit or canonical
+submission tracking. The dated action-context review in §17 separately records
+an outstanding detached-reconciliation publisher-ownership follow-up; this is
+not a claim that every asynchronous callback has been hardened.
+
+Receive readiness is likewise separate from scanning: an existing scoped local
+address remains available during a read-only scan, while a missing address is
+not itself evidence of loading. Locked, other-tab, stopped/error, and retry
+states remain explicit. New-address publication and asynchronous QR/retry
+feedback are bound to the current wallet session.
 
 The authenticated static catalogue supplies the deployment's checkpointed
 asset list without an RPC request during wallet unlock or the first switch to a
@@ -553,8 +681,8 @@ Private Balance must not be described as hiding all identities, defeating all
 tracing, or guaranteeing privacy.
 
 The separate Horizon stealth subsystem is complementary, not an alternative
-name for the pool. It provides reusable-recipient unlinkability by deriving a
-fresh classic destination without proving, but the asset, amount, sender,
+name for the pool. It derives a fresh classic destination for each payment to a
+reusable meta-address without proving, but the asset, amount, sender,
 timing, account creation, and later sweep can remain linkable. The two systems
 retain separate keys, recovery, sync, and user-facing guarantees.
 
@@ -591,9 +719,9 @@ The pool size comparison is also like-for-like: baseline revision `69335bd`
 and the replacement were built with Stellar CLI 27.0.0, Rust 1.97.1, locked
 dependencies, and identical optimization commands. The current governed pool
 is 71,277 bytes raw and 61,067 bytes after `stellar contract optimize`, 23.77%
-and 23.90% below that baseline respectively. The optimized size was remeasured
-locally for this revision; the deployed fixture intentionally uses the exact
-unoptimized 71,277-byte manifest-pinned Wasm.
+and 23.90% below that baseline respectively. The optimized size was measured
+locally during the protocol review; the deployed fixture intentionally uses
+the exact unoptimized 71,277-byte manifest-pinned Wasm.
 
 A standalone additional depth-17 association-set membership path compiled to
 4,573 constraints. It would raise the current action to at least 19,687
@@ -617,10 +745,14 @@ performance for protocol risk.
 ## 17. Deployment and trust status
 
 The replacement remains Protocol V1 and deliberately replaces the old Testnet
-design in place. There is no backward-compatible state migration. Previous
-Testnet pools bind different circuit, tree, contract, and verification-key
+circuit/tree design in place. There is no backward-compatible state migration
+from those retired pools. Previous Testnet pools bind different circuit, tree,
+contract, and verification-key
 hashes; their manifests and fixture evidence were retired rather than relabeled.
 Old balances and addresses are not presented as part of the replacement.
+This incompatibility does not describe the later relay removal: the current
+direct-only runtime preserves the replacement pool's notes and legacy pending
+records as described in §13.
 
 StellarKey's authenticated catalogue now publishes one live Testnet pool,
 `CBQI…DRUI`, with XLM at registry index 0 and USDC at index 1. Both entries were
@@ -649,6 +781,16 @@ as an audit, ceremony, physical-device result, or real-value approval. A Stellar
 Testnet reset deletes this pool and requires a fresh redeploy, new evidence, and
 republished manifest hashes.
 
+That historical browser run is not a new end-to-end validation of the current
+direct-only runtime. The 2026-09-11 [action-context checks](private-action-context-2026-09-11.md)
+and [receive/recovery checks](private-receive-recovery-design-2026-09-11.md)
+record local automated and synthetic-browser coverage for the newer behavior.
+The same day's [fee-limit investigation](private-payments-fee-limit-2026-09-11.md)
+records public Testnet code/instance maintenance, getter checks, and a synthetic
+XLM proof simulation; it does not establish a successful user payment or USDC
+action, and its observed fees are not a future cost guarantee. Updating this
+whitepaper does not renew those dated results or constitute a security audit.
+
 The current proving key was created by a single-party setup. It passes
 `snarkjs zkey verify` against the repository's
 pinned Powers-of-Tau transcript. Those exact SHA-256-selected bytes are PSE's
@@ -673,6 +815,12 @@ remain normative in the repository sources:
 - [Protocol V1 specification](../protocol/private-balance/docs/protocol-v1.md)
 - [Threat model](../protocol/private-balance/docs/threat-model.md)
 - [Canonical encoding](../protocol/private-balance/docs/encoding.md)
+- [Pool entrypoints](../protocol/private-balance/contracts/pool/src/contract.rs) and [storage/TTL behavior](../protocol/private-balance/contracts/pool/src/storage.rs)
+- [Receive-address initialization](../src/features/private-balance/worker/client.ts) and [encrypted issuance/recovery state](../src/features/private-balance/runtime/storage.ts)
+- [Recipient and archive scanner](../src/features/private-balance/runtime/scanner.ts)
+- [Public getter validation](../src/features/private-balance/runtime/archive-client.ts) and [archive-record restoration](../src/features/private-balance/runtime/archive-restoration.ts)
+- [Action preparation](../src/features/private-balance/runtime/action-transaction.ts), [envelope review](../src/features/private-balance/runtime/transaction-review.ts), and [fee policy](../src/features/private-balance/runtime/fee-policy.ts)
+- [Held-proof recovery rules](../src/features/private-balance/runtime/spend-recovery.ts)
 - [Protocol review and measurements](private-balance-protocol-review-2026-09-02.md)
 - [Recovery guide](private-balance-recovery.md)
 - [Safe support guide](private-balance-support.md)

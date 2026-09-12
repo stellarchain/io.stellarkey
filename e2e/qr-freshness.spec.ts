@@ -12,6 +12,81 @@ test.beforeEach(async ({ page, baseURL }) => {
   await page.goto('/private-component-fixture');
 });
 
+test('stopped receive offers recovery instead of endless loading', async ({ page }) => {
+  await page.getByRole('button', { name: 'Open QR freshness checks' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Synthetic receive continuity' });
+  await dialog.getByRole('tab', { name: 'Private', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Stop synthetic receive runtime', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Try Again', exact: true })).toBeVisible();
+  await expect(dialog.getByText('Your address is loading — one moment', { exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Try Again', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toBeVisible();
+});
+
+for (const action of ['Revoke', 'Replace']) test(`receive ${action.toLowerCase()} session hides retained address before runtime updates`, async ({ page }) => {
+  await page.getByRole('button', { name: 'Open QR freshness checks' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Synthetic receive continuity' });
+  await dialog.getByRole('tab', { name: 'Private', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: `${action} synthetic receive session`, exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Complete initial synthetic QRs', exact: true }).click();
+  await expect(dialog.locator('img, a[download]')).toHaveCount(0);
+  await expect(dialog.getByRole('heading', { name: 'Unlock to receive privately', exact: true })).toBeVisible();
+});
+
+test('receive follower takeover and reusable-only recovery are explicit', async ({ page }) => {
+  await page.getByRole('button', { name: 'Open QR freshness checks' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Synthetic receive continuity' });
+  await dialog.getByRole('tab', { name: 'Private', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Move synthetic receive to another tab', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Use in This Tab', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Remove synthetic reusable address', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toBeVisible();
+  const type = dialog.getByRole('button', { name: 'Private receive address type', exact: true });
+  await type.press('ArrowDown');
+  await dialog.getByRole('option', { name: 'Shielded', exact: true }).press('End');
+  await dialog.getByRole('option', { name: 'Reusable', exact: true }).press('Enter');
+  await expect(type).toBeFocused();
+  await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Try Again', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toBeVisible();
+  await expect(dialog.getByTestId('receive-retry-count')).toHaveText('1');
+});
+
+test('receive QR failure offers local retry and leaves the address usable', async ({ page }) => {
+  await page.getByRole('button', { name: 'Open QR freshness checks' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Synthetic receive continuity' });
+  await dialog.getByRole('tab', { name: 'Private', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Fail pending synthetic QRs', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Retry QR', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Complete initial synthetic QRs', exact: true }).click();
+  await expect(dialog.locator('img')).toHaveCount(1);
+  await expect(dialog.locator('a[download]')).toHaveCount(1);
+  await expect(dialog.getByTestId('receive-retry-count')).toHaveText('0');
+});
+
+test('receive delayed retry is dismissible and cannot publish into a reopened panel', async ({ page }) => {
+  const opener = page.getByRole('button', { name: 'Open QR freshness checks' });
+  await opener.click();
+  const dialog = page.getByRole('dialog', { name: 'Synthetic receive continuity' });
+  await dialog.getByRole('tab', { name: 'Private', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Delay synthetic receive retry', exact: true }).click();
+  const retry = dialog.getByRole('button', { name: 'Try Again', exact: true });
+  await retry.evaluate(node => { (node as HTMLButtonElement).click(); (node as HTMLButtonElement).click(); });
+  await expect(dialog.getByTestId('receive-retry-count')).toHaveText('1');
+  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeEnabled();
+  await dialog.press('Escape');
+  await expect(dialog).toBeHidden();
+  await opener.click();
+  await dialog.getByRole('tab', { name: 'Private', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Fail old synthetic receive retry', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Try Again', exact: true })).toBeEnabled();
+  await expect(dialog.getByText('Synthetic retired receive retry', { exact: true })).toHaveCount(0);
+});
+
 test('receive QR and download never describe a stale payload; leaving clears rendered private state', async ({ page }) => {
   await page.getByRole('button', { name: 'Open QR freshness checks' }).click();
   const dialog = page.getByRole('dialog', { name: 'Synthetic receive continuity' });
@@ -34,13 +109,14 @@ test('receive QR and download never describe a stale payload; leaving clears ren
   await expect(dialog.locator('img')).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Complete next synthetic QR' }).click();
   await expect(dialog.locator('img')).toHaveCount(1);
-  await dialog.getByRole('button', { name: 'Reusable', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Private receive address type', exact: true }).click();
+  await dialog.getByRole('option', { name: 'Reusable', exact: true }).click();
   await expect(dialog.getByTestId('qr-request-count')).toHaveText(String(initial + 3));
   await expect(dialog.locator('img')).toHaveCount(0);
   await publicTab.click();
   await dialog.getByRole('button', { name: 'Complete next synthetic QR' }).click();
   await expect(dialog.locator('img, a[download]')).toHaveCount(0);
-  await expect(dialog.getByRole('group', { name: 'Private receive address type' })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Private receive address type' })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('button', { name: 'Open QR freshness checks' })).toBeFocused();

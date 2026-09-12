@@ -11,6 +11,7 @@ import { formatPrivateBalanceAmount } from '../runtime/selectors';
 import { PrivateActionError } from './PrivateActionError';
 import { PrivateActionReview } from './PrivateActionReview';
 import { PrivateAssetSelector } from './PrivateAssetSelector';
+import { PrivateFeeAccountSelector, usePrivateFeeAccount } from './PrivateFeeAccountSelector';
 import {
   PrivateAmountField,
   PrivateQuickAmounts,
@@ -104,6 +105,7 @@ export function WithdrawPrivateFlow({
   onHeaderChange,
   onDirtyChange,
 }: WithdrawPrivateFlowProps) {
+  const feeAccount = usePrivateFeeAccount();
   const { asset, publicAddress, verifiedBalanceStroops, networkLabel } =
     usePrivateBalanceRuntimeData();
   const decimals = asset?.decimals ?? 7;
@@ -146,7 +148,7 @@ export function WithdrawPrivateFlow({
     if (shell && !shell.closest('[inert]')) shell.focus({ preventScroll: true });
     setStage('review');
     void flow.prepare(
-      { kind: 'withdraw', amount: amount.trim(), publicRecipient: trimmedRecipient },
+      { kind: 'withdraw', amount: amount.trim(), publicRecipient: trimmedRecipient, feePayerAccountId: feeAccount.feePayerAccountId || undefined },
     );
   };
 
@@ -205,7 +207,7 @@ export function WithdrawPrivateFlow({
         />
       ) : stage === 'review' ? (
         <PrivateActionReview
-          draft={{ kind: 'withdraw', amount: amount.trim(), publicRecipient: trimmedRecipient }}
+          draft={{ kind: 'withdraw', amount: amount.trim(), publicRecipient: trimmedRecipient, feePayer: feeAccount.feePayer }}
           review={flow.review}
           chained={flow.chained}
           chainProgress={flow.chainProgress}
@@ -278,6 +280,7 @@ export function WithdrawPrivateFlow({
             {flow.errorCause ?? flow.error ? (
               <PrivateActionError cause={flow.errorCause ?? new Error(flow.error ?? '')} />
             ) : null}
+            <PrivateFeeAccountSelector value={feeAccount.feePayerAccountId} onChange={feeAccount.select} />
             <ModalFooter
               primary={
                 <Button type="submit" disabled={amountCheck.stroops === null || !recipientShapeOk}>

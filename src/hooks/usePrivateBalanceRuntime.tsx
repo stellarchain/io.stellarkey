@@ -1,5 +1,6 @@
 'use client';
 
+import type { PrivateActionSubmission } from '../features/private-balance/runtime/submission';
 import {
   createContext,
   useCallback,
@@ -31,7 +32,7 @@ import type {
 } from '@/features/private-balance/runtime/types';
 import type { PrivateArchiveRestorationProgress } from '@/features/private-balance/runtime/archive-restoration';
 import type { PrivateBalanceAsset } from '@/lib/private-balance-assets';
-import type { PrivatePortfolioEntry } from '@/features/private-balance/runtime/portfolio';
+import type { PrivateAccountPortfolioBalances, PrivatePortfolioEntry } from '@/features/private-balance/runtime/portfolio';
 import type { StealthOwnedPayment } from '@/features/private-balance/runtime/stealth-cache';
 
 export type PrivateBalanceRuntimePhase =
@@ -121,6 +122,8 @@ export interface PrivateBalanceRuntimeDataValue {
   restoreRequiredActionIndex: number | null;
   deployment: PrivateBalanceDeploymentSummary;
   privateAddress: string | null;
+  /** In-memory vault session that authenticated the published receive identity. */
+  receiveSessionId: number | null;
   publicAddress: string | null;
   networkLabel: 'Testnet' | 'Mainnet';
   protocolVersion: number;
@@ -169,10 +172,11 @@ export interface PrivateBalanceRuntimeDataValue {
     onProgress?: (stage: PrivateActionProgressStage) => void,
     signal?: AbortSignal,
     authorizeDisclosure?: AuthorizePrivateProofDisclosure,
+    feePayerAccountId?: string,
   ): Promise<PreparedPrivateActionReview>;
   submitAction(
     review: PreparedPrivateActionReview,
-  ): Promise<'broadcast' | 'ambiguous'>;
+  ): Promise<PrivateActionSubmission>;
   prepareChainedSend(draft: PrivateChainedSendDraft): Promise<PrivateChainedSendApproval>;
   submitChainedSend(
     approval: PrivateChainedSendApproval,
@@ -239,6 +243,7 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   error: null,
   restoreRequiredActionIndex: null,
   privateAddress: null,
+  receiveSessionId: null,
   publicAddress: null,
   networkLabel: 'Testnet',
   protocolVersion: 1,
@@ -294,7 +299,7 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   prepareAction: unavailableReview,
   prepareSpendRecovery: unavailableReview,
   cancelAction: unavailable,
-  submitAction: unavailableSubmission,
+  submitAction: async () => { throw new Error('Private Payments are unavailable.'); },
   prepareChainedSend: unavailableChainedApproval,
   submitChainedSend: unavailableChainedSubmission,
   onIncomingPrivatePayment: () => () => {},
@@ -311,9 +316,13 @@ const PrivateBalanceRuntimeDataContext =
 
 export interface PrivateBalancePortfolioValue {
   entries: PrivatePortfolioEntry[];
+  accountBalances: PrivateAccountPortfolioBalances;
+  refreshAccountBalances(): Promise<void>;
 }
 
-const PrivateBalancePortfolioContext = createContext<PrivateBalancePortfolioValue>({ entries: [] });
+const EMPTY_ACCOUNT_BALANCES: PrivateAccountPortfolioBalances = {};
+const noopPortfolioRefresh = async () => {};
+const PrivateBalancePortfolioContext = createContext<PrivateBalancePortfolioValue>({ entries: [], accountBalances: EMPTY_ACCOUNT_BALANCES, refreshAccountBalances: noopPortfolioRefresh });
 
 interface PrivateBalanceRuntimeControlState {
   scopeKey: string | null;
@@ -448,11 +457,15 @@ export function PrivateBalanceRuntimeDataProvider({
 export function PrivateBalancePortfolioProvider({
   children,
   entries,
+  accountBalances = EMPTY_ACCOUNT_BALANCES,
+  refreshAccountBalances = noopPortfolioRefresh,
 }: {
   children: ReactNode;
   entries: PrivatePortfolioEntry[];
+  accountBalances?: PrivateAccountPortfolioBalances;
+  refreshAccountBalances?: () => Promise<void>;
 }) {
-  const value = useMemo(() => ({ entries }), [entries]);
+  const value = useMemo(() => ({ entries, accountBalances, refreshAccountBalances }), [entries, accountBalances, refreshAccountBalances]);
   return (
     <PrivateBalancePortfolioContext.Provider value={value}>
       {children}

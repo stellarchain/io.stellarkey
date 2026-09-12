@@ -72,6 +72,8 @@ import { fetchFiatRateSamples, isMarketObservationFresh, marketValues, USD_REFER
 import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/lib/types";
 import type { HardwareSigner } from "@/lib/hardware";
 import type { PreparedStealthPayment } from "@/features/private-balance/runtime/stealth-payment";
+import { resolvePrivateFeePayer, assertSamePrivateFeePayer, type PrivateFeePayer } from "@/features/private-balance/runtime/fee-policy";
+import type { PrivateFeeBumpLimits } from "@/lib/private-balance-fee-bump";
 import type { NetworkKey } from "@/lib/stellar";
 import { NETWORKS } from "@/lib/stellar";
 import {
@@ -431,7 +433,8 @@ interface WalletContextValue {
     envelopeXdr: string;
     expectedTransactionHash: string;
     networkPassphrase: string;
-  }, assertActionCurrent?: () => void) => Promise<string>;
+  } & PrivateFeeBumpLimits, assertActionCurrent?: () => void) => Promise<string>;
+  resolvePrivateBalanceFeePayer: (accountId?: string) => PrivateFeePayer | undefined;
   fundFromFriendbot: () => Promise<void>;
 }
 
@@ -527,6 +530,7 @@ type WalletTransactionsContextValue = Pick<
   | "prepareCosignPayment"
   | "cosignTransaction"
   | "signPrivateBalanceEnvelope"
+  | "resolvePrivateBalanceFeePayer"
   | "fundFromFriendbot"
 >;
 
@@ -581,6 +585,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [vaultStorageIssue, setVaultStorageIssue] = useState<StorageIssue | null>(null);
   const [network, setNetworkState] = useState<NetworkKey>("testnet");
   const [accounts, setAccounts] = useState<AccountMeta[]>([]);
+  const accountsRef = useRef(accounts);
+  useLayoutEffect(() => { accountsRef.current = accounts; }, [accounts]);
   const [archivedAccounts, setArchivedAccounts] = useState<AccountMeta[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [signingContextRevision, setSigningContextRevision] = useState(0);
@@ -2838,13 +2844,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [activeAccount, network, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
+  const resolvePrivateBalanceFeePayer = useCallback((accountId?: string) => {
+    captureSigningContext()();
+    if (!activeAccount) throw new Error("No active account");
+    return resolvePrivateFeePayer(accountsRef.current, activeAccount.id, accountId);
+  }, [activeAccount, captureSigningContext]);
+
   const signPrivateBalanceEnvelope = useCallback(async (request: {
     envelopeXdr: string;
     expectedTransactionHash: string;
     networkPassphrase: string;
-  }, assertActionCurrent?: () => void) => {
+  } & PrivateFeeBumpLimits, assertActionCurrent?: () => void) => {
     const assertWalletCurrent = captureSigningContext();
-    const assertContextCurrent = () => { assertWalletCurrent(); assertActionCurrent?.(); };
+    const feePayer = request.feePayer ? Object.freeze({ ...request.feePayer }) : undefined;
+    const assertContextCurrent = () => {
+      assertWalletCurrent(); assertActionCurrent?.();
+      assertSamePrivateFeePayer(feePayer, resolvePrivateBalanceFeePayer(feePayer?.accountId));
+    };
     assertContextCurrent();
     if (!activeAccount) throw new Error("No active account");
     if (activeAccount.watchOnly || activeAccount.hardware) {
@@ -2857,11 +2873,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     assertContextCurrent();
     const signing = await loadPrivateBalanceSigningApi();
     assertContextCurrent();
-    return withSigningKeypair(activeAccount.id, softwareSigner => {
+    return withSigningKeypair(activeAccount.id, async softwareSigner => {
       assertContextCurrent();
+      if (feePayer) return withSigningKeypair(feePayer.accountId, feePayerSigner => {
+        assertContextCurrent();
+        return signing.signExactPrivateBalanceEnvelope({ ...request, feePayer, expectedSource: activeAccount.publicKey, softwareSigner, feePayerSigner });
+      });
       return signing.signExactPrivateBalanceEnvelope({ ...request, expectedSource: activeAccount.publicKey, softwareSigner });
     });
-  }, [activeAccount, captureSigningContext, network, requestSigningAuthorization]);
+  }, [activeAccount, captureSigningContext, network, requestSigningAuthorization, resolvePrivateBalanceFeePayer]);
 
   const changePriceRange = useCallback(
     async (r: PriceRange) => {
@@ -3016,6 +3036,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       prepareCosignPayment,
       cosignTransaction,
       signPrivateBalanceEnvelope,
+      resolvePrivateBalanceFeePayer,
       fundFromFriendbot,
     }),
     [
@@ -3104,6 +3125,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       prepareCosignPayment,
       cosignTransaction,
       signPrivateBalanceEnvelope,
+      resolvePrivateBalanceFeePayer,
       fundFromFriendbot,
     ],
   );
@@ -3286,6 +3308,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     prepareCosignPayment,
     cosignTransaction,
     signPrivateBalanceEnvelope,
+    resolvePrivateBalanceFeePayer,
     fundFromFriendbot,
   }), [
     applyMultisigConfig,
@@ -3304,6 +3327,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     sendBatch,
     submitStealthPayment,
     signPrivateBalanceEnvelope,
+    resolvePrivateBalanceFeePayer,
     swap,
     trustAsset,
     trustAssets,

@@ -1,5 +1,63 @@
 import { expect, test } from "@playwright/test";
-import { installNetworkFixtures, installQuietEventSource, testAccount, testPassword, testSecret } from "./fixtures";
+import AxeBuilder from "@axe-core/playwright";
+import { importTestWallet, installNetworkFixtures, installQuietEventSource, testAccount, testPassword, testSecret } from "./fixtures";
+
+test("balance and chart omit timestamps and reuse public price requests until the five-minute expiry", async ({ context, page, browserName }) => {
+  const observedAt = 1_800_000_000_000;
+  const calls = new Map<string, number>();
+  await installQuietEventSource(context);
+  await installNetworkFixtures(context);
+  await context.route("https://api.coingecko.com/**", async route => {
+    const url = new URL(route.request().url());
+    const key = url.pathname.endsWith("/market_chart") ? `chart:${url.searchParams.get("days")}`
+      : url.pathname.endsWith("/exchange_rates") ? "fiat" : "spot";
+    calls.set(key, (calls.get(key) ?? 0) + 1);
+    await route.fallback();
+  });
+  await context.route("**/*", async route => {
+    const host = new URL(route.request().url()).hostname;
+    if (["127.0.0.1", "api.coingecko.com", "horizon-testnet.stellar.org", "soroban-testnet.stellar.org"].includes(host)) return route.fallback();
+    await route.abort();
+  });
+  await page.clock.setFixedTime(observedAt);
+  await importTestWallet(page);
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+  await expect(page.getByText(/^Rate updated ·/)).toHaveCount(0);
+  const chart = page.locator("section").filter({ has: page.getByText("XLM Market", { exact: true }) });
+  await expect(chart.getByRole("button", { name: /refresh|retry/i })).toHaveCount(0);
+  await expect.poll(() => Object.fromEntries(calls)).toEqual({ "chart:7": 1, fiat: 1, spot: 1 });
+
+  await page.clock.setFixedTime(observedAt + 120_000);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText("Updating", { exact: true })).toBeHidden();
+  expect(Object.fromEntries(calls)).toEqual({ "chart:7": 1, fiat: 1, spot: 1 });
+  await chart.getByRole("button", { name: "1D", exact: true }).click();
+  await expect(page.getByLabel("1D market price summary")).toBeVisible();
+  await chart.getByRole("button", { name: "7D", exact: true }).click();
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+  expect(Object.fromEntries(calls)).toEqual({ "chart:7": 1, "chart:1": 1, fiat: 1, spot: 1 });
+
+  await page.clock.setFixedTime(observedAt + 300_000);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect.poll(() => Object.fromEntries(calls)).toEqual({ "chart:7": 2, "chart:1": 1, fiat: 2, spot: 2 });
+  await expect(page.getByText("Updating", { exact: true })).toBeHidden();
+  const range = chart.getByRole("button", { name: "1D", exact: true });
+  await range.focus();
+  await page.keyboard.press("Enter");
+  await expect(range).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("1D market price summary")).toBeVisible();
+  expect(calls.get("chart:1")).toBe(1);
+
+  const results = await new AxeBuilder({ page })
+    .include(".dashboard-home-balance-card")
+    .include("section:has([data-market-range-selector])")
+    .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
+    // WebKit cannot reliably resolve contrast through the existing blurred surfaces.
+    .disableRules(browserName === "webkit" ? ["color-contrast"] : [])
+    .analyze();
+  expect(results.violations.filter(v => v.impact === "critical" || v.impact === "serious")
+    .map(v => ({ id: v.id, impact: v.impact, nodes: v.nodes.length }))).toEqual([]);
+});
 
 test("Mainnet quote expiry at the tip action preserves the ticket and price retry restores checkout", async ({ context, page }) => {
   const observedAt = 1_800_000_000_000;

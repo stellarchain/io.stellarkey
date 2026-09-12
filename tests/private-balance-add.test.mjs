@@ -27,7 +27,7 @@ test('add-funds uses the reviewed action lifecycle and honest privacy copy', () 
   const source = read('src/features/private-balance/components/AddPrivateFunds.tsx');
   const controller = read('src/features/private-balance/components/usePrivateActionController.ts');
 
-  assert.match(source, /flow\.prepare\(\{ kind: 'deposit', amount: amount\.trim\(\) \}\)/);
+  assert.match(source, /flow\.prepare\(\{ kind: 'deposit', amount: amount\.trim\(\), feePayerAccountId: feeAccount.feePayerAccountId \|\| undefined \}\)/);
   assert.match(source, /PRIVACY_ROW\.deposit/);
   assert.match(controller, /cancelAction/);
 });

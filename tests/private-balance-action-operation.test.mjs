@@ -70,7 +70,7 @@ for (const mode of ['direct', 'chained']) {
       const owner = current.current;
       await submit();
       const afterDuplicate = { ...ui, owner: current.current, aborted: owner.signal.aborted };
-      resolve(mode === 'chained' ? { status: outcome, finalTransactionHash: 'synthetic-hash' } : outcome);
+      resolve(mode === 'chained' ? { status: outcome, finalTransactionHash: 'synthetic-hash' } : { status: outcome, transactionHash: 'synthetic-hash' });
       await first;
 
       assert.equal(requests, 1, 'duplicate confirmation must not reach the provider busy rejection');

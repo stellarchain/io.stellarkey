@@ -44,6 +44,30 @@ const ERROR_RULES: ErrorRule[] = [
     }),
   },
   {
+    match: /^Private Balance simulated resource fee exceeds the approved cap\.$/i,
+    humanize: () => ({
+      title: 'Network fee exceeds the limit',
+      body: 'Preparation stopped because the estimated network fee exceeds the approved limit. The limit has not been increased. Check private activity before starting another payment.',
+      action: 'details',
+    }),
+  },
+  {
+    match: /fee-paying account.*(?:spendable public XLM|needs public XLM)/i,
+    humanize: () => ({
+      title: 'Not enough XLM for network fees',
+      body: 'Choose a fee account with enough public XLM after its reserve and selling liabilities, or fund that account. Any already shared private proof remains held until its outcome is checked.',
+      action: 'details',
+    }),
+  },
+  {
+    match: /fee-paying account.*(?:changed|unavailable|invalid)/i,
+    humanize: () => ({
+      title: 'Choose the fee account again',
+      body: 'The selected fee account is no longer available for this review. Go back and choose an account again. Previously shared proofs remain held until their outcomes are checked.',
+      action: 'details',
+    }),
+  },
+  {
     match: /previous payment is still confirming/i,
     humanize: () => ({
       title: 'One moment',
@@ -185,11 +209,19 @@ const ERROR_RULES: ErrorRule[] = [
     }),
   },
   {
-    match: /worker (is not ready|terminated|returned a mismatched|session is not initialized)/i,
+    match: /private (action|proof sharing) cancelled after its wallet context changed/i,
+    humanize: () => ({
+      title: 'The wallet session changed',
+      body: 'This action stopped updating in this session. Check private activity for any pending payment before starting another.',
+      action: 'details',
+    }),
+  },
+  {
+    match: /worker (is not ready|is unavailable|terminated|crashed|stopped responding|returned an unreadable|returned a mismatched|session is not initialized)/i,
     humanize: () => ({
       title: 'Something interrupted the preparation',
-      body: 'Nothing was sent and your money is safe. Try again.',
-      action: 'retry',
+      body: 'The local proof worker stopped. Sync private payments to restart it, then check activity for any pending payment before starting another.',
+      action: 'details',
     }),
   },
   {
@@ -225,8 +257,8 @@ export function humanizePrivateError(cause: unknown): HumanizedPrivateError {
   }
   return {
     title: "That didn't work",
-    body: 'Your money is safe — nothing was sent. Try again, and check Details if it keeps happening.',
-    action: 'retry',
+    body: 'The payment status could not be determined here. Check private activity before starting another payment, and open Details for more information.',
+    action: 'details',
     technical: raw,
   };
 }

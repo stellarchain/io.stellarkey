@@ -20,12 +20,15 @@ import { PrivateActionError, PrivateReviewMismatchError } from './PrivateActionE
 import { privateReviewBalanceSimulation } from './PrivateReviewSimulation';
 import type { PrivateProofDisclosure } from '../runtime/proof-disclosure';
 import { assertDirectPrivateSubmission } from '../runtime/direct-submission';
+import { assertSamePrivateFeePayer, privateFeePayerUnavailableReason, type PrivateFeePayer } from '../runtime/fee-policy';
+import { useWalletIdentity } from '@/hooks/useWallet';
 import type {
   PrivateChainedReview,
 } from './usePrivateActionController';
 
 /** What the person actually typed — the review screen renders this at once. */
 export interface PrivateReviewDraft {
+  feePayer?: PrivateFeePayer;
   purpose?: 'recovery';
   kind: 'deposit' | 'transfer' | 'withdraw';
   /** Display-units amount exactly as entered. */
@@ -102,6 +105,10 @@ export function PrivateActionReview({
   backInHeader?: boolean;
 }) {
   const { asset, publicAddress } = usePrivateBalanceRuntimeData();
+  const { accounts, activeAccount } = useWalletIdentity();
+  const feeAccount = draft.feePayer
+    ? accounts.find(account => account.id === draft.feePayer!.accountId && account.publicKey === draft.feePayer!.publicKey)
+    : activeAccount;
   const decimals = asset?.decimals ?? 7;
   const code = asset?.code ?? 'Asset';
   const privateAmount = (atomicUnits: string | bigint) =>
@@ -118,11 +125,19 @@ export function PrivateActionReview({
   // Render-integrity: a prepared review may only enable confirm when it
   // byte-matches the draft the person is looking at.
   const mismatch = useMemo<PrivateReviewMismatchError | null>(() => {
+    if (draft.feePayer && (!feeAccount || privateFeePayerUnavailableReason(feeAccount))) {
+      return new PrivateReviewMismatchError('fee account is unavailable');
+    }
     try {
-      if (review) assertDirectPrivateSubmission(review);
+      if (review) {
+        assertDirectPrivateSubmission(review);
+        assertSamePrivateFeePayer(draft.feePayer, review.transaction.feePayer);
+      }
+      if (disclosure) assertSamePrivateFeePayer(draft.feePayer, disclosure.feePayer);
       if (chained) {
         assertDirectPrivateSubmission(chained.approval);
         assertDirectPrivateSubmission(chained.draft);
+        assertSamePrivateFeePayer(draft.feePayer, chained.approval.feePayer);
       }
     } catch {
       return new PrivateReviewMismatchError('direct submission requires a new review');
@@ -160,7 +175,7 @@ export function PrivateActionReview({
       return new PrivateReviewMismatchError('public recipient changed');
     }
     return null;
-  }, [amountStroops, asset?.contractId, chained, disclosure, draft, review]);
+  }, [amountStroops, asset?.contractId, chained, disclosure, draft, feeAccount, review]);
 
   const maximumFeeStroops = review
     ? review.transaction.classicFeeStroops + review.transaction.resourceFeeStroops
@@ -288,6 +303,7 @@ export function PrivateActionReview({
           </ReviewRow>
         ) : null}
         {draft.memo ? <ReviewRow label="Memo">{draft.memo}</ReviewRow> : null}
+        <ReviewRow label="Fee account">{feeAccount?.label ?? (draft.feePayer ? 'Unavailable account' : 'Current account')}</ReviewRow>
         {chained ? (
           <div className="py-2.5 text-[13px]">
             <dt className="text-neutral-400">Network Fee</dt>
@@ -352,7 +368,9 @@ export function PrivateActionReview({
       ) : null}
 
       <Notice tone="info" compact>
-        Your Stellar account is public as the submitting account and pays network fees.
+        {draft.feePayer
+          ? 'Your current account remains the public transaction source. The selected fee account pays the network fee; both accounts are visible on Stellar.'
+          : 'Your Stellar account is public as the submitting account and pays network fees.'}
       </Notice>
 
       <details className="panel-inset px-4">
@@ -368,8 +386,14 @@ export function PrivateActionReview({
           ) : null}
           {publicAddress ? (
             <div className="flex items-center justify-between gap-4">
-              <span className="shrink-0 text-neutral-400">Fee paid by</span>
+              <span className="shrink-0 text-neutral-400">Transaction source</span>
               <HashValue value={publicAddress} className="justify-end text-[11.5px] text-neutral-300" />
+            </div>
+          ) : null}
+          {draft.feePayer?.publicKey || publicAddress ? (
+            <div className="flex items-center justify-between gap-4">
+              <span className="shrink-0 text-neutral-400">Fee paid by</span>
+              <HashValue value={draft.feePayer?.publicKey ?? publicAddress!} className="justify-end text-[11.5px] text-neutral-300" />
             </div>
           ) : null}
           {chained ? (

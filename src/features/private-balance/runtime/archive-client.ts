@@ -64,6 +64,7 @@ interface ArchiveRpc {
 interface PrivateContractInvocation {
   result: unknown;
   isReadCall: boolean;
+  simulation?: SorobanRpc.Api.SimulateTransactionResponse;
 }
 
 interface PrivateContractClient {
@@ -80,6 +81,62 @@ interface PrivateContractClientFactoryInput {
 type PrivateContractClientFactory = (
   input: PrivateContractClientFactoryInput,
 ) => Promise<PrivateContractClient>;
+
+/**
+ * Protocol 23+ puts auto-restored entries in the write footprint, even for a
+ * getter. The SDK's isReadCall therefore rejects an otherwise read-only call.
+ * Accept only a complete restoration list with no auth or other changes, and
+ * corroborate each simulated value against its unchanged archived ledger data.
+ * This never restores anything on-chain and never caches restoration evidence.
+ */
+async function isUnchangedArchivedRead(
+  response: PrivateContractInvocation,
+  server: ArchiveRpc,
+): Promise<boolean> {
+  const simulation = response.simulation;
+  if (!simulation || !SorobanRpc.Api.isSimulationSuccess(simulation)) return false;
+  if (!simulation.result || simulation.result.auth.length !== 0) return false;
+  if (!Number.isSafeInteger(simulation.latestLedger) || simulation.latestLedger <= 0) return false;
+  const data = simulation.transactionData.build();
+  const writes = data.resources.footprint.readWrite;
+  const changes = simulation.stateChanges;
+  if (
+    writes.length === 0 || writes.length > MAX_ARCHIVE_RECORD_BATCH
+    || data.ext.type !== 'resourceExt'
+    || data.ext.resourceExt.archivedSorobanEntries.length !== writes.length
+    || data.ext.resourceExt.archivedSorobanEntries.some((index, position) => index !== position)
+    || !changes || changes.length !== writes.length
+    || writes.some(key => key.type !== 'contractCode' && (
+      key.type !== 'contractData' || key.contractData.durability.name !== 'persistent'
+    ))
+  ) return false;
+
+  const writeKeys = writes.map(key => key.toXdr());
+  const changeIndices = changes.map(change => writeKeys.findIndex(key => equalBytes(key, change.key.toXdr())));
+  if (
+    changeIndices.includes(-1) || new Set(changeIndices).size !== writes.length
+    || changes.some(change => change.before !== null || !change.after)
+  ) return false;
+
+  const ledger = await server.getLedgerEntries(...writes);
+  if (
+    !Number.isSafeInteger(ledger.latestLedger) || ledger.latestLedger < simulation.latestLedger
+    || ledger.entries.length !== writes.length
+  ) return false;
+  const seen = new Set<number>();
+  for (const entry of ledger.entries) {
+    const index = writeKeys.findIndex(key => equalBytes(key, entry.key.toXdr()));
+    const after = changes[changeIndices.indexOf(index)]?.after;
+    if (
+      index < 0 || seen.has(index) || !after
+      || !Number.isSafeInteger(entry.liveUntilLedgerSeq)
+      || entry.liveUntilLedgerSeq! < 0 || entry.liveUntilLedgerSeq! >= simulation.latestLedger
+      || !equalBytes(entry.val.toXdr(), after.data.toXdr())
+    ) return false;
+    seen.add(index);
+  }
+  return true;
+}
 
 /**
  * Loading an untyped SDK contract client fetches the contract instance and
@@ -133,11 +190,16 @@ export function createCachedPrivateContractQuery(input: {
     if (typeof invoke !== 'function') {
       throw new Error(`Private Balance contract has no method '${method}'`);
     }
-    const response = await invoke.call(client, args ?? {}) as PrivateContractInvocation;
+    const methodOptions = { restore: false };
+    const response = await (args === undefined
+      ? invoke.call(client, methodOptions)
+      : invoke.call(client, args, methodOptions)) as PrivateContractInvocation;
     if (!response || typeof response.isReadCall !== 'boolean') {
       throw new Error(`Private Balance contract method '${method}' returned an invalid response`);
     }
-    return response as { result: T; isReadCall: boolean };
+    const isReadCall = response.isReadCall || await isUnchangedArchivedRead(response, input.server);
+    // Do not expose the SDK transaction or its sign/send methods to readers.
+    return { result: response.result as T, isReadCall };
   };
 }
 

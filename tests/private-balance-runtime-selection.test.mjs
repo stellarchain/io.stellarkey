@@ -32,6 +32,46 @@ async function runtimePublicationDomain() {
   }
 }
 
+test('account summaries retain balances only and obsolete disk reads cannot replace live updates', async () => {
+  const domain = await portfolioDomain();
+  assert.equal(typeof domain.createPrivateAccountPortfolioStore, 'function');
+  const store = domain.createPrivateAccountPortfolioStore(['a', 'b']);
+  store.start();
+  const native = value => [{ asset: { kind: 'native', decimals: 7 }, verifiedBalanceAtomicUnits: value,
+    deploymentId: 'synthetic', activities: [{ memoHex: 'synthetic-private' }], pendingActions: [], privateAddress: 'unusable' }];
+  let resolve;
+  const pending = store.load('a', () => new Promise(r => { resolve = r; }));
+  store.publish('a', native('40000000'));
+  resolve(native('10000000'));
+  await pending;
+  assert.deepEqual(store.getSnapshot().a, [{ asset: { kind: 'native', decimals: 7 }, verifiedBalanceAtomicUnits: '40000000' }]);
+  assert.equal(store.getSnapshot().b, undefined, 'Unread private balances are unknown, not zero');
+  await store.load('b', async () => []);
+  assert.deepEqual(store.getSnapshot().b, [], 'Verified absence can contribute zero');
+  await store.load('b', async () => { throw new Error('synthetic storage failure'); });
+  assert.equal(store.getSnapshot().b, null, 'Unreadable encrypted data cannot become a zero balance');
+  assert.equal(store.publish('removed', native('1')), false);
+});
+
+test('revoked account-summary loads cannot publish after lock, network change, or Strict Mode restart', async () => {
+  const domain = await portfolioDomain();
+  assert.equal(typeof domain.createPrivateAccountPortfolioStore, 'function');
+  const store = domain.createPrivateAccountPortfolioStore(['a']);
+  store.start();
+  let resolve;
+  const pending = store.load('a', () => new Promise(r => { resolve = r; }));
+  store.publish('a', []);
+  store.stop();
+  assert.deepEqual(store.getSnapshot(), {});
+  assert.equal(store.publish('a', []), false);
+  store.start();
+  resolve([{ asset: { kind: 'native' }, verifiedBalanceAtomicUnits: '1' }]);
+  await pending;
+  assert.deepEqual(store.getSnapshot(), {}, 'Restart cannot authorize an earlier generation');
+  await store.load('a', async () => []);
+  assert.deepEqual(store.getSnapshot(), { a: [] });
+});
+
 function deployment(id, kind, encryptedStateExists = false) {
   return { id, asset: { kind }, encryptedStateExists };
 }

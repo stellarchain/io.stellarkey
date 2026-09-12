@@ -15,10 +15,12 @@ export function PrivateAssetSelector({
   presentation = 'pill',
   balance = null,
   balanceScope = 'private',
+  disabled = false,
 }: {
   presentation?: 'pill' | 'field';
   balance?: string | null;
   balanceScope?: 'private' | 'public';
+  disabled?: boolean;
 } = {}) {
   const {
     availableAssets,
@@ -56,6 +58,7 @@ export function PrivateAssetSelector({
 
   return (
     <Select
+      disabled={disabled}
       value={selected?.deploymentId ?? ''}
       onChange={selectAsset}
       ariaLabel="Asset"

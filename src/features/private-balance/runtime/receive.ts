@@ -8,6 +8,28 @@ import { hash } from '@stellar/stellar-sdk';
 export type PrivateAddressPrefix = 'tskpay_' | 'skpay_';
 export type StealthAddressPrefix = 'tsm' | 'ssm';
 
+/** Missing identity is not evidence of work in progress. Retained local
+ * addresses are usable during a read-only scan, but never while locked. */
+export function privateReceiveState(input: {
+  configured: boolean;
+  hasAddress: boolean;
+  isLeader: boolean;
+  phase: string;
+  reusable: boolean;
+  stealthSyncing: boolean;
+  hasError: boolean;
+  sessionCurrent: boolean;
+}): 'locked' | 'setup' | 'ready' | 'follower' | 'stopped' | 'loading' | 'missing' {
+  if (!input.sessionCurrent || input.phase === 'locked') return 'locked';
+  if (!input.configured) return 'setup';
+  if (input.hasAddress) return 'ready';
+  if (!input.isLeader) return 'follower';
+  if (input.hasError || ['safe-error', 'status-unknown'].includes(input.phase)) return 'stopped';
+  if (['reading-meta', 'loading-artifacts', 'scanning-live'].includes(input.phase)
+    || (input.reusable && input.stealthSyncing)) return 'loading';
+  return 'missing';
+}
+
 export function privateReceivePayload(
   address: string,
   expectedPrefix: PrivateAddressPrefix = 'tskpay_',

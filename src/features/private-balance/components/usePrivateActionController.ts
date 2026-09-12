@@ -144,6 +144,7 @@ export function usePrivateActionController(
         try {
           const chainedDraft: PrivateChainedSendDraft = {
             kind: 'transfer',
+            ...(draft.feePayerAccountId ? { feePayerAccountId: draft.feePayerAccountId } : {}),
             amount: draft.amount,
             recipientAddress: draft.recipientAddress,
             ...(draft.memo ? { memo: draft.memo } : {}),
@@ -260,11 +261,11 @@ export function usePrivateActionController(
     const ownsOperation = () => abortRef.current === controller && !controller.signal.aborted;
     setWorking(true);
     try {
-      const status = await submitAction(review);
+      const submitted = await submitAction(review);
       if (!ownsOperation()) return;
-      setSubmission(status);
-      setSubmittedHash(review.transaction.transactionHash);
-      onSubmission?.(status);
+      setSubmission(submitted.status);
+      setSubmittedHash(submitted.transactionHash);
+      onSubmission?.(submitted.status);
     } catch (cause: unknown) {
       if (!ownsOperation()) return;
       if (cause instanceof PrivateActionReviewExpiredError && draftRef.current?.kind === 'deposit') {

@@ -59,13 +59,13 @@ test('live contract reads reuse one loaded contract client per contract and netw
       contractId: poolContractId,
       networkPassphrase: manifest.networkPassphrase,
       method: 'config',
-      args: {},
+      args: { restore: false },
     },
     {
       contractId: poolContractId,
       networkPassphrase: manifest.networkPassphrase,
       method: 'tree_state',
-      args: {},
+      args: { restore: false },
     },
   ]);
 });

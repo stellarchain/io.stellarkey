@@ -1,5 +1,6 @@
 import { createSessionRevocationGuard, subscribeSessionRevocation } from '../../../lib/vault';
 import { assertDirectPrivateSubmission } from './direct-submission';
+import type { PrivateFeePayer } from './fee-policy';
 
 /** A lock/unlock ABA cannot revive an in-flight proof or signing operation. */
 export function createPrivateActionLifetime(assertContext: () => void, signal?: AbortSignal) {
@@ -17,6 +18,7 @@ export function createPrivateActionLifetime(assertContext: () => void, signal?: 
 }
 
 export interface PrivateProofDisclosure {
+  feePayer?: PrivateFeePayer;
   kind: 'deposit' | 'transfer' | 'withdraw' | 'consolidate';
   actionId: string;
   recoveryOfActionId?: string;

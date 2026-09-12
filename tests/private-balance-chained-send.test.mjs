@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { Keypair } from '@stellar/stellar-sdk';
 import {
   planPrivateChainedSend,
   runPrivateChainedSend,
@@ -70,7 +71,7 @@ function driverHarness({ reviews, submitResults, confirmations }) {
       },
       submit: async (review, { isFinal }) => {
         calls.push(['submit', review.id, isFinal]);
-        return submitResults.shift() ?? 'broadcast';
+        return { status: submitResults.shift() ?? 'broadcast', transactionHash: review.transaction.transactionHash };
       },
       cancel: async actionId => {
         calls.push(['cancel', actionId]);
@@ -115,6 +116,32 @@ test('the chained approval plan preflights public XLM for the whole chain', () =
       return true;
     },
   );
+});
+
+test('a sponsored chain carries the approved payer through every step and tracks submitted hashes', async () => {
+  const feePayer = { accountId: 'synthetic-payer', publicKey: Keypair.random().publicKey() };
+  const reviews = [reviewFixture(1), reviewFixture(2), reviewFixture(3, { kind: 'transfer' })];
+  reviews.forEach(review => { review.transaction.feePayer = feePayer; review.transaction.classicFeeStroops = 200n; });
+  const h = driverHarness({ reviews, submitResults: [], confirmations: [] });
+  h.input.approval.feePayer = feePayer;
+  h.input.draft = { ...DRAFT, feePayerAccountId: feePayer.accountId };
+  let step = 0;
+  h.input.prepare = async draft => { assert.equal(draft.feePayerAccountId, feePayer.accountId); return reviews[step++]; };
+  h.input.submit = async () => ({ status: 'broadcast', transactionHash: `outer-${step}` });
+  h.input.awaitConfirmation = async (review, submission) => { assert.notEqual(submission.transactionHash, review.transaction.transactionHash); return true; };
+  const result = await runPrivateChainedSend(h.input);
+  assert.equal(result.finalTransactionHash, 'outer-3');
+  assert.deepEqual(h.advances, [600n, 600n, 600n]);
+});
+
+test('a different fee payer cannot consume the approved chain budget', async () => {
+  const feePayer = { accountId: 'synthetic-payer', publicKey: Keypair.random().publicKey() };
+  const h = driverHarness({ reviews: [reviewFixture(1)], submitResults: [], confirmations: [] });
+  h.input.approval.feePayer = feePayer;
+  h.input.draft = { ...DRAFT, feePayerAccountId: feePayer.accountId };
+  await assert.rejects(runPrivateChainedSend(h.input), /fee.pay/i);
+  assert.deepEqual(h.advances, []);
+  assert.deepEqual(h.calls.at(-1), ['cancel', 'action-1']);
 });
 
 test('the chained driver runs consolidations then the send under one approval', async () => {

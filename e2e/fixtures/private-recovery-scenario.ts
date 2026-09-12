@@ -2,7 +2,7 @@
 // Production preparation, encryption, storage, signing classification and scan
 // run unchanged. The worker bridge invokes the real builder/scanner; only the
 // prover, archive transport and RPC responses are controlled here.
-import { Account, Keypair, SorobanDataBuilder, StrKey, TransactionBuilder, xdr, rpc as SorobanRpc } from '@stellar/stellar-sdk';
+import { Account, Address, Contract, Keypair, SorobanDataBuilder, StrKey, TransactionBuilder, nativeToScVal, scValToNative, xdr, rpc as SorobanRpc, type FeeBumpTransaction, type Transaction } from '@stellar/stellar-sdk';
 import { appendCommitments, computeContextField, computeContextHash, computeGenesisRecordHash,
   computeRecordHash, createEmptyTree, deriveDiversifiedAddressKeys, deriveExpandedSpendingKey,
   derivePrivateAddressDeploymentTag, encodePrivateAddress, toViewingKey,
@@ -166,6 +166,7 @@ export async function createPrivateRecoveryScenario(development: PrivateBalanceM
   let confirmed = false;
   let shared = 0;
   let submissions = 0;
+  let workerCrashes = 0;
   let senderLookups = 0;
   const stages: string[] = [];
   const bobSigner = Keypair.fromRawEd25519Seed(bytes(11));
@@ -177,6 +178,7 @@ export async function createPrivateRecoveryScenario(development: PrivateBalanceM
   return {
     manifest, scope: bob.scope,
     get shared() { return shared; }, get submissions() { return submissions; },
+    get workerCrashes() { return workerCrashes; },
     get senderLookups() { return senderLookups; }, get stages() { return [...stages]; },
     get review() { return review ?? null; },
     state: loadBob,
@@ -207,38 +209,88 @@ export async function createPrivateRecoveryScenario(development: PrivateBalanceM
         reserved: format(sender.notes.filter(note => note.status === 'reserved').reduce((sum, note) => sum + BigInt(note.value), 0n)),
         alice: format(selectTotalShieldedBalance(unrelated)), charlie: format(selectTotalShieldedBalance(recipient)), pending: sender.pendingActions.length };
     }, sync,
-    installProviderTransport() {
+    installProviderTransport(options: { crashWorkerAt?: 'build' | 'submission'; uncertainSubmission?: boolean; simulationResourceFee?: () => string; receiveSyncBlocked?: () => boolean; beforeAddressRotation?: () => Promise<void>;
+      nativeBalance?: () => string; onSubmit?: (transaction: Transaction | FeeBumpTransaction) => void } = {}) {
+      const latestWorker: { current: PrivateBalanceWorkerClient | null } = { current: null };
+      const crashWorker = (client: PrivateBalanceWorkerClient) => {
+        // Fault injection at the actual browser-worker event boundary. The
+        // production client owns failure, rejection, teardown and recovery.
+        const worker = (client as unknown as { worker: Worker | null }).worker;
+        if (!worker) throw new Error('Synthetic worker event target missing');
+        workerCrashes++;
+        worker.dispatchEvent(new Event('error'));
+      };
       const archivePrototype = PrivateBalanceArchiveClient.prototype;
       const savedArchive = { readHead: archivePrototype.readHead, readRecords: archivePrototype.readRecords,
         readLedgerCloseTimes: archivePrototype.readLedgerCloseTimes, readDepositsPaused: archivePrototype.readDepositsPaused,
         readNetworkPassphrase: archivePrototype.readNetworkPassphrase, readOldestLedgerSequence: archivePrototype.readOldestLedgerSequence,
-        readLatestLedgerSequence: archivePrototype.readLatestLedgerSequence, readLedgerIdentity: archivePrototype.readLedgerIdentity };
+        readLatestLedgerSequence: archivePrototype.readLatestLedgerSequence, readLedgerIdentity: archivePrototype.readLedgerIdentity,
+        readAssetBalance: archivePrototype.readAssetBalance };
       const rpcPrototype = SorobanRpc.Server.prototype;
       const savedRpc = { getAccount: rpcPrototype.getAccount, simulateTransaction: rpcPrototype.simulateTransaction,
         sendTransaction: rpcPrototype.sendTransaction, getTransaction: rpcPrototype.getTransaction };
       const workerPrototype = PrivateBalanceWorkerClient.prototype;
       const savedBuild = workerPrototype.buildAction;
       const savedProof = workerPrototype.generateProof;
+      const savedGenerateAddress = workerPrototype.generateAddress;
+      workerPrototype.generateAddress = async function () {
+        await options.beforeAddressRotation?.();
+        return savedGenerateAddress.call(this);
+      };
       const savedFetch = globalThis.fetch;
       const savedStealth = HorizonStealthAnnouncementReader.prototype.readPage;
       Object.assign(archivePrototype, { ...archive, readDepositsPaused: async () => false,
+        readHead: async () => {
+          if (options.receiveSyncBlocked?.()) throw new Error('Synthetic receive archive unavailable.');
+          return archive.readHead();
+        },
+        readAssetBalance: async () => 10000000000n,
         readNetworkPassphrase: async () => manifest.networkPassphrase, readOldestLedgerSequence: async () => 0,
         readLatestLedgerSequence: async () => head().latestLedger,
         readLedgerIdentity: async (sequence: number) => ({ sequence, hash: manifest.deploymentCheckpoint.hash }) });
       HorizonStealthAnnouncementReader.prototype.readPage = async () => ({ announcements: [], latestLedger: head().latestLedger, hasMore: false, nextCursor: '1' });
       rpcPrototype.getAccount = async address => new Account(address, '7');
-      rpcPrototype.simulateTransaction = async () => {
+      rpcPrototype.simulateTransaction = async transaction => {
         shared++;
+        const envelope = transaction.toEnvelope();
+        if (envelope.type !== 'envelopeTypeTx') throw new Error('Synthetic simulation requires a direct transaction');
+        const operation = envelope.value.tx.operations[0];
+        if (operation.body.type !== 'invokeHostFunction' || operation.body.invokeHostFunctionOp.hostFunction.type !== 'hostFunctionTypeInvokeContract') {
+          throw new Error('Synthetic simulation requires a pool invocation');
+        }
+        const invocation = operation.body.invokeHostFunctionOp.hostFunction.invokeContract;
+        const auth: xdr.SorobanAuthorizationEntry[] = [];
+        if (invocation.functionName.toString() === 'deposit') {
+          const fields = scValToNative(invocation.args[0]) as { asset_index: number; public_value: bigint; deposit_source: string };
+          const transferOperation = new Contract(manifest.assets[fields.asset_index].contractId).call('transfer',
+            Address.fromString(fields.deposit_source).toScVal(), Address.fromString(manifest.poolContractId).toScVal(),
+            nativeToScVal(fields.public_value));
+          if (transferOperation.body.type !== 'invokeHostFunction' || transferOperation.body.invokeHostFunctionOp.hostFunction.type !== 'hostFunctionTypeInvokeContract') {
+            throw new Error('Synthetic deposit requires a token transfer invocation');
+          }
+          const transfer = transferOperation.body.invokeHostFunctionOp.hostFunction.invokeContract;
+          const authorize = (call: xdr.InvokeContractArgs, subInvocations: xdr.SorobanAuthorizedInvocation[] = []) => new xdr.SorobanAuthorizedInvocation({
+            function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(call), subInvocations,
+          });
+          auth.push(new xdr.SorobanAuthorizationEntry({ credentials: xdr.SorobanCredentials.sorobanCredentialsSourceAccount(),
+            rootInvocation: authorize(invocation, [authorize(transfer)]) }));
+        }
+        const resourceFee = options.simulationResourceFee?.() ?? '500';
         return { _parsed: true, id: 'synthetic', latestLedger: head().latestLedger, events: [],
-          transactionData: new SorobanDataBuilder().setResourceFee('500'), minResourceFee: '500', result: { auth: [], retval: xdr.ScVal.scvVoid() } };
+          transactionData: new SorobanDataBuilder().setResourceFee(resourceFee), minResourceFee: resourceFee, result: { auth, retval: xdr.ScVal.scvVoid() } };
       };
       rpcPrototype.sendTransaction = async transaction => {
+        options.onSubmit?.(transaction);
         submissions++;
+        if (options.crashWorkerAt === 'submission' && latestWorker.current) crashWorker(latestWorker.current);
+        if (options.uncertainSubmission) throw new Error('Synthetic uncertain submission response');
         return { status: 'PENDING', hash: hex(transaction.hash()), latestLedger: head().latestLedger, latestLedgerCloseTime: 1_800_000_000 };
       };
       rpcPrototype.getTransaction = async hash => ({ status: SorobanRpc.Api.GetTransactionStatus.NOT_FOUND, txHash: hash,
         latestLedger: head().latestLedger, latestLedgerCloseTime: 1_800_000_000, oldestLedger: 0, oldestLedgerCloseTime: 1_800_000_000 });
       workerPrototype.buildAction = async function (...args) {
+        latestWorker.current = this;
+        if (options.crashWorkerAt === 'build' && workerCrashes === 0) crashWorker(this);
         const built = await savedBuild.apply(this, args);
         recoveryAction = built.action;
         return built;
@@ -250,6 +302,11 @@ export async function createPrivateRecoveryScenario(development: PrivateBalanceM
         const path = url.split('?')[0].split('/').at(-1)!;
         const payload = artifacts.get(path);
         if (url.includes('/protocol/private-balance/v1/') && payload) return new Response(payload.slice().buffer);
+        if (options.nativeBalance && /\/accounts\/G[A-Z2-7]{55}(?:\?|$)/.test(url)) {
+          return new Response(JSON.stringify({ balances: [{ asset_type: 'native', balance: options.nativeBalance(), selling_liabilities: '2.0000000' }],
+            subentry_count: 0, num_sponsoring: 0, num_sponsored: 0 }), { headers: { 'Content-Type': 'application/json' } });
+        }
+        if (options.nativeBalance && /\/ledgers\?/.test(url)) return new Response(JSON.stringify({ _embedded: { records: [{ base_reserve_in_stroops: '5000000' }] } }), { headers: { 'Content-Type': 'application/json' } });
         if (init?.method === 'POST' && typeof init.body === 'string') {
           const request = JSON.parse(init.body) as { method?: string; id?: number };
           if (request.method === 'getNetwork') return new Response(JSON.stringify({ jsonrpc: '2.0', id: request.id,
@@ -261,6 +318,7 @@ export async function createPrivateRecoveryScenario(development: PrivateBalanceM
       return () => {
         Object.assign(archivePrototype, savedArchive); Object.assign(rpcPrototype, savedRpc);
         workerPrototype.buildAction = savedBuild; workerPrototype.generateProof = savedProof;
+        workerPrototype.generateAddress = savedGenerateAddress;
         globalThis.fetch = savedFetch; HorizonStealthAnnouncementReader.prototype.readPage = savedStealth;
       };
     },

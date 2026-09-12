@@ -45,8 +45,9 @@ test('action controllers publish terminal status outside remountable modal state
     new URL('../src/features/private-balance/components/usePrivateActionController.ts', import.meta.url),
     'utf8',
   );
-  assert.match(controller, /const status = await submitAction\(review\)/);
-  assert.match(controller, /onSubmission\?\.\(status\)/);
+  assert.match(controller, /const submitted = await submitAction\(review\)/);
+  assert.match(controller, /onSubmission\?\.\(submitted.status\)/);
+  assert.match(controller, /setSubmittedHash\(submitted.transactionHash\)/);
 });
 
 function reviewedFixture() {

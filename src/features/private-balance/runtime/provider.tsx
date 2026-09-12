@@ -32,7 +32,10 @@ import {
   type PreparedStealthSweep,
 } from '../../../hooks/usePrivateBalanceRuntime';
 import { IndexedDbEncryptedRecordDriver } from '../../../lib/indexed-db';
-import { fetchCurrentBaseReserve } from '../../../lib/api';
+import { fetchCurrentBaseReserve, fetchAccountSnapshot, minimumNativeBalanceForSnapshot } from '../../../lib/api';
+import { amountToStroops } from '../../../lib/stellar-domain';
+import { spendableAssetBalance } from '../../../lib/transaction-intent';
+import { assertSamePrivateFeePayer, privateActionClassicFeeStroops } from './fee-policy';
 import { privateBalanceSensitivePrefix, privateBalanceStateRecordKey } from '../../../lib/private-balance-bootstrap';
 import {
   privateBalanceAvailability,
@@ -44,7 +47,7 @@ import {
 import { prefetchCircuitArtifacts } from '../../../lib/private-balance-artifacts';
 import { getRpcUrl, testRpcEndpoint } from '../../../lib/stellar-endpoints';
 import type { NetworkKey } from '../../../lib/types';
-import { createSessionRevocationGuard, subscribeSessionRevocation, withPrivacySessionRoot } from '../../../lib/vault';
+import { createSessionRevocationGuard, getSessionSnapshot, subscribeSessionRevocation, withPrivacySessionRoot } from '../../../lib/vault';
 import {
   useWalletLedger,
   useWalletPhase,
@@ -124,6 +127,7 @@ import {
   signReviewedPrivateBalanceAction,
   PRIVATE_ACTION_EXPIRY_MARGIN_SECONDS,
   type PrivateBalanceSigningRequest,
+  type PrivateActionSubmission,
 } from './submission';
 import { diffIncomingPrivateTransfers, syncPrivateBalance } from './sync-machine';
 import {
@@ -155,6 +159,16 @@ const IDLE_SYNC_INTERVAL_MS = 30_000;
 const BACKGROUND_PROGRESS_SURFACE_MS = 2_000;
 const RPC_WITNESS_PREFERENCE_PREFIX = 'stellarkey.private.rpc-witness.v1';
 
+async function freshPrivateFeeBalance(publicKey: string, network: NetworkKey, signal?: AbortSignal): Promise<bigint> {
+  const [snapshot, reserve] = await Promise.all([
+    fetchAccountSnapshot(publicKey, network, signal), fetchCurrentBaseReserve(network),
+  ]);
+  signal?.throwIfAborted();
+  const native = snapshot.balances.find(balance => balance.isNative);
+  if (!native) throw new Error('The fee-paying account needs public XLM on this network.');
+  return amountToStroops(spendableAssetBalance(native, [minimumNativeBalanceForSnapshot(snapshot, reserve)]));
+}
+
 interface PrivateBalanceContextValue {
   state: PrivateBalanceState;
   totalBalanceStroops: bigint;
@@ -173,7 +187,7 @@ interface PrivateBalanceContextValue {
   cancelAction(actionId: string): Promise<void>;
   submitAction(
     review: PreparedPrivateActionReview,
-  ): Promise<'broadcast' | 'ambiguous'>;
+  ): Promise<PrivateActionSubmission>;
 }
 
 interface RuntimeSnapshot {
@@ -315,15 +329,6 @@ function isRpcAuthenticationError(error: unknown): boolean {
     error instanceof PrivateRpcWitnessUnavailableError;
 }
 
-function publicXlmBalanceStroops(
-  balances: ReadonlyArray<{ balance: string; isNative?: boolean }> | null | undefined,
-): bigint {
-  const native = balances?.find(balance => balance.isNative);
-  if (!native || !/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,7})?$/.test(native.balance)) return 0n;
-  const [whole, fraction = ''] = native.balance.split('.');
-  return BigInt(whole) * 10_000_000n + BigInt(fraction.padEnd(7, '0') || '0');
-}
-
 export function PrivateBalanceProvider({
   children,
   accountId,
@@ -342,10 +347,11 @@ export function PrivateBalanceProvider({
   deploymentId,
   onDurableStateChange,
 }: PrivateBalanceProviderProps) {
-  const { recommendedBaseFeeStroops, balances } = useWalletLedger();
+  const { recommendedBaseFeeStroops } = useWalletLedger();
   const { phase: walletPhase } = useWalletPhase();
-  const { authorizeTransactionSigning, signPrivateBalanceEnvelope, captureSigningContext } = useWalletTransactions();
+  const { authorizeTransactionSigning, signPrivateBalanceEnvelope, captureSigningContext, resolvePrivateBalanceFeePayer } = useWalletTransactions();
   const [state, dispatch] = useReducer(privateBalanceReducer, initialPrivateBalanceState);
+  const [receiveSessionId, setReceiveSessionId] = useState<number | null>(null);
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(() => ({
     phase: encryptedStateExists ? 'reading-meta' : 'disabled',
     configured: encryptedStateExists,
@@ -375,6 +381,9 @@ export function PrivateBalanceProvider({
     ((createIfMissing: boolean, options?: { background?: boolean }) => Promise<void>) | null
   >(null);
   const leaderRef = useRef(false);
+  // A lost runtime lease cannot revive old work after this tab takes over again.
+  // Worker recovery alone does not change wallet/runtime authority.
+  const runtimeAuthorityEpochRef = useRef(0);
   const actionBusyRef = useRef(false);
   // Serializes the sync machine with prepare/sign/broadcast/cancel so action
   // flows await an in-flight sync instead of failing on a transient phase.
@@ -466,6 +475,7 @@ export function PrivateBalanceProvider({
       stealthSnapshotSubscriptionRef.current?.();
       stealthSnapshotSubscriptionRef.current = null;
       invalidateStealth();
+      setReceiveSessionId(null);
     };
   }, [invalidateStealth, stealthScope, walletPhase]);
 
@@ -609,6 +619,7 @@ export function PrivateBalanceProvider({
       // replacement effect owns these refs. Its teardown already cleared it.
       if (!active || stealthContextRef.current !== assertDiscoveryContext) return;
       invalidateStealth();
+      setReceiveSessionId(null);
       setOutgoingHistoryModeState('recoverable');
       workerRef.current?.terminate();
       workerRef.current = null;
@@ -623,6 +634,7 @@ export function PrivateBalanceProvider({
       address: string,
       ownerCommitmentHex: string,
     ) => {
+      setReceiveSessionId(getSessionSnapshot());
       setOutgoingHistoryModeState(privateOutgoingHistoryMode(durable.outgoingHistoryMode));
       dispatch({ type: 'RESET' });
       dispatch({ type: 'SET_OPTED_IN', optedIn: true });
@@ -1227,6 +1239,7 @@ export function PrivateBalanceProvider({
       }
       if (!claimed) {
         if (leaderRef.current) {
+          runtimeAuthorityEpochRef.current += 1;
           leaderRef.current = false;
           clearDecryptedState(null);
           setSnapshot(current => ({ ...current, isLeader: false }));
@@ -1242,6 +1255,7 @@ export function PrivateBalanceProvider({
     const onLeaseChange = (event: StorageEvent) => {
       if (!active || !leaderRef.current || (event.key !== null && event.key !== leaseKey)) return;
       try { assertPrivateBalanceLease(window.localStorage, leaseKey, runtimeOwnerId, Date.now()); } catch {
+        runtimeAuthorityEpochRef.current += 1;
         leaderRef.current = false;
         clearDecryptedState(null);
         setSnapshot(current => ({ ...current, isLeader: false }));
@@ -1276,6 +1290,7 @@ export function PrivateBalanceProvider({
 
     return () => {
       active = false;
+      runtimeAuthorityEpochRef.current += 1;
       if (stealthContextRef.current === assertDiscoveryContext) stealthContextRef.current = null;
       invalidateStealth();
       window.removeEventListener('storage', onLeaseChange);
@@ -1486,6 +1501,21 @@ export function PrivateBalanceProvider({
     reflectDurableState(next);
   }, [accountId, manifest, reflectDurableState, storageScope]);
 
+  const capturePrivateActionContext = useCallback(() => {
+    const assertWalletCurrent = captureSigningContext();
+    const runtimeEpoch = runtimeAuthorityEpochRef.current;
+    const rpcUrl = getRpcUrl(network);
+    return () => {
+      assertWalletCurrent();
+      // The shared scope identity also binds deployment, asset and storage.
+      if (!providerMountedRef.current || !leaderRef.current || walletPhaseRef.current !== 'unlocked' ||
+        stealthScopeRef.current !== stealthScope || runtimeAuthorityEpochRef.current !== runtimeEpoch ||
+        getRpcUrl(network) !== rpcUrl) {
+        throw new DOMException('Private action cancelled after its wallet context changed.', 'AbortError');
+      }
+    };
+  }, [captureSigningContext, network, stealthScope]);
+
   const rotatePrivateAddress = useCallback(async (): Promise<string> => {
     if (!leaderRef.current) {
       throw new Error('Use Private Payments in this tab before creating a new address.');
@@ -1499,42 +1529,63 @@ export function PrivateBalanceProvider({
     }
     const context = deploymentContext(manifest);
     const driver = new IndexedDbEncryptedRecordDriver();
-    return mutexRef.current.runExclusive(() => withPrivacySessionRoot(
-      accountId,
-      context,
-      async (_sessionRoot, storageKey) => {
-        const current = await loadPrivateBalanceState(storageScope, storageKey, driver);
-        if (!current) throw new Error('Private Balance state is unavailable.');
-        const identity = await worker.generateAddress();
-        try {
-          const next = await recordPrivateBalanceAddress(
-            storageScope,
-            storageKey,
-            current.revision,
-            identity.address,
-            driver,
-          );
-          workerIdentityRef.current = identity;
-          dispatch({
-            type: 'SET_UNLOCKED',
-            unlocked: true,
-            address: identity.address,
-            ownerCommitmentHex: identity.ownerCommitmentHex,
-          });
-          reflectDurableState(next);
-          return identity.address;
-        } catch (error) {
-          // The worker has already selected the new identity. If encrypted
-          // storage loses a revision race, discard the session so the next
-          // sync restores the last committed address instead of diverging.
-          worker.terminate();
-          if (workerRef.current === worker) workerRef.current = null;
-          workerIdentityRef.current = null;
-          throw error;
-        }
-      },
-    ));
-  }, [accountId, manifest, reflectDurableState, storageScope]);
+    const assertAuthority = capturePrivateActionContext();
+    const assertCurrent = () => {
+      assertAuthority();
+      if (workerRef.current !== worker || worker.failed) throw new DOMException('Private address worker changed.', 'AbortError');
+    };
+    actionBusyRef.current = true;
+    try {
+      return await mutexRef.current.runExclusive(() => {
+        assertCurrent();
+        return withPrivacySessionRoot(
+          accountId,
+          context,
+          async (_sessionRoot, storageKey) => {
+            assertCurrent();
+            const current = await loadPrivateBalanceState(storageScope, storageKey, driver);
+            assertCurrent();
+            if (!current) throw new Error('Private Balance state is unavailable.');
+            try {
+              const identity = await worker.generateAddress();
+              assertCurrent();
+              const next = await recordPrivateBalanceAddress(
+                storageScope,
+                storageKey,
+                current.revision,
+                identity.address,
+                driver,
+              );
+              // A completed durable write remains valid if ownership changes;
+              // only publication into this runtime is revoked.
+              assertCurrent();
+              workerIdentityRef.current = identity;
+              dispatch({
+                type: 'SET_UNLOCKED',
+                unlocked: true,
+                address: identity.address,
+                ownerCommitmentHex: identity.ownerCommitmentHex,
+              });
+              reflectDurableState(next);
+              return identity.address;
+            } catch (error) {
+              // The worker has already selected the new identity. If encrypted
+              // storage loses a revision race, discard the session so the next
+              // sync restores the last committed address instead of diverging.
+              worker.terminate();
+              if (workerRef.current === worker) {
+                workerRef.current = null;
+                workerIdentityRef.current = null;
+              }
+              throw error;
+            }
+          },
+        );
+      });
+    } finally {
+      actionBusyRef.current = false;
+    }
+  }, [accountId, capturePrivateActionContext, manifest, reflectDurableState, storageScope]);
 
   const cancelAction = useCallback(async (actionId: string, assertAuthority?: () => void) => {
     assertAuthority?.();
@@ -1566,22 +1617,6 @@ export function PrivateBalanceProvider({
       }));
   }, [accountId, manifest, reflectDurableState, storageScope]);
 
-  const capturePrivateActionContext = useCallback(() => {
-    const assertWalletCurrent = captureSigningContext();
-    const worker = workerRef.current;
-    const identity = workerIdentityRef.current;
-    const rpcUrl = getRpcUrl(network);
-    return () => {
-      assertWalletCurrent();
-      // The shared scope identity also binds deployment, asset and storage.
-      if (!providerMountedRef.current || !leaderRef.current || walletPhaseRef.current !== 'unlocked' ||
-        stealthScopeRef.current !== stealthScope || !worker || worker.failed || workerRef.current !== worker ||
-        !identity || workerIdentityRef.current !== identity || getRpcUrl(network) !== rpcUrl) {
-        throw new DOMException('Private action cancelled after its wallet context changed.', 'AbortError');
-      }
-    };
-  }, [captureSigningContext, network, stealthScope]);
-
   const prepareActionInternal = useCallback(async (
     draft: PrivateActionDraft,
     onProgress?: (stage: PrivateActionProgressStage) => void,
@@ -1604,17 +1639,40 @@ export function PrivateBalanceProvider({
     if (!rpcUrl) throw new Error('Configure a Stellar RPC endpoint for Private Balance.');
     const context = deploymentContext(manifest);
     const driver = new IndexedDbEncryptedRecordDriver();
+    const feePayer = draft.feePayerAccountId && draft.feePayerAccountId !== accountId
+      ? resolvePrivateBalanceFeePayer(draft.feePayerAccountId) : undefined;
     const operation = createPrivateActionLifetime(capturePrivateActionContext(), signal);
+    const assertPayerCurrent = () => {
+      operation.assertCurrent();
+      if (feePayer) assertSamePrivateFeePayer(feePayer, resolvePrivateBalanceFeePayer(feePayer.accountId));
+    };
     try {
+      if (feePayer) {
+        const available = await freshPrivateFeeBalance(feePayer.publicKey, network, operation.signal);
+        assertPayerCurrent();
+        if (available < privateActionClassicFeeStroops(BigInt(recommendedBaseFeeStroops), feePayer) + MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS) {
+          throw new Error('The selected fee-paying account needs more spendable public XLM for the network fee limit.');
+        }
+      }
       for (let attempt = 0; ; attempt += 1) {
         try {
           // Awaiting the mutex waits out any in-flight sync instead of failing
           // on a transient non-current phase.
           const result = await mutexRef.current.runExclusive(async () => {
+            operation.assertCurrent();
             const worker = workerRef.current;
-            const privateAddress = workerIdentityRef.current?.address ?? null;
-            if (!worker || !privateAddress) throw new Error('Private Balance worker is not ready.');
-            return withPrivacySessionRoot(
+            const identity = workerIdentityRef.current;
+            const privateAddress = identity?.address ?? null;
+            if (!worker || worker.failed || !privateAddress) throw new Error('Private Balance worker is not ready. Sync again to restart it.');
+            // Only this preparation attempt needs the worker. Bind it after
+            // waiting for sync, and never confuse worker failure with revocation.
+            const assertPreparationCurrent = () => {
+              assertPayerCurrent();
+              if (workerRef.current !== worker || worker.failed || workerIdentityRef.current !== identity || identity?.address !== privateAddress) {
+                throw new Error('Private Balance worker is not ready. Sync again to restart it.');
+              }
+            };
+            const prepared = await withPrivacySessionRoot(
               accountId,
               context,
               async (_sessionRoot, storageKey) => preparePrivateBalanceActionFlow({
@@ -1627,6 +1685,7 @@ export function PrivateBalanceProvider({
                 worker,
                 rpcUrl,
                 classicFeeStroops: BigInt(recommendedBaseFeeStroops),
+                feePayer,
                 depositSourceMinimumBalanceStroops,
                 assetContractId: asset.contractId,
                 assetIndex: asset.index,
@@ -1638,13 +1697,12 @@ export function PrivateBalanceProvider({
                 authorizeDisclosure,
                 directChainApprovalId,
                 recoveryActionId,
-                assertContext: () => {
-                  operation.assertCurrent();
-                  if (!providerMountedRef.current || !leaderRef.current || walletPhaseRef.current !== 'unlocked' || workerRef.current !== worker || worker.failed || workerIdentityRef.current?.address !== privateAddress) throw new DOMException('Private proof sharing cancelled after its wallet context changed.', 'AbortError');
-                },
+                assertContext: assertPreparationCurrent,
                 onProgress,
               }),
             );
+            assertPreparationCurrent();
+            return prepared;
           });
           operation.assertCurrent();
           reflectDurableState(result.state);
@@ -1658,6 +1716,7 @@ export function PrivateBalanceProvider({
             operation.assertAuthority();
             if (current) reflectDurableState(current);
           }).catch(() => undefined);
+          operation.assertAuthority();
           if (
             operation.signal.aborted ||
             (error instanceof DOMException && error.name === 'AbortError')
@@ -1674,6 +1733,7 @@ export function PrivateBalanceProvider({
             } catch {
               // The retried preparation reports the live failure.
             }
+            operation.assertCurrent();
             continue;
           }
           try {
@@ -1681,6 +1741,7 @@ export function PrivateBalanceProvider({
           } catch {
             // The action error is more useful; normal status surfaces the resync failure.
           }
+          operation.assertAuthority();
           throw error;
         }
       }
@@ -1697,6 +1758,7 @@ export function PrivateBalanceProvider({
     manifest,
     network,
     recommendedBaseFeeStroops,
+    resolvePrivateBalanceFeePayer,
     reflectDurableState,
     registryAssets,
     storageScope,
@@ -1720,11 +1782,12 @@ export function PrivateBalanceProvider({
   const prepareSpendRecovery = useCallback(async (
     actionId: string, onProgress?: (stage: PrivateActionProgressStage) => void,
     signal?: AbortSignal, authorizeDisclosure?: AuthorizePrivateProofDisclosure,
+    feePayerAccountId?: string,
   ): Promise<PreparedPrivateActionReview> => {
     if (actionBusyRef.current) throw new Error('Another Private Balance action is already open.');
     actionBusyRef.current = true;
     try {
-      return await prepareActionInternal({ kind: 'consolidate' }, onProgress, signal,
+      return await prepareActionInternal({ kind: 'consolidate', feePayerAccountId }, onProgress, signal,
         undefined, undefined, authorizeDisclosure, undefined, actionId);
     } finally { actionBusyRef.current = false; }
   }, [prepareActionInternal]);
@@ -1832,7 +1895,7 @@ export function PrivateBalanceProvider({
         sessionRoot: Uint8Array,
       ): Promise<string>;
     } = {},
-  ): Promise<'broadcast' | 'ambiguous'> => {
+  ): Promise<PrivateActionSubmission> => {
     assertDirectPrivateSubmission(preparedReview);
     assertDirectPrivateSubmission(options);
     if (!leaderRef.current) {
@@ -1847,8 +1910,23 @@ export function PrivateBalanceProvider({
     const allowHttp = endpoint.protocol === 'http:' &&
       ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
     const rpc = new SorobanRpc.Server(endpoint.toString(), { allowHttp });
+    // The reviewed proof is already durable. Signing, submission and its
+    // pending result belong to the wallet session, not a completed proof worker.
     const operation = createPrivateActionLifetime(capturePrivateActionContext());
+    const feePayer = preparedReview.transaction.feePayer;
+    const assertPayerCurrent = () => {
+      operation.assertCurrent();
+      if (feePayer) assertSamePrivateFeePayer(feePayer, resolvePrivateBalanceFeePayer(feePayer.accountId));
+    };
     try {
+      assertPayerCurrent();
+      if (feePayer) {
+        const available = await freshPrivateFeeBalance(feePayer.publicKey, network, operation.signal);
+        assertPayerCurrent();
+        if (available < preparedReview.transaction.classicFeeStroops + preparedReview.transaction.resourceFeeStroops) {
+          throw new Error('The selected fee-paying account no longer has enough spendable public XLM.');
+        }
+      }
       const status = await mutexRef.current.runExclusive(() =>
         withPrivacySessionRoot(accountId, context, async (sessionRoot, storageKey) => {
           operation.assertCurrent();
@@ -1870,20 +1948,25 @@ export function PrivateBalanceProvider({
             review: preparedReview.transaction,
             networkPassphrase: manifest.networkPassphrase,
             sign: async request => {
-              operation.assertCurrent();
+              assertPayerCurrent();
               const envelope = await (options.sign
                 ? options.sign(request, sessionRoot)
                 : signPrivateBalanceEnvelope({
                   envelopeXdr: request.envelopeXdr,
                   expectedTransactionHash: request.transactionHash,
                   networkPassphrase: request.networkPassphrase,
-                }, operation.assertCurrent));
-              operation.assertCurrent();
+                  feePayer: request.feePayer,
+                  maximumClassicFeeStroops: request.maximumClassicFeeStroops,
+                  maximumResourceFeeStroops: request.maximumResourceFeeStroops,
+                }, assertPayerCurrent));
+              assertPayerCurrent();
               return envelope;
             },
             storageDriver: driver,
           });
           operation.assertCurrent();
+          const transactionHash = signed.pendingActions.find(action => action.id === preparedReview.id)?.transactionHash;
+          if (!transactionHash) throw new Error('The signed private transaction hash is unavailable.');
           const broadcast = await broadcastPrivateBalanceAction({
             context: storageScope,
             storageKey,
@@ -1928,7 +2011,7 @@ export function PrivateBalanceProvider({
           }
           operation.assertCurrent();
           reflectDurableState(latest);
-          return broadcast.status;
+          return { status: broadcast.status, transactionHash };
         }));
       try {
         await performSyncRef.current?.(false);
@@ -1939,7 +2022,7 @@ export function PrivateBalanceProvider({
       if (options.watchOutcome !== false) {
         watchBroadcastOutcome(
           preparedReview.id,
-          preparedReview.transaction.transactionHash,
+          status.transactionHash,
           rpc,
           context,
           driver,
@@ -1953,6 +2036,7 @@ export function PrivateBalanceProvider({
       } catch {
         // Never release a transaction that may have reached broadcast.
       }
+      operation.assertAuthority();
       throw error;
     } finally { operation.dispose(); }
   }, [
@@ -1963,13 +2047,14 @@ export function PrivateBalanceProvider({
     network,
     reflectDurableState,
     signPrivateBalanceEnvelope,
+    resolvePrivateBalanceFeePayer,
     storageScope,
     watchBroadcastOutcome,
   ]);
 
   const submitAction = useCallback(async (
     preparedReview: PreparedPrivateActionReview,
-  ): Promise<'broadcast' | 'ambiguous'> => {
+  ): Promise<PrivateActionSubmission> => {
     if (actionBusyRef.current) throw new Error('Another Private Balance action is already running.');
     actionBusyRef.current = true;
     try {
@@ -2008,7 +2093,7 @@ export function PrivateBalanceProvider({
     }
     actionBusyRef.current = true;
     try {
-      return await submitActionInternal(sweep.review, {
+      const submitted = await submitActionInternal(sweep.review, {
         beforeSign: async ({ storageKey }) => {
           const cache = await markStealthPaymentSweeping(
             storageScope,
@@ -2050,6 +2135,7 @@ export function PrivateBalanceProvider({
           }
         },
       });
+      return submitted.status;
     } catch (error) {
       try {
         await performSyncRef.current?.(false, { background: true });
@@ -2086,14 +2172,21 @@ export function PrivateBalanceProvider({
     if (selection.kind === 'selected') {
       throw new Error('This send does not need multiple steps.');
     }
+    const assertCurrent = capturePrivateActionContext();
+    const feePayer = draft.feePayerAccountId && draft.feePayerAccountId !== accountId
+      ? resolvePrivateBalanceFeePayer(draft.feePayerAccountId) : undefined;
+    const available = await freshPrivateFeeBalance(feePayer?.publicKey ?? accountPublicKey, network);
+    assertCurrent();
+    if (feePayer) assertSamePrivateFeePayer(feePayer, resolvePrivateBalanceFeePayer(feePayer.accountId));
     return planPrivateChainedSend({
+      feePayer,
       approvalId: ownerId(),
       consolidationActionCount: selection.actionCount,
       perStepMaxFeeStroops:
-        BigInt(recommendedBaseFeeStroops) + MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS,
-      publicXlmBalanceStroops: publicXlmBalanceStroops(balances),
+        privateActionClassicFeeStroops(BigInt(recommendedBaseFeeStroops), feePayer) + MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS,
+      publicXlmBalanceStroops: available,
     });
-  }, [asset.decimals, balances, recommendedBaseFeeStroops, state.notes]);
+  }, [accountId, accountPublicKey, asset.decimals, capturePrivateActionContext, network, recommendedBaseFeeStroops, resolvePrivateBalanceFeePayer, state.notes]);
 
   const submitChainedSend = useCallback(async (
     approval: PrivateChainedSendApproval,
@@ -2108,6 +2201,8 @@ export function PrivateBalanceProvider({
     }
     const privateAddress = workerIdentityRef.current?.address;
     if (!privateAddress) throw new Error('Private Balance worker is not ready.');
+    assertSamePrivateFeePayer(approval.feePayer, draft.feePayerAccountId && draft.feePayerAccountId !== accountId
+      ? resolvePrivateBalanceFeePayer(draft.feePayerAccountId) : undefined);
     actionBusyRef.current = true;
     const context = deploymentContext(manifest);
     const driver = new IndexedDbEncryptedRecordDriver();
@@ -2136,6 +2231,7 @@ export function PrivateBalanceProvider({
             current.revision,
             {
               id: approval.id,
+              feePayer: approval.feePayer,
               steps: approval.steps,
               perStepMaxFeeStroops: approval.perStepMaxFeeStroops,
               cumulativeMaxFeeStroops: approval.cumulativeMaxFeeStroops,
@@ -2154,6 +2250,7 @@ export function PrivateBalanceProvider({
           ownFingerprint,
           assetDecimals: asset.decimals,
           prepare: stepDraft => prepareActionInternal(stepDraft, undefined, undefined, undefined, undefined, async disclosure => {
+            assertSamePrivateFeePayer(approval.feePayer, disclosure.feePayer);
             // Initial chain consent authorizes only this exact local self-merge
             // or the final draft. Reject a changed proof BEFORE it leaves us.
             const final = stepDraft.kind === 'transfer';
@@ -2170,7 +2267,7 @@ export function PrivateBalanceProvider({
           submit: (review, { isFinal }) =>
             submitActionInternal(review, { watchOutcome: isFinal }),
           cancel: actionId => cancelAction(actionId),
-          awaitConfirmation: async review => {
+          awaitConfirmation: async (review, submission) => {
             const rpcUrl = getRpcUrl(network);
             if (!rpcUrl) return false;
             const endpoint = new URL(rpcUrl);
@@ -2186,7 +2283,7 @@ export function PrivateBalanceProvider({
               },
             );
             const outcome = await pollBroadcastPrivateBalanceTransaction({
-              transactionHash: review.transaction.transactionHash,
+              transactionHash: submission.transactionHash,
               rpc,
               reconcile: async () => {
                 await performSyncRef.current?.(false, { background: true });
@@ -2238,6 +2335,7 @@ export function PrivateBalanceProvider({
     network,
     prepareActionInternal,
     reflectDurableState,
+    resolvePrivateBalanceFeePayer,
     storageScope,
     submitActionInternal,
   ]);
@@ -2373,6 +2471,7 @@ export function PrivateBalanceProvider({
               [stealthDiscoveryRecordKey(storageScope)], guard, new Map([[stateKey, raw]]));
           });
           removal.assertActive();
+          runtimeAuthorityEpochRef.current += 1;
           encryptedStateExistsRef.current = false;
           workerRef.current?.terminate();
           workerRef.current = null;
@@ -2467,6 +2566,7 @@ export function PrivateBalanceProvider({
     verifiedBalanceStroops: totalBalanceStroops.toString(),
     asset,
     privateAddress: state.shieldedAddress,
+    receiveSessionId,
     publicAddress: accountPublicKey,
     networkLabel: network === 'mainnet' ? 'Mainnet' : 'Testnet',
     protocolVersion: manifest.protocolVersion,
@@ -2528,6 +2628,7 @@ export function PrivateBalanceProvider({
     rotatePrivateAddress,
     rpcWitnessEnabled,
     runFullVerification,
+    receiveSessionId,
     setRpcWitnessEnabled,
     setOutgoingHistoryMode,
     snapshot,
