@@ -2527,7 +2527,7 @@ export function SectionHeader({
   ...rest
 }: {
   children: React.ReactNode;
-  as?: "p" | "h2" | "h3" | "h4";
+  as?: "p" | "h2" | "h3" | "h4" | "span" | "div";
   className?: string;
 } & React.HTMLAttributes<HTMLElement>) {
   return (

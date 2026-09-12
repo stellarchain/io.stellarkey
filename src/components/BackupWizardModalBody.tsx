@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useWalletIdentity,
   useWalletLifecycleActions,
@@ -414,9 +415,7 @@ export function BackupWizardModalBody({
           <div className="space-y-3">
             <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] px-4 py-3">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                  Local backup health
-                </span>
+                <SectionHeader as="span">Local backup health</SectionHeader>
                 <span className={`text-[12px] font-semibold ${backupHealth?.lastExportedAt ? "text-[#30D158]" : "text-[#FF9F0A]"}`}>
                   {backupHealth?.lastExportedAt ? "Backup recorded" : "Backup needed"}
                 </span>
@@ -579,9 +578,7 @@ export function BackupWizardModalBody({
                 </Notice>
                 <div className="mt-3.5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                      12-Word Recovery Phrase
-                    </span>
+                    <SectionHeader as="span">12-Word Recovery Phrase</SectionHeader>
                     <CopyButton value={revealed} label="Copy" sensitive />
                   </div>
                   <div className="grid grid-cols-3 gap-2">
@@ -607,9 +604,7 @@ export function BackupWizardModalBody({
                 </Notice>
                 <div className="mt-3.5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                   <div className="mb-2.5 flex items-center justify-between gap-3">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                      Secret Key
-                    </span>
+                    <SectionHeader as="span">Secret Key</SectionHeader>
                     <CopyButton value={revealed} label="Copy" sensitive />
                   </div>
                   <HashValue

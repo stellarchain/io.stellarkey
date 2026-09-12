@@ -168,9 +168,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
     <div className="fade-up w-full min-w-0 pb-[132px] md:pb-12">
       <div className="flex items-center justify-between pb-1 pt-2">
         <IOSBackButton label="Back to Merchant settings" onClick={onBack} />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-          Merchant
-        </span>
+        <SectionHeader as="span">Merchant</SectionHeader>
         <span className="w-11" aria-hidden />
       </div>
 
@@ -227,9 +225,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                   </span>
                 )}
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                    Current operator
-                  </span>
+                  <SectionHeader as="span" className="block">Current operator</SectionHeader>
                   <span className="mt-0.5 block truncate text-[16px] font-semibold text-white">
                     {activeStaff?.name ?? "Till locked"}
                   </span>

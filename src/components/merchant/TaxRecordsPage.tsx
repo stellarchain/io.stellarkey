@@ -261,9 +261,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
     <div className="fade-up w-full min-w-0 pb-[132px] md:pb-12">
       <div className="flex items-center justify-between pb-1 pt-2">
         <IOSBackButton label="Back to Merchant settings" onClick={onBack} />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-          Merchant
-        </span>
+        <SectionHeader as="span">Merchant</SectionHeader>
         <span className="w-11" aria-hidden />
       </div>
       <h1 className="display-h text-[32px] font-bold tracking-tight text-white">Tax Records</h1>

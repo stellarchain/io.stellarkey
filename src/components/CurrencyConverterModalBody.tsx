@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useLayoutEffect, useMemo, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { useWalletMarket } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { marketDataLabel } from "@/lib/prices";
@@ -138,9 +139,7 @@ export function CurrencyConverterModalBody({
 
         {/* To Output */}
         <div>
-          <span className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
-            Converted Amount
-          </span>
+          <SectionHeader as="span" className="block mb-1.5">Converted Amount</SectionHeader>
           <div className="flex items-center gap-2">
             <output
               className={`input mono !h-12 flex flex-1 items-center bg-white/[0.02] text-base font-semibold text-white sm:text-[15px] ${

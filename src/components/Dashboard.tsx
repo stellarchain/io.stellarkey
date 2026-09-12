@@ -2014,9 +2014,7 @@ export function Dashboard() {
             {!sidebarCollapsed ? (
               <div className="pt-3 space-y-1">
                 <div className="flex items-center justify-between px-2 pb-0.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                    Accounts ({accounts.length})
-                  </span>
+                  <SectionHeader as="span">Accounts ({accounts.length})</SectionHeader>
                   <div className="flex items-center">
                     <button
                       type="button"
