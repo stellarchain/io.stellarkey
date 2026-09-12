@@ -1,9 +1,39 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
+import { createRequire } from "node:module";
+import { Legacy } from "@eslint/eslintrc";
 
 const root = new URL("../", import.meta.url);
 const read = (relativePath) => readFileSync(new URL(relativePath, root), "utf8");
+
+test("ESLint's actual YAML adapter resolves the patched parser", () => {
+  const require = createRequire(import.meta.url);
+  const eslintRequire = createRequire(require.resolve("eslint/package.json"));
+  const adapterRequire = createRequire(eslintRequire.resolve("@eslint/eslintrc"));
+  const installed = adapterRequire("js-yaml/package.json");
+  const [major, minor, patch] = installed.version.split(".").map(Number);
+  assert.equal(major, 4, "parser major changes require explicit compatibility review");
+  assert.ok(minor > 3 || (minor === 3 && patch >= 2), "ESLint must resolve js-yaml >=4.3.2");
+  const lock = JSON.parse(read("package-lock.json"));
+  assert.equal(lock.packages["node_modules/js-yaml"].version, installed.version);
+});
+
+test("ESLint loads ordinary YAML config and rejects malformed YAML through its installed adapter", () => {
+  const valid = new URL("tests/fixtures/eslint-valid.yaml", root);
+  const invalid = new URL("tests/fixtures/eslint-invalid.yaml", root);
+  const config = Legacy.loadConfigFile(valid.pathname);
+  assert.deepEqual(config, { root: true, env: { browser: true, es2022: true }, rules: { "no-debugger": "error" } });
+  const normalized = new Legacy.ConfigArrayFactory({ cwd: root.pathname }).loadFile(valid.pathname);
+  assert.deepEqual(normalized.extractConfig(new URL("src/example.js", root).pathname).rules["no-debugger"], ["error"]);
+  assert.throws(() => Legacy.loadConfigFile(invalid.pathname), /Cannot read config file|end of the stream|flow collection/);
+});
+
+test("application verification audits development dependencies as well as production", () => {
+  const scripts = JSON.parse(read("package.json")).scripts;
+  assert.equal(scripts["audit:all"], "npm audit --audit-level=high");
+  assert.match(scripts["verify:application"], /npm run audit:prod && npm run audit:all/);
+});
 
 test("the direct cipher dependency is the reviewed hardening release", () => {
   const packageJson = JSON.parse(read("package.json"));

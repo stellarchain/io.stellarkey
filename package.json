@@ -23,6 +23,7 @@
     "test:bundle": "node --no-warnings --test tests/bundle-budget.build.mjs",
     "typecheck": "tsc --noEmit",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "audit:all": "npm audit --audit-level=high",
     "test:hardware": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/hardware.test.mjs",
     "test:swap": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/swap.test.mjs",
     "private:generate": "node protocol/private-balance/scripts/build-private-balance-artifacts.mjs",
@@ -37,7 +38,7 @@
     "test:private-protocol": "npm --prefix protocol/private-balance/packages/browser test",
     "check:fixture-clean": "node scripts/testing/wallet-test-policy.mjs",
     "measure:ux": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs scripts/measure-ux.ts",
-    "verify:application": "npm run private:check-generated && npm run typecheck && npm test && npm run test:private-protocol && npm run lint && npm run audit:prod && npm run test:e2e:reporter && npm run test:e2e:private-ui && npm run test:e2e:private-components && npm run check:fixture-clean && npm run build && npm run check:fixture-clean && npm run test:bundle && npm run check:bundle && playwright test",
+    "verify:application": "npm run private:check-generated && npm run typecheck && npm test && npm run test:private-protocol && npm run lint && npm run audit:prod && npm run audit:all && npm run test:e2e:reporter && npm run test:e2e:private-ui && npm run test:e2e:private-components && npm run check:fixture-clean && npm run build && npm run check:fixture-clean && npm run test:bundle && npm run check:bundle && playwright test",
     "release:verify": "node scripts/assert-clean-release.mjs && npm run verify:application"
   },
   "dependencies": {

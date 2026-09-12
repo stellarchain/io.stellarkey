@@ -1,4 +1,31 @@
-# Dependency security evidence — 2026-09-07
+# Dependency security evidence
+
+## 2026-09-12 — development parser and complete application audit
+
+The installed chain `eslint 9.39.5 → @eslint/eslintrc 3.3.6 → js-yaml`
+now resolves 4.3.2, the compatible patch for
+[GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh).
+Only that package's version, registry URL and integrity changed in the dependency
+update. Tests resolve the parser from ESLint's installed adapter, load and
+normalize an ordinary YAML configuration through `@eslint/eslintrc`, and reject
+malformed input through the same adapter. The parser/version and audit-gate
+regressions failed before the fix; all 11 dependency-governance tests pass after it.
+
+`verify:application` retains its production audit and now also runs
+`npm audit --audit-level=high` including development dependencies. Fresh full
+and production audits each report **10 low vulnerable packages, no moderate,
+high or critical findings, and one distinct advisory** (elliptic). The full
+graph previously had 11 vulnerable packages, including the high-severity YAML
+finding, across two distinct advisories. Package counts include transitive
+parents and are not counts of independent vulnerabilities.
+
+No major dependency upgrade, cryptographic replacement, hardware removal or
+gate waiver was made. The embedded-browser, remote Trezor core, unpatched
+elliptic and distribution-authorization limits documented below still apply.
+The lockfile provenance pins must be regenerated with the release metadata;
+focused checks alone are not a clean-tree release verification.
+
+## Historical evidence — 2026-09-07
 
 The production npm audit passes its high/critical threshold after the scoped
 TOML fix below. This is evidence about the installed dependency graph. Embedded
