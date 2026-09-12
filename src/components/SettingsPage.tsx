@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { IconTile } from "@/components/ui";
 import dynamic from "next/dynamic";
 import { useWallet, useWalletSecurity } from "@/hooks/useWallet";
 import { useMerchantSettings } from "@/hooks/useMerchantRuntime";
@@ -1012,7 +1013,7 @@ export function SettingsPage({
                   <div className="flex items-center gap-3 px-1 pt-1">
                     <span
                       aria-hidden="true"
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--color-oncolor)] shadow-sm"
                       style={{ background: "#5E5CE6" }}
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2607,12 +2608,7 @@ function RowButton({
       onClick={onClick}
     >
       {tint ? (
-        <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
-          style={{ background: tint }}
-        >
-          {icon}
-        </span>
+        <IconTile tint={tint} icon={icon} />
       ) : (
         icon
       )}

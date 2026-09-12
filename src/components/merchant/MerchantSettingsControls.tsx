@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { SectionHeader } from "@/components/ui";
+import { IconTile, SectionHeader } from "@/components/ui";
 import { ModalBody } from "../ui";
 
 export function SettingsSection({
@@ -84,12 +84,7 @@ export function SettingsRow({
   const content = (
     <>
       {tint ? (
-        <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
-          style={{ background: tint }}
-        >
-          {icon}
-        </span>
+        <IconTile tint={tint} icon={icon} />
       ) : (
         icon
       )}
