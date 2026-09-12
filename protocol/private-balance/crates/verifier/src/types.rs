@@ -53,5 +53,5 @@ pub struct VerificationKey {
     pub beta_g2: [u8; 128],
     pub gamma_g2: [u8; 128],
     pub delta_g2: [u8; 128],
-    pub gamma_abc: [[u8; 64]; 14],
+    pub gamma_abc: [[u8; 64]; 12],
 }

@@ -4,6 +4,45 @@ import { subtractStellarAmounts, type StellarMemoInput } from "./stellar-domain"
 import type { AssetBalance, NetworkKey } from "./types";
 import { formatTrezorAddress } from "./address-display";
 
+export interface PublicPaymentReview {
+  readonly sourcePublicKey: string;
+  readonly network: NetworkKey;
+  readonly destination: string;
+  readonly amount: string;
+  readonly asset: Readonly<{
+    key: string;
+    code: string;
+    issuer: string | null;
+    isNative: boolean;
+    balanceBefore: string;
+  }>;
+  readonly memo?: Readonly<StellarMemoInput>;
+  readonly feeStroops: number;
+  readonly needsCosigners: boolean;
+}
+
+export function bindPublicPaymentReview(review: PublicPaymentReview): PublicPaymentReview {
+  return Object.freeze({
+    ...review,
+    asset: Object.freeze({ ...review.asset }),
+    ...(review.memo ? { memo: Object.freeze({ ...review.memo }) } : {}),
+  });
+}
+
+export function requireCurrentPublicPaymentReview(
+  review: PublicPaymentReview | null,
+  current: Pick<PublicPaymentReview, "sourcePublicKey" | "network">,
+): PublicPaymentReview {
+  if (!review) throw new Error("Review this payment before signing it.");
+  if (review.sourcePublicKey !== current.sourcePublicKey) {
+    throw new Error("The active account changed. Review the payment again before signing.");
+  }
+  if (review.network !== current.network) {
+    throw new Error("The Stellar network changed. Review the payment again before signing.");
+  }
+  return review;
+}
+
 export interface SwapRequestIdentity {
   network: NetworkKey;
   sendAssetKey: string;
@@ -139,9 +178,15 @@ export interface DestinationMemoState {
 }
 
 export function normalizeFederationMemo(
-  memo: string,
-  memoType?: string,
+  memo: unknown,
+  memoType?: unknown,
 ): DestinationMemoState {
+  if (typeof memo !== "string") {
+    throw new Error("Federation memo must be a string.");
+  }
+  if (memoType !== undefined && typeof memoType !== "string") {
+    throw new Error("Federation memo type must be a string.");
+  }
   const normalizedType = memoType?.trim().toLowerCase();
   if (
     normalizedType &&
@@ -150,7 +195,7 @@ export function normalizeFederationMemo(
     normalizedType !== "hash" &&
     normalizedType !== "return"
   ) {
-    throw new Error(`Federation memo type ${memoType} is not supported.`);
+    throw new Error(`Federation memo type ${memoType as string} is not supported.`);
   }
   const type = (normalizedType || "text") as StellarMemoInput["type"];
   return { memo, memoType: type, federationBound: true };
@@ -176,6 +221,9 @@ export function spendableAssetBalance(
   asset: AssetBalance,
   deductions: readonly string[] = [],
 ): string {
+  if (!asset.isNative && asset.isAuthorized !== true) {
+    return "0";
+  }
   return subtractStellarAmounts(asset.balance, [
     asset.sellingLiabilities || "0",
     ...deductions,
@@ -272,7 +320,7 @@ export interface TrustlineSelectionUpdate {
 }
 
 function trustlineSelectionKey(selection: TrustlineSelection): string {
-  return `${selection.code.toUpperCase()}:${selection.issuer}`;
+  return `${selection.code}:${selection.issuer}`;
 }
 
 export function addTrustlineSelection(

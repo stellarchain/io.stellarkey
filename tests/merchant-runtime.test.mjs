@@ -129,7 +129,7 @@ test("screen awake protection is scoped to an active checkout", () => {
 
   assert.doesNotMatch(page, /useWakeLock/);
   assert.doesNotMatch(page, /ForegroundMonitoringStatus/);
-  assert.match(checkout, /const wakeLock = useWakeLock\(awaiting\)/);
+  assert.match(checkout, /const wakeLock = useWakeLock\(requestAvailable\)/);
   assert.match(checkout, /Watching for payment/);
   assert.match(
     checkout,
@@ -138,6 +138,14 @@ test("screen awake protection is scoped to an active checkout", () => {
   assert.match(checkout, /wakeLock\.retry/);
   assert.doesNotMatch(offlineStates, /Foreground monitoring active/);
   assert.doesNotMatch(offlineStates, /Screen awake protection is on/);
+  assert.doesNotMatch(checkout, /dispatchEvent\(new Event\("pointerdown"\)\)/);
+});
+
+test("the privacy shield portals above secret-bearing dialogs", () => {
+  const dashboard = source("src/components/Dashboard.tsx");
+  assert.match(dashboard, /createPortal/);
+  assert.match(dashboard, /data-privacy-shield/);
+  assert.match(dashboard, /z-\[2147483647\]/);
 });
 
 test("merchant blockers offer direct recovery actions", () => {
@@ -157,7 +165,7 @@ test("merchant blockers offer direct recovery actions", () => {
   assert.match(page, />\s*Choose staff\s*<\/button>/);
   assert.match(page, /<PosTerminal onOpenShift=\{\(\) => setShiftShowing\(true\)\} \/>/);
   assert.match(till, /onOpenShift: \(\) => void;/);
-  assert.match(till, /\{!activeShift && \([\s\S]*?>\s*Open shift\s*<\/button>[\s\S]*?\)\}/);
+  assert.match(till, /\{!activeShift && \([\s\S]*?>\s*Open Shift\s*<\/button>[\s\S]*?\)\}/);
   assert.match(till, /min-h-11/);
 });
 
@@ -183,7 +191,7 @@ test("persisted merchant record identifiers use Web Crypto randomness", () => {
 });
 
 test("merchant PIN disclosures match the encrypted unlocked-storage boundary", () => {
-  const setup = source("src/components/merchant/SetupWizard.tsx");
+  const setup = source("src/components/merchant/SetupWizardBody.tsx");
   const staff = source("src/components/merchant/StaffTerminalsPage.tsx");
   for (const disclosure of [setup, staff]) {
     assert.match(disclosure, /encrypted merchant storage/i);
@@ -198,6 +206,55 @@ test("customer display exit verifies a real staff PIN and does not show an amoun
   assert.match(hook, /verifyMerchantPin/);
   assert.doesNotMatch(display, /Any four digits|buildSep7PayUri|QRCode/);
   assert.match(display, /Same-device display/);
+});
+
+test("tracked wallet broadcasts retain revocable signing-boundary checks", () => {
+  const wallet = source("src/hooks/useWallet.tsx");
+  const api = source("src/lib/api.ts");
+
+  assert.match(wallet, /authorizeBeforeSigning/);
+  assert.match(api, /beforeSign/);
+
+  const trackedBroadcast = wallet.split("const runTrackedBroadcast = useCallback")[1]
+    ?.split("const retryPendingTransaction")[0] ?? "";
+  assert.match(trackedBroadcast, /createSessionRevocationGuard\(\)/);
+  assert.ok(
+    trackedBroadcast.indexOf("journal?.onPrepared") < trackedBroadcast.indexOf("assertSessionCurrent"),
+    "session authority must be checked after durable preparation",
+  );
+  assert.match(trackedBroadcast, /beforeSubmit\?\.\(\)/);
+});
+
+test("merchant pricing is refreshed and expires before it can quote Mainnet sales", () => {
+  const hook = source("src/hooks/useMerchant.tsx");
+  assert.match(hook, /fetchAssetPriceSamples/);
+  assert.match(hook, /setInterval\(refreshPrices, MERCHANT_PRICE_REFRESH_MS\)/);
+  assert.match(hook, /quoteCurrencyPerUnit\([\s\S]{0,200}xlmPriceSample, fiatRateSamples/);
+  assert.doesNotMatch(hook, /setAssetPricesObservedAt/);
+  const quoteInputs = hook.split("const quoteInputs = useCallback")[1]?.split("/* ---------------- invoices")[0] ?? "";
+  assert.match(quoteInputs, /rateFor\(asset\)/);
+  const merchantPage = source("src/components/merchant/MerchantPage.tsx");
+  assert.match(merchantPage, /retryMarketPrices/);
+  assert.match(merchantPage, /Retry Prices/);
+  assert.match(hook, /Promise\.all\(\[refreshPrices\(\), refreshMarketData\(\)\]\)/);
+});
+
+test("retained record export entrypoints use the shared current-authority boundary", () => {
+  const hook = source("src/hooks/useMerchant.tsx");
+  const archive = hook.split("const exportEncryptedArchive = useCallback")[1]
+    ?.split("const resetRecoveryData")[0] ?? "";
+  assert.ok((archive.match(/requireExportingStaff/g) ?? []).length >= 2);
+  assert.match(hook, /const exportInvoiceRecord = useCallback/);
+  assert.match(hook, /requireExportingStaff/);
+  assert.match(source("src/components/merchant/InvoiceDetailModal.tsx"), /exportInvoiceRecord\(invoice\.id\)/);
+});
+
+test("terminal identity cannot change during an open shift", () => {
+  const hook = source("src/hooks/useMerchant.tsx");
+  const settings = hook.split("const updateSettings = useCallback")[1]
+    ?.split("const upsertItem")[0] ?? "";
+  assert.match(settings, /activeShiftForTerminal/);
+  assert.match(settings, /Close the current shift before renaming this terminal/i);
 });
 
 test("printing, scanner input, and supported preferences execute real browser paths", () => {

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-09-04T19:41:07Z",
+  "environment": {
+    "runtime": "Node.js 26.7.0",
+    "senderLifecycle": "new ephemeral sender session per sample",
+    "helperLifecycle": "one local helper session kept open for all samples",
+    "transport": [
+      "wss://relay.damus.io",
+      "wss://nos.lol"
+    ],
+    "chainSubmission": false,
+    "sensitivePaymentData": false
+  },
+  "baseline": {
+    "sourceCommit": "41f5ff7",
+    "quoteWindowMs": 5000,
+    "samples": [
+      {
+        "settledMs": 5196,
+        "quoteCount": 1
+      }
+    ]
+  },
+  "adaptive": {
+    "sourceCommit": "9b0b459",
+    "quoteWindowMs": 5000,
+    "settleWindowMs": 700,
+    "samples": [
+      {
+        "firstQuoteMs": 378,
+        "settledMs": 1079,
+        "quoteCount": 1
+      },
+      {
+        "firstQuoteMs": 385,
+        "settledMs": 1085,
+        "quoteCount": 1
+      },
+      {
+        "firstQuoteMs": 431,
+        "settledMs": 1132,
+        "quoteCount": 1
+      }
+    ]
+  },
+  "interpretation": "The fixed collection window dominated the prior one-peer latency. This controlled sample validates adaptive waiting but is not production p50/p95 evidence."
+}

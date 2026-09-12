@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 2,
+  "fixtureOnly": true,
+  "createdAt": "2026-09-04T00:47:12.521Z",
+  "networkPassphrase": "Test SDF Network ; September 2015",
+  "sourceAccount": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
+  "assetAdminAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
+  "assets": [
+    {
+      "index": 0,
+      "cliAsset": "native",
+      "kind": "native",
+      "code": "XLM",
+      "issuer": null,
+      "name": "Stellar Lumens",
+      "decimals": 7,
+      "displayDecimals": 7,
+      "contractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+    },
+    {
+      "index": 1,
+      "cliAsset": "USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+      "kind": "stellar",
+      "code": "USDC",
+      "issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+      "name": "USD Coin",
+      "decimals": 7,
+      "displayDecimals": 2,
+      "contractId": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
+    }
+  ],
+  "registeredAssets": [
+    {
+      "asset": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      "asset_field": "0fa59baaa8e420fbf133e5f8e488ed2e2073219b6bf201091500fa723ccfa657",
+      "index": 0,
+      "status": "Active"
+    },
+    {
+      "asset": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+      "asset_field": "20ae2110cf556eed267f14432eaf85564a8b3bc4a4d892dd21572b00fabe7ceb",
+      "index": 1,
+      "status": "Active"
+    }
+  ],
+  "poolContractId": "CBQIGXD6DPBBHCNNLQDQR552ZAANJOIPPM7DGOO3TT33TTT2SJW4DRUI",
+  "realmId": "db67e508600237c451d33ce9ffd2c1d952e406b458794cec05f37c431c3ffe5b",
+  "salt": "f12ed008e8c1ccafb6211e9f77c7b8f9fca67e9fab3295761e5e2ea569411316",
+  "deploymentBindingHash": "59d5c0fbdf41c649daf919ccf9a4d64d3d0034ee55d7b41a002f399fff1aaf2f",
+  "deploymentCheckpoint": {
+    "ledger": 4491845,
+    "hash": "2fd40507958359c7a3739e3eacbe7469e3ab0aa4b983e61fdf1beb392defe5f9"
+  },
+  "registryCheckpoint": {
+    "ledger": 4491848,
+    "hash": "c6e3092c20577fcce3041d53e54a089ba6039db7400629ecca521bb5544c4087",
+    "assetCount": 2
+  },
+  "wasmSha256": "9868d322fb170fe95cbcbcd48eb03e9c2cf48e0be7e2a72431a69f8a03801ecd",
+  "config": {
+    "circuit_hash": "e8e9566deeaabd745b9c4306f9b222e5f8dc3b224c5e1fd4741da729785fc2d3",
+    "context_field": "21d5ba4b131204011be7058854c01d0727cb01b4a75cc8c2ebffbc2e8c7f72f5",
+    "context_hash": "5198c3c15a91e01a154bf598a5ae5042ccb9a59c8581142f69262b300c3f634e",
+    "deployment_binding_hash": "59d5c0fbdf41c649daf919ccf9a4d64d3d0034ee55d7b41a002f399fff1aaf2f",
+    "guardian": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
+    "initial_asset_admin": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
+    "network_id": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
+    "poseidon2_parameter_hash": "6ecf310eeece863dcb24370c6668cfe42808ac1cdb25c30f4b85461ab37789a8",
+    "protocol_version": 1,
+    "realm_id": "db67e508600237c451d33ce9ffd2c1d952e406b458794cec05f37c431c3ffe5b",
+    "root_window_ledgers": 1440,
+    "tree_depth": 17,
+    "verification_key_hash": "6af84a98f2e9bddc7fbcfdf08160c10b2d627e2aab19fa612290b1feaf09e0f7"
+  },
+  "assetCount": 2,
+  "archiveMeta": {
+    "action_count": 0,
+    "transcript_head": "d7a8a2964c4842bb4c08f2695fcf437f187a94cebd07b02d8d84c04263501851"
+  },
+  "treeState": {
+    "current_root": "23b3e23c0bc898db86d462d5e7a3c7e7a3f1f4f9409dfc3744feb2fb4cae15a5",
+    "frontier": [
+      "0000000000000000000000000000000000000000000000000000000000000000",
+      "0000000000000000000000000000000000000000000000000000000000000000",
+      "2a5de47ed300af27b706aaa14762fc468f5cfc16cd8116eb6b09b0f2643ca2b9",
+      "2a5de47ed300af27b706aaa14762fc468f5cfc16cd8116eb6b09b0f2643ca2b9",
+      "1070e389d2a8c6c59df016833644d786bc20cd3c02702f8842318abdbc24f2be",
+      "1070e389d2a8c6c59df016833644d786bc20cd3c02702f8842318abdbc24f2be",
+      "0219c4d94d0a6bbedaca37389b257a9d77b79eb808c6c96aad26b3fedf18623f",
+      "0219c4d94d0a6bbedaca37389b257a9d77b79eb808c6c96aad26b3fedf18623f",
+      "1c542f962c10039f740a8df044f0f7a24a5e34ddfdb4aceac279219ec138994a",
+      "1c542f962c10039f740a8df044f0f7a24a5e34ddfdb4aceac279219ec138994a",
+      "041427ef9d920eea17d39cd01efa15f87b5d86bc43d2681fa6e37498625106ab",
+      "041427ef9d920eea17d39cd01efa15f87b5d86bc43d2681fa6e37498625106ab",
+      "0ac86b0ef82942a569557943ec2600126932f3b1d171bb2a2cd54eeae3401868",
+      "0ac86b0ef82942a569557943ec2600126932f3b1d171bb2a2cd54eeae3401868",
+      "24a59b2c70ffdd9b05059919fc6d281a6d9427cd239ade15d9ed1469711d10f0",
+      "24a59b2c70ffdd9b05059919fc6d281a6d9427cd239ade15d9ed1469711d10f0",
+      "147afd0d2c07f85eaa70d3d673a1db77003ee4ab5d0bd821ad0ea66801bda534",
+      "147afd0d2c07f85eaa70d3d673a1db77003ee4ab5d0bd821ad0ea66801bda534",
+      "2efdede6144d26513da58fab51b1e2756cbcc5ed29f9f56c231e43c0c451170b",
+      "2efdede6144d26513da58fab51b1e2756cbcc5ed29f9f56c231e43c0c451170b",
+      "27a77c9a37fa7fc9e205bf22ef8123199a834ebf1e0f756de5bb587a8ae2280e",
+      "27a77c9a37fa7fc9e205bf22ef8123199a834ebf1e0f756de5bb587a8ae2280e",
+      "02550c437ec27e059f2e0f8a6f3ef0b19f76b2aaf418c6258e00c6a6013bcc03",
+      "02550c437ec27e059f2e0f8a6f3ef0b19f76b2aaf418c6258e00c6a6013bcc03",
+      "2e512ab7918b5c42e16201af79869aad6231f2ff0d7988d362bf8c9e71d3ee4d",
+      "2e512ab7918b5c42e16201af79869aad6231f2ff0d7988d362bf8c9e71d3ee4d",
+      "23246d93d74982acb736c0208daf955e4c3cba5aec87506e76efe2fb6c598da4",
+      "23246d93d74982acb736c0208daf955e4c3cba5aec87506e76efe2fb6c598da4",
+      "1e01f044649095495c9a65a993d8797d3d684a047875a15498dfcbc14e12e0c7",
+      "1e01f044649095495c9a65a993d8797d3d684a047875a15498dfcbc14e12e0c7",
+      "16b3a2ff965b9474bf814cc1a3a55859cbbc83d94ce5628632461871c6447a16",
+      "16b3a2ff965b9474bf814cc1a3a55859cbbc83d94ce5628632461871c6447a16",
+      "1bdaee57fd2490bdbcd7328fe96f98dcd62dab5d2818e47d12d8327cc59d4215",
+      "1bdaee57fd2490bdbcd7328fe96f98dcd62dab5d2818e47d12d8327cc59d4215"
+    ],
+    "next_index": 0
+  },
+  "depositsPaused": false,
+  "manifest": {
+    "schemaVersion": 1,
+    "protocolVersion": 1,
+    "artifactVersion": "1.0.2-dev-fixture",
+    "status": "development",
+    "minimumStellarProtocol": 25,
+    "networkPassphrase": "Test SDF Network ; September 2015",
+    "networkId": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
+    "realmId": "db67e508600237c451d33ce9ffd2c1d952e406b458794cec05f37c431c3ffe5b",
+    "poolContractId": "CBQIGXD6DPBBHCNNLQDQR552ZAANJOIPPM7DGOO3TT33TTT2SJW4DRUI",
+    "guardianAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
+    "assetAdminAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
+    "assets": [
+      {
+        "index": 0,
+        "cliAsset": "native",
+        "kind": "native",
+        "code": "XLM",
+        "issuer": null,
+        "name": "Stellar Lumens",
+        "decimals": 7,
+        "displayDecimals": 7,
+        "contractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+      },
+      {
+        "index": 1,
+        "cliAsset": "USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+        "kind": "stellar",
+        "code": "USDC",
+        "issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+        "name": "USD Coin",
+        "decimals": 7,
+        "displayDecimals": 2,
+        "contractId": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
+      }
+    ],
+    "stealthAnnouncerAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
+    "witnessRpcUrl": "https://rpc.ankr.com/stellar_testnet_soroban",
+    "deploymentCheckpoint": {
+      "ledger": 4491845,
+      "hash": "2fd40507958359c7a3739e3eacbe7469e3ab0aa4b983e61fdf1beb392defe5f9"
+    },
+    "registryCheckpoint": {
+      "ledger": 4491848,
+      "hash": "c6e3092c20577fcce3041d53e54a089ba6039db7400629ecca521bb5544c4087",
+      "assetCount": 2
+    },
+    "deploymentBindingHash": "59d5c0fbdf41c649daf919ccf9a4d64d3d0034ee55d7b41a002f399fff1aaf2f",
+    "artifacts": {
+      "r1csSha256": "e8e9566deeaabd745b9c4306f9b222e5f8dc3b224c5e1fd4741da729785fc2d3",
+      "r1csConstraints": 15114,
+      "wasmSha256": "d574799b6191e8564cc2f364e7ac0a927e2452bb6ceed8ffe37d5e9fdcff8d7e",
+      "wasmByteLength": 154930,
+      "zkeySha256": "fd04e9225485bbdfcca999b5f46be3735c6435ca6a3c98a1346b5952e9672273",
+      "zkeyByteLength": 9264916,
+      "zkeyTransport": {
+        "encoding": "points-compressed",
+        "sha256": "c684799ed86b8a40b22b1d818c3c866d3aa6d2c7f4fe7d5728bf8c5328d39520",
+        "byteLength": 6327606,
+        "wireByteLength": 2498167
+      },
+      "vkJsonSha256": "8a1fdbb8e21a688c5279edd43e4deafbed788604f518209c5cee27499ea996e7",
+      "vkBinSha256": "6af84a98f2e9bddc7fbcfdf08160c10b2d627e2aab19fa612290b1feaf09e0f7"
+    },
+    "constants": {
+      "treeDepth": 17,
+      "treeArity": 3,
+      "rootWindowLedgers": 1440,
+      "publicInputs": 11,
+      "notePlaintextBytes": 128,
+      "recipientEnvelopeBytes": 181,
+      "outgoingEnvelopeBytes": 157,
+      "outputPackageBytes": 370,
+      "outputsPerAction": 3,
+      "addressPayloadBytes": 84,
+      "addressAsciiBytes": 128,
+      "addressContextTagBytes": 16,
+      "addressChecksumBytes": 4
+    },
+    "hpke": {
+      "kemId": "0x0020",
+      "kdfId": "0x0001",
+      "aeadId": "0x0001"
+    },
+    "release": {
+      "contractWasmSha256": "9868d322fb170fe95cbcbcd48eb03e9c2cf48e0be7e2a72431a69f8a03801ecd",
+      "contractSourceCommit": "dd5386cdad4447dcd9d679525adf4564561ec32e",
+      "circuitSourceSha256": "50ecb2c842c217a29d03a66c22b1dc9cc578c6011b1e3fac0c7b40e3fba5e682",
+      "poseidonParametersSha256": "6ecf310eeece863dcb24370c6668cfe42808ac1cdb25c30f4b85461ab37789a8",
+      "hpkePackageVersion": "@hpke/core@1.9.0+@hpke/dhkem-x25519@1.8.0",
+      "hpkeDependencyIntegritySha256": "312a82fc6626f2bb66b1a24f351f8e13f95bde25fa4de350a8b10d2f4fe7a6b7",
+      "toolchainLockSha256": "f4e66eebab955789a7598207b82c7577364e5edad3be8e0712ca0d126fd3a50d",
+      "powersOfTauSha256": "3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db",
+      "zkeyVerified": true,
+      "ceremonyTranscriptRoot": "0000000000000000000000000000000000000000000000000000000000000000",
+      "auditReports": [],
+      "deploymentTransactions": [],
+      "allowedEnvironment": "testnet"
+    }
+  }
+}

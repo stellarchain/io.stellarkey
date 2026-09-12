@@ -1,3 +1,7 @@
+import type { LegacyPrivateRelayChainJournal } from './legacy-relay-state';
+import type { PrivateOutgoingHistoryMode } from './outgoing-history';
+import type { PrivateFeePayer } from './fee-policy';
+
 export interface DeploymentContext {
   protocolVersion: number;
   networkId: string;
@@ -10,9 +14,10 @@ export interface DeploymentContext {
 export type NoteStatus = 'unspent' | 'reserved' | 'spent';
 
 export interface ShieldedNoteRecord {
-  id: string; // Hex of note commitment
+  id: string; // Stable 32-byte wallet identity; duplicate leaves are leaf-bound
   commitment: string; // Hex (32 bytes)
   value: string; // Decimal string of stroops
+  assetIndex: number; // Immutable index in the pool's on-chain registry
   assetContractId: string; // Canonical SAC contract address
   diversifier: string; // Lowercase hex (4 bytes)
   ownerCommitment: string; // Hex (32 bytes)
@@ -31,6 +36,7 @@ export interface ShieldedActivityRecord {
   id: string; // Hex of actionField
   actionIndex: number;
   actionKind: 'deposit' | 'transfer' | 'withdraw';
+  assetIndex: number; // Recovered privately for transfers; public at boundaries
   assetContractId: string; // Canonical SAC contract address
   amount: string; // Decimal stroops
   direction: 'inflow' | 'outflow' | 'internal';
@@ -76,10 +82,21 @@ export type PendingActionStatus =
   | 'ambiguous';
 
 export interface PrivatePendingAction {
+  feePayer?: PrivateFeePayer;
+  /** Reviewed inner hash; present only once a sponsored envelope is signed. */
+  innerTransactionHash?: string;
   id: string;
   kind: 'deposit' | 'transfer' | 'withdraw';
+  assetIndex: number; // Immutable index in the pool's on-chain registry
   assetContractId: string; // Canonical SAC contract address
   status: PendingActionStatus;
+  /** Missing on legacy records: reconcile only; never infer a direct route. */
+  submissionMode?: 'direct' | 'relay';
+  /** Persisted before any proof-bearing network call. Missing legacy spends are shared. */
+  proofExposure?: 'local' | 'shared';
+  /** Immutable policy selected before building this proof. */
+  outgoingHistoryMode?: PrivateOutgoingHistoryMode;
+  directChainApprovalId?: string;
   reservedNoteIds: string[];
   actionField: string;
   nullifiers: string[];
@@ -108,6 +125,18 @@ export interface PrivatePendingAction {
   journalId?: string;
   recipientFingerprint?: string;
   memoHex?: string;
+  /** Archived relay metadata; never authorizes a new submission. */
+  relayChain?: {
+    approvalId: string;
+    step: number;
+    feeAtomic: string;
+    quoteId: string;
+    requestId: string;
+    sourceAccount: string;
+    recipientAddress: string;
+    recipientOutputCommitment: string;
+    expiresAtSeconds: number;
+  };
   createdAt: number;
   updatedAt: number;
 }
@@ -115,6 +144,9 @@ export interface PrivatePendingAction {
 export interface PrivateBuildReservation {
   id: string;
   kind: 'deposit' | 'transfer' | 'withdraw';
+  /** New reservations never leave the device; legacy reservations are uncertain. */
+  proofExposure?: 'local';
+  outgoingHistoryMode?: PrivateOutgoingHistoryMode;
   assetContractId: string; // Canonical SAC contract address
   reservedNoteIds: string[];
   createdAt: number;
@@ -128,6 +160,7 @@ export interface PrivateRecentRecipient {
 }
 
 export interface PrivateChainedApproval {
+  feePayer?: PrivateFeePayer;
   id: string;
   steps: number; // Total approved actions: consolidations plus the final send
   perStepMaxFeeStroops: string;
@@ -144,11 +177,26 @@ export interface PrivateBalanceDurableState {
   lastValidatedManifestHash: string;
   account: PrivateAccountState;
   privateAddress?: string; // Derived at opt-in so Receive works without a sync
+  /** Account+deployment scoped; missing legacy and seed-only state is recoverable. */
+  outgoingHistoryMode?: PrivateOutgoingHistoryMode;
+  /** Encrypted local issuance history; never sent to discovery or the worker. */
+  issuedAddressDiversifiers?: string[];
   notes: ShieldedNoteRecord[];
   activities: ShieldedActivityRecord[];
   checkpoint: ShieldedCheckpoint | null;
   buildReservations: PrivateBuildReservation[];
   pendingActions: PrivatePendingAction[];
+  /** Encrypted lineage; only a canonical scan may resolve a recovery attempt. */
+  spendRecovery?: PrivateSpendRecovery;
   recentPrivateRecipients?: PrivateRecentRecipient[];
   chainedApproval?: PrivateChainedApproval; // One-shot multi-step send consent
+  relayChainedApproval?: LegacyPrivateRelayChainJournal;
+}
+
+export interface PrivateSpendRecovery {
+  originalActionField: string;
+  recoveryActionFields: string[];
+  reservedNoteIds: string[];
+  assetContractId: string;
+  outcome: 'pending' | 'recovered' | 'original-confirmed' | 'conflict-confirmed';
 }

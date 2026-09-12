@@ -1,7 +1,9 @@
 'use client';
 
 import { useMemo } from 'react';
+import { Notice } from '@/components/ui';
 import { fmtAmount } from '@/lib/format';
+import { XlmFeeFiatValue } from '@/components/XlmFeeFiatValue';
 import { humanizePrivateError, type HumanizedPrivateError } from '../copy';
 import { PrivateConsolidationRequiredError } from '../runtime/action-flow';
 import { PrivateChainedFeePreflightError } from '../runtime/chained-send';
@@ -61,17 +63,23 @@ export function humanizeActionFlowError(cause: unknown): HumanizedPrivateError {
 export function PrivateActionError({ cause }: { cause: unknown }) {
   const humanized = useMemo(() => humanizeActionFlowError(cause), [cause]);
   return (
-    <div role="alert" className="rounded-2xl border border-[#FF453A]/25 bg-[#FF453A]/[0.08] p-4">
+    <Notice tone="danger" role="alert">
       <p className="text-[13px] font-semibold text-white">{humanized.title}</p>
       <p className="mt-1 text-[12.5px] leading-relaxed text-neutral-300">{humanized.body}</p>
+      {cause instanceof PrivateChainedFeePreflightError ? (
+        <XlmFeeFiatValue
+          amount={formatPrivateBalanceXlm(BigInt(cause.missingStroops))}
+          className="mt-1 block text-[11.5px] text-neutral-400"
+        />
+      ) : null}
       <details className="mt-2">
-        <summary className="cursor-pointer select-none text-[11.5px] text-neutral-500">
+        <summary className="flex tap cursor-pointer select-none items-center text-[12px] text-neutral-500">
           Technical details
         </summary>
         <p className="mt-1.5 break-all font-mono text-[10.5px] leading-relaxed text-neutral-500">
           {humanized.technical}
         </p>
       </details>
-    </div>
+    </Notice>
   );
 }

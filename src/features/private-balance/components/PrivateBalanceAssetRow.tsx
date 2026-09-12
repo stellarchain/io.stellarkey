@@ -1,8 +1,10 @@
 'use client';
 
-import { IconShieldStellar } from '@/components/icons';
+import { AssetAvatar } from '@/components/AssetAvatar';
 import type { PrivateBalanceAssetOption } from '@/hooks/usePrivateBalanceRuntime';
+import { lookupKnownAsset } from '@/lib/assets';
 import { fmtFiat, type FiatCurrency } from '@/lib/format';
+import type { NetworkKey } from '@/lib/stellar';
 import type { PrivatePortfolioEntry } from '../runtime/portfolio';
 import { privatePortfolioRepresentativeUsd } from '../runtime/portfolio';
 import { formatPrivateBalanceAmount } from '../runtime/selectors';
@@ -19,9 +21,11 @@ import { formatPrivateBalanceAmount } from '../runtime/selectors';
 export function PrivateBalanceAssetRow({
   option,
   entry,
-  configured,
+  paymentsEnabled,
+  prepared,
   separated = false,
   privacyMode,
+  network,
   xlmPriceUsd,
   fiatCurrency,
   fiatRates,
@@ -29,37 +33,37 @@ export function PrivateBalanceAssetRow({
 }: {
   option: PrivateBalanceAssetOption;
   entry: PrivatePortfolioEntry | null;
-  configured: boolean;
+  paymentsEnabled: boolean;
+  prepared: boolean;
   separated?: boolean;
   privacyMode: boolean;
+  network: NetworkKey;
   xlmPriceUsd: number | null;
   fiatCurrency: FiatCurrency;
   fiatRates: Partial<Record<FiatCurrency, number>> | null;
   onOpen(): void;
 }) {
   const { asset } = option;
-  const stroops = BigInt(entry?.verifiedBalanceAtomicUnits ?? '0');
+  const ready = prepared && entry !== null;
+  const stroops = ready ? BigInt(entry.verifiedBalanceAtomicUnits) : 0n;
   const decimals = asset.decimals;
   const assetCode = asset.code;
+  const known = lookupKnownAsset(asset.code, asset.issuer, network);
   const amount = formatPrivateBalanceAmount(stroops, decimals);
-  const confirming = (entry?.pendingActions ?? []).filter(action =>
+  const confirming = (ready ? entry.pendingActions : []).filter(action =>
     action.status === 'signed' || action.status === 'broadcast'
   ).length;
-  const detail = !configured
-    ? 'Not set up'
+  const detail = !paymentsEnabled
+    ? 'Not enabled'
+    : !ready
+      ? 'Available'
     : confirming > 0
-    ? `${confirming} ${confirming === 1 ? 'payment' : 'payments'} confirming`
-    : 'Ready';
+      ? `${confirming} ${confirming === 1 ? 'payment' : 'payments'} confirming`
+      : asset.status === 'exit-only'
+        ? 'Exit only'
+        : 'Ready';
 
-  /*
-   * The dot repeats the subtitle in colour so the row's state survives a scan.
-   * Green means the balance was verified against chain locally — a claim the
-   * protocol actually makes — so it must not appear before setup or while a
-   * scan is still running.
-   */
-  const dot = !configured ? '#636366' : confirming > 0 ? '#FF9F0A' : '#30D158';
-
-  const representativeUsd = entry
+  const representativeUsd = ready
     ? privatePortfolioRepresentativeUsd([entry], xlmPriceUsd)
     : null;
   const fiat = !privacyMode && representativeUsd !== null
@@ -70,27 +74,16 @@ export function PrivateBalanceAssetRow({
     <button
       type="button"
       onClick={onOpen}
-      aria-label={`Open private ${assetCode}. ${detail}. ${!configured ? 'Set up' : privacyMode ? 'Balance hidden' : `${amount} ${assetCode}`}`}
+      aria-label={`Open private ${assetCode}. ${detail}. ${!paymentsEnabled ? 'Turn on' : !ready ? 'Add Funds' : privacyMode ? 'Balance hidden' : `${amount} ${assetCode}`}`}
       className={`row-hover flex w-full min-w-0 items-center gap-3.5 px-4 py-3.5 text-left ${separated ? 'ios-sep' : ''}`}
     >
-      <span className="relative shrink-0">
-        <span
-          className="flex h-9 w-9 items-center justify-center rounded-full text-white shadow-inner"
-          style={{ background: 'linear-gradient(135deg, #0A84FF, #5E5CE6)' }}
-        >
-          <IconShieldStellar size={17} />
-        </span>
-        {/* a notch of the list ground so the badge reads as attached, not stacked */}
-        {dot && (
-          <span
-            aria-hidden="true"
-            className="absolute bottom-0 right-0 flex h-[15px] w-[15px] items-center justify-center rounded-full"
-            style={{ background: 'var(--color-panel, #1c1c1e)' }}
-          >
-            <span className="h-[9px] w-[9px] rounded-full" style={{ background: dot }} />
-          </span>
-        )}
-      </span>
+      <AssetAvatar
+        code={asset.code}
+        isNative={asset.kind === 'native'}
+        logoUrl={known?.iconUrl}
+        background={known?.color}
+        privatePayment
+      />
 
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15.5px] font-semibold leading-tight text-white">
@@ -102,8 +95,8 @@ export function PrivateBalanceAssetRow({
       </span>
 
       <span className="min-w-0 max-w-[48%] text-right">
-        <span className="mono block break-words text-[13px] font-medium leading-tight text-white sm:text-[15.5px]">
-          {!configured ? 'Set up' : privacyMode ? '••••••' : amount}
+        <span className={`${paymentsEnabled && ready ? 'mono ' : ''}block break-words text-[13px] font-medium leading-tight text-white sm:text-[15.5px]`}>
+          {!paymentsEnabled ? 'Turn on' : !ready ? 'Add Funds' : privacyMode ? '••••••' : amount}
         </span>
         {fiat && (
           <span className="block break-words text-[11px] leading-tight text-neutral-400 sm:text-[12px]">

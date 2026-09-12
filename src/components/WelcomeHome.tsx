@@ -117,16 +117,16 @@ export function WelcomeHome({
               </div>
             ) : testnet ? (
               <Button
-                className="!px-6 !py-3.5 text-[15px] font-semibold"
+                className="!px-6"
                 loading={fundBusy}
                 disabled={fundBusy}
                 onClick={onFund}
               >
-                Claim 10,000 test XLM
+                Claim 10,000 Test XLM
               </Button>
             ) : (
-              <Button className="!px-6 !py-3.5 text-[15px] font-semibold" onClick={onReceive}>
-                Show my address
+              <Button className="!px-6" onClick={onReceive}>
+                Show My Address
               </Button>
             )}
             {!checking && testnet && (
@@ -164,8 +164,8 @@ export function WelcomeHome({
               <p className="text-[14px] font-semibold text-white">Back up your recovery phrase</p>
               <p className="mt-0.5 text-[13px] text-neutral-400">The only way back in.</p>
             </div>
-            <Button variant="secondary" className="w-full !py-2 text-[13px] sm:w-auto" onClick={onBackup}>
-              Back up
+            <Button variant="secondary" className="w-full sm:w-auto" onClick={onBackup}>
+              Back Up
             </Button>
           </section>
         )}

@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-09-12
+
+### Added
+
+- Choose System, Light and Dark appearance across wallet and merchant screens.
+- Choose another software account to pay Private Payments network fees; the selected wallet account remains the default. Watch-only and hardware fee payers are not supported.
+- Recover held private funds with a self-transfer, keeping them reserved until the recovery or original payment is confirmed.
+- Recover sent-payment history, recipient check codes and memos from seed. An optional setting disables this for future payments; existing records and backups are unchanged.
+- Manage private assets through an administrator-controlled registry with deposit restrictions and two-step administrator transfer.
+
+### Changed
+
+- Expand modal focus regression coverage for delayed returns, unavailable destinations and newer dialogs.
+- Verify short dialog exits at the closing commit as well as rendered frames, retaining animation and geometry checks.
+- Synthetic component checks run in two isolated browser workers while retaining the complete Chromium/WebKit matrix and one exclusive fixture owner.
+- CI installs checksum-verified official Stellar CLI archives, validates cache hits before use, and runs generated-file verification once within the complete application gate.
+- Exact contract reproduction uses a canonical macOS ARM64 Rust host in parallel with Linux circuit analysis; the required gate accepts only success from both jobs, without changing shipped artifact hashes.
+- Private Payments submit directly through the selected RPC. The public transaction source and fee payer remain visible.
+- Replaced separate Testnet private pools with one XLM/USDC pool that hides the asset in internal transfers. This remains an unaudited Testnet preview, not a Mainnet feature.
+- Shorter checksummed private addresses and a simpler Receive screen with asset, address-type and QR choices.
+- Private Payments setup synchronizes available assets in one progress view, then closes automatically.
+- Standardized dialog controls, form labels and touch targets, with bottom sheets on phones and reduced-motion support.
+- Network fees show local-currency equivalents; public and private assets share consistent icons.
+- Removed rate timestamps from the main balance and XLM chart, and the chart refresh button. Prices and chart ranges share five-minute caches and in-flight requests.
+- Private-history and Merkle caches now update incrementally; recovery uses batched archive reads and native browser cryptography with a portable fallback.
+- Updated Next.js and its ESLint configuration to 16.3.4, and React DOM types to 19.2.7. Development, browser-test and production builds use separate caches.
+
+### Removed
+
+- Peer-relayed private payments, Earn by Relaying, helper settings, Waku/Nostr transports and their dependencies. Existing relay records are retained for recovery, not resubmitted through old routes.
+- Old private-pool formats and `tks1`/`sks1` addresses. State from the retired Testnet deployments must be recreated.
+
+### Fixed
+
+- Return keyboard focus to the payment result after a fast signing approval without overriding a newer focus choice.
+- Keep locked-screen legal links on one desktop row across system fonts without widening the unlock form.
+- Keep the receiving-account label and address readable beside long account names on narrow merchant settings screens.
+- Dialog exits retain the shell's current geometry even when layout changes immediately before private fields are cleared.
+- Select and menu opening focus no longer overtakes rapid Tab navigation to the next control.
+- Sheet drag handles no longer select text and intercept a later drag with the browser's native text-drag gesture; body text selection and pinch zoom remain available.
+- Hosted application checks allow enough time for cold toolchain installation and the complete private and public browser matrix, without skipping verification gates.
+- Private contract artifact builds explicitly use the pinned Rust toolchain, including isolated reproducibility checks on clean CI runners.
+- CI and release runners install the Linux runtime libraries required by the pinned Stellar CLI.
+- Appearance choices survive blocked browser storage and stay synchronized across open tabs; corrected text and control contrast in both themes.
+- Claim-review fee details remain legible in light mode; inactive tab and segmented-control labels have stronger contrast on translucent dark panels.
+- Account rows and the combined portfolio include public and saved private balances, with labelled Testnet reference values. Switching accounts no longer changes which funds are counted.
+- Dialogs retain their shell and keyboard focus during tab changes, menu selection and asynchronous actions; closing restores focus to the opener.
+- Late QR, file-read, pagination and dialog results cannot replace newer requests. Loading, copy and error feedback stays beside the relevant action.
+- Restored browser zoom and corrected narrow-screen overflow, keyboard positioning, footer spacing and Settings scroll/focus behavior.
+- Private Receive has explicit stopped and retry states. Worker and simulation errors no longer misreport an account switch or discard pending payment status.
+- Read-only private-contract queries accept storage-only restoration. Archived records are restored in reviewed, fee-capped batches.
+- Private sends and withdrawals remain available when deposits are paused, including after the pool has been idle.
+- Private recovery scans all retained history after seed import, preserves actionable receipts and archived-account records, and handles inconsistent recipient metadata and partial native X25519 support.
+- Corrected backup identities, imported-key paper wallets and derived-account recovery. Corrupt optional contacts or notes no longer prevent vault unlock.
+- Preserved asset-code case and issuer authorization/clawback flags; corrected spendable balances, required destination memos and Stellar amount limits.
+- Charts and exchange rates retain their real observation times. Stale merchant quotes require a fresh rate instead of silently using cached prices.
+- Merchant edits report success only after saving, retain drafts on failure, and update the active owner. Orders retain a fixed shift ID through device-clock changes.
+
+### Security
+
+- Refreshed private-manifest toolchain provenance to cover the canonical reproduction host guard; contract and proving artifacts are unchanged.
+- Receipt SMS and email drafts encode recipient input so it cannot append draft parameters, replace receipt text or introduce URI fragments.
+- Enabled immutable GitHub releases so newly published release assets and their tags cannot be replaced.
+- Updated ESLint's YAML parser to js-yaml 4.3.2 and included development dependencies in the application high/critical security gate.
+- Enabled repository secret scanning, push protection, Dependabot security fixes and CodeQL analysis; protected main-branch review/CI requirements and immutable release tags.
+- Detached private-payment status watchers stop publishing after wallet lock, account or endpoint changes, lost tab ownership, or unmount, while preserving already-authorized canonical transaction tracking.
+- Payment signing uses the exact reviewed transaction and rechecks account, network, session and password policy. Multisig edits use canonical signer state; hardware approvals cannot survive a wallet lock.
+- Lock and session changes revoke pending unlocks, signing, discovery and queued edits. Inactivity locking covers recovery screens and device sleep; full reset clears wallet-owned browser storage.
+- New and changed passwords require a Good or Strong rating; existing passwords still unlock. Vault revisions and password/PIN backoff reject stale writes and throttle repeated guesses.
+- Private spend proofs require consent and durable input reservations before RPC preparation. Cancellation or transaction expiry cannot release funds exposed by a proof.
+- Private notes and proofs are bound to their deployment and asset, and receive addresses to their pool. Recovery verifies archive records, cache checkpoints and independent RPC evidence.
+- New private receive addresses use randomized diversifiers; rotation rejects locally recorded reuse. Unused address history is encrypted and requires a backup, not seed-only recovery.
+- Public transaction confirmation and merchant settlement use canonical Horizon results, not submission acknowledgements or custom-endpoint claims. Uncertain refunds remain tracked.
+- Merchant routing, refunds, customer erasure, reports and wallet exit recheck current staff or owner authority. Invoices and counter codes are quarantined after receiving-account changes.
+- Backup and import validation checks credential identities, schemas and size limits. CSV exports escape spreadsheet formulas; issuer logos omit referrers and paper-wallet output escapes QR attributes.
+- Private panels clear on close; secret print windows close on lock. Temporary key/plaintext buffers receive best-effort cleanup, and copied secrets offer an explicit clipboard-clear action.
+- Overrode Trezor's installed Stellar SDK parser with TOML 4.2.0. Embedded browser code and the remote Trezor popup are outside this override.
+- Release checks verify pinned proving artifacts and generated code, run Rust, protocol and browser checks, and reject leftover test fixtures. Wallet browser tests disable screenshots, video and traces and use synthetic data with restricted failure reports.
+
 ## [1.4.1] - 2026-09-01
 
 ### Changed

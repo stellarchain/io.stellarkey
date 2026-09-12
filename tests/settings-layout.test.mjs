@@ -24,7 +24,7 @@ function contrastRatio(foreground, background) {
 }
 
 test("local-device signer badges sit below their addresses", () => {
-  const multisig = read("src/components/MultiSigStudioModal.tsx");
+  const multisig = read("src/components/MultiSigStudioModalBody.tsx");
   const separatedBadges = multisig.match(
     /className="mt-1 block w-fit rounded-md bg-\[#30D158\]\/15/g,
   );
@@ -51,7 +51,7 @@ test("merchant settings use an iOS-style summary hierarchy with focused edit she
 
   assert.match(
     settingsRoot,
-    /className="grid grid-cols-1 items-start gap-6 md:grid-cols-2"/,
+    /className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2"/,
   );
   assert.equal(
     settingsRoot.match(/data-merchant-settings-column=/g)?.length ?? 0,
@@ -63,35 +63,35 @@ test("merchant settings use an iOS-style summary hierarchy with focused edit she
   );
 
   for (const label of [
-    "Business details",
-    "Payment setup",
-    "Accepted assets",
+    "Business Details",
+    "Payment Setup",
+    "Accepted Assets",
     "Tax",
-    "Tax rates",
+    "Tax Rates",
     "Tips",
-    "Settlement rules",
-    "This device",
+    "Settlement Rules",
+    "This Device",
   ]) {
     assert.match(settingsRoot, new RegExp(`label="${label}"`));
   }
 
-  for (const label of ["Tax records", "Staff & terminals", "Peripherals"]) {
+  for (const label of ["Tax Records", "Staff & Terminals", "Peripherals"]) {
     assert.match(settingsRoot, new RegExp(`label="${label}"`));
   }
 
   assert.match(completeSettings, /type MerchantSettingsSheet\s*=/);
   assert.match(merchantSettings, /const \[activeSheet, setActiveSheet\]/);
   assert.match(merchantSheets, /activeSheet === "rates"/);
-  assert.match(merchantSheets, /title="Tax rates"/);
+  assert.match(merchantSheets, /title="Tax Rates"/);
   assert.match(merchantSheets, /sheet="rates"[\s\S]*settings\.taxRates\.map/);
   assert.match(
     merchantSheets,
-    /Issued requests keep their original receiving account and remain monitored until\s+resolved\./,
+    /Changing this account requires your wallet password\. Existing unpaid requests stop\s+accepting automatic settlement until they are replaced or the original account is\s+restored\./,
   );
-  assert.match(merchantSettings, /title="Turn off Merchant Mode\?"/);
+  assert.match(merchantSettings, /title="Turn Off Merchant Mode\?"/);
   assert.match(
     merchantSettings,
-    /title="Turn off Merchant Mode\?"[\s\S]*onClick=\{\(\) => void handleTurnOff\(\)\}/,
+    /title="Turn Off Merchant Mode\?"[\s\S]*onClick=\{\(\) => void handleTurnOff\(\)\}/,
   );
 
   const controls = read("src/components/merchant/MerchantSettingsControls.tsx");
@@ -101,6 +101,11 @@ test("merchant settings use an iOS-style summary hierarchy with focused edit she
     contrastRatio(dangerColor, "252527") >= 4.8,
     `destructive settings text needs contrast headroom, received #${dangerColor}`,
   );
+  assert.match(controls, /onCommit: \(next: string\) => string \| Promise<string>/);
+  assert.match(controls, /await onCommit\(draft\)/);
+  assert.match(controls, /catch[\s\S]*setDraft\(value\)/);
+  assert.match(merchantSheets, /async function saveSettings/);
+  assert.doesNotMatch(merchantSheets, /\n\s+updateSettings\(/);
 });
 
 test("tax records use a summary-first iOS hub with focused task sheets", () => {
@@ -118,25 +123,34 @@ test("tax records use a summary-first iOS hub with focused task sheets", () => {
   assert.doesNotMatch(hub, /<(?:Select|input)\b/);
 
   for (const label of [
-    "Reporting period",
-    "Tax rates",
-    "Export report",
-    "Encrypted archive",
+    "Reporting Period",
+    "Tax Rates",
+    "Export Report",
+    "Encrypted Archive",
     "Retention",
-    "Export history",
-    "About tax records",
+    "Export History",
+    "About Tax Records",
   ]) {
     assert.match(hub, new RegExp(`label="${label}"`));
   }
 
   assert.match(taxRecords, /type TaxRecordsSheet\s*=/);
   assert.match(taxRecords, /const \[activeSheet, setActiveSheet\]/);
-  assert.match(taxRecords, /activeSheet === "period"/);
-  assert.match(taxRecords, /activeSheet === "export"/);
-  assert.match(taxRecords, /activeSheet === "retention"/);
+  // The sheet renders from the retained value so its content survives the exit animation.
+  assert.match(taxRecords, /const shownSheet = useRetainedForExit\(activeSheet\)/);
+  assert.match(taxRecords, /shownSheet === "period"/);
+  assert.match(taxRecords, /shownSheet === "export"/);
+  assert.match(taxRecords, /shownSheet === "retention"/);
   assert.match(taxRecords, /<Modal[\s\S]*open=\{activeSheet !== null\}/);
   assert.match(
     taxRecords,
     /<Button\s+className="w-full min-w-0 !px-3"[^>]*>[\s\S]*?<span className="min-w-0 whitespace-normal text-center leading-tight">\s*Download encrypted archive\s*<\/span>/,
   );
+  const retentionSave = taxRecords.slice(
+    taxRecords.indexOf('ariaLabel="How long records are kept on this device"'),
+    taxRecords.indexOf("Export before the window closes"),
+  );
+  assert.match(retentionSave, /onChange=\{async \(next\)/);
+  assert.ok(retentionSave.indexOf("await updateSettings") < retentionSave.indexOf("toast("));
+  assert.match(retentionSave, /catch \(error\)/);
 });

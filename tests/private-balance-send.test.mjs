@@ -12,12 +12,19 @@ test('private send validates the private address and shows the fingerprint mark'
   // The identity mark derives from the FINGERPRINT, never the full address.
   assert.match(source, /<AccountMark publicKey=\{fingerprint\}/);
   assert.match(source, /32 bytes/i);
-  assert.match(source, /flow\.prepare\(\{[\s\S]*kind: 'transfer'/);
+  assert.match(source, /flow\.prepare\([\s\S]*kind: 'transfer'/);
   assert.match(source, /recipientFieldRef/);
   assert.match(source, /recipientFieldRef\.current\?\.focus\(\)/);
   assert.match(source, /pasteGuidance/);
   assert.match(source, /Press ⌘V|long-press/i);
   assert.doesNotMatch(source, /clipboardError/);
+});
+
+test('private transfer review displays the full canonical destination', () => {
+  const source = read('src/features/private-balance/components/PrivateActionReview.tsx');
+  assert.match(source, /recipientAddress/);
+  assert.match(source, /HashValue/);
+  assert.match(source, /recipient address changed/);
 });
 
 test('private send mirrors the public form: max, quick chips, fiat, memo presets, QR paste', () => {
@@ -26,7 +33,7 @@ test('private send mirrors the public form: max, quick chips, fiat, memo presets
 
   assert.match(source, /PrivateAmountField/);
   assert.match(amountField, /\[10, 25, 50, 100\]/);
-  assert.match(amountField, /MAX/);
+  assert.match(amountField, /<QuickAmountChips[\s\S]*?onMax=/);
   assert.match(amountField, /FiatValue/);
   assert.match(source, /QrScannerBox/);
   assert.match(source, /Paste QR Payload/);
@@ -83,7 +90,7 @@ test('review opens immediately and the proof prepares underneath it', () => {
   assert.match(review, /disabled=\{working \|\| settling \|\| !ready/);
   assert.match(review, /PrivateReviewMismatchError/);
   // Back keeps the draft: it releases the preparation and returns to the form.
-  assert.match(source, /flow\.cancelPrepared\(\);[\s\S]{0,80}setStage\('form'\)/);
+  assert.match(source, /const \{ cancelPrepared \} = flow;[\s\S]{0,120}cancelPrepared\(\);[\s\S]{0,80}setStage\('form'\)/);
 });
 
 test('an expired review re-prepares once and visibly diffs the changed rows', () => {
@@ -107,4 +114,14 @@ test('the first-ever private send celebrates exactly once', () => {
   assert.match(source, /celebrate/);
   assert.match(source, /Sent Privately/);
   assert.match(source, /explorerTxUrl/);
+});
+
+test('private send uses only direct preparation and keeps recipient validation scoped to current input', () => {
+  const source = read('src/features/private-balance/components/SendPrivate.tsx');
+  const controller = read('src/features/private-balance/components/usePrivateActionController.ts');
+  assert.doesNotMatch(source, /PrivateRelay|submissionMode|loadPrivateRelayPreferences/);
+  assert.doesNotMatch(controller, /PrivateRelay|requestQuotes|requestSignature/);
+  assert.match(source, /recipientValidation\?\.address === trimmedRecipient/);
+  assert.match(source, /recipientValidation\.networkLabel === networkLabel/);
+  assert.match(source, /if \(current\) setRecipientValidation/);
 });

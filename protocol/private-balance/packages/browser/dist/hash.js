@@ -32,6 +32,12 @@ export function hmacSha512(key, ...chunks) {
         mac.update(chunk);
     return mac.digest();
 }
+export function hmacSha256(key, ...chunks) {
+    const mac = hmac.create(sha256, key);
+    for (const chunk of chunks)
+        mac.update(chunk);
+    return mac.digest();
+}
 export function equalBytes(left, right) {
     if (left.length !== right.length)
         return false;

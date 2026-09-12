@@ -40,6 +40,16 @@ test('the leader reuses one worker session per epoch instead of recreating it', 
   assert.match(provider, /clearDecryptedState/);
 });
 
+test('persisting first-time setup does not restart and terminate the active worker session', () => {
+  // The runtime updates encryptedStateExistsRef before publishing setup to the
+  // parent. The reflected prop must not tear down the effect that owns the
+  // initialized worker while the first action is opening.
+  assert.doesNotMatch(
+    provider,
+    /deploymentId,\s*encryptedStateExists,\s*deployment,/,
+  );
+});
+
 test('a failed quiet background pass keeps the current snapshot instead of wiping it', () => {
   // The catch honors the same quiet split as the happy path: a transient
   // failure on a routine tick stashes its error and returns without
@@ -53,6 +63,21 @@ test('a failed quiet background pass keeps the current snapshot instead of wipin
   assert.match(provider, /lastSyncCurrentRef\.current = true;\s*backgroundSyncErrorRef\.current = null;/);
 });
 
+test('RPC disagreement preserves the last authenticated state and disables actions', () => {
+  const authenticationBranch = provider.match(
+    /if \(isRpcAuthenticationError\(error\)\) \{[\s\S]*?throw error;\s*\}/,
+  )?.[0] ?? '';
+  assert.match(authenticationBranch, /phase: 'status-unknown'/);
+  assert.match(authenticationBranch, /SET_SYNCING/);
+  assert.doesNotMatch(authenticationBranch, /clearDecryptedState|verifiedBalanceStroops: '0'/);
+  assert.ok(
+    provider.indexOf('if (isRpcAuthenticationError(error))') < provider.indexOf('if (quiet) {'),
+    'independent-view failures must not stay hidden as a quiet background error',
+  );
+  assert.match(provider, /durable\.checkpoint === null \|\| rpcWitnessEnabledRef\.current/);
+  assert.match(provider, /primaryOrigin === witnessOrigin/);
+});
+
 test('losing leadership mid-sync presents as a follower, never as a safe-error', () => {
   assert.match(
     provider,
@@ -63,11 +88,11 @@ test('losing leadership mid-sync presents as a follower, never as a safe-error',
 test('an aborted prepare skips the automatic resync so Back returns instantly', () => {
   assert.match(
     provider,
-    /signal\?\.aborted \|\|\s*\(error instanceof DOMException && error\.name === 'AbortError'\)/,
+    /operation\.signal\.aborted \|\|\s*\(error instanceof DOMException && error\.name === 'AbortError'\)/,
   );
   // The abort check comes before both resync paths in the prepare catch.
   const catchBody = provider.slice(
-    provider.indexOf("signal?.aborted"),
+    provider.indexOf("operation.signal.aborted"),
     provider.indexOf('PrivateStaleChainStateError && attempt === 0'),
   );
   assert.match(catchBody, /throw error;/);
@@ -91,9 +116,14 @@ test('the final chained step keeps the post-broadcast outcome watcher', () => {
 test('stale chain state auto-resyncs and retries the preparation once', () => {
   assert.match(provider, /error instanceof PrivateStaleChainStateError && attempt === 0/);
   const actionFlow = source('src/features/private-balance/runtime/action-flow.ts');
+  assert.match(
+    actionFlow,
+    /new PrivateStaleChainStateError\('Sync Private Balance before creating an action\.'\)/,
+  );
   assert.match(actionFlow, /new PrivateStaleChainStateError\('Private Balance root changed/);
-  assert.match(actionFlow, /new PrivateStaleChainStateError\('Private Balance root is too close to expiry/);
-  assert.match(actionFlow, /new PrivateStaleChainStateError\('Private Balance commitment cache is incomplete/);
+  assert.doesNotMatch(actionFlow, /root is too close to expiry|readKnownRoot/);
+  assert.match(actionFlow, /head\.latestLedger \+ input\.manifest\.constants\.rootWindowLedgers/);
+  assert.match(actionFlow, /new PrivateStaleChainStateError\('Private Balance Merkle (checkpoint is unavailable|cache is invalid)/);
 });
 
 test('incoming private payments surface as one leader-side event per sync', () => {
@@ -123,6 +153,13 @@ test('artifact prefetch starts only after explicit private-payment opt-in', () =
     provider.indexOf('prefetchCircuitArtifacts(manifest)') >
       provider.indexOf('const optIn = useCallback'),
   );
+  assert.ok(
+    provider.indexOf('prefetchCircuitArtifacts(manifest)') >
+      provider.indexOf('await performSync(true)'),
+    'artifact expansion must not compete with authenticated first-time setup',
+  );
+  assert.match(provider, /options\.prefetchArtifacts !== false/);
+  assert.match(provider, /requestAnimationFrame/);
   const artifacts = source('src/lib/private-balance-artifacts.ts');
   assert.match(artifacts, /export function prefetchCircuitArtifacts/);
   assert.match(artifacts, /inFlightLoad/);

@@ -11,8 +11,12 @@ import {
   type PrivateRecordDriver,
   type PrivateStorageContext,
 } from './storage';
+import { hasExposedPrivateSpend } from './proof-exposure';
+import { assertDirectPrivateSubmission } from './direct-submission';
 import type { PrivateBalanceDurableState, PrivatePendingAction } from './types';
 import type { PrivateBalanceTransactionReview } from './transaction-review';
+import { validatePrivateFeeBump, type PrivateFeeBumpLimits } from '../../../lib/private-balance-fee-bump';
+import { assertSamePrivateFeePayer } from './fee-policy';
 
 const HEX_32 = /^[0-9a-f]{64}$/;
 const ZERO_NULLIFIER = '0'.repeat(64);
@@ -38,9 +42,12 @@ export async function pollBroadcastPrivateBalanceTransaction(input: {
   transactionHash: string;
   rpc: PrivateBalanceRpcLookup;
   reconcile(rpcStatus: 'SUCCESS' | 'FAILED'): Promise<boolean>;
+  /** Revocable publisher ownership; cancellation never changes the journal. */
+  assertCurrent?(): void;
   delays?: readonly number[];
   sleep?: (milliseconds: number) => Promise<void>;
 }): Promise<'confirmed' | 'pending'> {
+  input.assertCurrent?.();
   if (!HEX_32.test(input.transactionHash)) {
     throw new Error('Private Balance broadcast transaction hash is invalid');
   }
@@ -48,24 +55,31 @@ export async function pollBroadcastPrivateBalanceTransaction(input: {
     setTimeout(resolve, milliseconds);
   }));
   for (const delay of input.delays ?? PRIVATE_BROADCAST_POLL_DELAYS_MS) {
+    input.assertCurrent?.();
     if (!Number.isSafeInteger(delay) || delay < 0) {
       throw new Error('Private Balance broadcast polling delay is invalid');
     }
     await sleep(delay);
+    input.assertCurrent?.();
     let status: 'SUCCESS' | 'FAILED' | 'NOT_FOUND';
     try {
       const response = await input.rpc.getTransaction(input.transactionHash);
+      input.assertCurrent?.();
       if (response.txHash && response.txHash.toLowerCase() !== input.transactionHash) {
         throw new Error('RPC returned a different private transaction hash');
       }
       status = response.status;
     } catch {
+      input.assertCurrent?.();
       continue;
     }
     if (status !== 'SUCCESS' && status !== 'FAILED') continue;
     try {
-      if (await input.reconcile(status)) return 'confirmed';
+      const reconciled = await input.reconcile(status);
+      input.assertCurrent?.();
+      if (reconciled) return 'confirmed';
     } catch {
+      input.assertCurrent?.();
       // The durable pending journal remains authoritative; keep polling and
       // otherwise leave the action for the next canonical sync.
     }
@@ -78,7 +92,7 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 export interface ValidatedSignedPrivateBalanceEnvelope {
-  transaction: Transaction;
+  transaction: Transaction | FeeBumpTransaction;
   hash: string;
   signatures: number;
 }
@@ -87,13 +101,16 @@ export function validateSignedPrivateBalanceEnvelope(input: {
   signedEnvelopeXdr: string;
   networkPassphrase: string;
   expectedTransactionHash: string;
-}): ValidatedSignedPrivateBalanceEnvelope {
+  expectedInnerTransactionHash?: string;
+} & PrivateFeeBumpLimits): ValidatedSignedPrivateBalanceEnvelope {
   if (!HEX_32.test(input.expectedTransactionHash)) {
     throw new Error('Expected private transaction hash is invalid');
   }
   const parsed = TransactionBuilder.fromXdr(input.signedEnvelopeXdr, input.networkPassphrase);
-  if (parsed instanceof FeeBumpTransaction || !(parsed instanceof Transaction)) {
-    throw new Error('Signed Private Balance envelope cannot be fee-bumped');
+  if (parsed instanceof FeeBumpTransaction) {
+    validatePrivateFeeBump(parsed, input);
+  } else if (!(parsed instanceof Transaction) || input.feePayer || input.expectedInnerTransactionHash) {
+    throw new Error('Signed Private Balance envelope does not match its reviewed fee payer');
   }
   const hash = bytesToHex(parsed.hash());
   if (hash !== input.expectedTransactionHash) {
@@ -109,7 +126,7 @@ export type PrivateActionRecoveryDecision = 'confirmed' | 'release' | 'ambiguous
 export type PrivateCanonicalTransactionStatus = 'SUCCESS' | 'FAILED' | 'NOT_FOUND' | 'UNAVAILABLE';
 
 export function classifyPrivateActionRecovery(
-  action: Pick<PrivatePendingAction, 'actionField' | 'nullifiers' | 'expiresAtSeconds'>,
+  action: Pick<PrivatePendingAction, 'actionField' | 'nullifiers' | 'expiresAtSeconds'> & Partial<Pick<PrivatePendingAction, 'kind' | 'proofExposure'>>,
   transactionStatus: PrivateCanonicalTransactionStatus,
   verifiedActionFields: readonly string[],
   verifiedNullifiers: readonly string[],
@@ -121,6 +138,7 @@ export function classifyPrivateActionRecovery(
     nullifier !== ZERO_NULLIFIER && observedNullifiers.has(nullifier))) {
     return 'ambiguous';
   }
+  if (hasExposedPrivateSpend(action)) return 'ambiguous';
   if (transactionStatus === 'FAILED') return 'release';
   // Stellar cannot apply a transaction past its envelope maxTime, so once the
   // verified head closed beyond expiry plus margin, an absent action field and
@@ -136,7 +154,12 @@ export function classifyPrivateActionRecovery(
   return 'ambiguous';
 }
 
-export interface PrivateBalanceSigningRequest {
+export interface PrivateActionSubmission {
+  status: 'broadcast' | 'ambiguous';
+  transactionHash: string;
+}
+
+export interface PrivateBalanceSigningRequest extends PrivateFeeBumpLimits {
   envelopeXdr: string;
   transactionHash: string;
   networkPassphrase: string;
@@ -153,8 +176,12 @@ export async function signReviewedPrivateBalanceAction(input: {
   storageDriver?: PrivateRecordDriver;
   now?: () => number;
 }): Promise<PrivateBalanceDurableState> {
+  const review = Object.freeze({
+    ...input.review,
+    feePayer: input.review.feePayer ? Object.freeze({ ...input.review.feePayer }) : undefined,
+  });
   const now = input.now ?? Date.now;
-  if (Math.floor(now() / 1000) >= input.review.expiresAt) {
+  if (Math.floor(now() / 1000) >= review.expiresAt) {
     throw new PrivateActionReviewExpiredError();
   }
   const state = await loadPrivateBalanceState(input.context, input.storageKey, input.storageDriver);
@@ -162,28 +189,40 @@ export async function signReviewedPrivateBalanceAction(input: {
     throw new Error('Private Balance state changed in another wallet session.');
   }
   const action = state.pendingActions.find(candidate => candidate.id === input.actionId);
-  if (!action || action.status !== 'reviewed' || action.transactionHash !== input.review.transactionHash) {
+  if (!action || action.status !== 'reviewed' || action.transactionHash !== review.transactionHash) {
     throw new Error('Private Balance action does not match the reviewed transaction');
   }
-  const unsigned = TransactionBuilder.fromXdr(input.review.envelopeXdr, input.networkPassphrase);
+  assertDirectPrivateSubmission({ ...action, submissionMode: action.submissionMode ?? null });
+  assertSamePrivateFeePayer(action.feePayer, review.feePayer);
+  if (BigInt(action.classicFeeCapStroops) !== review.classicFeeStroops ||
+    BigInt(action.resourceFeeCapStroops) !== review.resourceFeeStroops) throw new Error('Private reviewed fee limits changed.');
+  const unsigned = TransactionBuilder.fromXdr(review.envelopeXdr, input.networkPassphrase);
   if (
     unsigned instanceof FeeBumpTransaction ||
     !(unsigned instanceof Transaction) ||
     unsigned.signatures.length !== 0 ||
-    bytesToHex(unsigned.hash()) !== input.review.transactionHash
+    bytesToHex(unsigned.hash()) !== review.transactionHash
   ) {
     throw new Error('Private Balance reviewed envelope is invalid');
   }
 
-  const signedEnvelopeXdr = await input.sign({
-    envelopeXdr: input.review.envelopeXdr,
-    transactionHash: input.review.transactionHash,
+  const signedEnvelopeXdr = await input.sign(Object.freeze({
+    envelopeXdr: review.envelopeXdr,
+    transactionHash: review.transactionHash,
     networkPassphrase: input.networkPassphrase,
-  });
+    feePayer: review.feePayer,
+    maximumClassicFeeStroops: review.classicFeeStroops,
+    maximumResourceFeeStroops: review.resourceFeeStroops,
+  }));
+  const signedHash = bytesToHex(TransactionBuilder.fromXdr(signedEnvelopeXdr, input.networkPassphrase).hash());
   validateSignedPrivateBalanceEnvelope({
     signedEnvelopeXdr,
     networkPassphrase: input.networkPassphrase,
-    expectedTransactionHash: input.review.transactionHash,
+    expectedTransactionHash: review.feePayer ? signedHash : review.transactionHash,
+    expectedInnerTransactionHash: review.feePayer ? review.transactionHash : undefined,
+    feePayer: review.feePayer,
+    maximumClassicFeeStroops: review.classicFeeStroops,
+    maximumResourceFeeStroops: review.resourceFeeStroops,
   });
   return transitionPrivatePendingAction(
     input.context,
@@ -194,7 +233,8 @@ export async function signReviewedPrivateBalanceAction(input: {
       from: 'reviewed',
       to: 'signed',
       signedEnvelopeXdr,
-      expiresAtSeconds: input.review.expiresAt,
+      ...(review.feePayer ? { transactionHash: signedHash, innerTransactionHash: review.transactionHash } : {}),
+      expiresAtSeconds: review.expiresAt,
       updatedAt: now(),
     },
     input.storageDriver,
@@ -202,10 +242,19 @@ export async function signReviewedPrivateBalanceAction(input: {
 }
 
 export interface PrivateBalanceRpcSender {
-  sendTransaction(transaction: Transaction): Promise<{
+  sendTransaction(transaction: Transaction | FeeBumpTransaction): Promise<{
     status: 'PENDING' | 'DUPLICATE' | 'TRY_AGAIN_LATER' | 'ERROR';
     hash: string;
   }>;
+}
+
+function pendingPrivateFeeBumpLimits(action: PrivatePendingAction) {
+  return {
+    feePayer: action.feePayer,
+    expectedInnerTransactionHash: action.innerTransactionHash,
+    maximumClassicFeeStroops: BigInt(action.classicFeeCapStroops),
+    maximumResourceFeeStroops: BigInt(action.resourceFeeCapStroops),
+  };
 }
 
 export interface PrivateBroadcastResult {
@@ -237,20 +286,26 @@ export async function recoverPrivateBalanceAction(input: {
   context: PrivateStorageContext;
   storageKey: Uint8Array;
   actionId: string;
+  networkPassphrase?: string;
   rpc: PrivateBalanceRpcLookup;
-  scanCanonicalTranscript(): Promise<{ actionFields: string[]; nullifiers: string[] }>;
+  scanCanonicalTranscript(): Promise<{
+    actionFields: string[];
+    nullifiers: string[];
+    /** Close time of the common ledger through which the transcript was verified. */
+    headCloseTimeSeconds?: number;
+  }>;
   storageDriver?: PrivateRecordDriver;
   now?: () => number;
 }): Promise<PrivateRecoveryResult> {
   const initial = await loadPrivateBalanceState(input.context, input.storageKey, input.storageDriver);
   const action = initial?.pendingActions.find(candidate => candidate.id === input.actionId);
-  if (!initial || !action || !['broadcast', 'ambiguous'].includes(action.status) || !action.transactionHash) {
+  if (!initial || !action || (!hasExposedPrivateSpend(action) && (!['signed', 'broadcast', 'ambiguous'].includes(action.status) || !action.transactionHash))) {
     throw new Error('Private Balance action is not awaiting canonical recovery');
   }
 
-  let rpcStatus: PrivateCanonicalTransactionStatus;
+  let rpcStatus: PrivateCanonicalTransactionStatus = 'UNAVAILABLE';
   let headCloseTimeSeconds: number | undefined;
-  try {
+  if (action.submissionMode === 'direct' && action.transactionHash && !hasExposedPrivateSpend(action)) try {
     const response = await input.rpc.getTransaction(action.transactionHash);
     if (response.txHash && response.txHash.toLowerCase() !== action.transactionHash) {
       throw new Error('RPC returned a different private transaction hash');
@@ -266,12 +321,32 @@ export async function recoverPrivateBalanceAction(input: {
   const transcript = await input.scanCanonicalTranscript();
   if (
     !transcript.actionFields.every(value => HEX_32.test(value)) ||
-    !transcript.nullifiers.every(value => HEX_32.test(value))
+    !transcript.nullifiers.every(value => HEX_32.test(value)) ||
+    (transcript.headCloseTimeSeconds !== undefined &&
+      (!Number.isSafeInteger(transcript.headCloseTimeSeconds) || transcript.headCloseTimeSeconds <= 0))
   ) {
     throw new Error('Private Balance canonical recovery transcript is invalid');
   }
+  if (action.submissionMode !== 'direct' && transcript.headCloseTimeSeconds !== undefined) {
+    // NOT_FOUND here denotes non-inclusion in the verified common transcript,
+    // not a private transaction lookup. Expiry is still required for release.
+    rpcStatus = 'NOT_FOUND';
+    headCloseTimeSeconds = transcript.headCloseTimeSeconds;
+  }
+  let expiresAtSeconds = action.expiresAtSeconds;
+  if (expiresAtSeconds === undefined && action.signedEnvelopeXdr && input.networkPassphrase) {
+    const signed = validateSignedPrivateBalanceEnvelope({
+      signedEnvelopeXdr: action.signedEnvelopeXdr,
+      networkPassphrase: input.networkPassphrase,
+      expectedTransactionHash: action.transactionHash!,
+      ...pendingPrivateFeeBumpLimits(action),
+    });
+    const inner = signed.transaction instanceof FeeBumpTransaction ? signed.transaction.innerTransaction : signed.transaction;
+    const maxTime = Number(inner.timeBounds?.maxTime);
+    if (Number.isSafeInteger(maxTime) && maxTime > 0) expiresAtSeconds = maxTime;
+  }
   const decision = classifyPrivateActionRecovery(
-    action,
+    { ...action, expiresAtSeconds },
     rpcStatus,
     transcript.actionFields,
     transcript.nullifiers,
@@ -302,6 +377,9 @@ export async function recoverPrivateBalanceAction(input: {
     );
     return { state, outcome: decision, rpcStatus };
   }
+  if (['prepared', 'reviewed', 'signed'].includes(currentAction.status)) {
+    return { state: current, outcome: decision, rpcStatus };
+  }
   const state = await recordPrivatePendingActionRpcStatus(
     input.context,
     input.storageKey,
@@ -320,10 +398,12 @@ export async function broadcastPrivateBalanceAction(input: {
   expectedRevision: number;
   actionId: string;
   networkPassphrase: string;
+  submissionMode: 'direct';
   rpc: PrivateBalanceRpcSender;
   storageDriver?: PrivateRecordDriver;
   now?: () => number;
 }): Promise<PrivateBroadcastResult> {
+  assertDirectPrivateSubmission(input);
   const state = await loadPrivateBalanceState(input.context, input.storageKey, input.storageDriver);
   if (!state || state.revision !== input.expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');
@@ -332,6 +412,9 @@ export async function broadcastPrivateBalanceAction(input: {
   if (!action || !['signed', 'broadcast', 'ambiguous'].includes(action.status)) {
     throw new Error('Private Balance action is not ready for broadcast');
   }
+  if (!action.submissionMode || action.submissionMode !== input.submissionMode) {
+    throw new Error('Private Balance submission route differs from the approved route');
+  }
   if (!action.signedEnvelopeXdr || !action.transactionHash) {
     throw new Error('Private Balance signed recovery envelope is missing');
   }
@@ -339,6 +422,7 @@ export async function broadcastPrivateBalanceAction(input: {
     signedEnvelopeXdr: action.signedEnvelopeXdr,
     networkPassphrase: input.networkPassphrase,
     expectedTransactionHash: action.transactionHash,
+    ...pendingPrivateFeeBumpLimits(action),
   });
 
   let rpcStatus: PrivateBroadcastResult['rpcStatus'];
@@ -417,11 +501,11 @@ export async function broadcastPrivateBalanceAction(input: {
 }
 
 /**
- * Re-drives every persisted 'signed' action through broadcast at leader sync
+ * Re-drives explicitly direct 'signed' actions through broadcast at leader sync
  * start. A crash between the sign and broadcast commits leaves 'signed' with
  * zero recorded attempts even though the RPC send may already have fired, so
- * the only safe resolution is to resend: DUPLICATE lands it in 'broadcast'
- * and the canonical sync remains the sole authority on the outcome.
+ * a direct resend is safe for that route. Relayed and legacy actions retain
+ * their reservations until canonical inclusion or expiry proves the outcome.
  */
 export async function resumeSignedPrivateBalanceActions(input: {
   context: PrivateStorageContext;
@@ -434,7 +518,7 @@ export async function resumeSignedPrivateBalanceActions(input: {
   let state = await loadPrivateBalanceState(input.context, input.storageKey, input.storageDriver);
   if (!state) return null;
   const signedIds = state.pendingActions
-    .filter(action => action.status === 'signed')
+    .filter(action => action.status === 'signed' && action.submissionMode === 'direct')
     .map(action => action.id);
   for (const actionId of signedIds) {
     const resumed = await broadcastPrivateBalanceAction({
@@ -443,6 +527,7 @@ export async function resumeSignedPrivateBalanceActions(input: {
       expectedRevision: state.revision,
       actionId,
       networkPassphrase: input.networkPassphrase,
+      submissionMode: 'direct',
       rpc: input.rpc,
       storageDriver: input.storageDriver,
       now: input.now,

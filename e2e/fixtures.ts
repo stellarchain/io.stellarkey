@@ -219,7 +219,7 @@ export async function installNetworkFixtures(
 
 export async function importTestWallet(
   page: Page,
-  options: { requirePasswordForSigning?: boolean } = {},
+  options: { requirePasswordForSigning?: boolean; readyTimeout?: number } = {},
 ): Promise<void> {
   await page.goto("/app", { waitUntil: "domcontentloaded" });
   await page.evaluate(() => localStorage.clear());
@@ -234,7 +234,7 @@ export async function importTestWallet(
     }).click();
   }
   await page.getByRole("button", { name: "Unlock & Import" }).click();
-  await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
+  await expect(page.getByText("Your Assets", { exact: true })).toBeVisible({ timeout: options.readyTimeout });
 }
 
 export function observePageFailures(page: Page): {

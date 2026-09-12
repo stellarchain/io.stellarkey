@@ -480,6 +480,9 @@ export function reviewTransactionEnvelope(
   const maxTimeValue = BigInt(rawMaxTime);
   const maxTime = maxTimeValue > BigInt(0) ? rawMaxTime : null;
   const now = BigInt(nowSeconds);
+  if (tx.timeBounds && maxTimeValue === BigInt(0)) {
+    blockingReasons.push("Imported transaction envelopes must have a finite expiry time.");
+  }
   if (minTimeValue > now) blockingReasons.push("This transaction is not valid yet.");
   if (maxTimeValue > BigInt(0) && maxTimeValue <= now) blockingReasons.push("This transaction has expired.");
   if (

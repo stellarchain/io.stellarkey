@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { IconTile } from "@/components/ui";
 import dynamic from "next/dynamic";
-import { Keypair } from "@stellar/stellar-sdk";
 import { useWallet, useWalletSecurity } from "@/hooks/useWallet";
 import { useMerchantSettings } from "@/hooks/useMerchantRuntime";
 import {
@@ -10,9 +10,10 @@ import {
   hasPasskeyUnlock,
   importKeystore,
   removePasskeyUnlock,
-  revealSecret,
   isValidPublicAddress,
   hasMnemonic as hasMnemonicAlias,
+  verifyVaultPassword,
+  withSigningKeypair,
 } from "@/lib/vault";
 import { canOfferPasskeyUnlock } from "@/lib/passkey-prf";
 import { networkFeeXlm } from "@/lib/api";
@@ -44,11 +45,16 @@ import {
 } from "@/lib/transaction-review";
 import { assertCanAddTransactionSignature } from "@/lib/multisig";
 import { loadSoundPref, saveSoundPref } from "@/lib/sounds";
+import { getStoredThemePreference, setThemePreference, subscribeThemePreference, type ThemePreference } from "@/lib/theme";
 import {
   BACKUP_HEALTH_CHANGED_EVENT,
   loadBackupHealth,
   type BackupHealth,
 } from "@/lib/backup-health";
+import {
+  MAX_KEYSTORE_FILE_BYTES,
+  readBoundedTextFile,
+} from "@/lib/import-limits";
 import type { AccountMeta } from "@/lib/types";
 import {
   APPLICATION_VERSION,
@@ -72,6 +78,7 @@ import { RenameAccountModal } from "./RenameAccountModal";
 import { ResetWalletModal } from "./ResetWalletModal";
 import { AddAccountModal } from "./AddAccountModal";
 import {
+  AlertContent,
   Button,
   CopyButton,
   ErrorText,
@@ -79,13 +86,18 @@ import {
   HashValue,
   IOSBackButton,
   Modal,
+  ModalBody,
+  ModalFooter,
   ModalHeader,
-  NetworkBadge,
+  Notice,
+  SectionHeader,
   SegmentedControl,
   Spinner,
   Toggle,
+  useRetainedForExit,
 } from "./ui";
 import { AccountMark } from "./AccountMark";
+import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 import {
   IconCheck,
   IconBook,
@@ -98,7 +110,7 @@ import {
   IconPlus,
   IconRefresh,
   IconShield,
-  IconTrash,
+  IconCompass, IconTrash,
   IconWallet,
   IconTrezor,
   IconLedger,
@@ -154,6 +166,7 @@ function ownsItsHeader(sub: Sub): boolean {
 
 export function SettingsPage({
   initialSub = "root",
+  onSubChange,
   merchantOnly = false,
   installAvailable = false,
   installDescription = "Add StellarKey to this device",
@@ -166,6 +179,8 @@ export function SettingsPage({
   onOpenSend,
 }: {
   initialSub?: Sub;
+  /** Lets the shell follow sub-page navigation (compact headers step aside). */
+  onSubChange?: (sub: Sub) => void;
   /** Opened from Merchant Mode: Merchant settings is the root, so no back header. */
   merchantOnly?: boolean;
   installAvailable?: boolean;
@@ -205,6 +220,7 @@ export function SettingsPage({
     retryMergeReconciliation,
     submissionStatus,
   } = useWallet();
+  const singleOperationFeeXlm = networkFeeXlm(recommendedBaseFeeStroops, 1);
   const {
     enabled: merchantEnabled,
     configured: merchantConfigured,
@@ -214,13 +230,40 @@ export function SettingsPage({
   const { toast } = useToast();
   const {
     signingPasswordRequired,
+    authorizeSensitiveAction,
     changeSigningPasswordRequired,
     changeWalletPassword,
   } = useWalletSecurity();
 
   const [sub, setSub] = useState<Sub>(initialSub);
+  useEffect(() => {
+    onSubChange?.(sub);
+  }, [sub, onSubChange]);
+  const settingsRoot = useRef<HTMLDivElement>(null);
+  const navigationTarget = useRef<Sub | null>(initialSub);
+
+  function navigateToSub(next: Sub) {
+    if (next === sub) return;
+    navigationTarget.current = next;
+    setSub(next);
+  }
+
+  useLayoutEffect(() => {
+    const target = navigationTarget.current;
+    navigationTarget.current = null;
+    if (target !== sub) return;
+    const root = settingsRoot.current;
+    // Entry and explicit sub-navigation own this reset. Data refreshes and
+    // asynchronous completion must not move focus or a locked background.
+    if (!root || document.querySelector("[data-modal-backdrop]")) return;
+    root.closest<HTMLElement>("[data-app-scroll-owner]")?.scrollTo({ top: 0, behavior: "instant" });
+    window.scrollTo({ top: 0, behavior: "instant" });
+    const heading = root.querySelector<HTMLElement>("[data-settings-heading]");
+    (heading ?? root).focus({ preventScroll: true });
+  }, [sub]);
 
   const [soundEnabled, setSoundEnabled] = useState(() => loadSoundPref());
+  const themePref = useSyncExternalStore(subscribeThemePreference, getStoredThemePreference, () => 'system' as const);
   const [backupHealth, setBackupHealth] = useState<BackupHealth | null>(null);
   const [passkeyConfigured, setPasskeyConfigured] = useState(() => hasPasskeyUnlock());
   const [passkeyAvailable] = useState(() => canOfferPasskeyUnlock());
@@ -239,6 +282,31 @@ export function SettingsPage({
   const [changePasswordBusy, setChangePasswordBusy] = useState(false);
   const [changePasswordError, setChangePasswordError] = useState<string | null>(null);
   const newWalletPasswordStrength = estimatePasswordStrength(newWalletPassword);
+  // The passkey dialog keeps its variant through the exit animation.
+  const passkeyVariant = useRetainedForExit(passkeyDialog);
+  const disableSigningPasswordRef = useRef<HTMLInputElement>(null);
+  const currentPasswordRef = useRef<HTMLInputElement>(null);
+  const passkeyPasswordRef = useRef<HTMLInputElement>(null);
+
+  function closeDisableSigningDialog() {
+    setDisableSigningDialog(false);
+    setDisableSigningPassword("");
+    setDisableSigningError(null);
+  }
+
+  function closeChangePasswordDialog() {
+    setChangePasswordDialog(false);
+    setCurrentWalletPassword("");
+    setNewWalletPassword("");
+    setConfirmWalletPassword("");
+    setChangePasswordError(null);
+  }
+
+  function closePasskeyDialog() {
+    setPasskeyDialog(null);
+    setPasskeyPassword("");
+    setPasskeyError(null);
+  }
 
   useEffect(() => {
     const refresh = () => setBackupHealth(loadBackupHealth());
@@ -300,6 +368,7 @@ export function SettingsPage({
   const [horizonDraft, setHorizonDraft] = useState(() => getHorizonUrl(network));
   const [rpcDraft, setRpcDraft] = useState(() => getRpcUrl(network) ?? "");
   const [endpointTesting, setEndpointTesting] = useState<StellarEndpointKind | null>(null);
+  const [endpointResetting, setEndpointResetting] = useState(false);
   const [endpointHealth, setEndpointHealth] = useState<Partial<Record<StellarEndpointKind, EndpointHealth>>>({});
   const [endpointError, setEndpointError] = useState<string | null>(null);
 
@@ -334,6 +403,7 @@ export function SettingsPage({
       const health = kind === "horizon"
         ? await testHorizonEndpoint(network, value)
         : await testRpcEndpoint(network, value);
+      await authorizeSensitiveAction(`Change ${NETWORKS[network].label} ${kind === "horizon" ? "Horizon" : "RPC"} endpoint`);
       saveCustomEndpoint(network, kind, health.url);
       if (kind === "horizon") {
         setHorizonDraft(health.url);
@@ -351,9 +421,11 @@ export function SettingsPage({
     }
   }
 
-  function handleResetEndpoints() {
+  async function handleResetEndpoints() {
+    setEndpointResetting(true);
     setEndpointError(null);
     try {
+      await authorizeSensitiveAction(`Reset ${NETWORKS[network].label} network endpoints`);
       resetCustomEndpoints(network);
       setHorizonDraft(NETWORKS[network].horizonUrl);
       setRpcDraft(NETWORKS[network].rpcUrl ?? "");
@@ -363,6 +435,8 @@ export function SettingsPage({
     } catch (cause) {
       triggerHaptic("error");
       setEndpointError(cause instanceof Error ? cause.message : "Could not reset the endpoint settings.");
+    } finally {
+      setEndpointResetting(false);
     }
   }
 
@@ -573,24 +647,24 @@ export function SettingsPage({
       if (requestGeneration !== airReviewGeneration.current) {
         throw new Error("The account or network changed. Review the envelope again before signing.");
       }
-      const secret = await revealSecret(activeAccount.id, airPw);
-      if (!secret) throw new Error("Incorrect password.");
-      const kp = Keypair.fromSecret(secret);
-      if (kp.publicKey() !== reviewedAccount) {
-        throw new Error("The unlocked key does not match the active account.");
-      }
-      await assertCanAddTransactionSignature({
-        transaction: currentReview.transaction,
-        network: reviewedNetwork,
-        signerPublicKey: reviewedAccount,
+      await verifyVaultPassword(airPw);
+      await withSigningKeypair(activeAccount.id, async (kp) => {
+        if (kp.publicKey() !== reviewedAccount) {
+          throw new Error("The unlocked key does not match the active account.");
+        }
+        await assertCanAddTransactionSignature({
+          transaction: currentReview.transaction,
+          network: reviewedNetwork,
+          signerPublicKey: reviewedAccount,
+        });
+        if (requestGeneration !== airReviewGeneration.current) {
+          throw new Error("The account or network changed. Review the envelope again before signing.");
+        }
+        const tx = currentReview.transaction;
+        assertReviewCanBeSigned(currentReview, airNetworkConfirmed);
+        tx.sign(kp);
+        setSignedXdr(tx.toXdr());
       });
-      if (requestGeneration !== airReviewGeneration.current) {
-        throw new Error("The account or network changed. Review the envelope again before signing.");
-      }
-      const tx = currentReview.transaction;
-      assertReviewCanBeSigned(currentReview, airNetworkConfirmed);
-      tx.sign(kp);
-      setSignedXdr(tx.toXdr());
       triggerHaptic("success");
     } catch (e) {
       triggerHaptic("error");
@@ -669,7 +743,7 @@ export function SettingsPage({
   }
 
   async function handleImportKeystoreFile(file: File) {
-    setKeystoreJson(await file.text());
+    setKeystoreJson(await readBoundedTextFile(file, MAX_KEYSTORE_FILE_BYTES, "Keystore file"));
     setKsPassword("");
     setKsError(null);
   }
@@ -720,24 +794,22 @@ export function SettingsPage({
           : "root";
 
   return (
-    <div className="fade-up mx-auto w-full max-w-[1000px] min-w-0 px-0 pb-0 md:px-5 md:pb-[150px]">
+    <div ref={settingsRoot} role="region" aria-label={merchantOnly ? "Merchant settings" : "Wallet settings"} tabIndex={-1}
+      className="fade-up mx-auto w-full max-w-[1000px] min-w-0 px-0 pb-0 md:px-5 md:pb-[150px]">
       {/* Subpage Navigation — suppressed for sub-pages that draw their own. */}
       {sub !== "root" && !ownsItsHeader(sub) && !(merchantOnly && sub === "merchant") && (
         <>
-          <div className="flex items-center justify-between pb-1 pt-2">
+          <div className="flex items-center gap-1 pb-1 pt-2">
             <IOSBackButton
               label="Back to Settings"
               onClick={() => {
-                setSub(backTarget ?? "root");
+                navigateToSub(backTarget ?? "root");
               }}
             />
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Settings
-            </span>
-            <span className="w-11" aria-hidden />
+            <span aria-hidden="true" className="text-[15px] font-medium text-[#0A84FF]">Settings</span>
           </div>
 
-          <h1 className="display-h mb-5 text-[28px] font-bold text-white">
+          <h1 data-settings-heading tabIndex={-1} className="display-h mb-5 text-[28px] font-bold text-white">
             {sub === "accounts"
                 ? "Accounts"
                 : sub === "autolock"
@@ -796,22 +868,17 @@ export function SettingsPage({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
             {/* Column 1: Recovery, security, signing, and privacy */}
             <div className="space-y-6">
               <section aria-labelledby="settings-recovery-title">
-                <h2
-                  id="settings-recovery-title"
-                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
-                >
-                  Recovery
-                </h2>
+                <SectionHeader as="h2"
+                  id="settings-recovery-title" className="px-1 pb-2">Recovery</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     icon={<IconLock size={16} />}
                     tint="#30D158"
                     label="Require Password to Sign"
-                    value={signingPasswordRequired ? "On" : "Off"}
                     sub={signingPasswordRequired
                       ? "Fresh local verification for every transaction"
                       : "The unlocked wallet can sign without another prompt"}
@@ -857,12 +924,8 @@ export function SettingsPage({
               </section>
 
               <section aria-labelledby="settings-device-security-title">
-                <h2
-                  id="settings-device-security-title"
-                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
-                >
-                  Device Security
-                </h2>
+                <SectionHeader as="h2"
+                  id="settings-device-security-title" className="px-1 pb-2">Device Security</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     icon={<IconFingerprint size={16} />}
@@ -893,7 +956,7 @@ export function SettingsPage({
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setSub("autolock");
+                      navigateToSub("autolock");
                     }}
                     sep
                   />
@@ -901,12 +964,8 @@ export function SettingsPage({
               </section>
 
               <section aria-labelledby="settings-signing-security-title">
-                <h2
-                  id="settings-signing-security-title"
-                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
-                >
-                  Signing Security
-                </h2>
+                <SectionHeader as="h2"
+                  id="settings-signing-security-title" className="px-1 pb-2">Signing Security</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     icon={<IconShield size={16} />}
@@ -928,7 +987,7 @@ export function SettingsPage({
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setSub("hardware");
+                      navigateToSub("hardware");
                     }}
                     sep
                   />
@@ -940,20 +999,54 @@ export function SettingsPage({
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setSub("airsigner");
+                      navigateToSub("airsigner");
                     }}
                     sep
                   />
                 </div>
               </section>
 
+              <section aria-labelledby="settings-appearance-title">
+                <SectionHeader as="h2"
+                  id="settings-appearance-title" className="px-1 pb-2">Appearance</SectionHeader>
+                <div className="list-group space-y-3 p-3">
+                  <div className="flex items-center gap-3 px-1 pt-1">
+                    <span
+                      aria-hidden="true"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--color-oncolor)] shadow-sm"
+                      style={{ background: "#5E5CE6" }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
+                        <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" />
+                      </svg>
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[13.5px] font-semibold text-white">Theme</p>
+                      <p className="text-[12px] leading-relaxed text-neutral-400">
+                        Match your device, or always use light or dark.
+                      </p>
+                    </div>
+                  </div>
+                  <SegmentedControl<ThemePreference>
+                    ariaLabel="Appearance"
+                    value={themePref}
+                    onChange={(next) => {
+                      triggerHaptic("selection");
+                      setThemePreference(next);
+                    }}
+                    options={[
+                      { value: "system", label: "System" },
+                      { value: "light", label: "Light" },
+                      { value: "dark", label: "Dark" },
+                    ]}
+                  />
+                </div>
+              </section>
+
               <section aria-labelledby="settings-privacy-feedback-title">
-                <h2
-                  id="settings-privacy-feedback-title"
-                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
-                >
-                  Privacy &amp; Feedback
-                </h2>
+                <SectionHeader as="h2"
+                  id="settings-privacy-feedback-title" className="px-1 pb-2">Privacy &amp; Feedback</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     as="div"
@@ -961,7 +1054,7 @@ export function SettingsPage({
                     tint="#BF5AF2"
                     label="Hide Balances (Privacy)"
                   >
-                    <Toggle on={privacyMode} onChange={togglePrivacy} />
+                    <Toggle label="Hide Balances (Privacy)" on={privacyMode} onChange={togglePrivacy} />
                   </RowButton>
                   <RowButton
                     as="div"
@@ -970,7 +1063,7 @@ export function SettingsPage({
                     label="Audio & Haptic Feedback"
                     sep
                   >
-                    <Toggle on={soundEnabled} onChange={() => toggleSound(!soundEnabled)} />
+                    <Toggle label="Audio & Haptic Feedback" on={soundEnabled} onChange={() => toggleSound(!soundEnabled)} />
                   </RowButton>
                 </div>
               </section>
@@ -979,9 +1072,7 @@ export function SettingsPage({
             {/* Column 2: Accounts & Tools */}
             <div className="space-y-6">
               <div>
-                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                  Accounts
-                </p>
+                <SectionHeader className="px-1 pb-2">Accounts</SectionHeader>
                 <div className="list-group">
                   {activeAccount && (
                     <RowButton
@@ -991,7 +1082,7 @@ export function SettingsPage({
                       chevron
                       onClick={() => {
                         triggerHaptic("selection");
-                        setSub("accounts");
+                        navigateToSub("accounts");
                       }}
                       sep
                     />
@@ -1004,7 +1095,7 @@ export function SettingsPage({
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setSub("currency");
+                      navigateToSub("currency");
                     }}
                     sep
                   />
@@ -1013,9 +1104,7 @@ export function SettingsPage({
 
               {/* Merchant — a counter runs from the same account, so it sits with them */}
               <div>
-                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                  Merchant
-                </p>
+                <SectionHeader className="px-1 pb-2">Merchant</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     as="div"
@@ -1045,7 +1134,7 @@ export function SettingsPage({
                       <RowButton
                         icon={<IconStorefront size={16} />}
                         tint="#30D158"
-                        label="Open till"
+                        label="Open Till"
                         value={merchantProfileName || "Unnamed shop"}
                         chevron
                         sep
@@ -1060,7 +1149,7 @@ export function SettingsPage({
                         sep
                         onClick={() => {
                           triggerHaptic("selection");
-                          setSub("merchant");
+                          navigateToSub("merchant");
                         }}
                       />
                     </>
@@ -1070,27 +1159,24 @@ export function SettingsPage({
 
               {/* Network — its own section */}
               <div>
-                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                  Network
-                </p>
+                <SectionHeader className="px-1 pb-2">Network</SectionHeader>
                 <div className="list-group">
                   <RowButton
-                    icon={<NetworkBadge network={network} />}
+                    icon={<IconCompass size={16} />}
+                    tint={network === "testnet" ? "#FF9F0A" : "#30D158"}
                     label="Network"
                     value={NETWORKS[network].label}
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setSub("network");
+                      navigateToSub("network");
                     }}
                   />
                 </div>
               </div>
 
               <div>
-                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                  App
-                </p>
+                <SectionHeader className="px-1 pb-2">App</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     icon={<IconBook size={16} />}
@@ -1100,7 +1186,7 @@ export function SettingsPage({
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setSub("about");
+                      navigateToSub("about");
                     }}
                   />
                   {installAvailable && (
@@ -1117,12 +1203,11 @@ export function SettingsPage({
               </div>
 
               <div>
-                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                  Danger Zone
-                </p>
+                <SectionHeader className="px-1 pb-2">Danger Zone</SectionHeader>
                 <div className="list-group">
                   <RowButton
                     icon={<IconTrash size={16} />}
+                    tint="#FF453A"
                     label="Reset Wallet"
                     danger
                     onClick={() => {
@@ -1166,9 +1251,7 @@ export function SettingsPage({
           </section>
 
           <section aria-labelledby="settings-legal-title">
-            <h2 id="settings-legal-title" className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-              Trust Center
-            </h2>
+            <SectionHeader as="h2" id="settings-legal-title" className="px-1 pb-2">Trust Center</SectionHeader>
             <div className="list-group">
               {[
                 { label: "About StellarKey", sub: "Architecture and independence", href: PUBLIC_ROUTES.about },
@@ -1183,12 +1266,12 @@ export function SettingsPage({
                   href={item.href}
                   className={`row-hover flex min-h-14 w-full items-center gap-3.5 px-4 py-3.5 text-left ${index > 0 ? "ios-sep" : ""}`}
                 >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-white">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-[var(--color-oncolor)]">
                     <IconBook size={15} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-[15.5px] leading-tight text-white">{item.label}</span>
-                    <span className="block truncate text-[12px] leading-tight text-neutral-400">{item.sub}</span>
+                    <span className="line-clamp-2 text-[12px] leading-tight text-neutral-400">{item.sub}</span>
                   </span>
                   <IconExternal size={15} className="shrink-0 text-neutral-500" />
                 </a>
@@ -1197,9 +1280,7 @@ export function SettingsPage({
           </section>
 
           <section aria-labelledby="settings-source-title">
-            <h2 id="settings-source-title" className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-              Open Source &amp; Verification
-            </h2>
+            <SectionHeader as="h2" id="settings-source-title" className="px-1 pb-2">Open Source &amp; Verification</SectionHeader>
             <div className="list-group">
               {[
                 {
@@ -1230,12 +1311,12 @@ export function SettingsPage({
                   rel="noreferrer"
                   className={`row-hover flex min-h-14 w-full items-center gap-3.5 px-4 py-3.5 text-left ${index > 0 ? "ios-sep" : ""}`}
                 >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#0A84FF] text-white">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#0A84FF] text-[var(--color-oncolor)]">
                     <IconShield size={15} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-[15.5px] leading-tight text-white">{item.label}</span>
-                    <span className="block truncate text-[12px] leading-tight text-neutral-400">{item.sub}</span>
+                    <span className="line-clamp-2 text-[12px] leading-tight text-neutral-400">{item.sub}</span>
                   </span>
                   <IconExternal size={15} className="shrink-0 text-neutral-500" />
                 </a>
@@ -1243,7 +1324,7 @@ export function SettingsPage({
             </div>
           </section>
 
-          <Notice tone="warn">
+          <Notice tone="warn" className="mt-4">
             Passkeys and browser storage belong to this exact web origin. Keep your password and an
             encrypted backup before moving to {BRAND_ORIGIN}; enrol a new passkey after migration.
           </Notice>
@@ -1271,12 +1352,12 @@ export function SettingsPage({
                 key={opt.ms}
                 type="button"
                 className={`flex w-full items-center justify-between px-4 py-3.5 text-left ${
-                  i > 0 ? "ios-sep" : ""
+                  i > 0 ? "ios-sep ios-sep-flush" : ""
                 }`}
                 onClick={() => {
                   triggerHaptic("selection");
                   changeAutoLockMs(opt.ms);
-                  setSub("root");
+                  navigateToSub("root");
                 }}
               >
                 <span className="text-[15.5px] font-medium text-white">{opt.label}</span>
@@ -1294,7 +1375,7 @@ export function SettingsPage({
       {sub === "accounts" && (
         <>
           {activeMergeReconciliation && activeMergePresentation && (
-            <Notice tone="warn">
+            <Notice tone="warn" className="mt-4">
               {activeMergePresentation.message}
               <span className="mt-1 block break-all font-mono text-[10px] text-neutral-400">
                 {activeMergeReconciliation.network} · {activeMergeReconciliation.hash}
@@ -1388,9 +1469,7 @@ export function SettingsPage({
           {/* Archived / Deleted Accounts Section */}
           {archivedAccounts.length > 0 && (
             <div className="mt-6">
-              <p className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                Deleted / Archived Accounts
-              </p>
+              <SectionHeader className="px-1 pb-2">Deleted / Archived Accounts</SectionHeader>
               <div className="list-group">
                 {archivedAccounts.map((acct, i) => (
                   <div
@@ -1496,7 +1575,7 @@ export function SettingsPage({
                 chevron
                 onClick={() => {
                   triggerHaptic("selection");
-                  setSub("merge");
+                  navigateToSub("merge");
                 }}
                 sep
               />
@@ -1508,8 +1587,12 @@ export function SettingsPage({
                 onClick={() => {
                   triggerHaptic("warning");
                   if (activeAccount) {
-                    removeAccount(activeAccount.id);
-                    toast("Account archived", "info");
+                    void removeAccount(activeAccount.id)
+                      .then(() => toast("Account archived", "info"))
+                      .catch((cause: unknown) => toast(
+                        cause instanceof Error ? cause.message : "Account archival failed.",
+                        "error",
+                      ));
                   }
                 }}
               />
@@ -1521,12 +1604,13 @@ export function SettingsPage({
       {/* ---------- MERGE ACCOUNT ---------- */}
       {sub === "merge" && (
         <div className="space-y-4">
-          <Notice tone="pos">
+          <Notice tone="pos" className="mt-4">
             Account merge transfers all remaining lumens (including the 1.0 XLM base reserve) to the destination account and permanently closes this account on the network.
           </Notice>
-          <p className="px-1 text-[12px] text-neutral-400">
-            Selected network fee: {networkFeeXlm(recommendedBaseFeeStroops, 1)} XLM
-          </p>
+          <div className="px-1 text-[12px] text-neutral-400">
+            <p>Selected network fee: {singleOperationFeeXlm} XLM</p>
+            <XlmFeeFiatValue amount={singleOperationFeeXlm} className="mt-0.5 block" />
+          </div>
 
           <div className="list-group p-4 space-y-4">
             <Field label="Destination Stellar Address" hint="Must be an existing active account">
@@ -1542,9 +1626,7 @@ export function SettingsPage({
 
             {accounts.filter((a) => a.id !== activeAccount?.id).length > 0 && (
               <div>
-                <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-2">
-                  Or select one of your accounts
-                </p>
+                <SectionHeader className="mb-2">Or select one of your accounts</SectionHeader>
                 <div className="space-y-1.5">
                   {accounts
                     .filter((a) => a.id !== activeAccount?.id)
@@ -1579,7 +1661,7 @@ export function SettingsPage({
           <ErrorText message={mergeError ?? ""} />
 
           {mergePending && (
-            <Notice tone={trackedMergeStatus === "status_unknown" ? "warn" : "pos"}>
+            <Notice tone={trackedMergeStatus === "status_unknown" ? "warn" : "pos"} className="mt-4">
               {trackedMergeStatus === "status_unknown"
                 ? "Account-merge status is unknown."
                 : trackedMergeStatus === "confirmed"
@@ -1592,7 +1674,7 @@ export function SettingsPage({
 
           <Button
             variant="danger"
-            className="w-full !py-3.5 text-[15px] font-semibold"
+            className="w-full"
             loading={merging}
             disabled={!mergeDest || merging || mergeFlowLocked}
             onClick={() => void handleMergeAccount()}
@@ -1627,7 +1709,7 @@ export function SettingsPage({
                 setAirPw("");
                 setAirError(null);
               }}
-              className="input mono text-base resize-none sm:text-[12px]"
+              className="input mono text-base resize-none sm:text-[13px]"
             />
           </Field>
 
@@ -1659,7 +1741,10 @@ export function SettingsPage({
                 </div>
                 <div className="flex items-center justify-between gap-4 py-2.5">
                   <span className="text-neutral-400">Fee</span>
-                  <span className="mono text-neutral-200">{airReview.feeXlm} XLM</span>
+                  <span className="flex flex-col items-end text-neutral-200">
+                    <span className="mono">{airReview.feeXlm} XLM</span>
+                    <XlmFeeFiatValue amount={airReview.feeXlm} />
+                  </span>
                 </div>
                 <div className="flex items-center justify-between gap-4 py-2.5">
                   <span className="text-neutral-400">Memo</span>
@@ -1709,17 +1794,17 @@ export function SettingsPage({
               ))}
 
               {!airReview.signable && (
-                <div className="rounded-2xl border border-[#FF453A]/30 bg-[#FF453A]/[0.07] p-3 text-[12px] leading-relaxed text-[#FF6961]">
+                <Notice tone="danger" compact>
                   Signing blocked: {airReview.blockingReasons.join(" ")}
-                </div>
+                </Notice>
               )}
 
               {activeAccount && !airSignerReady && airReview.signable && airError && (
                 <div className="space-y-2">
-                  <div className="rounded-2xl border border-[#FF453A]/30 bg-[#FF453A]/[0.07] p-3 text-[12px] leading-relaxed text-[#FF6961]">
+                  <Notice tone="danger" compact>
                     Signing blocked: current on-chain signer authorization could not be proven for
                     the active account.
-                  </div>
+                  </Notice>
                   <Button
                     variant="secondary"
                     className="w-full"
@@ -1755,7 +1840,7 @@ export function SettingsPage({
                         placeholder="Enter password"
                         value={airPw}
                         onChange={(e) => setAirPw(e.target.value)}
-                        className="input text-base sm:text-[13.5px]"
+                        className="input text-base sm:text-[13px]"
                       />
                     </Field>
 
@@ -1812,7 +1897,7 @@ export function SettingsPage({
                       <p className="text-[11.5px] text-neutral-400">Safe 3 · Model T · Model One</p>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10.5px] font-semibold text-emerald-400">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10.5px] font-semibold text-emerald-400 shrink-0 whitespace-nowrap">
                     Trezor Connect
                   </span>
                 </div>
@@ -1821,7 +1906,7 @@ export function SettingsPage({
                 </p>
               </div>
               <Button
-                className="w-full !py-2.5 text-[13.5px] font-semibold"
+                className="w-full"
                 onClick={() => {
                   triggerHaptic("selection");
                   setAddAccountMode("hardware");
@@ -1845,7 +1930,7 @@ export function SettingsPage({
                       <p className="text-[11.5px] text-neutral-400">Stax · Nano X · Nano S Plus</p>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/10 text-[10.5px] font-semibold text-neutral-400">
+                  <span className="px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/10 text-[10.5px] font-semibold text-neutral-400 shrink-0 whitespace-nowrap">
                     Not Available
                   </span>
                 </div>
@@ -1853,7 +1938,7 @@ export function SettingsPage({
                   Ledger signing is intentionally disabled until a real Stellar transport and on-device verification flow are implemented.
                 </p>
               </div>
-              <Button className="w-full !py-2.5 text-[13.5px] font-semibold" disabled>
+              <Button className="w-full" disabled>
                 Ledger Integration Unavailable
               </Button>
             </div>
@@ -1862,9 +1947,7 @@ export function SettingsPage({
           {/* Connected Hardware Accounts */}
           {accounts.some((a) => a.hardware) && (
             <div>
-              <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                Connected Hardware Accounts
-              </p>
+              <SectionHeader className="px-1 pb-2">Connected Hardware Accounts</SectionHeader>
               <div className="list-group">
                 {accounts
                   .filter((a) => a.hardware)
@@ -1899,9 +1982,7 @@ export function SettingsPage({
 
           {/* Security Best Practices */}
           <div className="panel-inset p-4 space-y-2 text-[12px] text-neutral-300">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-              Hardware Security Checklist
-            </p>
+            <SectionHeader className="font-bold">Hardware Security Checklist</SectionHeader>
             <div className="flex items-center gap-2">
               <span className="text-[#30D158]">✓</span>
               <span>Always verify the destination address and amount on the physical device screen.</span>
@@ -1949,7 +2030,7 @@ export function SettingsPage({
                 }}
               >
                 <div className="flex items-center gap-3">
-                  <span className="mono flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.08] text-[13px] font-bold text-white">
+                  <span className="mono flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.08] text-[13px] font-bold text-[var(--color-oncolor)]">
                     {curr.symbol}
                   </span>
                   <div>
@@ -1970,16 +2051,16 @@ export function SettingsPage({
       {sub === "merchant" && (
         <MerchantSettings
           onDisabled={() => setSub("root")}
-          onNavigate={setSub}
+          onNavigate={navigateToSub}
           onOpenSwap={onOpenSwap}
           onOpenSend={onOpenSend}
         />
       )}
 
       {/* Merchant sub-pages draw their own back button, so they render bare. */}
-      {sub === "staff" && <StaffTerminalsPage onBack={() => setSub("merchant")} />}
-      {sub === "tax" && <TaxRecordsPage onBack={() => setSub("merchant")} />}
-      {sub === "peripherals" && <PeripheralsPage onBack={() => setSub("merchant")} />}
+      {sub === "staff" && <StaffTerminalsPage onBack={() => navigateToSub("merchant")} />}
+      {sub === "tax" && <TaxRecordsPage onBack={() => navigateToSub("merchant")} />}
+      {sub === "peripherals" && <PeripheralsPage onBack={() => navigateToSub("merchant")} />}
 
       {/* ---------- NETWORK SWITCHER & HEALTH ---------- */}
       {sub === "network" && (
@@ -2002,9 +2083,7 @@ export function SettingsPage({
           />
 
           <div className="panel-inset space-y-2.5 p-4 text-[12.5px]">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Live Network Health
-            </p>
+            <SectionHeader>Live Network Health</SectionHeader>
             <div className="flex justify-between text-neutral-300">
               <span>Status</span>
               <span className={`flex items-center gap-1.5 font-medium ${endpointHealth.horizon ? "text-[#30D158]" : "text-neutral-400"}`}>
@@ -2014,13 +2093,14 @@ export function SettingsPage({
             </div>
             <div className="flex justify-between text-neutral-300">
               <span>Selected Network Fee</span>
-              <span className="mono text-white">
-                {networkFeeXlm(recommendedBaseFeeStroops, 1)} XLM / operation
+              <span className="flex flex-col items-end text-white">
+                <span className="mono">{singleOperationFeeXlm} XLM / operation</span>
+                <XlmFeeFiatValue amount={singleOperationFeeXlm} />
               </span>
             </div>
             <div className="flex justify-between text-neutral-300">
               <span>Horizon Endpoint</span>
-              <span className="mono max-w-[200px] truncate text-[11px] text-neutral-400">
+              <span className="mono min-w-0 flex-1 truncate text-right text-[11px] text-neutral-400">
                 {getHorizonUrl(network)}
               </span>
             </div>
@@ -2054,7 +2134,7 @@ export function SettingsPage({
                 )}
               </div>
               <input
-                className="input mono text-base sm:text-[12.5px]"
+                className="input mono text-base sm:text-[13px]"
                 type="url"
                 inputMode="url"
                 autoCapitalize="none"
@@ -2073,7 +2153,7 @@ export function SettingsPage({
                 variant="secondary"
                 className="mt-2 w-full"
                 loading={endpointTesting === "horizon"}
-                disabled={!horizonDraft.trim() || endpointTesting !== null}
+                disabled={!horizonDraft.trim() || endpointTesting !== null || endpointResetting}
                 onClick={() => void handleTestAndSaveEndpoint("horizon")}
               >
                 {"Test & Save Horizon"}
@@ -2099,7 +2179,7 @@ export function SettingsPage({
                 )}
               </div>
               <input
-                className="input mono text-base sm:text-[12.5px]"
+                className="input mono text-base sm:text-[13px]"
                 type="url"
                 inputMode="url"
                 autoCapitalize="none"
@@ -2118,7 +2198,7 @@ export function SettingsPage({
                 variant="secondary"
                 className="mt-2 w-full"
                 loading={endpointTesting === "rpc"}
-                disabled={!rpcDraft.trim() || endpointTesting !== null}
+                disabled={!rpcDraft.trim() || endpointTesting !== null || endpointResetting}
                 onClick={() => void handleTestAndSaveEndpoint("rpc")}
               >
                 {"Test & Save RPC"}
@@ -2130,10 +2210,10 @@ export function SettingsPage({
             <button
               type="button"
               className="block min-h-11 w-full text-center text-[13px] font-medium text-[#0A84FF]"
-              onClick={handleResetEndpoints}
-              disabled={endpointTesting !== null}
+              onClick={() => void handleResetEndpoints()}
+              disabled={endpointTesting !== null || endpointResetting}
             >
-              Reset to Defaults
+              {endpointResetting ? "Authorizing…" : "Reset to Defaults"}
             </button>
             <p className="text-[11.5px] leading-relaxed text-neutral-500">
               Endpoints are stored only in this browser. The app accepts HTTPS URLs only and verifies
@@ -2159,11 +2239,11 @@ export function SettingsPage({
           )}
 
           {network === "mainnet" ? (
-            <Notice tone="pos">
+            <Notice tone="pos" className="mt-4">
               You are connected to Stellar Mainnet. Transactions involve real assets and fees.
             </Notice>
           ) : (
-            <Notice>
+            <Notice className="mt-4">
               Testnet lumens are free and funded by SDF Friendbot for development and testing.
             </Notice>
           )}
@@ -2188,255 +2268,266 @@ export function SettingsPage({
 
       <Modal
         open={disableSigningDialog}
-        onClose={() => {
-          if (signingPolicyBusy) return;
-          setDisableSigningDialog(false);
-          setDisableSigningPassword("");
-          setDisableSigningError(null);
-        }}
-        dismissable={!signingPolicyBusy}
+        onClose={closeDisableSigningDialog}
+        presentation="alert"
+        busy={signingPolicyBusy}
+        busyReason="Wait for the password check to finish before closing."
+        initialFocus={disableSigningPasswordRef}
       >
-        <ModalHeader
-          title="Turn Off Password Confirmation?"
-          subtitle="This weakens transaction signing protection"
-          onClose={signingPolicyBusy ? undefined : () => {
-            setDisableSigningDialog(false);
-            setDisableSigningPassword("");
-            setDisableSigningError(null);
-          }}
-        />
         <form
-          className="space-y-4 p-4 sm:p-6"
           onSubmit={(event) => {
             event.preventDefault();
             void handleDisableSigningPassword();
           }}
         >
-          <Notice tone="warn">
-            After this is off, anyone holding your unlocked device can approve software-wallet
-            transactions without entering the vault password again. Trezor still requires its own
-            device approval.
-          </Notice>
-          <Field label="Current Wallet Password" hint="Required to turn this protection off">
-            <input
-              className="input text-base sm:text-[14px]"
-              type="password"
-              autoComplete="current-password"
-              value={disableSigningPassword}
-              onChange={(event) => setDisableSigningPassword(event.target.value)}
-              placeholder="Enter password"
-              disabled={signingPolicyBusy}
-              autoFocus
-            />
-          </Field>
-          <ErrorText message={disableSigningError ?? ""} />
-          <div className="grid grid-cols-2 gap-3">
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={signingPolicyBusy}
-              onClick={() => {
-                setDisableSigningDialog(false);
-                setDisableSigningPassword("");
-                setDisableSigningError(null);
-              }}
-            >
-              Keep On
-            </Button>
-            <Button
-              type="submit"
-              variant="danger"
-              loading={signingPolicyBusy}
-              disabled={!disableSigningPassword || signingPolicyBusy}
-            >
-              Turn Off
-            </Button>
-          </div>
+          <AlertContent
+            title="Turn Off Password Confirmation?"
+            message="After this is off, anyone holding your unlocked device can approve software-wallet transactions without entering the vault password again. Trezor still requires its own device approval."
+            actions={
+              <ModalFooter
+                secondary={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={signingPolicyBusy}
+                    onClick={closeDisableSigningDialog}
+                  >
+                    Keep On
+                  </Button>
+                }
+                primary={
+                  <Button
+                    type="submit"
+                    variant="danger"
+                    loading={signingPolicyBusy}
+                    loadingLabel="Verifying password"
+                    disabled={!disableSigningPassword}
+                  >
+                    Turn Off
+                  </Button>
+                }
+              />
+            }
+          >
+            <div className="space-y-3">
+              <Field label="Current Wallet Password" hint="Required to turn this protection off">
+                <input
+                  ref={disableSigningPasswordRef}
+                  className="input text-base sm:text-[14px]"
+                  type="password"
+                  autoComplete="current-password"
+                  enterKeyHint="done"
+                  value={disableSigningPassword}
+                  onChange={(event) => setDisableSigningPassword(event.target.value)}
+                  placeholder="Enter password"
+                  disabled={signingPolicyBusy}
+                />
+              </Field>
+              <ErrorText message={disableSigningError ?? ""} />
+            </div>
+          </AlertContent>
         </form>
       </Modal>
 
       <Modal
         open={changePasswordDialog}
-        onClose={() => {
-          if (changePasswordBusy) return;
-          setChangePasswordDialog(false);
-          setCurrentWalletPassword("");
-          setNewWalletPassword("");
-          setConfirmWalletPassword("");
-          setChangePasswordError(null);
-        }}
-        dismissable={!changePasswordBusy}
+        onClose={closeChangePasswordDialog}
+        busy={changePasswordBusy}
+        busyReason="Wait for the password change to finish before closing."
+        initialFocus={currentPasswordRef}
       >
         <ModalHeader
           title="Change Wallet Password"
           subtitle="Re-wrap this encrypted vault locally"
-          onClose={changePasswordBusy ? undefined : () => {
-            setChangePasswordDialog(false);
-            setCurrentWalletPassword("");
-            setNewWalletPassword("");
-            setConfirmWalletPassword("");
-            setChangePasswordError(null);
-          }}
+          onClose={closeChangePasswordDialog}
         />
         <form
-          className="space-y-4 p-4 sm:p-6"
           onSubmit={(event) => {
             event.preventDefault();
             void handleChangeWalletPassword();
           }}
         >
-          <p className="text-[13.5px] leading-relaxed text-neutral-300">
-            Your accounts and encrypted records stay unchanged. Existing Face ID or Touch ID
-            unlock remains available because this operation keeps the same vault master key.
-          </p>
-          <Field label="Current Password">
-            <input
-              className="input text-base sm:text-[14px]"
-              type="password"
-              autoComplete="current-password"
-              value={currentWalletPassword}
-              onChange={(event) => setCurrentWalletPassword(event.target.value)}
-              placeholder="Enter current password"
-              disabled={changePasswordBusy}
-              autoFocus
+          <ModalBody>
+            <p className="text-[13.5px] leading-relaxed text-neutral-300">
+              Your accounts and encrypted records stay unchanged. Existing Face ID or Touch ID
+              unlock remains available because this operation keeps the same vault master key.
+            </p>
+            <Field label="Current Password">
+              <input
+                ref={currentPasswordRef}
+                className="input text-base sm:text-[14px]"
+                type="password"
+                autoComplete="current-password"
+                enterKeyHint="next"
+                value={currentWalletPassword}
+                onChange={(event) => setCurrentWalletPassword(event.target.value)}
+                placeholder="Enter current password"
+                disabled={changePasswordBusy}
+              />
+            </Field>
+            <Field label="New Password" hint="12+ characters; avoid common or predictable passwords">
+              <input
+                className="input text-base sm:text-[14px]"
+                type="password"
+                autoComplete="new-password"
+                enterKeyHint="next"
+                value={newWalletPassword}
+                onChange={(event) => setNewWalletPassword(event.target.value)}
+                placeholder="Enter new password"
+                disabled={changePasswordBusy}
+              />
+            </Field>
+            <PasswordStrengthMeter strength={newWalletPasswordStrength} />
+            <Field label="Confirm New Password">
+              <input
+                className="input text-base sm:text-[14px]"
+                type="password"
+                autoComplete="new-password"
+                enterKeyHint="done"
+                value={confirmWalletPassword}
+                onChange={(event) => setConfirmWalletPassword(event.target.value)}
+                placeholder="Repeat new password"
+                disabled={changePasswordBusy}
+              />
+            </Field>
+            <ErrorText message={changePasswordError ?? ""} />
+            <ModalFooter
+              primary={
+                <Button
+                  type="submit"
+                  loading={changePasswordBusy}
+                  loadingLabel="Changing password"
+                  disabled={
+                    !currentWalletPassword ||
+                    !newWalletPassword ||
+                    !confirmWalletPassword
+                  }
+                >
+                  Change Password
+                </Button>
+              }
             />
-          </Field>
-          <Field label="New Password" hint="12+ characters; avoid common or predictable passwords">
-            <input
-              className="input text-base sm:text-[14px]"
-              type="password"
-              autoComplete="new-password"
-              value={newWalletPassword}
-              onChange={(event) => setNewWalletPassword(event.target.value)}
-              placeholder="Enter new password"
-              disabled={changePasswordBusy}
-            />
-          </Field>
-          <PasswordStrengthMeter strength={newWalletPasswordStrength} />
-          <Field label="Confirm New Password">
-            <input
-              className="input text-base sm:text-[14px]"
-              type="password"
-              autoComplete="new-password"
-              value={confirmWalletPassword}
-              onChange={(event) => setConfirmWalletPassword(event.target.value)}
-              placeholder="Repeat new password"
-              disabled={changePasswordBusy}
-            />
-          </Field>
-          <ErrorText message={changePasswordError ?? ""} />
-          <Button
-            className="w-full"
-            type="submit"
-            loading={changePasswordBusy}
-            disabled={
-              changePasswordBusy ||
-              !currentWalletPassword ||
-              !newWalletPassword ||
-              !confirmWalletPassword
-            }
-          >
-            Change Password
-          </Button>
+          </ModalBody>
         </form>
       </Modal>
 
       <Modal
         open={passkeyDialog !== null}
-        onClose={() => {
-          if (passkeyBusy) return;
-          setPasskeyDialog(null);
-          setPasskeyPassword("");
-          setPasskeyError(null);
-        }}
-        dismissable={!passkeyBusy}
+        onClose={closePasskeyDialog}
+        presentation={passkeyVariant === "remove" ? "alert" : "auto"}
+        busy={passkeyBusy}
+        busyReason="Wait for the passkey change to finish before closing."
+        initialFocus={passkeyPasswordRef}
       >
-        <ModalHeader
-          title={passkeyDialog === "remove" ? "Remove Passkey Unlock?" : "Enable Face ID / Touch ID"}
-          subtitle="Origin-bound with a wrapper stored by this app"
-          onClose={passkeyBusy ? undefined : () => {
-            setPasskeyDialog(null);
-            setPasskeyPassword("");
-            setPasskeyError(null);
-          }}
-        />
-        <div className="space-y-4 p-4 sm:p-6">
-          {passkeyDialog === "remove" ? (
-            <>
-              <p className="text-[13.5px] leading-relaxed text-neutral-300">
-                This removes the local wrapper that lets this device unlock your vault. It does not
-                delete a passkey entry from iCloud Keychain or change your wallet password.
-              </p>
-              <p className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 text-[12.5px] leading-relaxed text-neutral-400">
-                Your password and encrypted backup remain the recovery path.
-              </p>
-              <Field label="Wallet Password" hint="Required before removing device unlock">
-                <input
-                  className="input text-base sm:text-[14px]"
-                  type="password"
-                  autoComplete="current-password"
-                  value={passkeyPassword}
-                  onChange={(event) => setPasskeyPassword(event.target.value)}
-                  placeholder="Enter password"
-                  disabled={passkeyBusy}
+        {passkeyVariant === "remove" ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleRemovePasskey();
+            }}
+          >
+            <AlertContent
+              title="Remove Passkey Unlock?"
+              message="This removes the local wrapper that lets this device unlock your vault. It does not delete a passkey entry from iCloud Keychain or change your wallet password."
+              actions={
+                <ModalFooter
+                  secondary={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={passkeyBusy}
+                      onClick={closePasskeyDialog}
+                    >
+                      Cancel
+                    </Button>
+                  }
+                  primary={
+                    <Button
+                      type="submit"
+                      variant="danger"
+                      loading={passkeyBusy}
+                      loadingLabel="Removing passkey"
+                      disabled={!passkeyPassword}
+                    >
+                      Remove Passkey
+                    </Button>
+                  }
                 />
-              </Field>
-              <ErrorText message={passkeyError ?? ""} />
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  variant="ghost"
-                  disabled={passkeyBusy}
-                  onClick={() => {
-                    setPasskeyDialog(null);
-                    setPasskeyPassword("");
-                    setPasskeyError(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="danger"
-                  loading={passkeyBusy}
-                  disabled={!passkeyPassword || passkeyBusy}
-                  onClick={() => void handleRemovePasskey()}
-                >
-                  Remove
-                </Button>
+              }
+            >
+              <div className="space-y-3">
+                <p className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 text-[12.5px] leading-relaxed text-neutral-400">
+                  Your password and encrypted backup remain the recovery path.
+                </p>
+                <Field label="Wallet Password" hint="Required before removing device unlock">
+                  <input
+                    ref={passkeyPasswordRef}
+                    className="input text-base sm:text-[14px]"
+                    type="password"
+                    autoComplete="current-password"
+                    enterKeyHint="done"
+                    value={passkeyPassword}
+                    onChange={(event) => setPasskeyPassword(event.target.value)}
+                    placeholder="Enter password"
+                    disabled={passkeyBusy}
+                  />
+                </Field>
+                <ErrorText message={passkeyError ?? ""} />
               </div>
-            </>
-          ) : (
-            <>
-              <p className="text-[13.5px] leading-relaxed text-neutral-300">
-                Your device will create a passkey and use Face ID or Touch ID to derive a key that
-                unwraps this vault locally. No account, server, or cloud wallet service is required.
-              </p>
-              <p className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 text-[12.5px] leading-relaxed text-neutral-400">
-                Your password and encrypted backup remain the recovery path. Passkey unlock works
-                only from this exact app origin, so keep both.
-              </p>
-              <Field label="Wallet Password" hint="Confirms access before adding this device">
-                <input
-                  className="input text-base sm:text-[14px]"
-                  type="password"
-                  autoComplete="current-password"
-                  value={passkeyPassword}
-                  onChange={(event) => setPasskeyPassword(event.target.value)}
-                  placeholder="Enter password"
-                  disabled={passkeyBusy}
+            </AlertContent>
+          </form>
+        ) : (
+          <>
+            <ModalHeader
+              title="Enable Face ID / Touch ID"
+              subtitle="Origin-bound with a wrapper stored by this app"
+              onClose={closePasskeyDialog}
+            />
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleEnablePasskey();
+              }}
+            >
+              <ModalBody>
+                <p className="text-[13.5px] leading-relaxed text-neutral-300">
+                  Your device will create a passkey and use Face ID or Touch ID to derive a key that
+                  unwraps this vault locally. No account, server, or cloud wallet service is required.
+                </p>
+                <p className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 text-[12.5px] leading-relaxed text-neutral-400">
+                  Your password and encrypted backup remain the recovery path. Passkey unlock works
+                  only from this exact app origin, so keep both.
+                </p>
+                <Field label="Wallet Password" hint="Confirms access before adding this device">
+                  <input
+                    ref={passkeyPasswordRef}
+                    className="input text-base sm:text-[14px]"
+                    type="password"
+                    autoComplete="current-password"
+                    enterKeyHint="done"
+                    value={passkeyPassword}
+                    onChange={(event) => setPasskeyPassword(event.target.value)}
+                    placeholder="Enter password"
+                    disabled={passkeyBusy}
+                  />
+                </Field>
+                <ErrorText message={passkeyError ?? ""} />
+                <ModalFooter
+                  primary={
+                    <Button
+                      type="submit"
+                      loading={passkeyBusy}
+                      loadingLabel="Enabling passkey"
+                      disabled={!passkeyPassword}
+                    >
+                      Enable Face ID / Touch ID
+                    </Button>
+                  }
                 />
-              </Field>
-              <ErrorText message={passkeyError ?? ""} />
-              <Button
-                className="w-full !py-3 text-[14px] font-semibold"
-                loading={passkeyBusy}
-                disabled={!passkeyPassword || passkeyBusy}
-                onClick={() => void handleEnablePasskey()}
-              >
-                Enable Face ID / Touch ID
-              </Button>
-            </>
-          )}
-        </div>
+              </ModalBody>
+            </form>
+          </>
+        )}
       </Modal>
 
       {/* Reset Confirmation Modal */}
@@ -2516,12 +2607,7 @@ function RowButton({
       onClick={onClick}
     >
       {tint ? (
-        <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
-          style={{ background: tint }}
-        >
-          {icon}
-        </span>
+        <IconTile tint={tint} icon={icon} />
       ) : (
         icon
       )}
@@ -2534,7 +2620,7 @@ function RowButton({
           {label}
         </span>
         {sub && (
-          <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
+          <span className="line-clamp-2 text-[12px] leading-tight text-neutral-400">
             {sub}
           </span>
         )}
@@ -2557,28 +2643,5 @@ function RowButton({
         </svg>
       )}
     </Tag>
-  );
-}
-
-function Notice({ tone, children }: { tone?: "pos" | "warn"; children: React.ReactNode }) {
-  return (
-    <div
-      className="mt-4 rounded-2xl px-4 py-3 text-[13px] leading-relaxed border"
-      style={{
-        background: tone === "pos"
-          ? "rgba(48,209,88,0.08)"
-          : tone === "warn"
-            ? "rgba(255,159,10,0.08)"
-            : "rgba(255,255,255,0.04)",
-        borderColor: tone === "pos"
-          ? "rgba(48,209,88,0.2)"
-          : tone === "warn"
-            ? "rgba(255,159,10,0.25)"
-            : "rgba(255,255,255,0.08)",
-        color: tone === "pos" ? "#30D158" : tone === "warn" ? "#FF9F0A" : "var(--color-muted)",
-      }}
-    >
-      {children}
-    </div>
   );
 }

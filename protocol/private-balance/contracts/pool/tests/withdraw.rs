@@ -1,11 +1,13 @@
 mod common;
 
 use common::{MockNativeTokenClient, register_pool};
-use private_balance_pool::{OutputPackage, PrivateBalancePoolClient, WithdrawAction};
+use private_balance_pool::{
+    AssetStatus, OutputPackage, PoolError, PrivateBalancePoolClient, WithdrawAction,
+};
 use private_balance_protocol::constants::ROOT_WINDOW_LEDGERS;
 use private_balance_verifier::types::ProofBytes;
 use serde::Deserialize;
-use soroban_sdk::{BytesN, Env, address_payload::AddressPayload};
+use soroban_sdk::{BytesN, Env, address_payload::AddressPayload, testutils::Ledger as _};
 use std::fs;
 
 #[derive(Deserialize)]
@@ -74,8 +76,6 @@ fn test_pool_withdrawal() {
     let pool_client = PrivateBalancePoolClient::new(&env, &fixture.pool_id);
     let recipient = AddressPayload::AccountIdPublicKeyEd25519(BytesN::from_array(&env, &[5; 32]))
         .to_address(&env);
-    let relayer = AddressPayload::AccountIdPublicKeyEd25519(BytesN::from_array(&env, &[6; 32]))
-        .to_address(&env);
 
     // Read proofs-v1.json
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../vectors/proofs-v1.json");
@@ -88,13 +88,19 @@ fn test_pool_withdrawal() {
 
     let ctx_bytes = field_str_to_bytes(&wd_item.public_signals[0]);
     let anchor_root_bytes = field_str_to_bytes(&wd_item.public_signals[3]);
-    let nf0_bytes = field_str_to_bytes(&wd_item.public_signals[9]);
-    let out_cm0_bytes = field_str_to_bytes(&wd_item.public_signals[11]);
+    let nf0_bytes = field_str_to_bytes(&wd_item.public_signals[6]);
+    let nf1_bytes = field_str_to_bytes(&wd_item.public_signals[7]);
+    let out_cm0_bytes = field_str_to_bytes(&wd_item.public_signals[8]);
+    let out_cm1_bytes = field_str_to_bytes(&wd_item.public_signals[9]);
+    let out_cm2_bytes = field_str_to_bytes(&wd_item.public_signals[10]);
 
     let context_field = BytesN::from_array(&env, &ctx_bytes);
     let anchor_root = BytesN::from_array(&env, &anchor_root_bytes);
     let nf0 = BytesN::from_array(&env, &nf0_bytes);
+    let nf1 = BytesN::from_array(&env, &nf1_bytes);
     let out_cm0 = BytesN::from_array(&env, &out_cm0_bytes);
+    let out_cm1 = BytesN::from_array(&env, &out_cm1_bytes);
+    let out_cm2 = BytesN::from_array(&env, &out_cm2_bytes);
 
     assert_eq!(pool_client.config().context_field, context_field);
 
@@ -108,24 +114,31 @@ fn test_pool_withdrawal() {
     });
 
     let action = WithdrawAction {
-        asset: fixture.asset.clone(),
         action_nonce: BytesN::from_array(&env, &[0x33; 32]),
         anchor_root,
         nullifier_0: nf0.clone(),
-        nullifier_1: BytesN::from_array(&env, &[0; 32]),
+        nullifier_1: nf1,
         output_0: OutputPackage {
             commitment: out_cm0,
             recipient_envelope: BytesN::from_array(&env, &[0xdd; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xde; 157]),
         },
-        output_1: OutputPackage::dummy(&env),
+        output_1: OutputPackage {
+            commitment: out_cm1,
+            recipient_envelope: BytesN::from_array(&env, &[0xdf; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xe0; 157]),
+        },
+        output_2: OutputPackage {
+            commitment: out_cm2,
+            recipient_envelope: BytesN::from_array(&env, &[0xe1; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xe2; 157]),
+        },
+        asset_index: 0,
         public_value: 7_000_000,
         public_recipient: recipient.clone(),
-        relayer_fee: 2_000,
-        relayer: relayer.clone(),
     };
 
     assert_eq!(token_client.balance(&recipient), 0);
-    assert_eq!(token_client.balance(&relayer), 0);
     assert!(!env.as_contract(&fixture.pool_id, || {
         private_balance_pool::nullifier::is_spent(&env, &nf0)
     }));
@@ -143,16 +156,108 @@ fn test_pool_withdrawal() {
     assert_eq!(pool_client.tree_state().next_index, 0);
 
     token_client.mint(&fixture.pool_id, &4_000_000);
+    pool_client.set_asset_status(&0, &AssetStatus::ExitOnly);
 
     // Execute withdraw of 7,000,000 stroops
     let action_index = pool_client.withdraw(&action, &proof);
 
     assert_eq!(action_index, 0);
     assert_eq!(token_client.balance(&recipient), 7_000_000);
-    assert_eq!(token_client.balance(&relayer), 2_000);
-    assert_eq!(token_client.balance(&fixture.pool_id), 2_998_000);
+    assert_eq!(token_client.balance(&fixture.pool_id), 3_000_000);
     assert!(env.as_contract(&fixture.pool_id, || {
         private_balance_pool::nullifier::is_spent(&env, &nf0)
     }));
-    assert_eq!(pool_client.tree_state().next_index, 2);
+    assert_eq!(pool_client.tree_state().next_index, 3);
+}
+
+#[test]
+fn paused_idle_pool_can_refresh_current_root_and_withdraw() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let fixture = register_pool(&env);
+    let token_client = MockNativeTokenClient::new(&env, &fixture.asset);
+    let pool_client = PrivateBalancePoolClient::new(&env, &fixture.pool_id);
+    let recipient = AddressPayload::AccountIdPublicKeyEd25519(BytesN::from_array(&env, &[5; 32]))
+        .to_address(&env);
+
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../vectors/proofs-v1.json");
+    let json_str = fs::read_to_string(path).expect("read proofs-v1.json");
+    let file: ProofVectorFile = serde_json::from_str(&json_str).expect("parse proofs-v1.json");
+    let wd_item = &file.proofs[2];
+    let proof = proof_from_snarkjs(&wd_item.proof).to_contract_proof(&env);
+    let anchor_root = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[3]));
+    let nf0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[6]));
+    let nf1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[7]));
+    let out_cm0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[8]));
+    let out_cm1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[9]));
+    let out_cm2 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[10]));
+    let action = WithdrawAction {
+        action_nonce: BytesN::from_array(&env, &[0x33; 32]),
+        anchor_root: anchor_root.clone(),
+        nullifier_0: nf0,
+        nullifier_1: nf1,
+        output_0: OutputPackage {
+            commitment: out_cm0,
+            recipient_envelope: BytesN::from_array(&env, &[0xdd; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xde; 157]),
+        },
+        output_1: OutputPackage {
+            commitment: out_cm1,
+            recipient_envelope: BytesN::from_array(&env, &[0xdf; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xe0; 157]),
+        },
+        output_2: OutputPackage {
+            commitment: out_cm2,
+            recipient_envelope: BytesN::from_array(&env, &[0xe1; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xe2; 157]),
+        },
+        asset_index: 0,
+        public_value: 7_000_000,
+        public_recipient: recipient.clone(),
+    };
+
+    token_client.mint(&fixture.pool_id, &10_000_000);
+    let anchored = env.as_contract(&fixture.pool_id, || {
+        let mut tree = private_balance_pool::storage::get_tree(&env);
+        tree.current_root = anchor_root;
+        private_balance_pool::storage::set_tree(&env, &tree);
+        private_balance_pool::storage::add_known_root(&env, &tree.current_root, ROOT_WINDOW_LEDGERS)
+            .unwrap()
+    });
+    pool_client.set_deposits_paused(&true);
+    env.ledger()
+        .set_sequence_number(anchored.valid_until_ledger + 1);
+
+    assert_eq!(
+        env.as_contract(&fixture.pool_id, || {
+            private_balance_pool::storage::known_root(&env, &action.anchor_root)
+        }),
+        Err(PoolError::RootExpired),
+        "the setup must reproduce the expired current root",
+    );
+    let refreshed = pool_client.touch_root();
+    assert!(
+        env.auths().is_empty(),
+        "root refresh must stay permissionless"
+    );
+    assert_eq!(refreshed.created_at_ledger, env.ledger().sequence());
+    assert_eq!(
+        refreshed.valid_until_ledger,
+        env.ledger().sequence() + ROOT_WINDOW_LEDGERS,
+    );
+    assert_eq!(
+        pool_client.touch_root(),
+        refreshed,
+        "same-ledger refresh is idempotent"
+    );
+    assert!(pool_client.deposits_paused());
+
+    // Let even the explicit refresh expire. The value-moving action must
+    // refresh the current root atomically instead of depending on a separate
+    // transaction or an enabled deposit path.
+    env.ledger()
+        .set_sequence_number(refreshed.valid_until_ledger + 1);
+    assert_eq!(pool_client.withdraw(&action, &proof), 0);
+    assert_eq!(token_client.balance(&recipient), 7_000_000);
 }

@@ -19,9 +19,9 @@ import {
   normalizeStellarAmount,
   stroopsToAmount,
 } from '../../../lib/stellar-domain';
+import { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
 
 const ANNOUNCEMENT_STROOPS = 1n;
-export const STEALTH_SWEEP_FEE_BUFFER_STROOPS = 1_000_000n;
 const OPERATION_COUNT = 3n;
 const MAX_INT64 = 9_223_372_036_854_775_807n;
 
@@ -29,6 +29,7 @@ export interface BuildStealthPaymentTransactionInput {
   sourceAccount: Account;
   metaAddress: string;
   network: StealthNetwork;
+  deploymentBindingHash: Uint8Array;
   networkPassphrase: string;
   announcerPublicKey: string;
   amount: string;
@@ -83,7 +84,8 @@ export async function buildStealthPaymentTransaction(
   const baseFeeStroops = positiveStroops(input.baseFeeStroops, 'Stealth payment base fee');
   const reserveStroops = baseReserveStroops * 2n;
   const networkFeeStroops = baseFeeStroops * OPERATION_COUNT;
-  const oneTimeAccountStroops = reserveStroops + STEALTH_SWEEP_FEE_BUFFER_STROOPS;
+  const sweepFeeBufferStroops = baseFeeStroops + MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS;
+  const oneTimeAccountStroops = reserveStroops + sweepFeeBufferStroops;
   const totalDebitStroops = amountStroops + oneTimeAccountStroops + ANNOUNCEMENT_STROOPS + networkFeeStroops;
   if (totalDebitStroops > MAX_INT64) throw new Error('Stealth payment total exceeds Stellar\'s amount range');
 
@@ -95,7 +97,11 @@ export async function buildStealthPaymentTransaction(
   if (!Number.isSafeInteger(nowSeconds) || nowSeconds < 0) {
     throw new Error('Stealth payment clock is invalid');
   }
-  const metaAddress = await decodeStealthMetaAddress(input.metaAddress, input.network);
+  const metaAddress = await decodeStealthMetaAddress(
+    input.metaAddress,
+    input.network,
+    input.deploymentBindingHash,
+  );
   const ephemeralPrivateKey = Uint8Array.from(input.ephemeralPrivateKey ?? randomBytes32());
   if (ephemeralPrivateKey.length !== 32) throw new Error('Stealth ephemeral private key must be 32 bytes');
 
@@ -132,7 +138,7 @@ export async function buildStealthPaymentTransaction(
       destinationPublicKey,
       ephemeralPublicKey: recipient.ephemeralPublicKey.slice(),
       reserveStroops: reserveStroops.toString(),
-      sweepFeeBufferStroops: STEALTH_SWEEP_FEE_BUFFER_STROOPS.toString(),
+      sweepFeeBufferStroops: sweepFeeBufferStroops.toString(),
       amountStroops: amountStroops.toString(),
       announcementStroops: '1',
       networkFeeStroops: networkFeeStroops.toString(),

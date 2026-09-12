@@ -54,7 +54,9 @@ test('private amounts parse and format exact generic atomic units', () => {
   assert.equal(parsePrivateAmount('1.234567', 6), 1234567n);
   assert.equal(parsePrivateAmount('42', 0), 42n);
   assert.equal(parsePrivateAmount('0.000000000000000001', 18), 1n);
+  assert.equal(parsePrivateAmount('000.100000', 6), 100000n);
   assert.throws(() => parsePrivateAmount('1.0000001', 6), /decimal places/i);
   assert.throws(() => parsePrivateAmount('0', 6), /greater than zero/i);
+  assert.throws(() => parsePrivateAmount('000', 6), /greater than zero/i);
   assert.throws(() => formatPrivateBalanceAmount(-1n, 7), /non-negative/i);
 });

@@ -1,5 +1,6 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { APPLICATION_VERSION } from "../src/lib/brand";
+import { APPLICATION_VERSION, SOURCE_REPOSITORY_URL } from "../src/lib/brand";
 import { importTestWallet, installNetworkFixtures, installQuietEventSource } from "./fixtures";
 
 const routes = [
@@ -61,16 +62,49 @@ for (const route of routes) {
   });
 }
 
-test("the wallet entry page shows the same release identity", async ({ page }) => {
+async function expectSourceAfterChangelog(page: Page, browserName: string) {
+  const navigation = page.getByRole("navigation", { name: "Legal", exact: true });
+  const changelog = navigation.getByRole("link", { name: "Changelog", exact: true });
+  const source = navigation.getByRole("link", { name: "Source", exact: true });
+  await expect(changelog).toHaveAttribute("href", "/changelog");
+  await expect(source).toHaveAttribute("href", SOURCE_REPOSITORY_URL);
+  for (const width of [320, 390, 1280]) {
+    await page.setViewportSize({ width, height: 720 });
+    await source.scrollIntoViewIfNeeded();
+    await expect.poll(async () => {
+      const before = await changelog.boundingBox();
+      const after = await source.boundingBox();
+      return !!before && !!after && Math.abs(before.y - after.y) <= 1 && after.x >= before.x + before.width;
+    }, { message: "Source must remain immediately right of Changelog on the same row" }).toBe(true);
+    if (width === 1280) {
+      await expect.poll(() => navigation.getByRole("link").evaluateAll(links => {
+        const top = links[0]?.getBoundingClientRect().top ?? 0;
+        return links.every(link => Math.abs(link.getBoundingClientRect().top - top) <= 1);
+      }), { message: "The desktop login links must stay on the original row, not move Changelog down" }).toBe(true);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+  await changelog.focus();
+  // Match the installed WebKit's native Option-Tab preference for links.
+  await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
+  await expect(source).toBeFocused();
+  const audit = await new AxeBuilder({ page }).include("footer").analyze();
+  expect(audit.violations
+    .filter(({ impact }) => impact === "critical" || impact === "serious")
+    .map(({ id, impact, nodes }) => ({ id, impact, nodes: nodes.length }))).toEqual([]);
+}
+
+test("the wallet entry page shows the same release identity", async ({ page, browserName }) => {
   await page.setViewportSize({ width: 320, height: 720 });
   const response = await page.goto("/app", { waitUntil: "domcontentloaded" });
 
   expect(response?.status()).toBe(200);
   await expectReleaseIdentity(page, "viewport");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await expectSourceAfterChangelog(page, browserName);
 });
 
-test("locked authentication keeps the release identity above the fold", async ({ page }) => {
+test("locked authentication keeps the release identity above the fold", async ({ page, browserName }) => {
   await page.setViewportSize({ width: 320, height: 720 });
   await importTestWallet(page);
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -78,6 +112,7 @@ test("locked authentication keeps the release identity above the fold", async ({
   await expect(page.getByRole("heading", { level: 1, name: "StellarKey" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Unlock Vault" })).toBeVisible();
   await expectReleaseIdentity(page, "viewport");
+  await expectSourceAfterChangelog(page, browserName);
 });
 
 test("the skip link appears for keyboards but cannot overlay touch-first screens", async ({ page }, testInfo) => {
@@ -162,7 +197,7 @@ test("the changelog publishes the current release as semantic text", async ({ pa
     expect(category).toMatch(/^(Added|Changed|Deprecated|Removed|Fixed|Security)$/);
   }
   await expect(currentRelease.getByRole("heading", { level: 2, name: APPLICATION_VERSION })).toBeVisible();
-  await expect(currentRelease.locator('time[datetime="2026-09-01"]')).toHaveText("1 September 2026");
+  await expect(currentRelease.locator('time[datetime="2026-09-12"]')).toHaveText("12 September 2026");
   await expect(page.getByRole("link", { name: /source repository/i })).toHaveAttribute(
     "href",
     "https://github.com/stellarchain/io.stellarkey",

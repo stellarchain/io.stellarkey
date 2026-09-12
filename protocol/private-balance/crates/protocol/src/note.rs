@@ -14,7 +14,8 @@ pub struct NotePlaintext {
     pub rho: [u8; 32],
     pub memo_length: u8,
     pub memo: [u8; MEMO_BYTES],
-    pub reserved: [u8; 15],
+    pub asset_index: u32,
+    pub reserved: [u8; 11],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +37,7 @@ pub enum NoteError {
 impl NotePlaintext {
     pub fn new(
         value: u64,
+        asset_index: u32,
         diversifier: [u8; 4],
         owner_commitment: [u8; 32],
         rho: [u8; 32],
@@ -66,7 +68,8 @@ impl NotePlaintext {
             rho,
             memo_length: memo_bytes.len() as u8,
             memo,
-            reserved: [0u8; 15],
+            asset_index,
+            reserved: [0u8; 11],
         })
     }
 
@@ -80,7 +83,8 @@ impl NotePlaintext {
         out[48..80].copy_from_slice(&self.rho);
         out[80] = self.memo_length;
         out[81..113].copy_from_slice(&self.memo);
-        out[113..128].copy_from_slice(&self.reserved);
+        out[113..117].copy_from_slice(&self.asset_index.to_be_bytes());
+        out[117..128].copy_from_slice(&self.reserved);
         out
     }
 
@@ -126,9 +130,10 @@ impl NotePlaintext {
             return Err(NoteError::NonZeroMemoTail);
         }
 
-        let mut reserved = [0u8; 15];
-        reserved.copy_from_slice(&bytes[113..128]);
-        if reserved != [0u8; 15] {
+        let asset_index = u32::from_be_bytes(bytes[113..117].try_into().unwrap());
+        let mut reserved = [0u8; 11];
+        reserved.copy_from_slice(&bytes[117..128]);
+        if reserved != [0u8; 11] {
             return Err(NoteError::NonZeroReserved);
         }
 
@@ -141,6 +146,7 @@ impl NotePlaintext {
             rho,
             memo_length,
             memo,
+            asset_index,
             reserved,
         })
     }

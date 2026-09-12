@@ -64,7 +64,7 @@ fn hpke_derive_keys_from_seed(
     let (root, _) = hpke_derive_keypair(&ikm);
     let child_hkdf = Hkdf::<Sha512>::new(None, &root);
     let mut child_ikm = [0u8; 32];
-    let child_info = [b"SKSB_ADDRESS_KEY_V2".as_slice(), &[0u8; 4]].concat();
+    let child_info = [b"SKSB_ADDRESS_KEY_V1".as_slice(), &[0u8; 4]].concat();
     child_hkdf
         .expand(&child_info, &mut child_ikm)
         .expect("valid child HKDF length");

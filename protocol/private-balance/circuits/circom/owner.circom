@@ -24,7 +24,7 @@ template DiversifiedOwnerCommitment() {
     signal input diversifier;
     signal output out;
 
-    var DOMAIN_DIVERSIFIED_OWNER = 10092330331475627654316475538447767172665893934138852183807994260952964801257;
+    var DOMAIN_DIVERSIFIED_OWNER = 14648730730437137655665581460901063522972457499366870315302424102560973417853;
     component hasher = Poseidon2Hash(3);
     hasher.in[0] <== DOMAIN_DIVERSIFIED_OWNER;
     hasher.in[1] <== baseOwnerCommitment;

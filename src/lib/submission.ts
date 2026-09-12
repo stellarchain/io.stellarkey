@@ -25,6 +25,11 @@ export type SubmissionPreparedCallback = (
   prepared: PreparedSubmissionIdentity,
 ) => void | Promise<void>;
 
+/** False defers domain cleanup and retains the existing canonical recovery handle. */
+export type SubmissionRejectedCallback = (
+  prepared: PreparedSubmissionIdentity,
+) => void | false | Promise<void | false>;
+
 export async function runPreparedBroadcast<T>(options: {
   broadcast: (onPrepared: SubmissionPreparedCallback) => Promise<T>;
   prepare: SubmissionPreparedCallback;
@@ -74,8 +79,16 @@ export interface PendingTransaction {
   status: PendingTransactionStatus;
   createdAt: number;
   expiresAt?: number;
+  /** Untrusted retention hint only; never evidence of a transaction outcome. */
+  journalPending?: true;
   action?: PendingTransactionAction;
 }
+
+/**
+ * Old recovery records may predate exact envelope max-time persistence. Keep
+ * their automatic canonical polling bounded, then require an explicit check.
+ */
+export const LEGACY_PENDING_AUTO_POLL_MS = 10 * 60 * 1_000;
 
 export type TransactionResolutionStatus = "confirmed" | "failed";
 
@@ -242,18 +255,33 @@ export interface PendingTransactionPresentation {
   manualCheck: boolean;
 }
 
+export function pendingTransactionNeedsManualCheck(
+  transaction: Pick<PendingTransaction, "createdAt" | "expiresAt">,
+  nowMs = Date.now(),
+): boolean {
+  if (transaction.expiresAt !== undefined) {
+    return transaction.expiresAt * 1_000 <= nowMs;
+  }
+  return nowMs - transaction.createdAt >= LEGACY_PENDING_AUTO_POLL_MS;
+}
+
 export function pendingTransactionPresentation(
-  transaction: Pick<PendingTransaction, "hash" | "network" | "label" | "status" | "expiresAt">,
+  transaction: Pick<
+    PendingTransaction,
+    "hash" | "network" | "label" | "status" | "createdAt" | "expiresAt"
+  >,
   nowMs = Date.now(),
 ): PendingTransactionPresentation {
   const networkLabel = transaction.network === "mainnet" ? "Mainnet" : "Testnet";
-  const manualCheck = transaction.expiresAt !== undefined &&
-    transaction.expiresAt * 1000 <= nowMs;
+  const manualCheck = pendingTransactionNeedsManualCheck(transaction, nowMs);
+  const legacyExpiry = manualCheck && transaction.expiresAt === undefined;
   if (transaction.status === "status_unknown") {
     return {
       title: `${transaction.label} status unknown`,
       detail: manualCheck
-        ? `The envelope expired before Horizon status could be verified on ${networkLabel}. Do not resubmit blindly. Use Check Status for a bounded canonical-hash lookup.`
+        ? legacyExpiry
+          ? `This legacy recovery record has no exact envelope expiry. Automatic checks stopped after a bounded interval on ${networkLabel}. Do not resubmit blindly. Use Check Status for a bounded canonical-hash lookup.`
+          : `The envelope expired before Horizon status could be verified on ${networkLabel}. Do not resubmit blindly. Use Check Status for a bounded canonical-hash lookup.`
         : `Horizon did not confirm whether this transaction was accepted on ${networkLabel}. Do not resubmit blindly. Tracking canonical hash ${transaction.hash}.`,
       caution: true,
       manualCheck,
@@ -263,7 +291,7 @@ export function pendingTransactionPresentation(
     title: `${transaction.label} confirming`,
     detail: manualCheck
       ? `Accepted by Horizon on ${networkLabel}, but final status is not indexed. Use Check Status for a bounded canonical-hash lookup.`
-      : `Accepted by Horizon on ${networkLabel}. Tracking canonical hash ${transaction.hash}.`,
+      : `Accepted by Horizon on ${networkLabel}. Tracking ${transaction.hash.slice(0, 6)}…${transaction.hash.slice(-6)}.`,
     caution: false,
     manualCheck,
   };
@@ -301,6 +329,7 @@ export function parsePendingTransactions(serialized: string | null): PendingTran
       label: entry.label,
       status: entry.status,
       createdAt: entry.createdAt,
+      ...(entry.journalPending === true ? { journalPending: true as const } : {}),
       ...(typeof entry.expiresAt === "number" &&
         Number.isSafeInteger(entry.expiresAt) &&
         entry.expiresAt >= 0
@@ -366,17 +395,22 @@ export function persistPendingTransactionQueue(
 
 /** Persist one recovery identity without replacing records written by another tab. */
 export function persistDurablePendingTransaction(
-  storage: Pick<Storage, "setItem">,
+  storage: Pick<Storage, "getItem" | "setItem">,
   key: string,
   record: PendingTransaction,
 ): PendingTransaction {
   const [sanitized] = parsePendingTransactions(JSON.stringify([record]));
   if (!sanitized) throw new Error("Pending transaction recovery record is invalid.");
-  storage.setItem(
-    pendingTransactionStorageKey(key, sanitized),
-    serializePendingTransactions([sanitized]),
+  const storageKey = pendingTransactionStorageKey(key, sanitized);
+  const [merged] = upsertPendingTransaction(
+    parsePendingTransactions(storage.getItem(storageKey)),
+    sanitized,
   );
-  return sanitized;
+  storage.setItem(
+    storageKey,
+    serializePendingTransactions([merged]),
+  );
+  return merged;
 }
 
 /** Remove only the resolved envelope, preserving recovery records from other tabs. */
@@ -386,6 +420,54 @@ export function removeDurablePendingTransaction(
   record: Pick<PendingTransaction, "hash" | "network">,
 ): void {
   storage.removeItem(pendingTransactionStorageKey(key, record));
+}
+
+function existingDurablePendingTransaction(
+  storage: Pick<Storage, "getItem">,
+  key: string,
+  record: Pick<PendingTransaction, "hash" | "network">,
+): PendingTransaction | null {
+  const [stored] = parsePendingTransactions(storage.getItem(pendingTransactionStorageKey(key, record)));
+  return stored?.network === record.network && stored.hash === record.hash.toLowerCase() ? stored : null;
+}
+
+/**
+ * Canonical resolution keeps journal-owned recovery until its authenticated
+ * consumer commits. An unmatched hint remains conservative: another tab may
+ * still be committing intent, so absence alone cannot release its ownership.
+ */
+export function completeDurablePendingTransaction(
+  storage: Pick<Storage, "getItem" | "removeItem">,
+  key: string,
+  record: Pick<PendingTransaction, "hash" | "network">,
+): void {
+  if (existingDurablePendingTransaction(storage, key, record)?.journalPending) return;
+  removeDurablePendingTransaction(storage, key, record);
+}
+
+/** Called only after an authenticated domain journal has durably recorded a terminal outcome. */
+export function acknowledgeDurableSubmissionJournal(
+  storage: Pick<Storage, "getItem" | "removeItem">,
+  key: string,
+  record: Pick<PendingTransaction, "hash" | "network">,
+): boolean {
+  if (!existingDurablePendingTransaction(storage, key, record)?.journalPending) return false;
+  removeDurablePendingTransaction(storage, key, record);
+  return true;
+}
+
+/** An erased journal releases ownership, not unresolved canonical tracking. Never creates a record. */
+export function releaseDurableSubmissionJournal(
+  storage: Pick<Storage, "getItem" | "setItem">,
+  key: string,
+  record: Pick<PendingTransaction, "hash" | "network">,
+): boolean {
+  const stored = existingDurablePendingTransaction(storage, key, record);
+  if (!stored?.journalPending) return false;
+  delete stored.journalPending;
+  // Ordinary persistence merges metadata and would preserve the old hint.
+  storage.setItem(pendingTransactionStorageKey(key, stored), serializePendingTransactions([stored]));
+  return true;
 }
 
 /** Restore the current per-transaction durable recovery queue. */

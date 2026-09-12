@@ -13,6 +13,9 @@ import type { ObservedPayment } from "./match";
 import { minorForAssetAmount, unitPriceE6 } from "./money";
 import { parsePaymentCreatedAt } from "./payment-time";
 import { assertPaymentReferenceAvailable, counterReference } from "./payment-reference";
+import { merchantPaymentIdentitySet, paymentTransactionIdentity } from "./payment-identity";
+import { isCurrentReceivingDestination } from "./destination";
+import { pendingReconciliationTray } from "./reconciliation-tray";
 import {
   createMerchantRoutingId,
   merchantPaymentTransport,
@@ -34,6 +37,13 @@ const MAX_SUGGESTIONS = 8;
 export interface CounterCodeCommit {
   store: MerchantStore;
   code: CounterCode;
+}
+
+export interface ConfirmCounterPaymentInput {
+  paymentId: string;
+  actor: StaffMember;
+  rates: QuoteInput[];
+  now?: number;
 }
 
 export interface CreateCounterCodeInput {
@@ -85,7 +95,9 @@ function safeTime(value: number, label: string): number {
 }
 
 function currentActor(store: MerchantStore, actor: StaffMember): StaffMember {
-  const member = store.staff.find((entry) => entry.id === actor.id);
+  const member = store.staff.find(
+    (entry) => entry.id === actor.id && entry.id === store.activeStaffId,
+  );
   if (!member?.active || !member.permissions.takePayment) {
     throw new Error(`${actor.name || "This staff member"} is not allowed to manage counter codes.`);
   }
@@ -387,23 +399,32 @@ export function reconcileCounterPayments(
   input: ReconcileCounterPaymentsInput,
 ): { store: MerchantStore; unclaimed: ObservedPayment[] } {
   const now = safeTime(input.now ?? Date.now(), "Counter-code reconciliation time");
-  const claimedIds = new Set(store.counterPayments.map((entry) => entry.id));
-  let counterCodes = store.counterCodes;
-  const counterPayments = [...store.counterPayments];
+  const claimedIds = new Set([
+    ...store.counterPayments.map((entry) => entry.id),
+    ...store.paymentReconciliations.map((record) => record.id),
+  ]);
+  const claimedIdentities = merchantPaymentIdentitySet(store);
+  let paymentReconciliations = store.paymentReconciliations;
   const unclaimed: ObservedPayment[] = [];
 
   for (const payment of input.payments) {
     if (claimedIds.has(payment.id)) continue;
+    const transactionIdentity = paymentTransactionIdentity(input.network, payment);
+    if (claimedIdentities.has(transactionIdentity)) {
+      unclaimed.push(payment);
+      continue;
+    }
     const paymentAt = parsePaymentCreatedAt(payment.createdAt);
     if (paymentAt === null) {
       unclaimed.push(payment);
       continue;
     }
     const codeIndex = !payment.routingConflict && payment.routingId
-      ? counterCodes.findIndex(
+      ? store.counterCodes.findIndex(
           (code) =>
             code.routingId === payment.routingId &&
             code.network === input.network &&
+            isCurrentReceivingDestination(store.settings, code.destination) &&
             code.destination === payment.destination &&
             paymentAt >= code.createdAt &&
             counterCodeAvailability(code, paymentAt) === "active",
@@ -413,7 +434,7 @@ export function reconcileCounterPayments(
       unclaimed.push(payment);
       continue;
     }
-    const code = counterCodes[codeIndex];
+    const code = store.counterCodes[codeIndex];
     if (!code.acceptedAssets.some((asset) => sameAsset(asset, payment.asset))) {
       unclaimed.push(payment);
       continue;
@@ -430,30 +451,114 @@ export function reconcileCounterPayments(
       unclaimed.push(payment);
       continue;
     }
-    const record: CounterPayment = {
-      id: payment.id,
-      codeId: code.id,
-      payment: { ...payment, asset: { ...payment.asset }, lane: "routing" },
-      amountMinor: priced.amountMinor,
-      quote: priced.quote,
-      seenAt: now,
-    };
-    const updated: CounterCode = {
-      ...code,
-      payments: code.payments + 1,
-      takingsMinor: code.takingsMinor + (priced.amountMinor ?? 0),
-      updatedAt: now,
-    };
-    counterCodes = counterCodes.map((entry, index) => (index === codeIndex ? updated : entry));
-    counterPayments.push(record);
+    paymentReconciliations = [
+      {
+        id: payment.id,
+        network: input.network,
+        payment: { ...payment },
+        outcome: "needs_confirmation",
+        chargeId: null,
+        orderId: null,
+        invoiceId: null,
+        counterCodeId: code.id,
+        amountMinor: priced.amountMinor,
+        reversalAmount: null,
+        observedAt: now,
+        resolution: null,
+      },
+      ...paymentReconciliations,
+    ];
     claimedIds.add(payment.id);
+    claimedIdentities.add(transactionIdentity);
   }
 
-  if (counterCodes === store.counterCodes && counterPayments.length === store.counterPayments.length) {
-    return { store, unclaimed };
-  }
+  if (paymentReconciliations === store.paymentReconciliations) return { store, unclaimed };
+  const next = { ...store, paymentReconciliations };
   return {
-    store: { ...store, counterCodes, counterPayments },
+    store: { ...next, unmatched: pendingReconciliationTray(next) },
     unclaimed,
   };
+}
+
+/** Apply a reviewed reusable-code payment exactly once under current till authority. */
+export function confirmCounterPayment(
+  store: MerchantStore,
+  input: ConfirmCounterPaymentInput,
+): MerchantStore {
+  const actor = currentActor(store, input.actor);
+  const now = safeTime(input.now ?? Date.now(), "Counter payment confirmation time");
+  const reconciliation = store.paymentReconciliations.find(
+    (entry) => entry.id === input.paymentId,
+  );
+  if (
+    !reconciliation ||
+    reconciliation.outcome !== "needs_confirmation" ||
+    reconciliation.resolution !== null ||
+    !reconciliation.counterCodeId
+  ) {
+    throw new Error("That counter payment is not awaiting confirmation.");
+  }
+  const code = store.counterCodes.find((entry) => entry.id === reconciliation.counterCodeId);
+  if (!code) throw new Error("That counter code no longer exists.");
+  const payment = reconciliation.payment;
+  if (
+    code.network !== reconciliation.network ||
+    code.destination !== store.settings.receivingPublicKey ||
+    code.destination !== payment.destination ||
+    !code.acceptedAssets.some((asset) => sameAsset(asset, payment.asset))
+  ) {
+    throw new Error("That payment no longer matches the current counter destination.");
+  }
+  const otherIdentities = merchantPaymentIdentitySet({
+    ...store,
+    paymentReconciliations: store.paymentReconciliations.filter(
+      (entry) => entry.id !== reconciliation.id,
+    ),
+  });
+  if (
+    store.counterPayments.some((entry) => entry.id === payment.id) ||
+    otherIdentities.has(paymentTransactionIdentity(reconciliation.network, payment))
+  ) {
+    throw new Error("That counter payment is already recorded.");
+  }
+  const priced = paymentMinor(code, payment, input.rates);
+  if (priced.amountMinor !== null && priced.amountMinor <= 0) {
+    throw new Error("That counter payment has no recordable value.");
+  }
+  const record: CounterPayment = {
+    id: payment.id,
+    codeId: code.id,
+    payment: { ...payment, asset: { ...payment.asset }, lane: "manual" },
+    amountMinor: priced.amountMinor,
+    quote: priced.quote,
+    seenAt: now,
+  };
+  const updated: CounterCode = {
+    ...code,
+    payments: code.payments + 1,
+    takingsMinor: code.takingsMinor + (priced.amountMinor ?? 0),
+    updatedAt: now,
+  };
+  const next = {
+    ...store,
+    counterCodes: store.counterCodes.map((entry) => entry.id === code.id ? updated : entry),
+    counterPayments: [...store.counterPayments, record],
+    paymentReconciliations: store.paymentReconciliations.map((entry) =>
+      entry.id === reconciliation.id
+        ? {
+            ...entry,
+            resolution: {
+              kind: "attached" as const,
+              staffId: actor.id,
+              staffName: actor.name,
+              at: now,
+              targetChargeId: null,
+              refundId: null,
+              targetCounterCodeId: code.id,
+            },
+          }
+        : entry,
+    ),
+  };
+  return { ...next, unmatched: pendingReconciliationTray(next) };
 }

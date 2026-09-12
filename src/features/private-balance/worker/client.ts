@@ -4,6 +4,7 @@ import {
   computeContextHash,
   decodePrivateAddress,
   type ArchiveRecordModel,
+  type MerklePathWitness,
   type MerkleTree,
 } from '@stellarkey/private-balance';
 import type { PrivateBalanceManifest } from '../../../lib/private-balance-manifest';
@@ -44,7 +45,8 @@ function zeroAttachedBuffer(buffer: ArrayBuffer): void {
 export class PrivateBalanceWorkerClient {
   private worker: Worker | null = null;
   private sessionId: string | null = null;
-  private addressPrefix: 'tks' | 'sks' | null = null;
+  private addressPrefix: 'tskpay_' | 'skpay_' | null = null;
+  private deploymentBindingHash: Uint8Array | null = null;
   private currentAddress: string | null = null;
   private nextOperation = 0;
   private dead = false;
@@ -89,16 +91,25 @@ export class PrivateBalanceWorkerClient {
     }
   }
 
-  private failWith(message: string): void {
+  private assertFreshReceiveDiversifier(diversifier: Uint8Array): void {
+    if (diversifier.every(byte => byte === 0)) {
+      this.failWith('Private Balance worker did not return a fresh private address.');
+      this.assertNotFailed();
+    }
+  }
+
+  private failWith(message: string, failure: Error = new Error(message)): void {
     if (this.dead) return;
     this.dead = true;
-    this.failure = new Error(message);
+    this.failure = failure;
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
     }
     this.sessionId = null;
     this.addressPrefix = null;
+    this.deploymentBindingHash?.fill(0);
+    this.deploymentBindingHash = null;
     this.currentAddress = null;
     for (const pending of this.pendingRequests.values()) {
       pending.cleanup?.();
@@ -194,6 +205,13 @@ export class PrivateBalanceWorkerClient {
       const abort = () => {
         const pending = this.pendingRequests.get(req.id);
         if (!pending || !this.worker) return;
+        if (req.type === 'GENERATE_PROOF') {
+          this.failWith(
+            'Private proof was cancelled. Sync again to restart the isolated worker.',
+            abortError(),
+          );
+          return;
+        }
         // Cancel only this operation. The worker drops the cancelled proof
         // and keeps its session key, so the shared client stays usable for
         // later scans and builds without a full resync.
@@ -252,6 +270,7 @@ export class PrivateBalanceWorkerClient {
     accountPublicKey: string,
     sessionRoot: Uint8Array,
     currentAddress?: string,
+    registryAssets?: ReadonlyArray<{ index: number; contractId: string }>,
   ): Promise<{ ownerCommitmentHex: string; address: string }> {
     this.assertNotFailed();
     if (
@@ -263,6 +282,17 @@ export class PrivateBalanceWorkerClient {
       throw new Error('Privacy session root must use a standalone 64-byte buffer.');
     }
     const parsedManifest = validateManifest(manifest);
+    const assets = registryAssets ?? parsedManifest.assets;
+    if (
+      assets.length < parsedManifest.assets.length
+      || assets.some((asset, index) => (
+        asset.index !== index || !StrKey.isValidContract(asset.contractId)
+      ))
+      || parsedManifest.assets.some(asset => assets[asset.index]?.contractId !== asset.contractId)
+      || new Set(assets.map(asset => asset.contractId)).size !== assets.length
+    ) {
+      throw new Error('Private asset registry is invalid or conflicts with the manifest checkpoint.');
+    }
     const networkId = hex32(parsedManifest.networkId);
     const realmId = hex32(parsedManifest.realmId);
     const poolId = new Uint8Array(StrKey.decodeContract(parsedManifest.poolContractId));
@@ -276,10 +306,17 @@ export class PrivateBalanceWorkerClient {
       poolId,
     );
     const addressPrefix = parsedManifest.networkPassphrase === MAINNET_PASSPHRASE
-      ? 'sks'
-      : 'tks';
-    const addressDiversifier = currentAddress
-      ? (await decodePrivateAddress(currentAddress, addressPrefix)).diversifier
+      ? 'skpay_'
+      : 'tskpay_';
+    const deploymentBindingHash = hex32(parsedManifest.deploymentBindingHash);
+    const storedDiversifier = currentAddress
+      ? (await decodePrivateAddress(currentAddress, addressPrefix, deploymentBindingHash)).diversifier
+      : undefined;
+    // Upgrade a legacy default in the recipient's own session. The provider
+    // records the replacement (and the old diversifier) before publishing it.
+    // Already diversified receive addresses keep their exact identity.
+    const addressDiversifier = storedDiversifier?.some(byte => byte !== 0)
+      ? storedDiversifier
       : undefined;
     const transferredRoot = sessionRoot.buffer;
     const sessionId = this.createId('session');
@@ -296,7 +333,12 @@ export class PrivateBalanceWorkerClient {
         poolId,
         accountPublicKey: accountPublicKeyBytes,
         contextField: computeContextField(contextHash),
+        deploymentBindingHash,
         addressPrefix,
+        assets: assets.map(asset => ({
+          index: asset.index,
+          contractId: asset.contractId,
+        })),
       },
       sessionRoot: transferredRoot,
       addressDiversifier,
@@ -307,7 +349,8 @@ export class PrivateBalanceWorkerClient {
         req,
         [transferredRoot],
       );
-      const decoded = await decodePrivateAddress(response.address, addressPrefix);
+      const decoded = await decodePrivateAddress(response.address, addressPrefix, deploymentBindingHash);
+      this.assertFreshReceiveDiversifier(decoded.diversifier);
       if (
         addressDiversifier &&
         decoded.diversifier.some((byte, index) => byte !== addressDiversifier[index])
@@ -315,11 +358,15 @@ export class PrivateBalanceWorkerClient {
         throw new Error('Private Balance worker restored the wrong receive address.');
       }
       this.addressPrefix = addressPrefix;
+      this.deploymentBindingHash?.fill(0);
+      this.deploymentBindingHash = deploymentBindingHash.slice();
       this.currentAddress = response.address;
       return { ownerCommitmentHex: response.ownerCommitmentHex, address: response.address };
     } catch (error) {
       if (this.sessionId === sessionId) this.sessionId = null;
       this.addressPrefix = null;
+      this.deploymentBindingHash?.fill(0);
+      this.deploymentBindingHash = null;
       this.currentAddress = null;
       throw error;
     }
@@ -337,11 +384,48 @@ export class PrivateBalanceWorkerClient {
       type: 'GENERATE_ADDRESS',
     };
     const response = await this.request<Extract<WorkerResponse, { type: 'ADDRESS_OK' }>>(req);
-    await decodePrivateAddress(response.address, this.addressPrefix);
+    const binding = this.deploymentBindingHash;
+    if (!binding) throw new Error('Private Balance worker deployment is unavailable.');
+    const decoded = await decodePrivateAddress(response.address, this.addressPrefix, binding);
+    this.assertFreshReceiveDiversifier(decoded.diversifier);
     if (response.address === this.currentAddress) {
       throw new Error('Private Balance worker returned the current receive address.');
     }
     this.currentAddress = response.address;
+    return { ownerCommitmentHex: response.ownerCommitmentHex, address: response.address };
+  }
+
+  /** Derives a one-time recovery address without rotating the receive address. */
+  public async deriveAddressForDiversifier(
+    diversifier: Uint8Array,
+  ): Promise<{ ownerCommitmentHex: string; address: string }> {
+    this.assertNotFailed();
+    if (!this.sessionId || !this.addressPrefix || !this.deploymentBindingHash) {
+      throw new Error('Private Balance worker session is not initialized.');
+    }
+    if (diversifier.length !== 4 || diversifier.every(byte => byte === 0)) {
+      throw new Error('Private address diversifier must be four bytes and nonzero.');
+    }
+    const copied = diversifier.slice();
+    const req: WorkerRequest = {
+      messageVersion: PRIVATE_BALANCE_WORKER_MESSAGE_VERSION,
+      id: this.createId('operation'),
+      sessionId: this.sessionId,
+      type: 'DERIVE_ADDRESS',
+      diversifier: copied,
+    };
+    const response = await this.request<Extract<WorkerResponse, { type: 'ADDRESS_DERIVED' }>>(req);
+    const decoded = await decodePrivateAddress(
+      response.address,
+      this.addressPrefix,
+      this.deploymentBindingHash,
+    );
+    if (decoded.diversifier.some((byte, index) => byte !== diversifier[index])) {
+      throw new Error('Private Balance worker derived the wrong recovery diversifier.');
+    }
+    if (response.address === this.currentAddress) {
+      throw new Error('Private recovery address must not reuse the current receive address.');
+    }
     return { ownerCommitmentHex: response.ownerCommitmentHex, address: response.address };
   }
 
@@ -418,7 +502,7 @@ export class PrivateBalanceWorkerClient {
   public async buildAction(
     reservationId: string,
     intent: BuildActionIntent,
-    commitments: Uint8Array[],
+    merklePaths: MerklePathWitness[],
     availableNotes: ShieldedNoteRecord[],
   ): Promise<Extract<WorkerResponse, { type: 'ACTION_PREPARED' }>> {
     this.assertNotFailed();
@@ -430,7 +514,7 @@ export class PrivateBalanceWorkerClient {
       type: 'BUILD_ACTION',
       reservationId,
       intent,
-      commitments,
+      merklePaths,
       availableNotes,
     };
     return this.request<Extract<WorkerResponse, { type: 'ACTION_PREPARED' }>>(req);
@@ -451,6 +535,8 @@ export class PrivateBalanceWorkerClient {
     }
     this.sessionId = null;
     this.addressPrefix = null;
+    this.deploymentBindingHash?.fill(0);
+    this.deploymentBindingHash = null;
     this.currentAddress = null;
     for (const pending of this.pendingRequests.values()) {
       pending.cleanup?.();

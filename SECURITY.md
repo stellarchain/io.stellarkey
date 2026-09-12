@@ -4,7 +4,7 @@ StellarKey is financial software. Please report vulnerabilities privately and av
 
 ## Supported versions
 
-The current supported release is `1.4.1`; only the latest `1.4.x` release receives security updates. When a newer production release is published, older builds should be treated as unsupported unless a release notice says otherwise. Verify the deployed commit and checksums as described in the README before testing a report.
+The current supported release is `1.5.0`; only the latest `1.5.x` release receives security updates. When a newer production release is published, older builds should be treated as unsupported unless a release notice says otherwise. Verify the deployed commit and checksums as described in the README before testing a report.
 
 ## Reporting a vulnerability
 
@@ -22,4 +22,4 @@ StellarKey cannot reverse a Stellar transaction, recover a lost recovery phrase,
 
 ## Private Balance reports
 
-Private Payments is a testnet-only preview in the production wallet and refuses Mainnet. A report may include its public pool ID, manifest or artifact hash, ledger sequence, public transaction hash, stable error code, and sanitized reproduction steps. Never include a private address, viewing key, note plaintext, witness, proof input, recovery phrase, or backup. See the [Private Balance support boundary](docs/private-balance-support.md) and [incident playbook](docs/private-balance-incident-response.md).
+Private Payments is a Testnet-only development candidate and refuses Mainnet. The authenticated catalogue publishes one current XLM/USDC pool; reports about older deployments must identify them as retired. A report may include a public pool ID, manifest or artifact hash, ledger sequence, public transaction hash, stable error code, and sanitized reproduction steps. Never include a private address, viewing key, note plaintext, witness, proof input, recovery phrase, or backup. Stellar RPC operators are third-party infrastructure and are outside this safe-harbour authorization. See the [Private Balance support boundary](docs/private-balance-support.md) and [incident playbook](docs/private-balance-incident-response.md).

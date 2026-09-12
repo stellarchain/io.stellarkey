@@ -1,7 +1,7 @@
 use ark_bn254::Fr;
 use ark_ff::{AdditiveGroup, BigInteger, Field, PrimeField};
 use private_balance_protocol::{
-    constants::{DOMAIN_MERKLE_NODE, TREE_DEPTH},
+    constants::{TREE_ARITY, TREE_CAPACITY, TREE_DEPTH, TREE_FRONTIER_WIDTH},
     field::{bytes_to_field, is_canonical_field},
     tree::{TreeError, TreeState},
 };
@@ -120,7 +120,7 @@ fn field_to_bytes(value: Fr) -> [u8; 32] {
     output
 }
 
-fn poseidon2_hash(inputs: &[[u8; 32]]) -> [u8; 32] {
+pub fn native_poseidon2_hash(inputs: &[[u8; 32]]) -> [u8; 32] {
     let field_inputs = inputs
         .iter()
         .map(|input| {
@@ -157,7 +157,7 @@ pub fn native_p2(domain: &str, fields: &[[u8; 32]]) -> [u8; 32] {
     let mut inputs = Vec::with_capacity(fields.len() + 1);
     inputs.push(domain_field);
     inputs.extend_from_slice(fields);
-    poseidon2_hash(&inputs)
+    native_poseidon2_hash(&inputs)
 }
 
 pub struct NativeTreeHashContext {
@@ -168,10 +168,7 @@ impl NativeTreeHashContext {
     pub fn new() -> Self {
         let mut empty_roots = [[0u8; 32]; TREE_DEPTH + 1];
         for depth in 0..TREE_DEPTH {
-            empty_roots[depth + 1] = native_p2(
-                DOMAIN_MERKLE_NODE,
-                &[empty_roots[depth], empty_roots[depth]],
-            );
+            empty_roots[depth + 1] = native_poseidon2_hash(&[empty_roots[depth]; TREE_ARITY]);
         }
         Self { empty_roots }
     }
@@ -180,7 +177,7 @@ impl NativeTreeHashContext {
         TreeState {
             root: self.empty_roots[TREE_DEPTH],
             next_leaf_index: 0,
-            frontier: [[0u8; 32]; TREE_DEPTH],
+            frontier: core::array::from_fn(|level| [self.empty_roots[level]; TREE_FRONTIER_WIDTH]),
         }
     }
 
@@ -190,23 +187,133 @@ impl NativeTreeHashContext {
         cm0: &[u8; 32],
         cm1: &[u8; 32],
     ) -> Result<[u8; 32], TreeError> {
-        if tree.next_leaf_index > (1u64 << TREE_DEPTH) - 2 {
+        if tree.next_leaf_index > TREE_CAPACITY - 2 {
             return Err(TreeError::TreeFull);
         }
-        debug_assert_eq!(tree.next_leaf_index & 1, 0);
-        tree.frontier[0] = *cm0;
-        let mut current = native_p2(DOMAIN_MERKLE_NODE, &[*cm0, *cm1]);
-        let mut index = tree.next_leaf_index >> 1;
-        for (level, empty_root) in self.empty_roots.iter().enumerate().take(TREE_DEPTH).skip(1) {
-            if index & 1 == 0 {
-                tree.frontier[level] = current;
-                current = native_p2(DOMAIN_MERKLE_NODE, &[current, *empty_root]);
-            } else {
-                current = native_p2(DOMAIN_MERKLE_NODE, &[tree.frontier[level], current]);
+        for leaf in [cm0, cm1] {
+            let mut current = *leaf;
+            let mut index = tree.next_leaf_index;
+            let mut level = 0;
+            loop {
+                match index % TREE_ARITY as u64 {
+                    0 => {
+                        tree.frontier[level][0] = current;
+                        break;
+                    }
+                    1 => {
+                        tree.frontier[level][1] = current;
+                        break;
+                    }
+                    2 => {
+                        current = native_poseidon2_hash(&[
+                            tree.frontier[level][0],
+                            tree.frontier[level][1],
+                            current,
+                        ]);
+                        index /= TREE_ARITY as u64;
+                        level += 1;
+                        if level == TREE_DEPTH {
+                            tree.root = current;
+                            break;
+                        }
+                    }
+                    _ => unreachable!(),
+                }
             }
-            index >>= 1;
+            tree.next_leaf_index += 1;
         }
-        tree.next_leaf_index += 2;
+
+        let mut current = self.empty_roots[0];
+        let mut index = tree.next_leaf_index;
+        for level in 0..TREE_DEPTH {
+            current = match index % TREE_ARITY as u64 {
+                0 => native_poseidon2_hash(&[
+                    current,
+                    self.empty_roots[level],
+                    self.empty_roots[level],
+                ]),
+                1 => native_poseidon2_hash(&[
+                    tree.frontier[level][0],
+                    current,
+                    self.empty_roots[level],
+                ]),
+                2 => native_poseidon2_hash(&[
+                    tree.frontier[level][0],
+                    tree.frontier[level][1],
+                    current,
+                ]),
+                _ => unreachable!(),
+            };
+            index /= TREE_ARITY as u64;
+        }
+        tree.root = current;
+        Ok(current)
+    }
+
+    pub fn append_three_commitments(
+        &self,
+        tree: &mut TreeState,
+        commitments: &[[u8; 32]; 3],
+    ) -> Result<[u8; 32], TreeError> {
+        if tree.next_leaf_index > TREE_CAPACITY - 3 {
+            return Err(TreeError::TreeFull);
+        }
+        for commitment in commitments {
+            let mut current = *commitment;
+            let mut index = tree.next_leaf_index;
+            let mut level = 0;
+            loop {
+                match index % TREE_ARITY as u64 {
+                    0 => {
+                        tree.frontier[level][0] = current;
+                        break;
+                    }
+                    1 => {
+                        tree.frontier[level][1] = current;
+                        break;
+                    }
+                    2 => {
+                        current = native_poseidon2_hash(&[
+                            tree.frontier[level][0],
+                            tree.frontier[level][1],
+                            current,
+                        ]);
+                        index /= TREE_ARITY as u64;
+                        level += 1;
+                        if level == TREE_DEPTH {
+                            tree.root = current;
+                            break;
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            tree.next_leaf_index += 1;
+        }
+
+        let mut current = self.empty_roots[0];
+        let mut index = tree.next_leaf_index;
+        for level in 0..TREE_DEPTH {
+            current = match index % TREE_ARITY as u64 {
+                0 => native_poseidon2_hash(&[
+                    current,
+                    self.empty_roots[level],
+                    self.empty_roots[level],
+                ]),
+                1 => native_poseidon2_hash(&[
+                    tree.frontier[level][0],
+                    current,
+                    self.empty_roots[level],
+                ]),
+                2 => native_poseidon2_hash(&[
+                    tree.frontier[level][0],
+                    tree.frontier[level][1],
+                    current,
+                ]),
+                _ => unreachable!(),
+            };
+            index /= TREE_ARITY as u64;
+        }
         tree.root = current;
         Ok(current)
     }

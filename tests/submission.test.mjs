@@ -63,6 +63,68 @@ function notFoundResponse() {
   return new Response(JSON.stringify({ title: "Resource Missing" }), { status: 404 });
 }
 
+test("journal retention is validated metadata, survives accepted upgrades, and never supplies a terminal result", () => {
+  const prepared = {
+    hash: "a".repeat(64), network: "testnet", label: "Synthetic", status: "status_unknown",
+    createdAt: 1, expiresAt: 2, journalPending: true,
+    resolution: "confirmed", confirmed: true,
+  };
+  const [parsed] = submission.parsePendingTransactions(JSON.stringify([prepared]));
+  assert.equal(parsed.journalPending, true);
+  assert.equal(parsed.resolution, undefined);
+  assert.equal(parsed.confirmed, undefined);
+  assert.equal(submission.submissionLifecycleStatus({ ...parsed, status: "status_unknown" }, {}), "status_unknown");
+  for (const journalPending of ["true", 1, { status: "confirmed" }]) {
+    const [invalid] = submission.parsePendingTransactions(JSON.stringify([{ ...prepared, journalPending }]));
+    assert.equal(invalid.journalPending, undefined);
+  }
+  const storage = memoryStorage();
+  submission.persistDurablePendingTransaction(storage, "synthetic", prepared);
+  const upgraded = submission.persistDurablePendingTransaction(storage, "synthetic", {
+    ...submission.pendingTransactionFromSubmission({ ...prepared, status: "accepted" }, "Synthetic"),
+  });
+  assert.equal(upgraded.journalPending, true);
+  assert.equal(upgraded.expiresAt, 2);
+  assert.equal(upgraded.status, "confirming");
+});
+
+test("durable journal acknowledgement removes only an existing journal-owned identity and is idempotent", () => {
+  assert.equal(typeof submission.acknowledgeDurableSubmissionJournal, "function");
+  const storage = memoryStorage();
+  const prepared = {
+    hash: "b".repeat(64), network: "testnet", label: "Synthetic", status: "status_unknown",
+    createdAt: 1, expiresAt: 2, journalPending: true,
+  };
+  submission.persistDurablePendingTransaction(storage, "synthetic", prepared);
+  assert.equal(submission.acknowledgeDurableSubmissionJournal(storage, "synthetic", { ...prepared, network: "mainnet" }), false);
+  assert.equal(submission.acknowledgeDurableSubmissionJournal(storage, "synthetic", prepared), true);
+  assert.equal(submission.acknowledgeDurableSubmissionJournal(storage, "synthetic", prepared), false);
+  assert.equal(submission.loadDurablePendingTransactions(storage, "synthetic").length, 0);
+  const ordinary = { ...prepared, journalPending: undefined };
+  submission.persistDurablePendingTransaction(storage, "synthetic", ordinary);
+  assert.equal(submission.acknowledgeDurableSubmissionJournal(storage, "synthetic", ordinary), false);
+  assert.equal(submission.loadDurablePendingTransactions(storage, "synthetic").length, 1);
+});
+
+test("releasing journal ownership preserves canonical recovery and never recreates a removed identity", () => {
+  assert.equal(typeof submission.releaseDurableSubmissionJournal, "function");
+  const storage = memoryStorage();
+  const prepared = {
+    hash: "c".repeat(64), network: "testnet", label: "Synthetic", status: "status_unknown",
+    createdAt: 1, expiresAt: 2, journalPending: true,
+  };
+  submission.persistDurablePendingTransaction(storage, "synthetic", prepared);
+  assert.equal(submission.releaseDurableSubmissionJournal(storage, "synthetic", prepared), true);
+  const [released] = submission.loadDurablePendingTransactions(storage, "synthetic");
+  assert.equal(released.journalPending, undefined);
+  assert.equal(released.hash, prepared.hash);
+  assert.equal(released.expiresAt, 2);
+  assert.equal(released.status, "status_unknown");
+  submission.removeDurablePendingTransaction(storage, "synthetic", prepared);
+  assert.equal(submission.releaseDurableSubmissionJournal(storage, "synthetic", prepared), false);
+  assert.equal(submission.loadDurablePendingTransactions(storage, "synthetic").length, 0);
+});
+
 test("Horizon timeout covers waiting for response headers", async (t) => {
   assert.equal(getHorizonJson.length, 4, "expected testable timeout and retry policy seams");
   t.mock.method(globalThis, "fetch", async (_url, init) =>
@@ -348,7 +410,7 @@ test("POST timeout while reading the response body becomes status unknown", asyn
   assert.equal((await submitSignedTx(transaction, "testnet", 5)).status, "status_unknown");
 });
 
-test("a hanging 429 POST body remains a definite rejection", async (t) => {
+test("a hanging 429 POST body preserves the prepared transaction as status unknown", async (t) => {
   const transaction = buildSignedTransaction();
   let calls = 0;
   t.mock.method(globalThis, "fetch", async () => {
@@ -356,11 +418,8 @@ test("a hanging 429 POST body remains a definite rejection", async (t) => {
     return new Response(new ReadableStream({ pull() {} }), { status: 429 });
   });
 
-  await assert.rejects(
-    submitSignedTx(transaction, "testnet", 5),
-    (error) => error instanceof HorizonRequestError && error.status === 429,
-  );
-  assert.equal(calls, 1);
+  assert.equal((await submitSignedTx(transaction, "testnet", 5)).status, "status_unknown");
+  assert.equal(calls, 2);
 });
 
 test("canonical lookup is bounded while waiting for response headers", async (t) => {
@@ -399,50 +458,42 @@ test("canonical lookup is bounded while reading a response body", async (t) => {
 });
 
 for (const status of [404, 429]) {
-  test(`an explicit ${status} POST response is a definite rejection`, async (t) => {
+  test(`an untrusted explicit ${status} POST response preserves recovery state`, async (t) => {
     const transaction = buildSignedTransaction();
     let calls = 0;
     const body = { title: status === 404 ? "Not Found" : "Rate Limited" };
     t.mock.method(globalThis, "fetch", async () => {
       calls += 1;
-      return new Response(JSON.stringify(body), { status });
+      return calls === 1
+        ? new Response(JSON.stringify(body), { status })
+        : notFoundResponse();
     });
 
-    await assert.rejects(
-      submitSignedTx(transaction, "testnet"),
-      (error) =>
-        error instanceof HorizonRequestError &&
-        error.status === status &&
-        error.body.title === body.title,
-    );
-    assert.equal(calls, 1);
+    assert.equal((await submitSignedTx(transaction, "testnet")).status, "status_unknown");
+    assert.equal(calls, 2);
   });
 }
 
-test("clear Horizon validation rejection retains parsed result codes", async (t) => {
+test("a validation-shaped POST rejection cannot discard prepared recovery state", async (t) => {
   const transaction = buildSignedTransaction();
   let calls = 0;
   t.mock.method(globalThis, "fetch", async () => {
     calls += 1;
-    return new Response(JSON.stringify({
-      title: "Transaction Failed",
-      extras: {
-        result_codes: {
-          transaction: "tx_insufficient_fee",
-          operations: ["op_underfunded"],
+    return calls === 1
+      ? new Response(JSON.stringify({
+        title: "Transaction Failed",
+        extras: {
+          result_codes: {
+            transaction: "tx_insufficient_fee",
+            operations: ["op_underfunded"],
+          },
         },
-      },
-    }), { status: 400 });
+      }), { status: 400 })
+      : notFoundResponse();
   });
 
-  await assert.rejects(
-    submitSignedTx(transaction, "testnet"),
-    (error) =>
-      error instanceof HorizonRequestError &&
-      error.kind === "validation" &&
-      error.body.extras.result_codes.transaction === "tx_insufficient_fee",
-  );
-  assert.equal(calls, 1);
+  assert.equal((await submitSignedTx(transaction, "testnet")).status, "status_unknown");
+  assert.equal(calls, 2);
 });
 
 test("bodyless Horizon failures retain their safe error explanation", () => {
@@ -495,7 +546,7 @@ test("tx_bad_seq checks whether the canonical hash was accepted previously", asy
   assert.equal((await submitSignedTx(transaction, "testnet")).status, "confirmed");
 });
 
-test("tx_bad_seq remains a definite rejection when canonical lookup is not found", async (t) => {
+test("tx_bad_seq remains status unknown when canonical lookup has not found the hash", async (t) => {
   const transaction = buildSignedTransaction();
   let request = 0;
   t.mock.method(globalThis, "fetch", async () => {
@@ -508,12 +559,7 @@ test("tx_bad_seq remains a definite rejection when canonical lookup is not found
       : notFoundResponse();
   });
 
-  await assert.rejects(
-    submitSignedTx(transaction, "testnet"),
-    (error) =>
-      error instanceof HorizonRequestError &&
-      error.body.extras.result_codes.transaction === "tx_bad_seq",
-  );
+  assert.equal((await submitSignedTx(transaction, "testnet")).status, "status_unknown");
 });
 
 test("tx_bad_seq remains status unknown when canonical lookup is unavailable", async (t) => {
@@ -535,11 +581,12 @@ test("tx_bad_seq remains status unknown when canonical lookup is unavailable", a
 
 test("canonical hash lookup reports an on-chain failed transaction", async (t) => {
   const transaction = buildSignedTransaction();
+  const expectedHash = canonicalHash(transaction);
   let request = 0;
   t.mock.method(globalThis, "fetch", async () => {
     request += 1;
     if (request === 1) throw new TypeError("connection reset");
-    return new Response(JSON.stringify({ successful: false }), { status: 200 });
+    return new Response(JSON.stringify({ hash: expectedHash, successful: false }), { status: 200 });
   });
 
   await assert.rejects(
@@ -549,6 +596,113 @@ test("canonical hash lookup reports an on-chain failed transaction", async (t) =
       error.kind === "validation" &&
       /found on-chain but failed/i.test(error.message),
   );
+});
+
+test("canonical lookup rejects a successful response for a different or missing hash", async (t) => {
+  const transaction = buildSignedTransaction();
+  const expectedHash = canonicalHash(transaction);
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  for (const record of [
+    { successful: true },
+    { hash: "f".repeat(64), successful: true },
+  ]) {
+    globalThis.fetch = async () => new Response(JSON.stringify(record), { status: 200 });
+    assert.equal(
+      await walletApi.lookupCanonicalTransaction("testnet", expectedHash, 20),
+      "unavailable",
+    );
+  }
+});
+
+test("canonical finality and merge inspection ignore a configured Horizon endpoint", async (t) => {
+  const transaction = buildSignedTransaction();
+  const expectedHash = canonicalHash(transaction);
+  const source = Keypair.random();
+  const merge = new TransactionBuilder(new Account(source.publicKey(), "0"), {
+    fee: "100",
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(Operation.accountMerge({ destination: Keypair.random().publicKey() }))
+    .setTimeout(180)
+    .build();
+  merge.sign(source);
+  const mergeHash = canonicalHash(merge);
+  const urls = [];
+  const previousWindow = globalThis.window;
+  const storage = memoryStorage({
+    "wallet.endpoint.horizon.testnet.v1": "https://malicious-horizon.example",
+  });
+  globalThis.window = { localStorage: storage };
+  t.after(() => {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  });
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const value = String(url);
+    urls.push(value);
+    if (value.endsWith(`/transactions/${expectedHash}`)) {
+      return new Response(JSON.stringify({ hash: expectedHash, successful: true }), { status: 200 });
+    }
+    if (value.endsWith(`/transactions/${mergeHash}`)) {
+      return new Response(JSON.stringify({
+        hash: mergeHash,
+        successful: true,
+        envelope_xdr: merge.toXdr(),
+      }), { status: 200 });
+    }
+    if (value.endsWith(`/accounts/${source.publicKey()}`)) return notFoundResponse();
+    throw new Error(`Unexpected URL: ${value}`);
+  });
+
+  assert.equal(
+    await walletApi.lookupCanonicalTransaction("testnet", expectedHash, 20),
+    "confirmed",
+  );
+  assert.deepEqual(
+    await walletApi.inspectConfirmedAccountMerge("testnet", mergeHash, 20),
+    { sourcePublicKey: source.publicKey(), sourceAccountExists: false },
+  );
+  assert.ok(urls.every((url) => url.startsWith("https://horizon-testnet.stellar.org/")));
+});
+
+test("an expired not-found transaction remains unknown until canonical ledger time passes", async (t) => {
+  const hash = "ab".repeat(32);
+  const urls = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const value = String(url);
+    urls.push(value);
+    if (value.endsWith(`/transactions/${hash}`)) return notFoundResponse();
+    if (value.includes("/ledgers?")) {
+      return new Response(JSON.stringify({
+        _embedded: { records: [{ sequence: 123, closed_at: "2026-09-01T12:00:00Z" }] },
+      }), { status: 200 });
+    }
+    throw new Error(`Unexpected URL: ${value}`);
+  });
+
+  assert.equal(
+    await walletApi.resolveCanonicalTransaction(
+      "testnet",
+      hash,
+      Date.parse("2026-09-01T12:00:01Z") / 1000,
+      20,
+    ),
+    "unavailable",
+  );
+  assert.equal(
+    await walletApi.resolveCanonicalTransaction(
+      "testnet",
+      hash,
+      Date.parse("2026-09-01T11:59:59Z") / 1000,
+      20,
+    ),
+    "not_found",
+  );
+  assert.ok(urls.every((url) => url.startsWith("https://horizon-testnet.stellar.org/")));
 });
 
 test("pending transaction insertion preserves accepted certainty for a canonical hash", () => {
@@ -740,6 +894,50 @@ test("prepared tracking survives a simulated crash with its exact expiry", () =>
   ]));
   assert.equal("expiresAt" in sanitized[0], false);
   assert.equal("expiresAt" in sanitized[1], false);
+});
+
+test("post-response persistence merges with the prepared recovery record", () => {
+  const storage = memoryStorage();
+  const hash = "ac".repeat(32);
+  const prepared = submission.pendingTransactionFromPrepared(
+    { hash, network: "testnet", expiresAt: 2_000_000_000 },
+    "Payment",
+    undefined,
+    10,
+  );
+  submission.persistDurablePendingTransaction(storage, "pending", prepared);
+
+  const response = submission.pendingTransactionFromSubmission({
+    hash,
+    network: "testnet",
+    status: "accepted",
+  }, "Payment");
+  assert.ok(response);
+  const merged = submission.persistDurablePendingTransaction(storage, "pending", response);
+
+  assert.equal(merged.status, "confirming");
+  assert.equal(merged.createdAt, prepared.createdAt);
+  assert.equal(merged.expiresAt, prepared.expiresAt);
+  assert.deepEqual(submission.loadDurablePendingTransactions(storage, "pending"), [merged]);
+});
+
+test("legacy pending records stop automatic polling and expose manual checking", () => {
+  assert.equal(typeof submission.LEGACY_PENDING_AUTO_POLL_MS, "number");
+  assert.equal(typeof submission.pendingTransactionNeedsManualCheck, "function");
+  const now = 2_000_000;
+  const record = {
+    hash: "ad".repeat(32),
+    network: "testnet",
+    label: "Payment",
+    status: "status_unknown",
+    createdAt: now - submission.LEGACY_PENDING_AUTO_POLL_MS,
+  };
+
+  assert.equal(submission.pendingTransactionNeedsManualCheck(record, now - 1), false);
+  assert.equal(submission.pendingTransactionNeedsManualCheck(record, now), true);
+  const presentation = submission.pendingTransactionPresentation(record, now);
+  assert.equal(presentation.manualCheck, true);
+  assert.match(presentation.detail, /legacy recovery record|Check Status/i);
 });
 
 test("different tabs persist pending recovery records without replacing each other", () => {
@@ -976,7 +1174,7 @@ test("wallet submission tracking is shared, persistent, and preserves unknown st
 test("active transaction flows render status unknown without claiming success", () => {
   const send = readFileSync(new URL("../src/components/SendModal.tsx", import.meta.url), "utf8");
   const batch = readFileSync(
-    new URL("../src/components/BatchSendModal.tsx", import.meta.url),
+    new URL("../src/components/BatchSendModalBody.tsx", import.meta.url),
     "utf8",
   );
   const swap = readFileSync(new URL("../src/components/SwapPage.tsx", import.meta.url), "utf8");
@@ -985,7 +1183,7 @@ test("active transaction flows render status unknown without claiming success", 
     "utf8",
   );
   const multisig = readFileSync(
-    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    new URL("../src/components/MultiSigStudioModalBody.tsx", import.meta.url),
     "utf8",
   );
 
@@ -1001,22 +1199,24 @@ test("active transaction flows render status unknown without claiming success", 
 
 test("the send dialog cannot be dismissed while signing or broadcasting", () => {
   const send = readFileSync(new URL("../src/components/SendModal.tsx", import.meta.url), "utf8");
-  assert.match(send, /onBusyChange\(stage === "sending"\)/);
-  assert.match(send, /<Modal open onClose=\{requestClose\} wide dismissable=\{!surfaceBusy\}>/);
-  assert.match(send, /closeDisabled=\{surfaceBusy\}/);
+  assert.match(send, /onBusyChange\(stage === "sending" \|\| preparingReview\)/);
+  // One busy policy: the shell blocks Escape, backdrop, drag and the close control.
+  assert.match(send, /<Modal\s+open=\{open\}\s+onClose=\{requestClose\}\s+wide\s+busy=\{surfaceBusy\}/);
+  assert.doesNotMatch(send, /dismissable=|closeDisabled=|onClose=\{surfaceBusy \?/);
   assert.match(send, /if \(next === sendMode \|\| surfaceBusy\) return/);
-  assert.match(send, /onClose=\{stage === "sending" \? undefined : onClose\}/);
+  assert.equal((send.match(/<ModalHeader\b/g) ?? []).length, 1);
+  assert.match(send, /<ModalHeader\s+title=\{header\?\.title \?\? "Send Payment"\}[\s\S]*?onClose=\{requestClose\}/);
 });
 
 test("every locked transaction flow consumes shared confirmed and failed resolutions", () => {
   const componentNames = [
     "SendModal.tsx",
-    "BatchSendModal.tsx",
+    "BatchSendModalBody.tsx",
     "SwapPage.tsx",
     "SettingsPage.tsx",
     "AddAssetModal.tsx",
-    "AssetDetailModal.tsx",
-    "MultiSigStudioModal.tsx",
+    "AssetDetailModalBody.tsx",
+    "MultiSigStudioModalBody.tsx",
   ];
   for (const name of componentNames) {
     const source = readFileSync(new URL(`../src/components/${name}`, import.meta.url), "utf8");
@@ -1026,7 +1226,7 @@ test("every locked transaction flow consumes shared confirmed and failed resolut
 
   const send = readFileSync(new URL("../src/components/SendModal.tsx", import.meta.url), "utf8");
   const batch = readFileSync(
-    new URL("../src/components/BatchSendModal.tsx", import.meta.url),
+    new URL("../src/components/BatchSendModalBody.tsx", import.meta.url),
     "utf8",
   );
   assert.match(send, /Payment Confirmed/);
@@ -1041,7 +1241,7 @@ test("the selective airdrop flow cannot immediately resubmit a pending claim", (
     "utf8",
   );
   const review = readFileSync(
-    new URL("../src/components/ClaimableBalancesModal.tsx", import.meta.url),
+    new URL("../src/components/ClaimableBalancesModalBody.tsx", import.meta.url),
     "utf8",
   );
   assert.match(dashboard, /disabled=\{pendingAirdropClaim\}/);
@@ -1158,7 +1358,7 @@ test("shared transaction tracking blocks an exact envelope across modal remounts
   );
 
   const component = readFileSync(
-    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    new URL("../src/components/MultiSigStudioModalBody.tsx", import.meta.url),
     "utf8",
   );
   assert.match(component, /envelopeSubmissionStatus\(xdrInput, network\)/);

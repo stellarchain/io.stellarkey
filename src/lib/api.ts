@@ -33,6 +33,8 @@ import type {
   SubmissionResult,
 } from "./submission";
 import { withAbortDeadline } from "./wallet-refresh";
+import { fetchNativePrice, isMarketObservationFresh, type MarketSample } from "./prices";
+import { createSharedMarketRequests } from "./market-requests";
 
 const MAX_TRUST_LIMIT = "922337203685.4775807";
 const MARKET_REQUEST_TIMEOUT_MS = 8_000;
@@ -54,6 +56,9 @@ interface RawBalance {
   balance: string;
   selling_liabilities?: string;
   limit?: string;
+  is_authorized?: boolean;
+  is_authorized_to_maintain_liabilities?: boolean;
+  is_clawback_enabled?: boolean;
 }
 
 interface RawAccountSnapshot {
@@ -87,6 +92,10 @@ function parseBalances(balances: RawBalance[] | undefined): AssetBalance[] {
       sellingLiabilities: b.selling_liabilities ?? "0",
       limit: b.limit ?? null,
       isNative,
+      isAuthorized: isNative ? true : b.is_authorized === true,
+      isAuthorizedToMaintainLiabilities:
+        !isNative && b.is_authorized_to_maintain_liabilities === true,
+      isClawbackEnabled: !isNative && b.is_clawback_enabled === true,
     };
     if (isNative) nativeBal = item;
     else list.push(item);
@@ -215,6 +224,7 @@ export async function fetchClaimableBalances(
 export async function claimClaimableBalance(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   balanceId: string;
   feeStroops?: number;
@@ -230,6 +240,7 @@ export async function claimClaimableBalance(params: {
 export async function claimClaimableBalances(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   balanceIds: string[];
   feeStroops?: number;
@@ -251,7 +262,7 @@ export async function claimClaimableBalances(params: {
   }
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
@@ -281,6 +292,7 @@ export async function claimClaimableBalances(params: {
 export async function mergeAccount(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   destination: string;
   feeStroops?: number;
@@ -292,7 +304,7 @@ export async function mergeAccount(params: {
   }
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
@@ -399,6 +411,22 @@ export async function fetchAccountSignerInfo(
   const horizonUrl = getHorizonUrl(network);
   const data = await getJson<unknown>(`${horizonUrl}/accounts/${publicKey}`);
 
+  if (!data) return null;
+  return parseAccountSignerInfo(data, publicKey);
+}
+
+/**
+ * Load account authority from SDF's network Horizon, never a user-configured
+ * operational endpoint. Signer omissions are security-sensitive: a custom
+ * endpoint must not be able to hide a key during threshold reconfiguration.
+ */
+export async function fetchCanonicalAccountSignerInfo(
+  publicKey: string,
+  network: NetworkKey,
+): Promise<AccountSignerInfo | null> {
+  const data = await getJson<unknown>(
+    `${NETWORKS[network].horizonUrl}/accounts/${publicKey}`,
+  );
   if (!data) return null;
   return parseAccountSignerInfo(data, publicKey);
 }
@@ -712,8 +740,13 @@ export function explainSubmitError(err: unknown): string {
 export function resolveSource(
   secretKey: string | undefined,
   hardwareSigner?: HardwareSigner,
+  softwareSigner?: Keypair,
 ): { kp: Keypair | null; publicKey: string } {
   if (hardwareSigner) return { kp: null, publicKey: hardwareSigner.publicKey };
+  if (softwareSigner) {
+    if (!softwareSigner.canSign()) throw new SendError("Software signing credential is unavailable.");
+    return { kp: softwareSigner, publicKey: softwareSigner.publicKey() };
+  }
   if (!secretKey) throw new SendError("No signing credential available.");
   const kp = Keypair.fromSecret(secretKey);
   return { kp, publicKey: kp.publicKey() };
@@ -725,15 +758,21 @@ export async function signAndSubmit(
   kp: Keypair | null,
   hardwareSigner?: HardwareSigner,
   onPrepared?: SubmissionPreparedCallback,
+  beforeSign?: () => void,
 ): Promise<SubmissionResult> {
   if (hardwareSigner) {
+    beforeSign?.();
     await signHardwareTx(tx, hardwareSigner);
+    // Hardware approval can take long enough for an operator or wallet session
+    // to be revoked. Recheck before the signed envelope leaves this device.
+    beforeSign?.();
   } else if (kp) {
+    beforeSign?.();
     tx.sign(kp);
   } else {
     throw new SendError("No signing credential available.");
   }
-  return submitSignedTx(tx, network, 15_000, onPrepared);
+  return submitSignedTx(tx, network, 15_000, onPrepared, beforeSign);
 }
 
 function preparedSubmissionIdentity(
@@ -763,11 +802,17 @@ export async function lookupCanonicalTransaction(
 ): Promise<CanonicalLookupStatus> {
   if (!/^[0-9a-f]{64}$/i.test(hash)) return "unavailable";
   try {
-    const record = await getHorizonJson<{ successful?: unknown }>(
-      `${getHorizonUrl(network)}/transactions/${hash.toLowerCase()}`,
+    const record = await getHorizonJson<{ hash?: unknown; successful?: unknown }>(
+      `${NETWORKS[network].horizonUrl}/transactions/${hash.toLowerCase()}`,
       undefined,
       requestTimeoutMs,
     );
+    if (
+      typeof record.hash !== "string" ||
+      record.hash.toLowerCase() !== hash.toLowerCase()
+    ) {
+      return "unavailable";
+    }
     if (record.successful === true) return "confirmed";
     if (record.successful === false) return "failed";
     return "unavailable";
@@ -777,20 +822,63 @@ export async function lookupCanonicalTransaction(
   }
 }
 
+export async function lookupCanonicalLedgerCloseTime(
+  network: NetworkKey,
+  requestTimeoutMs = 15_000,
+): Promise<number | null> {
+  try {
+    const page = await getHorizonJson<{
+      _embedded?: { records?: Array<{ closed_at?: unknown }> };
+    }>(
+      `${NETWORKS[network].horizonUrl}/ledgers?order=desc&limit=1`,
+      undefined,
+      requestTimeoutMs,
+    );
+    const closedAt = page._embedded?.records?.[0]?.closed_at;
+    if (typeof closedAt !== "string") return null;
+    const milliseconds = Date.parse(closedAt);
+    return Number.isFinite(milliseconds) ? Math.floor(milliseconds / 1_000) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves a time-bound transaction without trusting the browser clock or a
+ * configurable endpoint. Canonical absence becomes definitive only once the
+ * canonical ledger close time is past the envelope's maximum time.
+ */
+export async function resolveCanonicalTransaction(
+  network: NetworkKey,
+  hash: string,
+  expiresAt: number,
+  requestTimeoutMs = 15_000,
+): Promise<CanonicalLookupStatus> {
+  const lookup = await lookupCanonicalTransaction(network, hash, requestTimeoutMs);
+  if (lookup !== "not_found") return lookup;
+  if (!Number.isSafeInteger(expiresAt) || expiresAt < 0) return "unavailable";
+  const ledgerCloseTime = await lookupCanonicalLedgerCloseTime(network, requestTimeoutMs);
+  return ledgerCloseTime !== null && ledgerCloseTime > expiresAt
+    ? "not_found"
+    : "unavailable";
+}
+
 export async function submitSignedTx(
   tx: Transaction | FeeBumpTransaction,
   network: NetworkKey,
   requestTimeoutMs = 15_000,
   onPrepared?: SubmissionPreparedCallback,
+  beforeSubmit?: () => void,
 ): Promise<SubmissionResult> {
   const horizonUrl = getHorizonUrl(network);
   const hash = Array.from(tx.hash(), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const form = new URLSearchParams();
   form.set("tx", tx.toXdr());
   await onPrepared?.(preparedSubmissionIdentity(tx, network, hash));
+  // Prepared-journal callbacks can themselves queue a context change. Keep
+  // this final refusal outside the possibly-broadcast error boundary.
+  beforeSubmit?.();
 
-
-  let submissionError: unknown = null;
   try {
     const body = await getHorizonJson<SubmitFailureBody & { hash?: unknown }>(
       `${horizonUrl}/transactions`,
@@ -804,25 +892,12 @@ export async function submitSignedTx(
     if (typeof body.hash === "string" && body.hash.toLowerCase() === hash) {
       return { hash, network, status: "accepted" };
     }
-    submissionError = new HorizonRequestError(
-      "Horizon returned a malformed transaction submission response.",
-      { kind: "unknown", status: 200, body },
-    );
-  } catch (error) {
-    submissionError = error;
-  }
+  } catch {}
 
-  const transactionCode = submissionError instanceof HorizonRequestError &&
-      submissionError.body &&
-      typeof submissionError.body === "object"
-    ? (submissionError.body as SubmitFailureBody).extras?.result_codes?.transaction
-    : undefined;
-  const definiteRejection = submissionError instanceof HorizonRequestError &&
-    submissionError.status !== null &&
-    submissionError.status >= 400 &&
-    submissionError.status < 500;
-  if (definiteRejection && transactionCode !== "tx_bad_seq") throw submissionError;
-
+  // Once the signed envelope has been handed to a configurable endpoint, even
+  // a validation-shaped 4xx is not proof that the transaction was rejected.
+  // Resolve only through the exact hash on canonical SDF Horizon; otherwise
+  // retain the prepared envelope as status_unknown so retry cannot double-pay.
   const lookup = await lookupCanonicalTransaction(network, hash, requestTimeoutMs);
   if (lookup === "confirmed") return { hash, network, status: "confirmed" };
   if (lookup === "failed") {
@@ -830,8 +905,6 @@ export async function submitSignedTx(
       kind: "validation",
     });
   }
-  if (definiteRejection && lookup === "not_found") throw submissionError;
-
   return { hash, network, status: "status_unknown" };
 }
 
@@ -852,7 +925,7 @@ export async function inspectConfirmedAccountMerge(
 ): Promise<ConfirmedAccountMergeInspection | null> {
   if (!/^[0-9a-f]{64}$/i.test(hash)) return null;
   const normalizedHash = hash.toLowerCase();
-  const horizonUrl = getHorizonUrl(network);
+  const horizonUrl = NETWORKS[network].horizonUrl;
   const record = await getHorizonJson<{
     hash?: unknown;
     successful?: unknown;
@@ -910,6 +983,7 @@ export async function inspectConfirmedAccountMerge(
 export interface SendPaymentParams {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   destination: string;
   amount: string;
@@ -918,6 +992,43 @@ export interface SendPaymentParams {
   memo?: StellarMemoInput;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
+  beforeSign?: () => void;
+}
+
+interface HorizonMemoRequirementAccount {
+  sequence?: unknown;
+  data?: unknown;
+  /** SDK-normalized fixtures may use data_attr; raw Horizon uses data. */
+  data_attr?: unknown;
+}
+
+export function accountRequiresMemo(account: unknown): boolean {
+  if (!account || typeof account !== "object") return false;
+  const record = account as HorizonMemoRequirementAccount;
+  const data = record.data ?? record.data_attr;
+  return Boolean(
+    data &&
+      typeof data === "object" &&
+      !Array.isArray(data) &&
+      (data as Record<string, unknown>)["config.memo_required"] === "MQ==",
+  );
+}
+
+export function assertDestinationMemoRequirement(input: {
+  destination: string;
+  muxedDestination: boolean;
+  destinationAccount: unknown;
+  hasMemo: boolean;
+}): void {
+  if (
+    !input.muxedDestination &&
+    !input.hasMemo &&
+    accountRequiresMemo(input.destinationAccount)
+  ) {
+    throw new SendError(
+      `Destination ${input.destination} requires a memo. Ask the recipient for the correct memo before sending.`,
+    );
+  }
 }
 
 export async function sendPayment(params: SendPaymentParams): Promise<SubmissionResult> {
@@ -938,13 +1049,16 @@ export async function sendPayment(params: SendPaymentParams): Promise<Submission
 
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
-  const destExists = await getJson(`${horizonUrl}/accounts/${destinationAccount}`) !== null;
+  const destinationRecord = await getJson<HorizonMemoRequirementAccount>(
+    `${NETWORKS[network].horizonUrl}/accounts/${destinationAccount}`,
+  );
+  const destExists = destinationRecord !== null;
   const paymentAsset = toStellarAsset(assetCode, issuer);
   const isNative = paymentAsset.isNative();
 
@@ -957,6 +1071,14 @@ export async function sendPayment(params: SendPaymentParams): Promise<Submission
     throw new SendError(
       "The account behind this muxed address does not exist yet. Ask for its G-address and activate that account with XLM first.",
     );
+  }
+  if (destExists) {
+    assertDestinationMemoRequirement({
+      destination,
+      muxedDestination,
+      destinationAccount: destinationRecord,
+      hasMemo: memo !== null,
+    });
   }
   const fee = await loadRecommendedBaseFee(network, feeStroops);
 
@@ -987,7 +1109,14 @@ export async function sendPayment(params: SendPaymentParams): Promise<Submission
   const tx = builder.setTimeout(180).build();
 
   try {
-    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
+    return await signAndSubmit(
+      tx,
+      network,
+      kp,
+      params.hardwareSigner,
+      params.onPrepared,
+      params.beforeSign,
+    );
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -996,6 +1125,7 @@ export async function sendPayment(params: SendPaymentParams): Promise<Submission
 export async function sendBatchPayments(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   payments: Array<{
     destination: string;
@@ -1036,7 +1166,7 @@ export async function sendBatchPayments(params: {
 
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
@@ -1047,10 +1177,12 @@ export async function sendBatchPayments(params: {
   const destinationEntries = await Promise.all(
     uniqueDestinations.map(async (destination) => [
       destination,
-      destination === publicKey || (await getJson(`${horizonUrl}/accounts/${destination}`)) !== null,
+      await getJson<HorizonMemoRequirementAccount>(
+        `${NETWORKS[network].horizonUrl}/accounts/${destination}`,
+      ),
     ] as const),
   );
-  const destinationExists = new Map(destinationEntries);
+  const destinationRecords = new Map(destinationEntries);
   const activatedInTransaction = new Set<string>();
 
   const builder = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
@@ -1059,7 +1191,8 @@ export async function sendBatchPayments(params: {
   });
 
   for (const payment of prepared) {
-    const exists = destinationExists.get(payment.destinationAccount) === true;
+    const destinationRecord = destinationRecords.get(payment.destinationAccount) ?? null;
+    const exists = destinationRecord !== null;
     if (!exists && !payment.asset.isNative()) {
       throw new SendError(
         `Destination ${payment.destination} must be activated with XLM before receiving ${payment.asset.getCode()}.`,
@@ -1069,6 +1202,14 @@ export async function sendBatchPayments(params: {
       throw new SendError(
         `The account behind ${payment.destination} must be activated through its G-address first.`,
       );
+    }
+    if (exists) {
+      assertDestinationMemoRequirement({
+        destination: payment.destination,
+        muxedDestination: payment.muxedDestination,
+        destinationAccount: destinationRecord,
+        hasMemo: memo !== null,
+      });
     }
     if (!exists && !activatedInTransaction.has(payment.destinationAccount)) {
       builder.addOperation(
@@ -1103,6 +1244,7 @@ export async function sendBatchPayments(params: {
 export async function changeTrust(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   code: string;
   issuer: string;
@@ -1120,7 +1262,7 @@ export async function changeTrust(params: {
     throw new SendError("Issuer is not a valid Stellar address.");
   }
 
-  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
@@ -1155,6 +1297,7 @@ export async function changeTrust(params: {
 export async function changeTrustBatch(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   assets: Array<{ code: string; issuer: string }>;
   feeStroops?: number;
@@ -1181,7 +1324,7 @@ export async function changeTrustBatch(params: {
     seen.add(key);
   }
 
-  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
@@ -1228,6 +1371,34 @@ export interface FeeStats {
 
 export const MAX_BASE_FEE_STROOPS = 100_000;
 
+interface HorizonFeeStatsPayload {
+  last_ledger_base_fee?: unknown;
+  fee_charged?: {
+    min?: unknown;
+    mode?: unknown;
+    p90?: unknown;
+    p99?: unknown;
+  } | null;
+}
+
+function boundedFeeStroops(value: unknown, fallback: number): number {
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return fallback;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= Number(BASE_FEE) && parsed <= MAX_BASE_FEE_STROOPS
+    ? parsed
+    : fallback;
+}
+
+export function parseFeeStats(data: HorizonFeeStatsPayload): FeeStats {
+  return {
+    lastLedgerBaseFee: boundedFeeStroops(data.last_ledger_base_fee, 100),
+    minAcceptedFee: boundedFeeStroops(data.fee_charged?.min, 100),
+    modeAcceptedFee: boundedFeeStroops(data.fee_charged?.mode, 100),
+    p90AcceptedFee: boundedFeeStroops(data.fee_charged?.p90, 150),
+    p99AcceptedFee: boundedFeeStroops(data.fee_charged?.p99, 300),
+  };
+}
+
 export function selectRecommendedBaseFee(
   stats: Pick<FeeStats, "p90AcceptedFee"> | null,
   requestedFee?: number,
@@ -1259,43 +1430,14 @@ export async function loadRecommendedBaseFee(
 
 export async function fetchFeeStats(network: NetworkKey): Promise<FeeStats | null> {
   const horizonUrl = getHorizonUrl(network);
-  const data = await getJson<{
-    last_ledger_base_fee: string;
-    fee_charged?: { min: string; mode: string; p90: string; p99: string };
-  }>(`${horizonUrl}/fee_stats`);
+  const data = await getJson<HorizonFeeStatsPayload>(`${horizonUrl}/fee_stats`);
 
   if (!data) return null;
-  return {
-    lastLedgerBaseFee: parseInt(data.last_ledger_base_fee || "100", 10),
-    minAcceptedFee: parseInt(data.fee_charged?.min || "100", 10),
-    modeAcceptedFee: parseInt(data.fee_charged?.mode || "100", 10),
-    p90AcceptedFee: parseInt(data.fee_charged?.p90 || "150", 10),
-    p99AcceptedFee: parseInt(data.fee_charged?.p99 || "300", 10),
-  };
+  return parseFeeStats(data);
 }
 
-interface CoinGeckoPriceResp {
-  stellar?: { usd?: number };
-}
-
-export async function fetchXlmPrice(signal?: AbortSignal): Promise<number | null> {
-  try {
-    return await withAbortDeadline(async (signal) => {
-      const res = await fetch(
-        "https://api.coingecko.com/api/v3/simple/price?ids=stellar&vs_currencies=usd",
-        { signal },
-      );
-      if (!res.ok) return null;
-      const json = (await res.json()) as CoinGeckoPriceResp;
-      return json.stellar?.usd ?? null;
-    }, {
-      timeoutMs: MARKET_REQUEST_TIMEOUT_MS,
-      label: "XLM market price",
-      signal,
-    });
-  } catch {
-    return null;
-  }
+export async function fetchXlmPrice(signal?: AbortSignal): Promise<MarketSample> {
+  return fetchNativePrice(signal);
 }
 
 export type PriceRange = "1D" | "7D" | "1M" | "1Y";
@@ -1304,6 +1446,7 @@ const RANGE_DAYS: Record<PriceRange, number> = { "1D": 1, "7D": 7, "1M": 30, "1Y
 
 export interface PriceSeries {
   range: PriceRange;
+  observedAt: number;
   points: Array<{ t: number; p: number }>;
   changePct: number;
   current: number;
@@ -1313,33 +1456,48 @@ interface CoinGeckoChartResp {
   prices?: Array<[number, number]>;
 }
 
+const chartCache = new Map<PriceRange, PriceSeries>();
+const chartRequests = createSharedMarketRequests<PriceSeries | null>();
+
 export async function fetchXlmSeries(
   range: PriceRange,
   signal?: AbortSignal,
 ): Promise<PriceSeries | null> {
+  if (signal?.aborted) return null;
+  const cached = chartCache.get(range);
+  if (cached && isMarketObservationFresh(cached.observedAt)) return cached;
   try {
-    return await withAbortDeadline(async (signal) => {
-      const res = await fetch(
-        `https://api.coingecko.com/api/v3/coins/stellar/market_chart?vs_currency=usd&days=${RANGE_DAYS[range]}`,
-        { signal },
-      );
-      if (!res.ok) return null;
-      const json = (await res.json()) as CoinGeckoChartResp;
-      if (!json.prices || json.prices.length < 2) return null;
-      const points = json.prices.map(([t, p]) => ({ t, p }));
-      const first = points[0].p;
-      const last = points[points.length - 1].p;
-      return {
-        range,
-        points,
-        current: last,
-        changePct: ((last - first) / first) * 100,
-      };
-    }, {
-      timeoutMs: MARKET_REQUEST_TIMEOUT_MS,
-      label: "XLM market chart",
-      signal,
-    });
+    return await chartRequests(range, async sharedSignal => {
+      const series = await withAbortDeadline(async (signal) => {
+        const res = await fetch(
+          `https://api.coingecko.com/api/v3/coins/stellar/market_chart?vs_currency=usd&days=${RANGE_DAYS[range]}`,
+          { signal },
+        );
+        if (!res.ok) return null;
+        const json = (await res.json()) as CoinGeckoChartResp;
+        if (!Array.isArray(json.prices) || json.prices.length < 2 || signal.aborted) return null;
+        if (json.prices.some((point, index, points) => !Array.isArray(point) || point.length !== 2 ||
+          !point.every((value) => typeof value === "number" && Number.isFinite(value) && value > 0) ||
+          (index > 0 && point[0] <= points[index - 1][0]))) return null;
+        const points = json.prices.map(([t, p]) => ({ t, p }));
+        const first = points[0].p;
+        const last = points[points.length - 1].p;
+        return {
+          range,
+          observedAt: Date.now(),
+          points,
+          current: last,
+          changePct: ((last - first) / first) * 100,
+        };
+      }, {
+        timeoutMs: MARKET_REQUEST_TIMEOUT_MS,
+        label: "XLM market chart",
+        signal: sharedSignal,
+      });
+      if (sharedSignal.aborted) return null;
+      if (series) chartCache.set(range, series);
+      return series;
+    }, signal);
   } catch {
     return null;
   }
@@ -1356,17 +1514,11 @@ export async function waitForTransaction(
   hash: string,
   timeoutMs = 25_000,
 ): Promise<boolean | null> {
-  const horizonUrl = getHorizonUrl(network);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    try {
-      const tx = await getJson<{ successful: boolean }>(
-        `${horizonUrl}/transactions/${hash}`,
-      );
-      if (tx) return tx.successful;
-    } catch {
-      void 0;
-    }
+    const outcome = await lookupCanonicalTransaction(network, hash);
+    if (outcome === "confirmed") return true;
+    if (outcome === "failed") return false;
     await delay(1200);
   }
   return null;

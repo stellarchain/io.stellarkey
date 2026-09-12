@@ -1916,6 +1916,7 @@ dependencies = [
  "hex",
  "num-bigint",
  "private-balance-protocol",
+ "rand",
  "serde",
  "serde_json",
  "sha2 0.10.9",

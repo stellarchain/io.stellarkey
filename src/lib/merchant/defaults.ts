@@ -142,6 +142,7 @@ export function emptyStore(): MerchantStore {
     unmatched: [],
     paymentReconciliations: [],
     staff: [],
+    pinAttempts: {},
     activeStaffId: null,
     onShiftStaffIds: [],
     shifts: [],
@@ -149,6 +150,7 @@ export function emptyStore(): MerchantStore {
     counterCodes: [],
     counterPayments: [],
     customers: [],
+    customerEvents: [],
     settlementRule: {
       autoConvert: false,
       maxSlippageBps: 100,

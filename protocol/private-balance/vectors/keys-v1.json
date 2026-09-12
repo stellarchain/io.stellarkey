@@ -15,8 +15,9 @@
     "ask": "2a5b2d9b18bf77cab4326e6827b8765ad9888ed5220ce117ba3b9cb8259d82a0",
     "nk": "15b7e29b28070495fc9e03bf4f14daf1ebbd2a3f331669c9cf102dc81bbf5df5",
     "baseOwnerCommitment": "0261589c76f3f6941e5f9923480a1fd5d9eb3f219be4abf308679af886bbcf36",
-    "ownerCommitment": "13ebf289ee03020bb0999342c395033c6326f328e6f998b8826ae8573fe7814c",
+    "ownerCommitment": "0c3adda7a6ed581c8b01f9ad683aa877d604294a020334655b408aadb295a01e",
     "hpkePrivateKey": "b33166c36358738f86049dfe36e8b0e42cb0fb3cdcef060178f0fe465c58a5d3",
-    "hpkePublicKey": "803cffb201ff35efdfe4341ca5ffd9dfdd334adafa26feb85b14e1e0f73ef634"
+    "hpkePublicKey": "0de8adbe9513fd5036df1d3b5b83d93fc34225efc754700060744f5ff63f966c",
+    "outgoingViewingKey": "af856e3679dddb188fff549173574b2882a634f5d080c818c1f7528261ed1bf9"
   }
 }

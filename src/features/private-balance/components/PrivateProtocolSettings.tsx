@@ -4,12 +4,19 @@ import { useState, type ReactNode } from 'react';
 import {
   IconCheck,
   IconChevronDown,
+  IconFileText,
   IconRefresh,
   IconTrash,
 } from '@/components/icons';
-import { Button, Field, Modal, ModalHeader, Notice } from '@/components/ui';
-import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
+import { SectionHeader, Button, Field, ModalBody, ModalFooter, Notice, Toggle } from '@/components/ui';
+import {
+  usePrivateBalanceRuntime,
+  usePrivateBalanceRuntimeData,
+} from '@/hooks/usePrivateBalanceRuntime';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
+import { PrivateAssetRegistryAdmin } from './PrivateAssetRegistryAdmin';
+import { PrivateOutgoingHistorySettings } from './PrivateOutgoingHistorySettings';
+import { useReportToOwner } from './useReportToOwner';
 
 function fingerprint(value: string | null): string {
   if (!value) return 'Not recorded';
@@ -81,22 +88,40 @@ function DisclosureButton({
   );
 }
 
-export function PrivateProtocolSettings({
+/**
+ * Advanced privacy renders as a step inside the Private Payments dialog. The
+ * owning shell shows its header and stays busy during verification or removal.
+ */
+export function PrivateProtocolSettingsContent({
   onClose,
   onRemoved,
+  onBusyChange,
+  onDirtyChange,
 }: {
   onClose(): void;
   onRemoved?(): void;
+  onBusyChange?(busy: boolean): void;
+  onDirtyChange?(dirty: boolean): void;
 }) {
+  const { retryRuntime } = usePrivateBalanceRuntime();
   const {
+    phase,
+    isLeader,
+    publicAddress,
+    pendingActions,
+    outgoingHistoryMode,
+    setOutgoingHistoryMode,
     protocolVersion,
     deployment,
     asset,
     selectedRpc,
+    witnessRpc,
+    rpcWitnessEnabled,
     checkpoint,
     encryptedStorageBytes,
     noteCount,
     runFullVerification,
+    setRpcWitnessEnabled,
     disableLocalData,
   } = usePrivateBalanceRuntimeData();
   const [working, setWorking] = useState<'verify' | 'remove' | null>(null);
@@ -107,6 +132,8 @@ export function PrivateProtocolSettings({
   const [showTechnical, setShowTechnical] = useState(false);
   const [showRemoval, setShowRemoval] = useState(false);
   const [confirmation, setConfirmation] = useState('');
+  useReportToOwner(onBusyChange, working !== null, false);
+  useReportToOwner(onDirtyChange, false, false);
 
   const verify = async () => {
     setWorking('verify');
@@ -114,7 +141,7 @@ export function PrivateProtocolSettings({
     setResult(null);
     try {
       await runFullVerification();
-      setResult('Private history verified.');
+      setResult('Private history checked against two different-origin network providers.');
     } catch (cause: unknown) {
       setError(cause ?? new Error('Private history verification stopped safely.'));
     } finally {
@@ -141,34 +168,52 @@ export function PrivateProtocolSettings({
     : 'Not available';
 
   return (
-    <Modal open onClose={onClose} dismissable={!working} wide>
-      <ModalHeader
-        title="Advanced privacy"
-        subtitle="Verification and data stored on this device"
-        onClose={working ? undefined : onClose}
-      />
-      <div className="space-y-5 p-4 sm:p-6">
+    <ModalBody gap={5}>
+        <PrivateAssetRegistryAdmin />
+
+        <PrivateOutgoingHistorySettings
+          scope={JSON.stringify([publicAddress, deployment.networkId, deployment.poolContractId, deployment.manifestHash])}
+          mode={outgoingHistoryMode}
+          disabled={working !== null || phase !== 'current' || !isLeader || pendingActions.length > 0}
+          onChange={setOutgoingHistoryMode}
+        />
+
         <section aria-labelledby="private-maintenance-title">
-          <h3 id="private-maintenance-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
-            Maintenance
-          </h3>
-          <div className="ios-group overflow-hidden">
+          <SectionHeader as="h3" id="private-maintenance-title" className="mb-2 px-1">Maintenance</SectionHeader>
+          <div className="list-group">
+            <button
+              type="button"
+              disabled={working !== null}
+              onClick={retryRuntime}
+              className="row-hover flex min-h-16 w-full items-center gap-3.5 px-4 py-3 text-left disabled:opacity-45"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0A84FF]/12 text-[#0A84FF]">
+                <IconRefresh size={17} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13.5px] font-semibold text-white">Refresh asset registry</span>
+                <span className="mt-0.5 block text-[11.5px] leading-relaxed text-neutral-500">
+                  Check the on-chain registry for newly admitted assets and status changes.
+                </span>
+              </span>
+              <span className="shrink-0 text-[13px] font-semibold text-[#0A84FF]">Refresh</span>
+            </button>
             <button
               type="button"
               disabled={working !== null}
               onClick={() => void verify()}
-              className="row-hover flex min-h-16 w-full items-center gap-3.5 px-4 py-3 text-left disabled:opacity-45"
+              className="row-hover ios-sep flex min-h-16 w-full items-center gap-3.5 px-4 py-3 text-left disabled:opacity-45"
             >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0A84FF]/12 text-[#0A84FF]">
                 <IconRefresh size={17} className={working === 'verify' ? 'animate-spin' : ''} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[13.5px] font-semibold text-white">Verify private history</span>
+                <span className="block text-[13.5px] font-semibold text-white">Check private history</span>
                 <span className="mt-0.5 block text-[11.5px] leading-relaxed text-neutral-500">
                   Recheck your private history against the network from scratch.
                 </span>
               </span>
-              <span className="shrink-0 text-[12px] font-semibold text-[#0A84FF]">
+              <span className="shrink-0 text-[13px] font-semibold text-[#0A84FF]">
                 {working === 'verify' ? 'Checking' : 'Run'}
               </span>
             </button>
@@ -186,18 +231,39 @@ export function PrivateProtocolSettings({
         </div>
 
         <section aria-labelledby="private-local-state-title">
-          <h3 id="private-local-state-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
-            On this device
-          </h3>
-          <dl className="ios-group overflow-hidden">
+          <SectionHeader as="h3" id="private-local-state-title" className="mb-2 px-1">On this device</SectionHeader>
+          <dl className="list-group">
             <SettingsRow label="Encrypted local data" value={bytes(encryptedStorageBytes)} />
-            <SettingsRow label="Network endpoint" value={selectedRpc ?? 'Not configured'} mono />
+            <SettingsRow label="Primary RPC" value={selectedRpc ?? 'Not configured'} mono />
+            <SettingsRow label="Witness RPC" value={witnessRpc ?? 'Not configured'} mono />
           </dl>
         </section>
 
-        <section aria-label="Advanced controls" className="ios-group overflow-hidden">
+        <section aria-labelledby="private-network-checks-title">
+          <SectionHeader as="h3" id="private-network-checks-title" className="mb-2 px-1">Network checks</SectionHeader>
+          <div className="list-group">
+            <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-semibold text-white">Use witness during routine checks</p>
+                <p className="mt-0.5 text-[11.5px] leading-relaxed text-neutral-500">
+                  Compare public ledger and contract state with a different-origin provider.
+                </p>
+              </div>
+              <Toggle
+                checked={rpcWitnessEnabled}
+                onChange={enabled => setRpcWitnessEnabled(Boolean(enabled))}
+                label="Use a second RPC witness during routine checks"
+              />
+            </div>
+            <p className="border-t border-white/[0.07] px-4 py-3 text-[11.5px] leading-relaxed text-neutral-500">
+              A second provider sees another copy of the public network access timing and pattern. It never receives recipient or amount plaintext, never signs, and never submits transactions. Seed recovery and a full history check always require the witness, even when routine checks are off.
+            </p>
+          </div>
+        </section>
+
+        <section aria-label="Advanced controls" className="list-group">
           <DisclosureButton
-            icon={<span className="font-mono text-[12px] font-bold">#</span>}
+            icon={<IconFileText size={16} />}
             title="Technical details"
             subtitle="Versions and cryptographic identifiers"
             expanded={showTechnical}
@@ -218,7 +284,7 @@ export function PrivateProtocolSettings({
           ) : null}
         </section>
 
-        <section className="ios-group overflow-hidden">
+        <section className="list-group">
           <DisclosureButton
             icon={<IconTrash size={16} />}
             title="Remove private data from this device"
@@ -238,40 +304,45 @@ export function PrivateProtocolSettings({
                   Your private balance is spendable from this device. Continue only after checking that recovery works.
                 </Notice>
               ) : null}
-              <Field label="Type REMOVE PRIVATE BALANCE to confirm">
+              <Field label="Type REMOVE PRIVATE BALANCE to Confirm">
                 <input
                   className="input text-base sm:text-[14px]"
                   autoComplete="off"
+                  autoCapitalize="characters"
+                  enterKeyHint="done"
                   value={confirmation}
                   onChange={event => setConfirmation(event.target.value)}
                 />
               </Field>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={working !== null}
-                  onClick={() => {
-                    setShowRemoval(false);
-                    setConfirmation('');
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  variant="danger"
-                  loading={working === 'remove'}
-                  disabled={working !== null || confirmation !== 'REMOVE PRIVATE BALANCE'}
-                  onClick={() => void remove()}
-                >
-                  Remove from this device
-                </Button>
-              </div>
+              <ModalFooter
+                secondary={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={working !== null}
+                    onClick={() => {
+                      setShowRemoval(false);
+                      setConfirmation('');
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                }
+                primary={
+                  <Button
+                    type="button"
+                    variant="danger"
+                    loading={working === 'remove'}
+                    disabled={working !== null || confirmation !== 'REMOVE PRIVATE BALANCE'}
+                    onClick={() => void remove()}
+                  >
+                    Remove from this device
+                  </Button>
+                }
+              />
             </div>
           ) : null}
         </section>
-      </div>
-    </Modal>
+    </ModalBody>
   );
 }

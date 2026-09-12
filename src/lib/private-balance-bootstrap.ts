@@ -21,7 +21,7 @@ interface PrivateBalanceRuntimeMountInput {
 
 interface PrivateBalanceDeploymentCandidate {
   id: string;
-  asset: { kind: 'native' | 'stellar' };
+  asset: { kind: 'native' | 'stellar' | 'contract' };
   encryptedStateExists: boolean;
 }
 
@@ -31,6 +31,37 @@ interface PrivateBalancePoolCandidate {
 }
 
 interface PrivateBalanceConfiguredCandidate {
+  encryptedStateExists: boolean;
+}
+
+export interface PrivateCatalogueRefreshFailureInput {
+  runtimeRequestVersion: number;
+  currentScopeKey: string | null;
+  requestedScopeKey: string | null;
+  readyCount: number;
+}
+
+export type PrivatePaymentAccessState = 'needs-consent' | 'preparing' | 'ready';
+
+export interface PrivatePaymentAccessInput {
+  paymentsEnabled: boolean;
+  selectedStateExists: boolean;
+  runtimeConfigured: boolean;
+  runtimeMatchesSelection: boolean;
+}
+
+export interface PrivatePaymentSetupCompletionInput {
+  setupRunning: boolean;
+  phase: string;
+  configured: boolean;
+  privateAddressAvailable: boolean;
+  allAssetsPrepared: boolean;
+  selectedDeploymentRestored: boolean;
+  runtimeMatchesSelection: boolean;
+}
+
+export interface PrivatePaymentSetupAsset {
+  deploymentId: string;
   encryptedStateExists: boolean;
 }
 
@@ -102,16 +133,74 @@ export function shouldMountPrivateBalanceRuntime({
   accountReady,
   deploymentReady,
   requested,
-  encryptedStateExists,
 }: PrivateBalanceRuntimeMountInput): boolean {
-  return accountReady && deploymentReady && (requested || encryptedStateExists);
+  return accountReady && deploymentReady && requested;
 }
 
-/** Private Payments is enabled for the shared pool when any asset sees its durable state. */
-export function privateBalancePoolConfigured(
+/** Private Payments has wallet-wide consent once any asset has durable encrypted state. */
+export function privatePaymentsEnabled(
   deployments: readonly PrivateBalanceConfiguredCandidate[],
 ): boolean {
   return deployments.some(deployment => deployment.encryptedStateExists);
+}
+
+/**
+ * Consent belongs to Private Payments as a wallet capability. Each asset still
+ * has an isolated runtime and encrypted store, so an enabled wallet may need a
+ * short preparation pass before the selected asset can render its action UI.
+ */
+export function privatePaymentAccessState({
+  paymentsEnabled,
+  selectedStateExists,
+  runtimeConfigured,
+  runtimeMatchesSelection,
+}: PrivatePaymentAccessInput): PrivatePaymentAccessState {
+  if (!paymentsEnabled) return 'needs-consent';
+  return selectedStateExists && runtimeConfigured && runtimeMatchesSelection
+    ? 'ready'
+    : 'preparing';
+}
+
+/**
+ * First-time setup owns every captured asset's authenticated synchronization.
+ * Success must not hand the user back to another still-preparing asset.
+ */
+export function privatePaymentSetupComplete({
+  setupRunning,
+  phase,
+  configured,
+  privateAddressAvailable,
+  allAssetsPrepared,
+  selectedDeploymentRestored,
+  runtimeMatchesSelection,
+}: PrivatePaymentSetupCompletionInput): boolean {
+  return setupRunning
+    && phase === 'current'
+    && configured
+    && privateAddressAvailable
+    && allAssetsPrepared
+    && selectedDeploymentRestored
+    && runtimeMatchesSelection;
+}
+
+/**
+ * Prepare every other asset before the one the user started from. Finishing on
+ * the original selection avoids a third runtime mount and authenticated sync.
+ */
+export function privatePaymentSetupTarget(
+  assets: readonly PrivatePaymentSetupAsset[],
+  initialDeploymentId: string,
+): string | null {
+  const initial = assets.find(asset => asset.deploymentId === initialDeploymentId);
+  const remaining = assets.find(asset => (
+    asset.deploymentId !== initialDeploymentId && !asset.encryptedStateExists
+  ));
+  if (remaining) return remaining.deploymentId;
+  if (initial && !initial.encryptedStateExists) return initial.deploymentId;
+  return initial?.deploymentId
+    ?? assets.find(asset => !asset.encryptedStateExists)?.deploymentId
+    ?? assets[0]?.deploymentId
+    ?? null;
 }
 
 export function selectPrivateBalanceDeploymentId(
@@ -144,4 +233,20 @@ export function updatePrivateBalancePoolStorageState<T extends PrivateBalancePoo
     return { ...deployment, encryptedStateExists };
   });
   return changed ? updated : deployments;
+}
+
+/**
+ * A failed user-requested registry refresh must never erase the last verified
+ * catalogue for the same wallet scope. Initial discovery and scope changes
+ * still fail closed because they have no authenticated state to retain.
+ */
+export function shouldRetainPrivateCatalogueAfterRefreshFailure({
+  runtimeRequestVersion,
+  currentScopeKey,
+  requestedScopeKey,
+  readyCount,
+}: PrivateCatalogueRefreshFailureInput): boolean {
+  return runtimeRequestVersion > 0
+    && currentScopeKey === requestedScopeKey
+    && readyCount > 0;
 }

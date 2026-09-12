@@ -32,6 +32,8 @@ export interface HardwareSigner {
   device: HardwareDeviceType;
   publicKey: string;
   path: string;
+  /** Local-only guard captured from the unlocked vault session. */
+  assertSessionActive?: () => void;
 }
 
 /**
@@ -124,6 +126,28 @@ export async function connectTrezorDevice(index = 0): Promise<HardwareAccountInf
     index,
     label: `Trezor ${index + 1}`,
   };
+}
+
+/**
+ * Show a stored account's derivation path on Trezor and require the device to
+ * return the exact public key rendered by the receive screen.
+ */
+export async function verifyTrezorAddress(path: string, expectedPublicKey: string): Promise<void> {
+  if (!path.trim()) throw new Error("This Trezor account has no derivation path to verify.");
+  if (!StrKey.isValidEd25519PublicKey(expectedPublicKey)) {
+    throw new Error("The stored Stellar address is invalid.");
+  }
+  const tc = await loadTrezorConnect();
+  const res = await tc.stellarGetAddress({ path, showOnTrezor: true });
+  if (!res.success) {
+    throw trezorError(res.payload, "Trezor address verification was rejected.");
+  }
+  if (!StrKey.isValidEd25519PublicKey(res.payload.address)) {
+    throw new Error("Trezor returned an invalid Stellar address.");
+  }
+  if (res.payload.address !== expectedPublicKey) {
+    throw new Error("The address shown by Trezor does not match this wallet account.");
+  }
 }
 
 /* ---- stellar-sdk Transaction → Trezor StellarSignTransaction mapping ---- */
@@ -382,6 +406,7 @@ export async function signTrezorTransaction(
   tx: Transaction,
   path: string,
   expectedPublicKey = tx.source,
+  assertSessionActive?: () => void,
 ): Promise<void> {
   if (
     tx.ledgerBounds !== undefined ||
@@ -402,6 +427,7 @@ export async function signTrezorTransaction(
   const offerPrices = xdrOfferPrices(tx);
 
   const tc = await loadTrezorConnect();
+  assertSessionActive?.();
   const res = await tc.stellarSignTransaction({
     path,
     networkPassphrase: tx.networkPassphrase,
@@ -459,9 +485,17 @@ export async function signTrezorTransaction(
  * hardware wallet account.
  */
 export async function signHardwareTx(tx: Transaction, signer: HardwareSigner): Promise<void> {
+  const signatureCount = tx.signatures.length;
+  signer.assertSessionActive?.();
   if (signer.device === "trezor") {
-    await signTrezorTransaction(tx, signer.path, signer.publicKey);
-    return;
+    await signTrezorTransaction(tx, signer.path, signer.publicKey, signer.assertSessionActive);
+    try {
+      signer.assertSessionActive?.();
+      return;
+    } catch (error) {
+      tx.signatures.splice(signatureCount);
+      throw error;
+    }
   }
   throw new Error("Ledger transaction signing is not yet supported in this build.");
 }

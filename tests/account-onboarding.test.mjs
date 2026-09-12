@@ -20,7 +20,7 @@ test("the dashboard uses Add Account as its only account-onboarding entry", () =
   assert.match(accountSidebar, /\+ Add/);
   assert.match(
     dashboard,
-    /id: "add-account", label: "Add account", run: \(\) => setAddAccountOpen\(true\)/,
+    /id: "add-account", label: "Add Account", run: \(\) => setAddAccountOpen\(true\)/,
   );
   assert.match(dashboard, /function AccountMenu\(\{[\s\S]*?onAddAccount/);
   assert.match(dashboard, /onAddAccount\(\)[\s\S]*?<span>Add Account<\/span>/);
@@ -28,7 +28,7 @@ test("the dashboard uses Add Account as its only account-onboarding entry", () =
 });
 
 test("Add Account retains secure hardware controls without a promotional device suite", () => {
-  const addAccount = read("src/components/AddAccountModal.tsx");
+  const addAccount = read("src/components/AddAccountModalBody.tsx");
 
   assert.match(addAccount, /warmTrezorConnect/);
   assert.match(

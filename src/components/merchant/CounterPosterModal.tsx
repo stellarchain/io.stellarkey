@@ -5,14 +5,23 @@ import { createPortal } from "react-dom";
 import QRCode from "qrcode";
 import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import { useLiveNow } from "@/hooks/useLiveNow";
-import { triggerHaptic } from "@/lib/haptics";
 import { NETWORKS } from "@/lib/stellar";
 import { assetKey } from "@/lib/merchant/charge";
 import { counterCodeAvailability } from "@/lib/merchant/counter-codes";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { MerchantPaymentTransport } from "@/lib/merchant/routing";
 import type { AcceptedAsset, CounterCode } from "@/lib/merchant/types";
-import { Button, CopyButton, Modal, ModalHeader, Notice, SegmentedControl } from "../ui";
+import {
+  Button,
+  CopyButton,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Notice,
+  SegmentedControl,
+  useRetainedForExit,
+} from "../ui";
 import { IconInfo, IconPrinter } from "./icons";
 
 /** A6 in millimetres, and the code's printed width inside it. */
@@ -253,8 +262,13 @@ export function CounterPosterModal({
   code: CounterCode | null;
   onClose: () => void;
 }) {
-  if (!code) return null;
-  return <CounterPoster key={code.id} code={code} onClose={onClose} />;
+  // The poster stays rendered through the exit so the card never blanks mid-animation.
+  const shown = useRetainedForExit(code);
+  return (
+    <Modal open={code !== null} onClose={onClose} wide>
+      {shown && <CounterPoster key={shown.id} code={shown} onClose={onClose} />}
+    </Modal>
+  );
 }
 
 function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => void }) {
@@ -277,10 +291,13 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
   const printedAmount = asset
     ? code.quotes.find((quote) => assetKey(quote.asset) === assetKey(asset))?.amount ?? null
     : null;
-  const uri = asset ? counterCodePayUriFor(code, asset, requestTransport) : null;
   const availability = counterCodeAvailability(code, now);
   const receivingAccountChanged = settings.receivingPublicKey !== code.destination;
-  const canShare = availability === "active" && !receivingAccountChanged && uri !== null;
+  const canRenderPaymentArtifact = availability === "active" && !receivingAccountChanged;
+  const uri = canRenderPaymentArtifact && asset
+    ? counterCodePayUriFor(code, asset, requestTransport)
+    : null;
+  const canShare = canRenderPaymentArtifact && uri !== null;
 
   /* A real encoding, at a resolution that still has ink at 44 mm and 300 dpi. */
   useEffect(() => {
@@ -319,7 +336,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
       ? code.suggestedMinor.map((minor) => fmtMinor(minor, code.currency)).join("  ·  ")
       : null;
 
-  const face = (
+  const face = canRenderPaymentArtifact ? (
     <PosterFace
       shopName={shopName}
       addressLines={settings.profile.addressLines}
@@ -339,181 +356,180 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
         "Payments go straight to this shop's own Stellar account. Nothing is held by anyone in between, and a refund is an ordinary payment back."
       }
     />
-  );
+  ) : null;
 
   return (
     <>
-      <Modal open onClose={onClose} wide>
-        <ModalHeader
-          title="Counter poster"
-          subtitle={`${code.title} · A6 card, ${A6_WIDTH_MM} × ${A6_HEIGHT_MM} mm`}
-          onClose={onClose}
-        />
+      <ModalHeader
+        title="Counter Poster"
+        subtitle={`${code.title} · A6 card, ${A6_WIDTH_MM} × ${A6_HEIGHT_MM} mm`}
+        onClose={onClose}
+      />
 
-        <div className="space-y-5 p-4 sm:p-6">
-          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
-            {/* Preview: the same drawing the printer gets, scaled by its width. */}
-            <div
-              aria-label="Poster preview"
-              className="w-full max-w-[248px] shrink-0 overflow-hidden rounded-[10px] shadow-[0_18px_40px_-16px_rgba(0,0,0,0.9)] ring-1 ring-white/15"
-              style={{ aspectRatio: `${A6_WIDTH_MM} / ${A6_HEIGHT_MM}` }}
-            >
-              {face}
-            </div>
+      <ModalBody gap={5}>
+        <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+          {/* Preview: the same drawing the printer gets, scaled by its width. */}
+          <div
+            aria-label="Poster preview"
+            className="w-full max-w-[248px] shrink-0 overflow-hidden rounded-[10px] shadow-[0_18px_40px_-16px_var(--shadow-strong)] ring-1 ring-white/15"
+            style={{ aspectRatio: `${A6_WIDTH_MM} / ${A6_HEIGHT_MM}` }}
+          >
+            {canRenderPaymentArtifact ? (
+              face
+            ) : (
+              <div className="flex h-full items-center justify-center bg-[var(--color-oncolor)] p-6 text-center text-[13px] font-semibold text-neutral-700">
+                This payment code is no longer shareable.
+              </div>
+            )}
+          </div>
 
-            <div className="min-w-0 flex-1 space-y-3">
-              <SegmentedControl
-                ariaLabel="Payment request compatibility"
-                value={requestTransport}
-                onChange={setRequestTransport}
-                options={[
-                  { label: "Standard", value: "muxed" },
-                  { label: "Trezor", value: "memo-id" },
-                ]}
-              />
-              {code.acceptedAssets.length > 1 && (
-                <div className="space-y-1.5">
-                  <span className="field-label">Code asks for</span>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {code.acceptedAssets.map((option) => {
-                      const key = assetKey(option);
-                      const on = asset !== null && assetKey(asset) === key;
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          aria-pressed={on}
-                          onClick={() => {
-                            triggerHaptic("selection");
-                            setChosenKey(key);
-                          }}
-                          className={`mono rounded-full px-3 py-1.5 text-[11.5px] font-semibold transition-colors ${
-                            on
-                              ? "bg-[#0A84FF] text-white"
-                              : "bg-white/[0.08] text-neutral-400 hover:text-white"
-                          }`}
-                        >
-                          {option.code}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[11.5px] leading-relaxed text-neutral-500">
-                    One code names one asset. Print a card for each, or stand them side by side.
-                  </p>
+          <div className="min-w-0 flex-1 space-y-3">
+            <SegmentedControl
+              ariaLabel="Payment request compatibility"
+              value={requestTransport}
+              onChange={setRequestTransport}
+              options={[
+                { label: "Standard", value: "muxed" },
+                { label: "Trezor", value: "memo-id" },
+              ]}
+            />
+            {code.acceptedAssets.length > 1 && (
+              <div className="space-y-1.5">
+                <span className="field-label">Code asks for</span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {code.acceptedAssets.map((option) => {
+                    const key = assetKey(option);
+                    const on = asset !== null && assetKey(asset) === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => setChosenKey(key)}
+                        className={`mono rounded-full px-3.5 text-[12px] font-semibold transition-colors ${
+                          on
+                            ? "bg-[#0A84FF] text-[var(--color-oncolor)]"
+                            : "bg-white/[0.08] text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        {option.code}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11.5px] leading-relaxed text-neutral-500">
+                  One code names one asset. Print a card for each, or stand them side by side.
+                </p>
+              </div>
+            )}
+
+            <dl className="panel-inset divide-y divide-white/[0.08] text-[12.5px]">
+              <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
+                <dt className="text-neutral-400">Card</dt>
+                <dd className="mono text-white">
+                  A6 · {A6_WIDTH_MM} × {A6_HEIGHT_MM} mm
+                </dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
+                <dt className="text-neutral-400">Code</dt>
+                <dd className="mono text-white">
+                  {QR_WIDTH_MM} mm + {QR_QUIET_MM} mm quiet
+                </dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
+                <dt className="text-neutral-400">Reads at</dt>
+                <dd className="mono text-white">44 cm+</dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
+                <dt className="text-neutral-400">Payment route</dt>
+                <dd className="text-right text-white">
+                  {requestTransport === "muxed" ? "Included in address" : `MEMO_ID ${code.routingId}`}
+                </dd>
+              </div>
+              {printedAmount && asset && (
+                <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
+                  <dt className="text-neutral-400">Exact request</dt>
+                  <dd className="mono text-white">{printedAmount} {asset.code}</dd>
                 </div>
               )}
+            </dl>
 
-              <dl className="panel-inset divide-y divide-white/[0.08] text-[12.5px]">
-                <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
-                  <dt className="text-neutral-400">Card</dt>
-                  <dd className="mono text-white">
-                    A6 · {A6_WIDTH_MM} × {A6_HEIGHT_MM} mm
-                  </dd>
-                </div>
-                <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
-                  <dt className="text-neutral-400">Code</dt>
-                  <dd className="mono text-white">
-                    {QR_WIDTH_MM} mm + {QR_QUIET_MM} mm quiet
-                  </dd>
-                </div>
-                <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
-                  <dt className="text-neutral-400">Reads at</dt>
-                  <dd className="mono text-white">44 cm+</dd>
-                </div>
-                <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
-                  <dt className="text-neutral-400">Payment route</dt>
-                  <dd className="text-right text-white">
-                    {requestTransport === "muxed" ? "Included in address" : `MEMO_ID ${code.routingId}`}
-                  </dd>
-                </div>
-                {printedAmount && asset && (
-                  <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
-                    <dt className="text-neutral-400">Exact request</dt>
-                    <dd className="mono text-white">{printedAmount} {asset.code}</dd>
-                  </div>
-                )}
-              </dl>
+            <p className="text-[11.5px] leading-relaxed text-neutral-500">
+              44 mm is the smallest code that still reads at arm&apos;s length: the ten-to-one
+              rule of thumb puts it at 44 cm, and a phone camera with autofocus does better.
+            </p>
 
-              <p className="text-[11.5px] leading-relaxed text-neutral-500">
-                44 mm is the smallest code that still reads at arm&apos;s length: the ten-to-one
-                rule of thumb puts it at 44 cm, and a phone camera with autofocus does better.
-              </p>
-
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                <Button
-                  disabled={!canShare || !qrDataUrl}
-                  onClick={() => {
-                    triggerHaptic("light");
-                    window.print();
-                  }}
-                >
+            <ModalFooter
+              primary={
+                <Button disabled={!canShare || !qrDataUrl} onClick={() => window.print()}>
                   <IconPrinter size={16} />
                   Print
                 </Button>
-                {canShare && uri ? (
+              }
+              secondary={
+                canShare && uri ? (
                   <CopyButton
                     value={uri}
                     label="Copy request"
                     iconSize={15}
-                    className="btn btn-secondary w-full"
+                    className="btn btn-secondary tap w-full"
                   />
                 ) : (
                   <Button variant="secondary" disabled>
                     {uri ? "Sharing disabled" : "Request unavailable"}
                   </Button>
-                )}
-              </div>
-            </div>
+                )
+              }
+            />
           </div>
-
-          <Notice tone={availability !== "active" || receivingAccountChanged || !uri ? "warn" : "info"}>
-            <span className="flex items-start gap-2.5">
-              <IconInfo
-                size={15}
-                className={`mt-[1px] shrink-0 ${
-                  availability !== "active" || receivingAccountChanged || !uri
-                    ? "text-[#FF9F0A]"
-                    : "text-neutral-400"
-                }`}
-              />
-              <span>
-                {!uri ? (
-                  <>
-                    <span className="font-semibold text-white">Request unavailable. </span>
-                    This saved code has no reproducible publication request and cannot be printed.
-                  </>
-                ) : availability !== "active" ? (
-                  <>
-                    <span className="font-semibold text-white">
-                      {availability === "expired" ? "Expired. " : "Retired. "}
-                    </span>
-                    Existing paper is still readable, but new printing is disabled and matching
-                    ledger payments are no longer filed to this code.
-                  </>
-                ) : receivingAccountChanged ? (
-                  <>
-                    <span className="font-semibold text-white">Receiving account changed. </span>
-                    This poster still pays {code.destination.slice(0, 4)}…{code.destination.slice(-4)}
-                    on {NETWORKS[code.network].label}. Re-select that account for reconciliation or
-                    retire this code before sharing it.
-                  </>
-                ) : (
-                  <>
-                    <span className="font-semibold text-white">What prints. </span>
-                    The card alone, black on white at A6 — no app chrome, no background. The code is
-                    a SEP-7 request against this shop&apos;s own account on{" "}
-                    {NETWORKS[code.network].label}, and the paper carries all of it.
-                  </>
-                )}
-              </span>
-            </span>
-          </Notice>
         </div>
-      </Modal>
+
+        <Notice tone={availability !== "active" || receivingAccountChanged || !uri ? "warn" : "info"}>
+          <span className="flex items-start gap-2.5">
+            <IconInfo
+              size={15}
+              className={`mt-[1px] shrink-0 ${
+                availability !== "active" || receivingAccountChanged || !uri
+                  ? "text-[#FF9F0A]"
+                  : "text-neutral-400"
+              }`}
+            />
+            <span>
+              {!uri ? (
+                <>
+                  <span className="font-semibold text-white">Request unavailable. </span>
+                  This saved code has no reproducible publication request and cannot be printed.
+                </>
+              ) : availability !== "active" ? (
+                <>
+                  <span className="font-semibold text-white">
+                    {availability === "expired" ? "Expired. " : "Retired. "}
+                  </span>
+                  Existing paper is still readable, but new printing is disabled and matching
+                  ledger payments are no longer filed to this code.
+                </>
+              ) : receivingAccountChanged ? (
+                <>
+                  <span className="font-semibold text-white">Receiving account changed. </span>
+                  This poster still pays {code.destination.slice(0, 4)}…{code.destination.slice(-4)}
+                  on {NETWORKS[code.network].label}. Re-select that account for reconciliation or
+                  retire this code before sharing it.
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold text-white">What prints. </span>
+                  The card alone, black on white at A6 — no app chrome, no background. The code is
+                  a SEP-7 request against this shop&apos;s own account on{" "}
+                  {NETWORKS[code.network].label}, and the paper carries all of it.
+                </>
+              )}
+            </span>
+          </span>
+        </Notice>
+      </ModalBody>
 
       {/* The print copy: hidden on screen, and the only thing left on paper. */}
-      {mounted &&
+      {mounted && canRenderPaymentArtifact && face &&
         createPortal(
           <div data-counter-poster-print="">
             <style>{PRINT_CSS}</style>

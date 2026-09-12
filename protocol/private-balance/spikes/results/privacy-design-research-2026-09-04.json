@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-09-04",
+  "environment": {
+    "architecture": "arm64",
+    "operatingSystem": "macOS 26.5.2 (25F84)",
+    "processor": "Apple M3 Max",
+    "memoryBytes": 137438953472,
+    "nodeVersion": "26.7.0",
+    "circomVersion": "2.2.3",
+    "snarkjsVersion": "0.7.5",
+    "nobleCurvesVersion": "2.3.0"
+  },
+  "hiddenDiversifier": {
+    "currentRecipientEnvelopeBytes": 181,
+    "prototypeRecipientEnvelopeBytes": 177,
+    "prototypeRoundTripSucceeded": true,
+    "prototypeRepeatedAddressEnvelopesIdentical": false,
+    "testnet": {
+      "ledgerSequence": 4490577,
+      "xlm": {
+        "actions": 36,
+        "outputs": 72,
+        "zeroDiversifierOutputs": 8,
+        "privateTransfers": 8,
+        "privateTransfersWithExactlyOneZeroDiversifier": 8
+      },
+      "usdc": {
+        "actions": 3,
+        "outputs": 6,
+        "zeroDiversifierOutputs": 2,
+        "privateTransfers": 2,
+        "privateTransfersWithExactlyOneZeroDiversifier": 2
+      }
+    },
+    "screeningBenchmark": {
+      "outputsPerRun": 2000,
+      "measuredRunsAfterWarmup": 3,
+      "currentX25519ScanKeyDerivationPlusNativeDh": {
+        "runsMilliseconds": [323.89, 329.13, 337.08],
+        "medianMilliseconds": 329.13,
+        "microsecondsPerOutput": 164.57
+      },
+      "prototypeRistretto255VariableBaseDh": {
+        "runsMilliseconds": [1440.38, 1442.91, 1444.87],
+        "medianMilliseconds": 1442.91,
+        "microsecondsPerOutput": 721.46
+      },
+      "currentX25519AddressGeneration": {
+        "runsMilliseconds": [232.95, 234.41, 235.75],
+        "medianMilliseconds": 234.41,
+        "microsecondsPerAddress": 117.21
+      },
+      "prototypeRistretto255AddressGeneration": {
+        "runsMilliseconds": [1722.93, 1728.97, 1734.71],
+        "medianMilliseconds": 1728.97,
+        "microsecondsPerAddress": 864.48
+      },
+      "limitations": [
+        "Desktop Node.js screening result, not a browser or physical-phone benchmark.",
+        "The current path uses native X25519 while the prototype uses JavaScript Ristretto255.",
+        "The prototype validates feasibility and relative cost only; it is not a production cryptographic construction."
+      ]
+    }
+  },
+  "unifiedAssetPrivatePool": {
+    "constraintCounts": [
+      {
+        "variant": "current-depth-17-two-output",
+        "treeDepth": 17,
+        "outputs": 2,
+        "constraints": 14574,
+        "fitsPowerOfTau14": true
+      },
+      {
+        "variant": "hidden-asset-depth-17-two-output",
+        "treeDepth": 17,
+        "outputs": 2,
+        "constraints": 14579,
+        "fitsPowerOfTau14": true
+      },
+      {
+        "variant": "hidden-asset-depth-17-three-output",
+        "treeDepth": 17,
+        "outputs": 3,
+        "constraints": 15180,
+        "fitsPowerOfTau14": true
+      },
+      {
+        "variant": "hidden-asset-depth-18-three-output",
+        "treeDepth": 18,
+        "outputs": 3,
+        "constraints": 15722,
+        "fitsPowerOfTau14": true
+      },
+      {
+        "variant": "hidden-asset-depth-19-three-output",
+        "treeDepth": 19,
+        "outputs": 3,
+        "constraints": 16264,
+        "fitsPowerOfTau14": true
+      },
+      {
+        "variant": "hidden-asset-depth-20-three-output",
+        "treeDepth": 20,
+        "outputs": 3,
+        "constraints": 16806,
+        "fitsPowerOfTau14": false
+      }
+    ],
+    "witnessChecks": {
+      "validHiddenAssetTransferAccepted": true,
+      "publicAssetOnPrivateTransferRejected": true,
+      "wrongHiddenAssetRejected": true,
+      "validPublicBoundaryBindingAccepted": true,
+      "publicBoundaryAssetMismatchRejected": true
+    },
+    "desktopProvingBenchmark": {
+      "measuredRunsAfterWarmup": 3,
+      "currentDepth17TwoOutput": {
+        "runsMilliseconds": [526.9, 538.1, 543.9],
+        "medianMilliseconds": 538.1,
+        "wasmBytes": 152217,
+        "zkeyBytes": 8971612
+      },
+      "hiddenAssetDepth17ThreeOutput": {
+        "runsMilliseconds": [540.0, 545.9, 553.5],
+        "medianMilliseconds": 545.9,
+        "wasmBytes": 155420,
+        "zkeyBytes": 9299576
+      },
+      "limitations": [
+        "Desktop Node.js screening result, not a browser or physical-phone benchmark.",
+        "The prototype proving key is a development setup and not a production ceremony artifact.",
+        "Peak memory was not measured reliably and remains a release gate."
+      ]
+    },
+    "testnetAtLedger4490577": {
+      "xlm": {
+        "actions": 36,
+        "leaves": 72,
+        "deposits": 22,
+        "privateTransfers": 8,
+        "withdrawals": 6
+      },
+      "usdc": {
+        "actions": 3,
+        "leaves": 6,
+        "deposits": 1,
+        "privateTransfers": 2,
+        "withdrawals": 0
+      },
+      "combined": {
+        "actions": 39,
+        "leavesAtTwoOutputsPerAction": 78
+      },
+      "limitations": [
+        "The deployment is a small developer-driven testnet sample, not evidence of production anonymity.",
+        "Leaf count is a nominal pool size and not an effective anonymity-set measurement."
+      ]
+    }
+  }
+}

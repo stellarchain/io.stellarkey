@@ -1,5 +1,5 @@
 import { expect, type BrowserContext, type Locator, type Page, type Route } from "@playwright/test";
-import { installQuietEventSource } from "../fixtures";
+import { installQuietEventSource } from "../fixtures.ts";
 
 export const privateBalanceE2eEnabled = Boolean(
   process.env.PRIVATE_BALANCE_E2E_SENDER_SECRET &&
@@ -40,6 +40,8 @@ export async function installPrivateBalanceNetworkSupport(
 }
 
 export async function importLiveWallet(page: Page, secret: string): Promise<void> {
+  const { assertLiveWalletTestingSafe } = await import("../../scripts/testing/wallet-test-policy.mjs");
+  assertLiveWalletTestingSafe();
   if (!secret) throw new Error("Private Balance E2E secret is unavailable.");
   await page.goto("/app", { waitUntil: "domcontentloaded" });
   await page.evaluate(() => localStorage.clear());
@@ -74,7 +76,7 @@ export async function expectPrivateBalance(region: Locator, amount: string): Pro
 
 /**
  * Drives the one-screen setup: hero + disclosure + single consent checkbox +
- * "Turn On", then the live five-step stepper, then the success moment.
+ * "Turn On", then the live monotonic progress instrument through auto-dismiss.
  */
 export async function setupPrivateBalance(page: Page): Promise<Locator> {
   const region = await openPrivateBalance(page);
@@ -83,8 +85,15 @@ export async function setupPrivateBalance(page: Page): Promise<Locator> {
   await expect(dialog).toBeVisible({ timeout: 30_000 });
   await dialog.getByRole("checkbox").check();
   await dialog.getByRole("button", { name: "Turn On" }).click();
-  await expect(dialog.getByText("Private Payments is on")).toBeVisible({ timeout: 180_000 });
-  await dialog.getByRole("button", { name: "Done" }).click();
+  const failure = dialog.getByRole("alert");
+  await expect.poll(async () => {
+    if (await failure.isVisible().catch(() => false)) return "failure";
+    if (!(await dialog.isVisible().catch(() => false))) return "closed";
+    return "running";
+  }, { timeout: 180_000 }).not.toBe("running");
+  if (await failure.isVisible().catch(() => false)) {
+    throw new Error("Private Payments setup failed; an alert is visible.");
+  }
   await expect(dialog).toBeHidden();
   await expect(region.getByRole("button", { name: /^Open private XLM\. Ready\./ })).toBeVisible({
     timeout: 180_000,
@@ -130,7 +139,7 @@ export async function openPrivateSend(page: Page): Promise<Locator> {
   await expect(dialog.getByRole("heading", { name: "Send Payment", exact: true })).toBeVisible();
   await dialog.getByRole("tablist", { name: "Send type" })
     .getByRole("tab", { name: "Private", exact: true }).click();
-  await expect(dialog.getByLabel("Recipient Address", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("Private Recipient", { exact: true })).toBeVisible();
   return dialog;
 }
 

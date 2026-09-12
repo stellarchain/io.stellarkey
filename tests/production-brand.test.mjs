@@ -10,6 +10,19 @@ import nextConfig, { sourceTreeIsDirty } from "../next.config.ts";
 const root = new URL("../", import.meta.url);
 const read = (relativePath) => readFileSync(new URL(relativePath, root), "utf8");
 
+test("production configuration rejects a synthetic route left by an interrupted browser check", async () => {
+  const { assertNoPrivateComponentFixture } = await import("../next.config.ts");
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "private-component-build-guard-"));
+  try {
+    assert.doesNotThrow(() => assertNoPrivateComponentFixture(fixtureRoot));
+    await mkdir(path.join(fixtureRoot, "src/app/private-component-fixture"), { recursive: true });
+    assert.throws(() => assertNoPrivateComponentFixture(fixtureRoot), /synthetic private-component fixture/i);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+  assert.match(read("next.config.ts"), /process\.env\.NODE_ENV === "production"\) assertNoPrivateComponentFixture\(\)/);
+});
+
 function trackedTextFiles(relativePath) {
   const absolute = new URL(relativePath, root);
   if (!existsSync(absolute)) return [];
@@ -28,7 +41,7 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   assert.equal(brand.BRAND_NAME, "StellarKey");
   assert.equal(brand.BRAND_ORIGIN, "https://stellarkey.io");
   assert.equal(brand.SOURCE_REPOSITORY_URL, "https://github.com/stellarchain/io.stellarkey");
-  assert.equal(brand.APPLICATION_VERSION, "1.4.1");
+  assert.equal(brand.APPLICATION_VERSION, "1.5.0");
   assert.equal(brand.APPLICATION_VERSION, JSON.parse(read("package.json")).version);
   assert.match(nextConfig.env?.NEXT_PUBLIC_BUILD_COMMIT ?? "", /^[0-9a-f]{40}$/);
   assert.equal(brand.COPYRIGHT_OWNER, "StellarKey");
@@ -67,10 +80,10 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   assert.match(error, /Reload \{BRAND_NAME\}/);
   assert.match(error, /<main[^>]*id="app-content"/);
   assert.equal(packageJson.name, "stellarkey");
-  assert.equal(packageJson.version, "1.4.1");
+  assert.equal(packageJson.version, "1.5.0");
   assert.equal(packageLock.name, "stellarkey");
   assert.equal(packageLock.packages[""].name, "stellarkey");
-  assert.equal(packageLock.packages[""].version, "1.4.1");
+  assert.equal(packageLock.packages[""].version, "1.5.0");
   assert.match(read("src/lib/merchant/defaults.ts"), /appVersion: APPLICATION_VERSION/);
   assert.match(read("README.md"), /^# StellarKey$/m);
   assert.match(read("README.md"), /src="\.\/public\/stellarkey-logo-readme\.svg"/);
@@ -104,7 +117,7 @@ test("the public README leads with the official identity and essential project p
 });
 
 test("branded exports do not change encrypted compatibility contracts", () => {
-  assert.match(read("src/components/BackupWizardModal.tsx"), /stellarkey-backup-/);
+  assert.match(read("src/components/BackupWizardModalBody.tsx"), /stellarkey-backup-/);
   assert.match(read("src/components/PaperWalletModal.tsx"), /stellarkey-/);
   assert.match(read("src/components/StorageRecoveryScreen.tsx"), /stellarkey-recovery-/);
   assert.match(read("src/components/AddressBookPage.tsx"), /stellarkey-contacts-/);

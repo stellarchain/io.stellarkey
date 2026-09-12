@@ -5,8 +5,9 @@ This wallet ships as static files and talks directly to user-selected Stellar se
 ## Automated release gate
 
 - Use Node 22.22.2+ and npm 11.19.0+ from the supported ranges in `package.json`.
-- Install exactly from `package-lock.json` with `npm ci`. Review any new dependency install-script request; approved scripts are pinned by package and version in `allowScripts`.
+- Install exactly from `package-lock.json` with `npm ci`. The checked-in `.npmrc` sets `ignore-scripts=true`; no `allowScripts` allowlist is configured. Review any proposed change to that policy or manual dependency-script execution explicitly.
 - Run `npm run release:verify` from a clean checkout.
+- Require the separate Rust security and circuit Gate A workflow jobs as well as application verification. The application gate includes nested browser-protocol tests, mandatory synthetic private UI/component and overlay/manifest tests, fixture cleanup before and after the production build, and the normal browser matrix.
 - Create release files only from that verified `out/` directory with `node scripts/create-release-artifact.mjs`. Never rebuild during deployment.
 - Verify `SHA256SUMS`, then compare every static file with `release-files.json`. The archive, inventory, CycloneDX SBOM, and checksums must come from the same GitHub release and artifact attestation.
 - Confirm [CHANGELOG.md](../CHANGELOG.md) has a dated entry for the package version and a fresh `[Unreleased]` section before tagging; leave that section empty rather than publishing a placeholder note.
@@ -18,7 +19,7 @@ This wallet ships as static files and talks directly to user-selected Stellar se
 
 ## Manual device boundaries
 
-- On a real iPhone, test Safari onboarding, encrypted-backup restore, lock/unlock, form entry, safe areas, and Add to Home Screen cold launch. Pinch zoom remains disabled by product requirement; VoiceOver and system text remain usable.
+- On a real iPhone, test Safari onboarding, encrypted-backup restore, lock/unlock, form entry, safe areas, and Add to Home Screen cold launch. Verify pinch zoom and 200% reflow, VoiceOver, and system text without clipping controls or obscuring focus.
 - On a real iPad, repeat the installed-app, rotation, modal, keyboard, and account-menu lock flows.
 - Create a passkey on a real compatible Apple device, lock and unlock with Face ID or Touch ID, verify password fallback, and confirm removal rejects a wrong current password.
 - Connect a real supported Trezor, verify the address on-device, review a small testnet transaction on-device, and confirm cancellation and disconnect errors fail closed.
@@ -36,11 +37,19 @@ This wallet ships as static files and talks directly to user-selected Stellar se
 
 ## Private Balance beta gate
 
-- Keep the production activation gate closed while the manifest says `development` or any ceremony, audit, testnet deployment, or immutable release evidence is absent.
+- The exact pinned Testnet `development` fixture is explicitly enabled in production-hosted builds. Keep Mainnet and beta/production promotion closed while ceremony, audit, deployment, or immutable release evidence is absent; the development exception grants no promotion approval.
 - Verify the same manifest and artifact hashes across reproducible builds, ceremony records, contract deployment, independent review, browser tests, and release evidence.
 - Exercise encrypted-backup and seed-only recovery, paid archive restoration, expired archive/nullifier entries, pending-spend recovery, lock during scan/proof/submission, leader failover, exact semantic transaction review, CSP/network sentinels, and real-device accessibility.
 - Confirm every surface states the public fee payer, timing, pool activity, and deposit/withdrawal amount and endpoint boundaries. Never describe the feature as anonymous, untraceable, or guaranteed private.
 
-## Accepted dependency boundary
+## Remaining dependency boundary
 
-`@trezor/connect-web@9.7.3` is the current stable package and brings ten low-severity `elliptic` findings through its Bitcoin/UTXO-support dependency tree, not StellarKey's Stellar signing implementation. The package is optional and lazy-loaded only after a Trezor action. npm reports no fixed stable Trezor release. High and critical production advisories remain release-blocking; re-evaluate this exception whenever Trezor publishes an update.
+As checked on 2026-09-07, `@trezor/connect-web@9.7.3` remains the latest stable
+release. It is a regular production dependency loaded lazily for the optional
+Trezor UI. The production audit reports ten low-severity vulnerable packages
+associated with one `elliptic` advisory and no high/critical findings after the
+scoped TOML override. Review [the compatibility evidence and remaining embedded
+parser/remote-core limits](dependency-security.md); this is not an advisory waiver
+or proof that upstream popup code is patched. High/critical production findings,
+the Trezor redistribution authorization, registered origin, and physical-device
+checks remain release gates.

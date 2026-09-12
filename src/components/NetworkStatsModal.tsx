@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  useWalletActivity,
-  useWalletIdentity,
-  useWalletLedger,
-} from "@/hooks/useWallet";
-import { NETWORKS } from "@/lib/stellar";
-import { fetchFeeStats, type FeeStats } from "@/lib/api";
-import { getHorizonUrl, testHorizonEndpoint } from "@/lib/stellar-endpoints";
-import { stroopsToAmount } from "@/lib/stellar-domain";
-import { Button, ErrorText, Modal, ModalHeader } from "./ui";
-import { IconCheck, IconShield } from "./icons";
+import { useState } from "react";
+import dynamic from "next/dynamic";
+import { LoadingRegion, Modal, ModalHeader, useMountedThroughExit } from "./ui";
+import type { NetworkStatsHeader } from "./NetworkStatsModalBody";
+
+const NetworkStatsModalBody = dynamic(
+  () => import("./NetworkStatsModalBody").then((m) => m.NetworkStatsModalBody),
+  {
+    ssr: false,
+    loading: () => <LoadingRegion label="Loading" className="min-h-56" />,
+  },
+);
 
 export function NetworkStatsModal({
   open,
@@ -20,131 +20,27 @@ export function NetworkStatsModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const { network } = useWalletIdentity();
-  const { activity } = useWalletActivity();
-  const { minimumBalanceXlm } = useWalletLedger();
-  const [feeStats, setFeeStats] = useState<FeeStats | null>(null);
-  const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Every opening measures again: the body mounts fresh and stays through the exit.
+  const mounted = useMountedThroughExit(open);
+  const [generation, setGeneration] = useState(0);
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) setGeneration((current) => current + 1);
+  }
 
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    void Promise.all([
-      fetchFeeStats(network),
-      testHorizonEndpoint(network, getHorizonUrl(network)).then((result) => result.latencyMs),
-    ])
-      .then(([fees, latency]) => {
-        if (!alive) return;
-        setFeeStats(fees);
-        setLatencyMs(latency);
-        setError(null);
-      })
-      .catch((cause) => {
-        if (alive) setError(cause instanceof Error ? cause.message : "Unable to load network statistics.");
-      });
-    return () => {
-      alive = false;
-    };
-  }, [network, open]);
-
-  if (!open) return null;
-
-  const totalTxCount = activity.length;
+  const [header, setHeader] = useState<NetworkStatsHeader | null>(null);
 
   return (
-    <Modal open onClose={onClose} wide>
+    <Modal open={open} onClose={onClose} wide>
       <ModalHeader
-        title="Network Status"
-        subtitle={`Observed data from Stellar ${NETWORKS[network].label}`}
+        title={header?.title ?? "Network Status"}
+        subtitle={header?.subtitle ?? "Observed data from the Stellar network"}
         onClose={onClose}
       />
-      <div className="space-y-4 p-4 sm:p-6">
-        {/* Top Eco Banner */}
-        <div className="rounded-3xl bg-gradient-to-br from-emerald-950/40 via-zinc-900 to-black border border-emerald-500/20 p-5 flex items-center justify-between shadow-lg">
-          <div>
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] font-semibold text-emerald-400 mb-2">
-              <IconShield size={12} />
-              <span>No Proof-of-Work Mining</span>
-            </div>
-            <h3 className="text-[17px] font-bold text-white tracking-tight">
-              Stellar Consensus Protocol
-            </h3>
-            <p className="text-[12px] text-neutral-400 mt-1 max-w-sm">
-              Federated Byzantine Agreement reaches consensus without proof-of-work mining.
-            </p>
-          </div>
-          <div className="text-right">
-            <span className="text-3xl">🌱</span>
-          </div>
-        </div>
-
-        {/* 4-Stat Grid */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Horizon Response
-            </p>
-            <p className="mono text-[22px] font-bold text-white mt-1">{latencyMs === null ? "—" : `${latencyMs}ms`}</p>
-            <p className="text-[11px] text-neutral-400 mt-0.5">Measured from this browser</p>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Accepted Base Fee
-            </p>
-            <p className="mono text-[22px] font-bold text-[#30D158] mt-1">
-              {feeStats ? stroopsToAmount(BigInt(feeStats.modeAcceptedFee)) : "—"} XLM
-            </p>
-            <p className="text-[11px] text-neutral-400 mt-0.5">Horizon fee distribution mode</p>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Loaded Activity
-            </p>
-            <p className="mono text-[22px] font-bold text-[#64D2FF] mt-1">{totalTxCount}</p>
-            <p className="text-[11px] text-neutral-400 mt-0.5">Operations loaded in this session</p>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Smart Contracts Engine
-            </p>
-            <p className="mono text-[22px] font-bold text-purple-300 mt-1">Soroban</p>
-            <p className="text-[11px] text-purple-400 mt-0.5">Rust WASM Virtual Machine</p>
-          </div>
-        </div>
-
-        {error && <ErrorText message={error} />}
-
-        {/* Live account reserve */}
-        <div className="panel-inset p-4 space-y-2 text-[12.5px]">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            Active Account Reserve
-          </p>
-          <div className="flex justify-between text-neutral-300">
-            <span>Current Minimum Balance</span>
-            <span className="mono font-semibold text-white">
-              {minimumBalanceXlm === null ? "—" : `${minimumBalanceXlm} XLM`}
-            </span>
-          </div>
-          <div className="flex justify-between text-neutral-300">
-            <span>Last Ledger Base Fee</span>
-            <span className="mono font-semibold text-white">
-              {feeStats ? `${feeStats.lastLedgerBaseFee} stroops` : "—"}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 pt-1 text-[11px] text-emerald-400">
-            <IconCheck size={12} />
-            <span>Minimum balance includes subentries and sponsorship deltas reported by Horizon.</span>
-          </div>
-        </div>
-
-        <Button variant="ghost" className="w-full" onClick={onClose}>
-          Close
-        </Button>
-      </div>
+      {mounted ? (
+        <NetworkStatsModalBody key={generation} onClose={onClose} onHeaderChange={setHeader} />
+      ) : null}
     </Modal>
   );
 }

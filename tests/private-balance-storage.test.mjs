@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as storage from '../src/features/private-balance/runtime/storage.ts';
 import {
+  derivePrivateAddressDeploymentTag,
+  encodePrivateAddress,
+} from '@stellarkey/private-balance';
+import {
   advancePrivateChainedApprovalFee,
   beginPrivateChainedApproval,
   clearPrivateChainedApproval,
@@ -57,6 +61,7 @@ const note = {
   id: '06'.repeat(32),
   commitment: '06'.repeat(32),
   value: '5000000',
+  assetIndex: 0,
   assetContractId: ASSET_CONTRACT_ID,
   diversifier: '00000000',
   ownerCommitment: '07'.repeat(32),
@@ -72,12 +77,13 @@ const checkpoint = {
   lastActionIndex: 0,
   lastRecordHash: '0a'.repeat(32),
   treeRoot: '0b'.repeat(32),
-  treeFrontier: Array.from({ length: 32 }, () => '00'.repeat(32)),
+  treeFrontier: Array.from({ length: 34 }, () => '00'.repeat(32)),
   deploymentBindingHash: context.deploymentBindingHash,
   manifestHash,
   latestLedger: 100,
   updatedAt: 2,
 };
+
 
 test('private state is encrypted, context-bound, and reserved with atomic CAS', async () => {
   const driver = new MemoryDriver();
@@ -112,19 +118,22 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
 
   const pendingAction = {
     id: 'action-1',
+    proofExposure: 'local',
     kind: 'transfer',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     status: 'prepared',
     reservedNoteIds: [note.id],
     actionField: '0d'.repeat(32),
     nullifiers: ['0e'.repeat(32), '00'.repeat(32)],
-    outputCommitments: ['0f'.repeat(32), '12'.repeat(32)],
+    outputCommitments: ['0f'.repeat(32), '12'.repeat(32), '13'.repeat(32)],
     anchorRoot: checkpoint.treeRoot,
     anchorExpiresAtLedger: 150,
     proofHash: '10'.repeat(32),
     classicFeeCapStroops: '1000',
     resourceFeeCapStroops: '500000',
     amountStroops: '4000000',
+    submissionMode: 'direct',
     changeValueStroops: '1000000',
     broadcastAttempts: 0,
     createdAt: 3,
@@ -151,16 +160,21 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
   assert.equal(reserved.notes[0].reservedAt, 3);
   assert.deepEqual(reserved.pendingActions, [pendingAction]);
   assert.deepEqual(await loadPrivateBalanceState(context, key, driver), reserved);
+  await assert.rejects(commitPrivateBalanceState(context, key, {
+    ...reserved, revision: 3,
+    pendingActions: [{ ...pendingAction, submissionMode: 'automatic' }],
+  }, 2, driver), /schema/i);
 
   const reviewed = await transitionPrivatePendingAction(
     context,
     key,
     2,
     pendingAction.id,
-    { from: 'prepared', to: 'reviewed', transactionHash: '11'.repeat(32), updatedAt: 4 },
+    { from: 'prepared', to: 'reviewed', submissionMode: 'relay', transactionHash: '11'.repeat(32), updatedAt: 4 },
     driver,
   );
   assert.equal(reviewed.pendingActions[0].status, 'reviewed');
+  assert.equal(reviewed.pendingActions[0].submissionMode, 'direct');
   assert.equal(reviewed.pendingActions[0].transactionHash, '11'.repeat(32));
 
   await assert.rejects(
@@ -184,11 +198,13 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
       to: 'signed',
       signedEnvelopeXdr: 'AAAA',
       expiresAtSeconds: 1_700_000_300,
+      submissionMode: 'relay',
       updatedAt: 5,
     },
     driver,
   );
   assert.equal(signed.pendingActions[0].status, 'signed');
+  assert.equal(signed.pendingActions[0].submissionMode, 'direct');
   assert.equal(signed.pendingActions[0].signedEnvelopeXdr, 'AAAA');
   assert.equal(signed.pendingActions[0].expiresAtSeconds, 1_700_000_300);
   assert.equal(signed.pendingActions[0].amountStroops, '4000000');
@@ -210,10 +226,11 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
     key,
     4,
     pendingAction.id,
-    { from: 'signed', to: 'ambiguous', latestRpcStatus: 'NOT_FOUND', updatedAt: 6 },
+    { from: 'signed', to: 'ambiguous', submissionMode: 'relay', latestRpcStatus: 'NOT_FOUND', updatedAt: 6 },
     driver,
   );
   assert.equal(ambiguous.pendingActions[0].status, 'ambiguous');
+  assert.equal(ambiguous.pendingActions[0].submissionMode, 'direct');
   assert.equal(ambiguous.pendingActions[0].broadcastAttempts, 1);
   assert.equal(ambiguous.notes[0].status, 'reserved');
 
@@ -239,6 +256,7 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
   }, driver);
   const deposit = await commitPrivateBuildReservation(context, key, 7, 'deposit-1', {
     ...pendingAction,
+    submissionMode: 'direct',
     id: 'deposit-1',
     kind: 'deposit',
     assetContractId: ASSET_CONTRACT_ID,
@@ -290,6 +308,7 @@ test('private notes reserve before witness creation and promote atomically', asy
     driver,
   );
   const reservation = {
+    proofExposure: 'local',
     id: 'build-1',
     kind: 'transfer',
     assetContractId: ASSET_CONTRACT_ID,
@@ -310,13 +329,15 @@ test('private notes reserve before witness creation and promote atomically', asy
 
   const pendingAction = {
     id: reservation.id,
+    proofExposure: 'local',
     kind: reservation.kind,
+    assetIndex: 0,
     assetContractId: reservation.assetContractId,
     status: 'prepared',
     reservedNoteIds: reservation.reservedNoteIds,
     actionField: '0d'.repeat(32),
     nullifiers: ['0e'.repeat(32), '00'.repeat(32)],
-    outputCommitments: ['0f'.repeat(32), '12'.repeat(32)],
+    outputCommitments: ['0f'.repeat(32), '12'.repeat(32), '13'.repeat(32)],
     anchorRoot: checkpoint.treeRoot,
     anchorExpiresAtLedger: 150,
     proofHash: '10'.repeat(32),
@@ -378,6 +399,7 @@ test('build reservations past the TTL release their notes in one commit', async 
   );
   const reservation = {
     id: 'stale-build',
+    proofExposure: 'local',
     kind: 'transfer',
     assetContractId: ASSET_CONTRACT_ID,
     reservedNoteIds: [note.id],
@@ -431,10 +453,11 @@ test('stale pre-broadcast pending actions release their notes, broadcasts never 
   const freshNote = makeNote('18'.repeat(32), 5_000);
   const base = {
     kind: 'transfer',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     actionField: '0d'.repeat(32),
     nullifiers: ['0e'.repeat(32), '00'.repeat(32)],
-    outputCommitments: ['0f'.repeat(32), '12'.repeat(32)],
+    outputCommitments: ['0f'.repeat(32), '12'.repeat(32), '13'.repeat(32)],
     anchorRoot: '0b'.repeat(32),
     anchorExpiresAtLedger: 150,
     proofHash: '10'.repeat(32),
@@ -445,6 +468,7 @@ test('stale pre-broadcast pending actions release their notes, broadcasts never 
   // 'reviewed', zero broadcast attempts, notes still reserved.
   const orphan = {
     ...base,
+    proofExposure: 'local',
     id: 'orphan-1',
     status: 'reviewed',
     reservedNoteIds: [orphanNote.id],
@@ -601,7 +625,22 @@ test('the private address and recent recipients persist under schema validation'
     null,
     driver,
   );
-  const address = index => `tks1${['q', 'p', 'z', 'r', 'y', 'x'][index].repeat(115)}`;
+  const fromHex = value => Uint8Array.from(
+    value.match(/../g) ?? [],
+    byte => Number.parseInt(byte, 16),
+  );
+  const address = index => encodePrivateAddress({
+    deploymentTag: derivePrivateAddressDeploymentTag(fromHex(context.deploymentBindingHash)),
+    diversifier: Uint8Array.of(index >>> 24, index >>> 16 & 255, index >>> 8 & 255, index & 255),
+    ownerCommitment: fromHex('13ebf289ee03020bb0999342c395033c6326f328e6f998b8826ae8573fe7814c'),
+    hpkePublicKey: fromHex('803cffb201ff35efdfe4341ca5ffd9dfdd334adafa26feb85b14e1e0f73ef634'),
+  }, 'tskpay_');
+
+  assert.equal(address(0).length, 128);
+  await assert.rejects(
+    () => recordPrivateBalanceAddress(context, key, 0, `tks1${'q'.repeat(115)}`, driver),
+    /address is invalid/,
+  );
 
   await assert.rejects(
     () => recordPrivateBalanceAddress(context, key, 0, 'tks1not-canonical', driver),
@@ -654,4 +693,45 @@ test('the private address and recent recipients persist under schema validation'
     lastUsedAt: 99,
   });
   assert.deepEqual(await loadPrivateBalanceState(context, key, driver), repeated);
+  const rotated = await recordPrivateBalanceAddress(context, key, repeated.revision, address(1), driver);
+  const twice = await recordPrivateBalanceAddress(context, key, rotated.revision, address(2), driver);
+  await assert.rejects(
+    recordPrivateBalanceAddress(context, key, twice.revision, address(0), driver),
+    /already issued/i,
+  );
+  assert.deepEqual(twice.issuedAddressDiversifiers, ['00000000', '00000001', '00000002']);
+  assert.equal((await loadPrivateBalanceState(context, key, driver)).privateAddress, address(2));
+  assert.equal((await recordPrivateBalanceAddress(context, key, twice.revision, address(2), driver)).revision, twice.revision);
+  const reset = storage.createPrivateBalanceVerificationReset(twice, manifestHash, 100);
+  assert.equal(reset.privateAddress, address(2));
+  assert.deepEqual(reset.issuedAddressDiversifiers, twice.issuedAddressDiversifiers);
+  assert.deepEqual(reset.notes, []);
+  await commitPrivateBalanceState(context, key, reset, twice.revision, driver);
+  await assert.rejects(recordPrivateBalanceAddress(context, key, reset.revision, address(0), driver), /already issued/i);
+  // A legacy record remembers at least its current address when first rotated.
+  const legacy = { ...reset };
+  delete legacy.issuedAddressDiversifiers;
+  await commitPrivateBalanceState(context, key, { ...legacy, revision: reset.revision + 1 }, reset.revision, driver);
+  const afterLegacy = await recordPrivateBalanceAddress(context, key, reset.revision + 1, address(3), driver);
+  await assert.rejects(recordPrivateBalanceAddress(context, key, afterLegacy.revision, address(2), driver), /already issued/i);
+  const rollback = storage.createPrivateBalanceVerificationRollback(reset, afterLegacy);
+  assert.equal(rollback.privateAddress, address(3));
+  assert.deepEqual(rollback.issuedAddressDiversifiers, ['00000000', '00000001', '00000002', '00000003']);
+  assert.equal(rollback.revision, afterLegacy.revision + 1);
+  assert.throws(() => storage.createPrivateBalanceVerificationRollback(reset, {
+    ...afterLegacy, buildReservations: [{ id: 'in-flight' }],
+  }), /pending/i);
+  for (const issuedAddressDiversifiers of [['bad'], ['00000000', '00000000'],
+    Array.from({ length: storage.MAX_ISSUED_PRIVATE_DIVERSIFIERS + 1 }, (_, index) => index.toString(16).padStart(8, '0'))]) {
+    await assert.rejects(commitPrivateBalanceState(context, key, {
+      ...afterLegacy, revision: afterLegacy.revision + 1, issuedAddressDiversifiers,
+    }, afterLegacy.revision, driver), /schema/i);
+  }
+  const atLimit = {
+    ...afterLegacy, revision: afterLegacy.revision + 1,
+    issuedAddressDiversifiers: Array.from({ length: storage.MAX_ISSUED_PRIVATE_DIVERSIFIERS }, (_, index) => index.toString(16).padStart(8, '0')),
+  };
+  await commitPrivateBalanceState(context, key, atLimit, afterLegacy.revision, driver);
+  await assert.rejects(recordPrivateBalanceAddress(context, key, atLimit.revision, address(65_536), driver), /safety limit/i);
+  assert.equal((await loadPrivateBalanceState(context, key, driver)).privateAddress, address(3));
 });

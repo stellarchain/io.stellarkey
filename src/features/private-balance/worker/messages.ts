@@ -1,4 +1,9 @@
-import type { ActionModel, ArchiveRecordModel, MerkleTree } from '@stellarkey/private-balance';
+import type {
+  ActionModel,
+  ArchiveRecordModel,
+  MerklePathWitness,
+  MerkleTree,
+} from '@stellarkey/private-balance';
 import type { ShieldedActivityRecord, ShieldedNoteRecord } from '../runtime/types';
 import type { BuildActionIntent } from './action-builder';
 
@@ -23,7 +28,9 @@ export interface PrivateBalanceKeyContext {
   poolId: Uint8Array;
   accountPublicKey: Uint8Array;
   contextField: Uint8Array;
-  addressPrefix: 'tks' | 'sks';
+  deploymentBindingHash: Uint8Array;
+  addressPrefix: 'tskpay_' | 'skpay_';
+  assets: Array<{ index: number; contractId: string }>;
 }
 
 export type WorkerRequest =
@@ -37,6 +44,10 @@ export type WorkerRequest =
       type: 'GENERATE_ADDRESS';
     })
   | (WorkerMessage & {
+      type: 'DERIVE_ADDRESS';
+      diversifier: Uint8Array;
+    })
+  | (WorkerMessage & {
       type: 'SCAN_PAGE';
       records: ArchiveRecordModel[];
       expectedPriorRecordHash: Uint8Array;
@@ -48,7 +59,7 @@ export type WorkerRequest =
       type: 'BUILD_ACTION';
       reservationId: string;
       intent: BuildActionIntent;
-      commitments: Uint8Array[];
+      merklePaths: MerklePathWitness[];
       availableNotes: ShieldedNoteRecord[];
     })
   | (WorkerMessage & {
@@ -78,6 +89,11 @@ export type WorkerResponse =
       address: string;
     })
   | (WorkerMessage & {
+      type: 'ADDRESS_DERIVED';
+      ownerCommitmentHex: string;
+      address: string;
+    })
+  | (WorkerMessage & {
       type: 'SCAN_OK';
       notes: ShieldedNoteRecord[];
       activities: ShieldedActivityRecord[];
@@ -92,10 +108,10 @@ export type WorkerResponse =
       preparedActionId: string;
       action: ActionModel;
       actionFieldHex: string;
-      actionBindingHex: string;
       reservedNoteIds: string[];
       inputValue: string;
       changeValue: string;
+      recipientOutputCommitment?: string;
       anchorExpiresAtLedger: number;
     })
   | (WorkerMessage & {

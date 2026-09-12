@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 class MemoryStorage {
@@ -52,13 +53,72 @@ test("destructive reset removes every wallet-owned storage key and preserves unr
   assert.equal(localStorage.getItem("unrelated.application"), "keep");
 });
 
-test("POC plaintext contacts are rejected and never rewritten", async () => {
+test("full wallet reset also removes every private-payment IndexedDB record", () => {
+  const source = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
+  const reset = source.split("const resetWallet = useCallback")[1]?.split("useEffect(() => {")[0] ?? "";
+  assert.ok(
+    reset.indexOf("wipeVault()") >= 0 &&
+      reset.indexOf("wipeVault()") < reset.indexOf("getMerchantRepository().clear()"),
+    "reset must revoke the session and erase the vault before fallible IndexedDB cleanup",
+  );
+  assert.match(reset, /getMerchantRepository\(\)\.clear\(\)/);
+  assert.match(reset, /IndexedDbEncryptedRecordDriver\(\)\.removePrefix\("private:"\)/);
+  assert.match(reset, /sessionStorage\.clear\(\)/);
+  assert.match(reset, /serviceWorker\.getRegistrations\(\)/);
+  assert.match(reset, /registration\.unregister\(\)/);
+  assert.match(reset, /caches\.keys\(\)/);
+  assert.match(reset, /caches\.delete\(name\)/);
+  assert.match(reset, /location\.reload\(\)/);
+});
+
+test("auto-lock covers onboarding and checks monotonic plus suspend-aware wall time", () => {
+  const source = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
+  const autoLock = source.split("const lockVaultAndReset")[1]?.split("const pollPendingRef")[0] ?? "";
+  assert.match(autoLock, /phase === "empty" && isUnlocked\(\)/);
+  assert.match(autoLock, /performance\.now\(\)/);
+  assert.match(autoLock, /Date\.now\(\)/);
+  assert.match(autoLock, /idleElapsedMs/);
+  assert.match(autoLock, /addEventListener\("pageshow", onResume\)/);
+  assert.match(autoLock, /closePaperWalletPrints\(\)/);
+});
+
+test("idle elapsed time survives suspend and ignores backward clock movement", async () => {
+  const { idleElapsedMs } = await import("../src/lib/idle-time.ts");
+
+  assert.equal(idleElapsedMs(
+    { monotonicMs: 100, wallMs: 1_000 },
+    { monotonicMs: 150, wallMs: 61_000 },
+  ), 60_000);
+  assert.equal(idleElapsedMs(
+    { monotonicMs: 100, wallMs: 1_000 },
+    { monotonicMs: 600, wallMs: 500 },
+  ), 500);
+  assert.equal(idleElapsedMs(
+    { monotonicMs: 100, wallMs: 1_000 },
+    { monotonicMs: 50, wallMs: 500 },
+  ), 0);
+});
+
+test("every user-controlled JSON file is bounded before file.text", () => {
+  for (const path of [
+    "src/components/Onboarding.tsx",
+    "src/components/BackupWizardModalBody.tsx",
+    "src/components/AddressBookPage.tsx",
+    "src/components/SettingsPage.tsx",
+  ]) {
+    const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+    assert.match(source, /readBoundedTextFile/);
+    assert.doesNotMatch(source, /await file\.text\(\)/);
+  }
+});
+
+test("corrupt ancillary contacts do not block unlock and are never rewritten", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
   const { Keypair } = await import("@stellar/stellar-sdk");
   const alice = Keypair.random().publicKey();
   const password = "correct horse battery staple";
-  const { initializeVault, lockVault, unlockVault } = await import("../src/lib/vault.ts");
+  const { initializeVault, isUnlocked, lockVault, unlockVault } = await import("../src/lib/vault.ts");
   await initializeVault(password, { secret: Keypair.random().secret() });
   lockVault();
   localStorage.setItem(
@@ -70,9 +130,45 @@ test("POC plaintext contacts are rejected and never rewritten", async () => {
   await assert.rejects(() => loadContacts(), /locked/i);
 
   const raw = localStorage.getItem("stellarkey.contacts.v1");
-  await assert.rejects(() => unlockVault(password), /contacts.*unsupported|unsupported.*contacts/i);
+  await unlockVault(password);
+  assert.equal(isUnlocked(), true);
   assert.equal(localStorage.getItem("stellarkey.contacts.v1"), raw);
-  await assert.rejects(() => saveContact({ name: "Alice", address: alice }), /locked/i);
+  await assert.rejects(() => loadContacts(), /contacts.*unsupported|unsupported.*contacts/i);
+  await assert.rejects(
+    () => saveContact({ name: "Alice", address: alice }),
+    /contacts.*unsupported|unsupported.*contacts/i,
+  );
+});
+
+test("a reset epoch invalidates backup restore before it can replace storage", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const {
+    exportVaultBackup,
+    initializeVault,
+    invalidateWalletLifecycle,
+    loadVault,
+    restoreVaultBackup,
+  } = await import("../src/lib/vault.ts");
+  await initializeVault("correct horse battery staple", {
+    secret: Keypair.random().secret(),
+  });
+  const backup = await exportVaultBackup("correct horse battery staple");
+  const identity = loadVault().accounts[0].publicKey;
+
+  const restoring = restoreVaultBackup(backup, "correct horse battery staple");
+  invalidateWalletLifecycle();
+  await assert.rejects(restoring, /reset|cancelled|changed/i);
+  assert.equal(loadVault().accounts[0].publicKey, identity);
+});
+
+test("wallet reset broadcasts intent and invalidates restore before fallible cleanup", () => {
+  const source = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
+  const reset = source.split("const resetWallet = useCallback")[1]?.split("useEffect(() => {")[0] ?? "";
+  assert.ok(reset.indexOf("invalidateWalletLifecycle()") >= 0);
+  assert.ok(reset.indexOf('post("wallet-reset")') >= 0);
+  assert.ok(reset.indexOf('post("wallet-reset")') < reset.indexOf("getMerchantRepository().clear()"));
 });
 
 test("restored contacts are encrypted before the restored vault is exposed", async () => {
@@ -104,6 +200,68 @@ test("restored contacts are encrypted before the restored vault is exposed", asy
   await unlockVault(password);
   assert.deepEqual(await loadContacts(), [{ ...contact, favorite: false }]);
   lockVault();
+});
+
+test("contact persistence enforces the same bounded visible-name policy as the editor", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const { initializeVault } = await import("../src/lib/vault.ts");
+  const { saveContact, validateContact } = await import("../src/lib/contacts.ts");
+  const address = Keypair.random().publicKey();
+  await initializeVault("correct horse battery staple", { secret: Keypair.random().secret() });
+
+  for (const name of ["x".repeat(25), "Alice\u202e@example.com", "Ali\u200bce"]) {
+    assert.ok(validateContact(name, address));
+    await assert.rejects(
+      () => saveContact({ name, address }),
+      /invalid name|24 characters|unsupported character/i,
+    );
+  }
+});
+
+test("backup inspection identifies the wallet before destructive restore", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const {
+    exportVaultBackup,
+    initializeVault,
+    inspectVaultBackup,
+  } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  const secret = Keypair.random().secret();
+  const publicKey = Keypair.fromSecret(secret).publicKey();
+  await initializeVault(password, { secret });
+
+  const info = await inspectVaultBackup(await exportVaultBackup(password), password);
+  assert.equal(info.primaryAccountPublicKey, publicKey);
+  assert.equal(info.primaryAccountKind, "software");
+  assert.equal(info.primaryAccountAuthenticated, true);
+});
+
+test("backup inspection prefers an authenticated software account over an active watch-only address", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const {
+    addWatchOnlyAccount,
+    exportVaultBackup,
+    initializeVault,
+    inspectVaultBackup,
+  } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  const softwareSecret = Keypair.random().secret();
+  const softwarePublicKey = Keypair.fromSecret(softwareSecret).publicKey();
+  const watchOnlyPublicKey = Keypair.random().publicKey();
+  await initializeVault(password, { secret: softwareSecret });
+  await addWatchOnlyAccount(watchOnlyPublicKey, "Active watch-only decoy");
+
+  const info = await inspectVaultBackup(await exportVaultBackup(password), password);
+  assert.equal(info.primaryAccountPublicKey, softwarePublicKey);
+  assert.notEqual(info.primaryAccountPublicKey, watchOnlyPublicKey);
+  assert.equal(info.primaryAccountKind, "software");
+  assert.equal(info.primaryAccountAuthenticated, true);
 });
 
 test("full wallet backup preserves the validated Merchant Mode bootstrap state", async () => {
@@ -154,6 +312,201 @@ test("private transaction notes are encrypted at rest and require an unlocked va
   lockVault();
   await assert.rejects(() => loadPrivateTxNote("deadbeef"), /locked/i);
   assert.throws(() => getMerchantEncryptionKey(), /locked/i);
+});
+
+test("journal-less private activity notes survive a verified backup round trip", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const {
+    exportVaultBackup,
+    initializeVault,
+    inspectVaultBackup,
+    loadPrivateTxNote,
+    restoreVaultBackup,
+    savePrivateTxNote,
+    unlockVault,
+  } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  const noteKey = `private:testnet-private-pool-v2:${"ab".repeat(32)}`;
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  await savePrivateTxNote(noteKey, "Received privately");
+
+  const backup = await exportVaultBackup(password);
+  const info = await inspectVaultBackup(backup, password);
+  assert.deepEqual(info.warnings, []);
+  await restoreVaultBackup(backup, password);
+  await unlockVault(password);
+
+  assert.equal(await loadPrivateTxNote(noteKey), "Received privately");
+  await assert.rejects(
+    () => savePrivateTxNote("not a transaction identifier", "must not persist"),
+    /transaction.*identifier/i,
+  );
+});
+
+test("backup restore omits malformed optional transaction notes with a warning", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const { decryptString, encryptString } = await import("../src/lib/crypto.ts");
+  const {
+    encryptVaultString,
+    unwrapVaultMasterKey,
+    zeroKey,
+  } = await import("../src/lib/vault-keys.ts");
+  const {
+    exportVaultBackup,
+    initializeVault,
+    inspectVaultBackup,
+    loadPrivateTxNote,
+    restoreVaultBackup,
+    unlockVault,
+  } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  const validKey = `private:testnet-private-pool-v2:${"cd".repeat(32)}`;
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  const backup = JSON.parse(await exportVaultBackup(password));
+  const payload = JSON.parse(await decryptString(backup.crypto, password));
+  const masterKey = await unwrapVaultMasterKey(payload.vault.wrappedMasterKey, password);
+  try {
+    payload.txNotes = {
+      version: 3,
+      crypto: await encryptVaultString(JSON.stringify({
+        [validKey]: "Keep this note",
+        "unknown optional key": "Drop this note",
+        deadbeef: 42,
+      }), masterKey),
+    };
+  } finally {
+    zeroKey(masterKey);
+  }
+  backup.crypto = await encryptString(JSON.stringify(payload), password);
+  const raw = JSON.stringify(backup);
+
+  const info = await inspectVaultBackup(raw, password);
+  assert.equal(info.warnings.length, 1);
+  assert.match(info.warnings[0], /2 private transaction notes.*omitted/i);
+  const restored = await restoreVaultBackup(raw, password);
+  assert.deepEqual(restored.warnings, info.warnings);
+  await unlockVault(password);
+
+  assert.equal(await loadPrivateTxNote(validKey), "Keep this note");
+  assert.equal(await loadPrivateTxNote("deadbeef"), "");
+});
+
+test("backup export refuses an unreadable encrypted transaction-note store", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const { exportVaultBackup, initializeVault } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  localStorage.setItem("wallet.tx-notes.v1", JSON.stringify({
+    version: 3,
+    crypto: { iv: "invalid", ciphertext: "invalid" },
+  }));
+
+  await assert.rejects(() => exportVaultBackup(password), /transaction notes|backup.*validate/i);
+});
+
+test("backup inspection recovers archived-account private state and warns on unknown records", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair, StrKey } = await import("@stellar/stellar-sdk");
+  const { decryptString, encryptString } = await import("../src/lib/crypto.ts");
+  const {
+    derivePrivacySessionRoot,
+    derivePrivateStorageKey,
+  } = await import("@stellarkey/private-balance");
+  const {
+    commitPrivateBalanceState,
+    createEmptyPrivateBalanceState,
+  } = await import("../src/features/private-balance/runtime/storage.ts");
+  const { exportPrivateBalanceBackupArchive } = await import(
+    "../src/features/private-balance/runtime/backup.ts"
+  );
+  const {
+    addStoredAccount,
+    exportVaultBackup,
+    initializeVault,
+    inspectVaultBackup,
+  } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  const first = Keypair.random();
+  const archived = Keypair.random();
+  await initializeVault(password, { secret: first.secret() });
+  const archivedMeta = await addStoredAccount({ secret: archived.secret() });
+  const backup = JSON.parse(await exportVaultBackup(password));
+  const payload = JSON.parse(await decryptString(backup.crypto, password));
+  const archivedRecord = payload.vault.accounts.find(account => account.id === archivedMeta.id);
+  payload.vault.accounts = payload.vault.accounts.filter(account => account.id !== archivedMeta.id);
+  payload.vault.archivedAccounts = [archivedRecord];
+  payload.vault.activeAccountId = payload.vault.accounts[0].id;
+
+  const context = {
+    networkId: "01".repeat(32),
+    realmId: "02".repeat(32),
+    poolId: "03".repeat(32),
+    accountId: archivedMeta.id,
+    deploymentBindingHash: "05".repeat(32),
+  };
+  const rawSeed = new Uint8Array(StrKey.decodeEd25519SecretSeed(archived.secret()));
+  const sessionRoot = derivePrivacySessionRoot(
+    rawSeed,
+    1,
+    Buffer.from(context.networkId, "hex"),
+    Buffer.from(context.realmId, "hex"),
+    Buffer.from(context.poolId, "hex"),
+    new Uint8Array(StrKey.decodeEd25519PublicKey(archived.publicKey())),
+  );
+  const storageKey = derivePrivateStorageKey(
+    sessionRoot,
+    Buffer.from(context.deploymentBindingHash, "hex"),
+  );
+  rawSeed.fill(0);
+  sessionRoot.fill(0);
+  const privateDriver = {
+    records: new Map(),
+    async read(key) { return this.records.get(key) ?? null; },
+    async readPrefix(prefix) {
+      return new Map([...this.records].filter(([key]) => key.startsWith(prefix)));
+    },
+    async compareAndSet(recordKey, expectedRevision, value) {
+      const current = this.records.get(recordKey) ?? null;
+      const revision = current === null ? null : JSON.parse(current).revision;
+      if (revision !== expectedRevision) return { ok: false, current };
+      this.records.set(recordKey, value);
+      return { ok: true, current: value };
+    },
+  };
+  await commitPrivateBalanceState(
+    context,
+    storageKey,
+    createEmptyPrivateBalanceState("07".repeat(32), 1),
+    null,
+    privateDriver,
+  );
+  await commitPrivateBalanceState(
+    { ...context, accountId: "unknown-account" },
+    storageKey,
+    createEmptyPrivateBalanceState("08".repeat(32), 1),
+    null,
+    privateDriver,
+  );
+  storageKey.fill(0);
+  payload.privateBalanceStore = JSON.stringify(
+    await exportPrivateBalanceBackupArchive(privateDriver),
+  );
+  backup.crypto = await encryptString(JSON.stringify(payload), password);
+  globalThis.indexedDB = {};
+  try {
+    const info = await inspectVaultBackup(JSON.stringify(backup), password);
+    assert.equal(info.hasPrivateBalanceArchive, true);
+    assert.match(info.warnings.join(" "), /1 Private Payments record.*omitted/i);
+  } finally {
+    delete globalThis.indexedDB;
+  }
 });
 
 test("merchant session keys are unique to each vault even when passwords match", async () => {
@@ -270,6 +623,34 @@ test("encrypted backups reject malformed decrypted payloads before restore", asy
   await assert.rejects(
     () => inspectVaultBackup(backup, password),
     /malformed|invalid/i,
+  );
+});
+
+test("backup inspection opens every nested signing credential", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const { decryptString, encryptString } = await import("../src/lib/crypto.ts");
+  const {
+    addStoredAccount,
+    exportVaultBackup,
+    initializeVault,
+    inspectVaultBackup,
+  } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  await addStoredAccount({ secret: Keypair.random().secret() });
+  const backup = JSON.parse(await exportVaultBackup(password));
+  const payload = JSON.parse(await decryptString(backup.crypto, password));
+  [payload.vault.accounts[0].secret, payload.vault.accounts[1].secret] = [
+    payload.vault.accounts[1].secret,
+    payload.vault.accounts[0].secret,
+  ];
+  backup.crypto = await encryptString(JSON.stringify(payload), password);
+
+  await assert.rejects(
+    () => inspectVaultBackup(JSON.stringify(backup), password),
+    /could not unlock or validate/i,
   );
 });
 

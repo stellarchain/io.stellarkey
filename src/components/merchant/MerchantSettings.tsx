@@ -9,13 +9,12 @@ import {
 } from "@/hooks/useMerchant";
 import { useWalletIdentity } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
-import { triggerHaptic } from "@/lib/haptics";
 import type {
   SettlementSwapIntent,
   SettlementSweepIntent,
 } from "@/lib/merchant/settlement";
 import type { SettingsSub } from "../SettingsPage";
-import { Button, Modal, ModalHeader } from "../ui";
+import { AlertContent, Button, Modal, ModalFooter, useRetainedForExit } from "../ui";
 import { useToast } from "../Toast";
 import {
   IconFileText,
@@ -62,6 +61,8 @@ export function MerchantSettings({
   const { accounts } = useWalletIdentity();
   const { toast } = useToast();
   const [activeSheet, setActiveSheet] = useState<MerchantSettingsSheet | null>(null);
+  // The sheet keeps rendering its content through the exit animation.
+  const shownSheet = useRetainedForExit(activeSheet);
   const [confirmTurnOff, setConfirmTurnOff] = useState(false);
   const [turningOff, setTurningOff] = useState(false);
   const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
@@ -90,7 +91,7 @@ export function MerchantSettings({
   }
 
   async function handleTurnOff() {
-    triggerHaptic("warning");
+    if (turningOff) return;
     setTurningOff(true);
     try {
       await setEnabled(false);
@@ -111,7 +112,7 @@ export function MerchantSettings({
     <>
       <div data-merchant-settings-root="true" className="pb-2">
         <h1 className="sr-only">Merchant settings</h1>
-        <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
           <div data-merchant-settings-column="business" className="space-y-6">
             <SettingsSection title="Business">
               <div className="list-group">
@@ -119,7 +120,7 @@ export function MerchantSettings({
                   first
                   icon={<IconStorefront size={16} />}
                   tint="#30D158"
-                  label="Business details"
+                  label="Business Details"
                   sub="Name, tax ID, address and receipt footer"
                   value={settings.profile.name || "Required"}
                   chevron
@@ -129,7 +130,7 @@ export function MerchantSettings({
                 <SettingsRow
                   icon={<IconReceipt size={16} />}
                   tint="#5E5CE6"
-                  label="Latest receipt"
+                  label="Latest Receipt"
                   sub={
                     receiptPreviewOrder
                       ? "Preview the most recent completed sale"
@@ -156,7 +157,7 @@ export function MerchantSettings({
                   first
                   icon={<IconWallet size={16} />}
                   tint="#30D158"
-                  label="Payment setup"
+                  label="Payment Setup"
                   sub={
                     receivingAccount
                       ? formatTrezorAddress(receivingAccount.publicKey)
@@ -170,7 +171,7 @@ export function MerchantSettings({
                 <SettingsRow
                   icon={<IconWallet size={16} />}
                   tint="#64D2FF"
-                  label="Accepted assets"
+                  label="Accepted Assets"
                   sub="Exact asset and issuer identities"
                   value={`${settings.acceptedAssets.length}`}
                   chevron
@@ -186,7 +187,7 @@ export function MerchantSettings({
                   first
                   icon={<IconSwap size={16} />}
                   tint="#5E5CE6"
-                  label="Settlement rules"
+                  label="Settlement Rules"
                   sub={`${settlementDue} ${settlementDue === 1 ? "action" : "actions"} due · prompt at ${askAt}`}
                   value={settlementRule.autoConvert ? "Convert & sweep" : "Sweep only"}
                   chevron
@@ -217,7 +218,7 @@ export function MerchantSettings({
                 <SettingsRow
                   icon={<IconPercent size={16} />}
                   tint="#BF5AF2"
-                  label="Tax rates"
+                  label="Tax Rates"
                   sub="Names and percentages"
                   value={`${settings.taxRates.length}`}
                   chevron
@@ -237,7 +238,7 @@ export function MerchantSettings({
                 <SettingsRow
                   icon={<IconFileText size={16} />}
                   tint="#5E5CE6"
-                  label="Tax records"
+                  label="Tax Records"
                   sub="Filing periods, exports and adjustments"
                   chevron={Boolean(onNavigate)}
                   onClick={onNavigate ? () => onNavigate("tax") : undefined}
@@ -251,7 +252,7 @@ export function MerchantSettings({
                   first
                   icon={<IconTerminal size={16} />}
                   tint="#5E5CE6"
-                  label="This device"
+                  label="This Device"
                   sub={
                     storageHealth?.persistence === "persistent"
                       ? "Persistent encrypted storage"
@@ -265,7 +266,7 @@ export function MerchantSettings({
                 <SettingsRow
                   icon={<IconUsers size={16} />}
                   tint="#5E5CE6"
-                  label="Staff & terminals"
+                  label="Staff & Terminals"
                   sub={`${staffCount} ${staffCount === 1 ? "person" : "people"} · ${terminal.name}`}
                   chevron={Boolean(onNavigate)}
                   onClick={onNavigate ? () => onNavigate("staff") : undefined}
@@ -289,7 +290,7 @@ export function MerchantSettings({
                   danger
                   icon={<IconXCircle size={16} />}
                   tint="#FF453A"
-                  label="Turn off Merchant Mode"
+                  label="Turn Off Merchant Mode"
                   chevron
                   opensDialog
                   onClick={() => setConfirmTurnOff(true)}
@@ -318,7 +319,7 @@ export function MerchantSettings({
           wide
         >
           <MerchantSettingsSheetContent
-            activeSheet={activeSheet}
+            activeSheet={shownSheet}
             onClose={() => setActiveSheet(null)}
             onNavigate={onNavigate}
             onOpenSwap={onOpenSwap}
@@ -328,49 +329,39 @@ export function MerchantSettings({
 
         <Modal
           open={confirmTurnOff}
-          dismissable={!turningOff}
-          onClose={() => {
-            if (!turningOff) setConfirmTurnOff(false);
-          }}
+          onClose={() => setConfirmTurnOff(false)}
+          presentation="alert"
+          busy={turningOff}
+          busyReason="Wait for Merchant Mode to finish turning off."
         >
-          <ModalHeader
-            title="Turn off Merchant Mode?"
-            subtitle="The counter disappears, but local records stay intact"
-            onClose={turningOff ? undefined : () => setConfirmTurnOff(false)}
+          <AlertContent
+            title="Turn Off Merchant Mode?"
+            message="The counter disappears, but local records stay intact. Payments still go to the same wallet account, and existing orders, catalogue items, reports and settings remain encrypted on this device."
+            actions={
+              <ModalFooter
+                stack
+                primary={
+                  <Button variant="danger" loading={turningOff} onClick={() => void handleTurnOff()}>
+                    Turn Off Merchant Mode
+                  </Button>
+                }
+                secondary={
+                  <Button variant="ghost" disabled={turningOff} onClick={() => setConfirmTurnOff(false)}>
+                    Cancel
+                  </Button>
+                }
+              />
+            }
           />
-          <div className="space-y-4 p-4 sm:p-6">
-            <p className="text-[13px] leading-relaxed text-neutral-300">
-              Payments still go to the same wallet account. Existing orders, catalogue items,
-              reports, and settings remain encrypted on this device.
-            </p>
-            <Button
-              variant="danger"
-              className="w-full"
-              loading={turningOff}
-              onClick={() => void handleTurnOff()}
-            >
-              Turn Off Merchant Mode
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full"
-              disabled={turningOff}
-              onClick={() => setConfirmTurnOff(false)}
-            >
-              Cancel
-            </Button>
-          </div>
         </Modal>
       </div>
 
-      {receiptPreviewOpen && receiptPreviewOrder && (
-        <ReceiptSheet
-          open
-          onClose={() => setReceiptPreviewOpen(false)}
-          order={receiptPreviewOrder}
-          transactionHash={receiptPreviewHash}
-        />
-      )}
+      <ReceiptSheet
+        open={receiptPreviewOpen && receiptPreviewOrder !== null}
+        onClose={() => setReceiptPreviewOpen(false)}
+        order={receiptPreviewOrder}
+        transactionHash={receiptPreviewHash}
+      />
     </>
   );
 }

@@ -80,8 +80,8 @@ fn test_verify_vectors() {
         let env = Env::default();
         env.cost_estimate().budget().reset_unlimited();
 
-        assert_eq!(item.public_signals.len(), 13);
-        let mut signals = [[0u8; 32]; 13];
+        assert_eq!(item.public_signals.len(), 11);
+        let mut signals = [[0u8; 32]; 11];
         for (signal, value) in signals.iter_mut().zip(&item.public_signals) {
             *signal = field_str_to_bytes(value);
         }
@@ -89,5 +89,13 @@ fn test_verify_vectors() {
         let proof = proof_from_snarkjs(&item.proof);
         let valid = verify_groth16_proof_bytes(&env, &proof, &signals).expect("verifier run");
         assert!(valid, "Proof must verify successfully in Soroban verifier!");
+        println!(
+            "Verifier CPU instructions: {}",
+            env.cost_estimate().budget().cpu_instruction_cost(),
+        );
+        assert!(
+            env.cost_estimate().budget().cpu_instruction_cost() < 30_000_000,
+            "the 11-signal batched verifier must remain below its measured 30M-instruction ceiling",
+        );
     }
 }

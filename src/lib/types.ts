@@ -20,6 +20,8 @@ export interface StoredAccount {
 
 export interface VaultFile {
   version: 3;
+  /** Monotonic local revision used to reject stale cross-tab writes. */
+  revision?: number;
   /** Random vault master key wrapped by the password-derived key. */
   wrappedMasterKey: EncryptedPayload;
   /** Merchant storage authority wrapped by the same random master key. */
@@ -54,6 +56,12 @@ export interface AssetBalance {
   sellingLiabilities: string;
   limit: string | null;
   isNative: boolean;
+  /** Full payment authorization for issued assets. Native XLM is always true. */
+  isAuthorized?: boolean;
+  /** May retain liabilities but cannot make payments or new offers. */
+  isAuthorizedToMaintainLiabilities?: boolean;
+  /** The issuer may burn this trustline balance. */
+  isClawbackEnabled?: boolean;
 }
 
 export interface ActivitySwapLeg {

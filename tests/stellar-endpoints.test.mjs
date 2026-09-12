@@ -21,6 +21,28 @@ class MemoryStorage {
   removeItem(key) { this.#items.delete(key); }
 }
 
+test("Settings requires fresh wallet authorization before endpoint persistence", () => {
+  const source = readFileSync(
+    new URL("../src/components/SettingsPage.tsx", import.meta.url),
+    "utf8",
+  );
+  const saveHandler = source.split("async function handleTestAndSaveEndpoint")[1]
+    ?.split("async function handleResetEndpoints")[0] ?? "";
+  const resetHandler = source.split("async function handleResetEndpoints")[1]
+    ?.split("async function handleEnablePasskey")[0] ?? "";
+
+  assert.match(saveHandler, /await authorizeSensitiveAction\(/);
+  assert.ok(
+    saveHandler.indexOf("await authorizeSensitiveAction(") < saveHandler.indexOf("saveCustomEndpoint("),
+    "authorization must complete before an endpoint is persisted",
+  );
+  assert.match(resetHandler, /await authorizeSensitiveAction\(/);
+  assert.ok(
+    resetHandler.indexOf("await authorizeSensitiveAction(") < resetHandler.indexOf("resetCustomEndpoints("),
+    "authorization must complete before endpoints are reset",
+  );
+});
+
 test("custom Stellar endpoints are HTTPS-only, credential-free, and normalized", () => {
   assert.equal(normalizeStellarEndpointUrl(" https://node.example/rpc/ "), "https://node.example/rpc");
   assert.throws(() => normalizeStellarEndpointUrl("http://node.example"), /HTTPS/i);
@@ -153,6 +175,27 @@ test("RPC endpoint health uses getNetwork and rejects a wrong passphrase", async
     () => testRpcEndpoint("testnet", "https://rpc.example"),
     /serves Mainnet.*selected Testnet/i,
   );
+});
+
+test("RPC endpoint health retries one transient empty getNetwork response", async (t) => {
+  let requests = 0;
+  t.mock.method(globalThis, "fetch", async (_url, init) => {
+    requests += 1;
+    if (requests === 1) return new Response("", { status: 200 });
+    const request = JSON.parse(init.body);
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      id: request.id,
+      result: {
+        passphrase: "Test SDF Network ; September 2015",
+        protocolVersion: 28,
+      },
+    }), { status: 200 });
+  });
+
+  const result = await testRpcEndpoint("testnet", "https://rpc.example");
+  assert.equal(requests, 2);
+  assert.equal(result.protocolVersion, 28);
 });
 
 test("network settings expose test, save, and reset controls without bundled keys", () => {

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useMerchantConfiguration,
   useMerchantRecords,
@@ -23,12 +24,15 @@ import {
   Button,
   IOSBackButton,
   Modal,
+  ModalBody,
+  ModalFooter,
   ModalHeader,
   SegmentedControl,
   Select,
   Toggle,
+  useRetainedForExit,
 } from "../ui";
-import { IconAlert, IconLock } from "../icons";
+import { IconAlert, IconCheck, IconLock } from "../icons";
 import { IconClock, IconTerminal } from "./icons";
 import { MerchantDisclosure } from "./Disclosure";
 import { RefundRequestsPanel } from "./RefundRequestsPanel";
@@ -113,7 +117,14 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
   const [operatorTargetId, setOperatorTargetId] = useState<string | null>(null);
   const [operatorPending, setOperatorPending] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
+  const [rosterBusy, setRosterBusy] = useState(false);
   const [lockingOpen, setLockingOpen] = useState(false);
+  const [savingStaff, setSavingStaff] = useState(false);
+  const [staffDirty, setStaffDirty] = useState(false);
+  const [addingBusy, setAddingBusy] = useState(false);
+  /* The PIN field is the one entry point in these sheets, so it takes focus on open. */
+  const pinRef = useRef<HTMLInputElement>(null);
+  const addNameRef = useRef<HTMLInputElement>(null);
 
   const takingsById = useMemo(() => {
     const start = new Date(now);
@@ -132,6 +143,8 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
   }, [members, now, orders]);
 
   const editing = members.find((member) => member.id === editingId) ?? null;
+  // The editor keeps its member through the exit so the sheet never blanks mid-animation.
+  const shownEditing = useRetainedForExit(editing);
   const operatorTarget = members.find((member) => member.id === operatorTargetId) ?? null;
   const availableOperators = members.filter(
     (member) => member.active && !onShiftStaff.some((entry) => entry.id === member.id),
@@ -144,7 +157,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
     try {
       await lockStaffSession();
       triggerHaptic("success");
-      toast("Till locked; the on-shift roster is still ready", "info");
+      toast("Till locked; the on-shift roster is still ready", "info", { silent: true });
     } catch (error) {
       triggerHaptic("error");
       toast(error instanceof Error ? error.message : "The till could not lock.", "error");
@@ -155,13 +168,11 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
     <div className="fade-up w-full min-w-0 pb-[132px] md:pb-12">
       <div className="flex items-center justify-between pb-1 pt-2">
         <IOSBackButton label="Back to Merchant settings" onClick={onBack} />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-          Merchant
-        </span>
+        <SectionHeader as="span">Merchant</SectionHeader>
         <span className="w-11" aria-hidden />
       </div>
 
-      <h1 className="display-h text-[28px] font-bold text-white">Staff &amp; this device</h1>
+      <h1 className="display-h text-[28px] font-bold text-white">Staff &amp; This Device</h1>
       <p className="mt-1.5 max-w-[60ch] text-[13px] leading-relaxed text-neutral-400">
         Staff are roles on this device, not accounts. Switching staff attributes the orders rung up
         next and gates what the till will allow — locally, in this app, and nowhere else.
@@ -189,12 +200,8 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
           <section aria-labelledby="on-shift-title">
             <div className="flex items-baseline justify-between px-1 pb-2">
               <div className="flex items-baseline gap-2">
-                <h2
-                  id="on-shift-title"
-                  className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
-                >
-                  On this shift
-                </h2>
+                <SectionHeader as="h2"
+                  id="on-shift-title">On this shift</SectionHeader>
                 <span className="text-[11px] text-neutral-500">{onShiftStaff.length}</span>
               </div>
               {onShiftStaff.length > 0 && (
@@ -218,9 +225,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                   </span>
                 )}
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
-                    Current operator
-                  </span>
+                  <SectionHeader as="span" className="block">Current operator</SectionHeader>
                   <span className="mt-0.5 block truncate text-[16px] font-semibold text-white">
                     {activeStaff?.name ?? "Till locked"}
                   </span>
@@ -256,7 +261,6 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                         aria-label={current ? `${member.name}, current operator` : `Switch to ${member.name}`}
                         disabled={current}
                         onClick={() => {
-                          triggerHaptic("selection");
                           setOperatorTargetId(member.id);
                           setOperatorSheetOpen(true);
                         }}
@@ -271,7 +275,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                           {current && (
                             <span
                               aria-hidden="true"
-                              className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#17171a] bg-[#30D158]"
+                              className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[var(--color-panel)] bg-[#30D158]"
                             />
                           )}
                         </span>
@@ -285,7 +289,6 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                   <button
                     type="button"
                     onClick={() => {
-                      triggerHaptic("selection");
                       setOperatorTargetId(null);
                       setOperatorSheetOpen(true);
                     }}
@@ -294,7 +297,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                     <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-white/[0.08] text-[22px] font-light text-[#0A84FF]">
                       +
                     </span>
-                    <span className="text-[11.5px] font-semibold">Add operator</span>
+                    <span className="text-[11.5px] font-semibold">Add Operator</span>
                   </button>
                 </div>
               </div>
@@ -304,11 +307,11 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                 onClick={() => setLockingOpen(true)}
                 className="row-hover ios-sep flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left"
               >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-white">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-[var(--color-oncolor)]">
                   <IconLock size={14} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[14.5px] text-white">Operator locking</span>
+                  <span className="block text-[14.5px] text-white">Operator Locking</span>
                   <span className="block truncate text-[11.5px] text-neutral-400">
                     {settings.operatorLockMode === "after_sale"
                       ? "After every sale"
@@ -327,17 +330,15 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
 
           <section>
             <div className="flex items-baseline justify-between px-1 pb-2">
-              <h2 className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                Staff
-              </h2>
-              <button
-                type="button"
-                className="text-[12px] font-semibold text-[#0A84FF] hover:text-[#64D2FF] disabled:cursor-not-allowed disabled:opacity-50"
+              <SectionHeader as="h2">Staff</SectionHeader>
+              <Button
+                variant="ghost"
+                className="btn-sm"
                 disabled={activeStaff?.role !== "owner"}
                 onClick={() => setAdding(true)}
               >
-                Add staff
-              </button>
+                Add Staff
+              </Button>
             </div>
             <div className="list-group">
               {members.map((member, i) => (
@@ -348,10 +349,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                   takingsMinor={takingsById.get(member.id)?.takingsMinor ?? 0}
                   orderCount={takingsById.get(member.id)?.orderCount ?? 0}
                   sep={i > 0}
-                  onOpen={() => {
-                    triggerHaptic("selection");
-                    setEditingId(member.id);
-                  }}
+                  onOpen={() => setEditingId(member.id)}
                 />
               ))}
             </div>
@@ -369,16 +367,17 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
 
       <Modal
         open={operatorSheetOpen}
-        dismissable={!operatorPending}
-        onClose={() => {
-          if (!operatorPending) setOperatorSheetOpen(false);
-        }}
+        onClose={() => setOperatorSheetOpen(false)}
+        busy={operatorPending}
+        busyReason="Wait for the operator switch to finish before closing."
+        initialFocus={pinRef}
       >
         {operatorTarget ? (
           <OperatorPinSheet
             key={operatorTarget.id}
             member={operatorTarget}
             alreadyOnShift={onShiftStaff.some((member) => member.id === operatorTarget.id)}
+            pinRef={pinRef}
             onBack={availableOperators.length > 0 ? () => setOperatorTargetId(null) : undefined}
             onCancel={() => setOperatorSheetOpen(false)}
             onBusyChange={setOperatorPending}
@@ -386,7 +385,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
               await switchStaff(operatorTarget.id, pin);
               setOperatorSheetOpen(false);
               triggerHaptic("success");
-              toast(`${operatorTarget.name} is now the current operator`, "success");
+              toast(`${operatorTarget.name} is now the current operator`, "success", { silent: true });
             }}
           />
         ) : (
@@ -398,16 +397,22 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
         )}
       </Modal>
 
-      <Modal open={rosterOpen} onClose={() => setRosterOpen(false)}>
+      <Modal
+        open={rosterOpen}
+        onClose={() => setRosterOpen(false)}
+        busy={rosterBusy}
+        busyReason="Wait for the session to end before closing."
+      >
         <OperatorRosterSheet
           members={onShiftStaff}
           activeStaff={activeStaff}
           onCancel={() => setRosterOpen(false)}
+          onBusyChange={setRosterBusy}
           onEnd={async (member) => {
             await endStaffSession(member.id);
             if (member.id === activeStaff?.id) setRosterOpen(false);
             triggerHaptic("success");
-            toast(`${member.name} ended their operator session`, "info");
+            toast(`${member.name} ended their operator session`, "info", { silent: true });
           }}
         />
       </Modal>
@@ -420,7 +425,6 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
           onChange={async (patch) => {
             try {
               await updateSettings(patch);
-              triggerHaptic("selection");
             } catch (error) {
               triggerHaptic("error");
               toast(error instanceof Error ? error.message : "Operator locking could not be updated.", "error");
@@ -429,41 +433,65 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
         />
       </Modal>
 
-      <Modal open={editingId !== null} onClose={() => setEditingId(null)}>
-        {editing && (
+      <Modal
+        open={editingId !== null}
+        onClose={() => setEditingId(null)}
+        busy={savingStaff}
+        busyReason="Wait for the staff record to be saved before closing."
+        dirty={staffDirty}
+      >
+        {shownEditing && (
           <StaffEditor
-            key={editing.id}
-            member={editing}
+            key={shownEditing.id}
+            member={shownEditing}
             currency={currency}
+            saving={savingStaff}
+            onDirtyChange={setStaffDirty}
             onCancel={() => setEditingId(null)}
             onSave={async (edit) => {
+              if (savingStaff) return;
+              setSavingStaff(true);
               try {
-                await updateStaff(editing.id, edit);
+                await updateStaff(shownEditing.id, edit);
                 triggerHaptic("success");
                 setEditingId(null);
-                toast(`${edit.name.trim()}'s staff access was saved on this device.`, "success");
+                toast(`${edit.name.trim()}'s staff access was saved on this device.`, "success", {
+                  silent: true,
+                });
               } catch (error) {
                 triggerHaptic("error");
-                toast(error instanceof Error ? error.message : "Staff permissions could not be saved.", "error");
+                toast(error instanceof Error ? error.message : "Staff permissions could not be saved.", "error", {
+                  silent: true,
+                });
+              } finally {
+                setSavingStaff(false);
               }
             }}
             onResetPin={async (pin) => {
-              await resetStaffPin(editing.id, pin);
+              await resetStaffPin(shownEditing.id, pin);
               triggerHaptic("success");
-              toast(`${editing.name}'s PIN was reset`, "success");
+              toast(`${shownEditing.name}'s PIN was reset`, "success", { silent: true });
             }}
           />
         )}
       </Modal>
 
-      <Modal open={adding} onClose={() => setAdding(false)}>
+      <Modal
+        open={adding}
+        onClose={() => setAdding(false)}
+        busy={addingBusy}
+        busyReason="Wait for the staff member to be added before closing."
+        initialFocus={addNameRef}
+      >
         <AddStaffForm
+          nameRef={addNameRef}
           onCancel={() => setAdding(false)}
+          onBusyChange={setAddingBusy}
           onAdd={async (input) => {
             await addStaff(input);
             setAdding(false);
             triggerHaptic("success");
-            toast(`${input.name.trim()} was added to this till`, "success");
+            toast(`${input.name.trim()} was added to this till`, "success", { silent: true });
           }}
         />
       </Modal>
@@ -487,22 +515,18 @@ function OperatorPickerSheet({
   return (
     <>
       <ModalHeader
-        title="Add operator"
+        title="Add Operator"
         subtitle="Join this device's on-shift roster"
         onClose={onCancel}
       />
-      <div className="p-4 sm:p-5">
+      <ModalBody>
         {members.length > 0 ? (
           <div className="list-group">
             {members.map((member, index) => (
               <button
                 key={member.id}
                 type="button"
-                autoFocus={index === 0}
-                onClick={() => {
-                  triggerHaptic("selection");
-                  onChoose(member.id);
-                }}
+                onClick={() => onChoose(member.id)}
                 className={`row-hover flex min-h-[64px] w-full items-center gap-3.5 px-4 py-3 text-left ${
                   index > 0 ? "ios-sep" : ""
                 }`}
@@ -525,7 +549,7 @@ function OperatorPickerSheet({
         ) : (
           <div className="flex flex-col items-center px-5 py-8 text-center">
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#30D158]/12 text-[#30D158]">
-              <span className="text-xl">✓</span>
+              <IconCheck size={22} aria-hidden="true" />
             </span>
             <p className="mt-3 text-[15px] font-semibold text-white">Everyone active is on shift</p>
             <p className="mt-1 max-w-[30ch] text-[12px] leading-relaxed text-neutral-400">
@@ -533,10 +557,8 @@ function OperatorPickerSheet({
             </p>
           </div>
         )}
-        <Button variant="secondary" className="mt-4 min-h-11 w-full" onClick={onCancel}>
-          Done
-        </Button>
-      </div>
+        <ModalFooter primary={<Button variant="secondary" onClick={onCancel}>Done</Button>} />
+      </ModalBody>
     </>
   );
 }
@@ -544,6 +566,7 @@ function OperatorPickerSheet({
 function OperatorPinSheet({
   member,
   alreadyOnShift,
+  pinRef,
   onBack,
   onCancel,
   onBusyChange,
@@ -551,6 +574,7 @@ function OperatorPinSheet({
 }: {
   member: StaffMember;
   alreadyOnShift: boolean;
+  pinRef: RefObject<HTMLInputElement | null>;
   onBack?: () => void;
   onCancel: () => void;
   onBusyChange: (busy: boolean) => void;
@@ -559,6 +583,12 @@ function OperatorPinSheet({
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /* Reached from the picker mid-dialog, so the shell's open-time focus has
+     already landed; the PIN field takes it the moment this step appears. */
+  useEffect(() => {
+    pinRef.current?.focus({ preventScroll: true });
+  }, [pinRef]);
 
   async function submit() {
     if (!/^\d{4,6}$/.test(pin) || busy) return;
@@ -582,59 +612,57 @@ function OperatorPinSheet({
       <ModalHeader
         title={member.name}
         subtitle={alreadyOnShift ? "Select current operator" : "Join shift and become current"}
-        onClose={busy ? undefined : onCancel}
+        onBack={onBack}
+        backLabel="Choose someone else"
+        onClose={onCancel}
       />
       <form
-        className="p-4 sm:p-5"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
         }}
       >
-        <div className="flex flex-col items-center py-2 text-center">
-          <Avatar seed={member.name} size={58} />
-          <p className="mt-3 text-[15px] font-semibold text-white">Enter {member.name.split(" ")[0]}&apos;s PIN</p>
-          <p className="mt-1 text-[12px] text-neutral-400">
-            Actions after this point are attributed to {member.name.split(" ")[0]}.
-          </p>
-        </div>
+        <ModalBody>
+          <div className="flex flex-col items-center py-2 text-center">
+            <Avatar seed={member.name} size={58} />
+            <p className="mt-3 text-[15px] font-semibold text-white">Enter {member.name.split(" ")[0]}&apos;s PIN</p>
+            <p className="mt-1 text-[12px] text-neutral-400">
+              Actions after this point are attributed to {member.name.split(" ")[0]}.
+            </p>
+          </div>
 
-        <input
-          autoFocus
-          type="password"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={6}
-          value={pin}
-          onChange={(event) => {
-            setPin(event.target.value.replace(/\D/g, "").slice(0, 6));
-            setError(null);
-          }}
-          aria-label={`PIN for ${member.name}`}
-          aria-invalid={Boolean(error)}
-          placeholder="4 to 6 digits"
-          className="input mono mt-4 text-center text-base tracking-[0.32em] sm:text-[15px]"
-        />
-        {error && <p role="alert" className="mt-2 text-center text-[12px] text-[#FF6961]">{error}</p>}
+          <input
+            ref={pinRef}
+            type="password"
+            inputMode="numeric"
+            enterKeyHint="done"
+            autoComplete="one-time-code"
+            maxLength={6}
+            value={pin}
+            onChange={(event) => {
+              setPin(event.target.value.replace(/\D/g, "").slice(0, 6));
+              setError(null);
+            }}
+            aria-label={`PIN for ${member.name}`}
+            aria-invalid={Boolean(error)}
+            placeholder="4 to 6 digits"
+            className="input mono text-center text-base tracking-[0.32em] sm:text-[14px]"
+          />
+          {error && <p role="alert" className="text-center text-[12px] text-[#FF6961]">{error}</p>}
 
-        {onBack && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onBack}
-            className="mt-3 min-h-11 w-full text-[12.5px] font-semibold text-[#0A84FF] active:opacity-60"
-          >
-            Choose someone else
-          </button>
-        )}
-        <div className="mt-3 flex gap-2">
-          <Button type="button" variant="secondary" className="min-h-11 flex-1" disabled={busy} onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button type="submit" className="min-h-11 flex-1" loading={busy} disabled={!/^\d{4,6}$/.test(pin)}>
-            {alreadyOnShift ? "Select" : "Join shift"}
-          </Button>
-        </div>
+          <ModalFooter
+            secondary={
+              <Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>
+                Cancel
+              </Button>
+            }
+            primary={
+              <Button type="submit" loading={busy} disabled={!/^\d{4,6}$/.test(pin)}>
+                {alreadyOnShift ? "Select" : "Join shift"}
+              </Button>
+            }
+          />
+        </ModalBody>
       </form>
     </>
   );
@@ -644,20 +672,27 @@ function OperatorRosterSheet({
   members,
   activeStaff,
   onCancel,
+  onBusyChange,
   onEnd,
 }: {
   members: StaffMember[];
   activeStaff: StaffMember | null;
   onCancel: () => void;
+  onBusyChange: (busy: boolean) => void;
   onEnd: (member: StaffMember) => Promise<void>;
 }) {
   const [endingId, setEndingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const ending = endingId !== null;
+  useEffect(() => {
+    onBusyChange(ending);
+    return () => onBusyChange(false);
+  }, [ending, onBusyChange]);
 
   return (
     <>
-      <ModalHeader title="On this shift" subtitle={`${members.length} operator${members.length === 1 ? "" : "s"} on this device`} onClose={endingId ? undefined : onCancel} />
-      <div className="space-y-3 p-4 sm:p-5">
+      <ModalHeader title="On This Shift" subtitle={`${members.length} operator${members.length === 1 ? "" : "s"} on this device`} onClose={onCancel} />
+      <ModalBody gap={3}>
         <div className="list-group">
           {members.map((member, index) => {
             const isCurrent = member.id === activeStaff?.id;
@@ -679,9 +714,12 @@ function OperatorRosterSheet({
                   </span>
                   <span className="block truncate text-[12px] text-neutral-400">{ROLE_LABEL[member.role]}</span>
                 </span>
-                <button
-                  type="button"
+                <Button
+                  variant="danger"
+                  className="btn-sm shrink-0"
                   disabled={!canEnd || Boolean(endingId)}
+                  loading={endingId === member.id}
+                  loadingLabel="Ending the session"
                   onClick={() => {
                     setEndingId(member.id);
                     setError(null);
@@ -692,10 +730,9 @@ function OperatorRosterSheet({
                       })
                       .finally(() => setEndingId(null));
                   }}
-                  className="min-h-11 shrink-0 px-2 text-[12.5px] font-semibold text-[#FF6961] disabled:opacity-35"
                 >
-                  {endingId === member.id ? "Ending…" : "End"}
-                </button>
+                  End
+                </Button>
               </div>
             );
           })}
@@ -704,10 +741,14 @@ function OperatorRosterSheet({
         <p className="px-1 text-[12px] leading-relaxed text-neutral-400">
           Operators can end their own session. The current owner can end another operator&apos;s session.
         </p>
-        <Button variant="secondary" className="min-h-11 w-full" disabled={Boolean(endingId)} onClick={onCancel}>
-          Done
-        </Button>
-      </div>
+        <ModalFooter
+          primary={
+            <Button variant="secondary" disabled={Boolean(endingId)} onClick={onCancel}>
+              Done
+            </Button>
+          }
+        />
+      </ModalBody>
     </>
   );
 }
@@ -728,8 +769,8 @@ function OperatorLockSheet({
 }) {
   return (
     <>
-      <ModalHeader title="Operator locking" subtitle="Keep attribution accurate on a shared till" onClose={onClose} />
-      <div className="space-y-5 p-4 sm:p-5">
+      <ModalHeader title="Operator Locking" subtitle="Keep attribution accurate on a shared till" onClose={onClose} />
+      <ModalBody gap={5}>
         <section>
           <h3 className="field-label">When to lock</h3>
           <SegmentedControl<"after_sale" | "after_timeout">
@@ -785,8 +826,8 @@ function OperatorLockSheet({
         <p className="text-[12px] leading-relaxed text-neutral-400">
           This policy is stored only in encrypted merchant data on this device. It does not change wallet auto-lock.
         </p>
-        <Button className="min-h-11 w-full" onClick={onClose}>Done</Button>
-      </div>
+        <ModalFooter primary={<Button onClick={onClose}>Done</Button>} />
+      </ModalBody>
     </>
   );
 }
@@ -879,12 +920,16 @@ function StaffRow({
 function StaffEditor({
   member,
   currency,
+  saving,
+  onDirtyChange,
   onCancel,
   onSave,
   onResetPin,
 }: {
   member: StaffMember;
   currency: FiatCurrency;
+  saving: boolean;
+  onDirtyChange: (dirty: boolean) => void;
   onCancel: () => void;
   onSave: (edit: StaffEdit) => void;
   onResetPin: (pin: string) => Promise<void>;
@@ -915,6 +960,17 @@ function StaffEditor({
   const ceilingValue =
     permissions.refundCeilingMinor === null ? "none" : String(permissions.refundCeilingMinor);
 
+  /* Unsaved edits: the PIN saves on its own, so only the record fields count. */
+  const isDirty =
+    name !== member.name ||
+    active !== member.active ||
+    role !== member.role ||
+    JSON.stringify(permissions) !== JSON.stringify(member.permissions);
+  useEffect(() => {
+    onDirtyChange(isDirty);
+    return () => onDirtyChange(false);
+  }, [isDirty, onDirtyChange]);
+
   return (
     <>
       <ModalHeader
@@ -923,7 +979,7 @@ function StaffEditor({
         onClose={onCancel}
       />
 
-      <div className="space-y-4 p-4 sm:p-5">
+      <ModalBody>
         <div className="flex items-center gap-3">
           <Avatar seed={member.name} size={44} />
           <div className="min-w-0 flex-1">
@@ -943,7 +999,9 @@ function StaffEditor({
             maxLength={80}
             onChange={(event) => setName(event.target.value)}
             aria-label="Staff name"
-            className="input text-base sm:text-[13.5px]"
+            enterKeyHint="done"
+            autoCapitalize="words"
+            className="input text-base sm:text-[14px]"
           />
         </div>
 
@@ -978,9 +1036,7 @@ function StaffEditor({
         </div>
 
         <section>
-          <h3 className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            On the till
-          </h3>
+          <SectionHeader as="h3" className="px-1 pb-2">On the till</SectionHeader>
           <div className="list-group">
             {PERMISSION_ROWS.map((row, i) => (
               <div
@@ -1010,9 +1066,7 @@ function StaffEditor({
         </section>
 
         <section>
-          <h3 className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            Refund ceiling
-          </h3>
+          <SectionHeader as="h3" className="px-1 pb-2">Refund ceiling</SectionHeader>
           <div className="panel p-4">
             <Select
               ariaLabel={`Refund ceiling for ${member.name}`}
@@ -1036,9 +1090,7 @@ function StaffEditor({
         </section>
 
         <section>
-          <h3 className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            PIN
-          </h3>
+          <SectionHeader as="h3" className="px-1 pb-2">PIN</SectionHeader>
           <div className="panel space-y-3 p-4">
             <p className="text-[12.5px] leading-relaxed text-neutral-400">
               A salted digest kept inside encrypted merchant storage. It authorises this till and
@@ -1059,7 +1111,8 @@ function StaffEditor({
                 onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
                 aria-label={`New PIN for ${member.name}`}
                 placeholder="New PIN"
-                className="input mono text-base sm:text-[13.5px]"
+                enterKeyHint="next"
+                className="input mono text-base sm:text-[13px]"
               />
               <input
                 type="password"
@@ -1070,7 +1123,8 @@ function StaffEditor({
                 onChange={(event) => setPinConfirm(event.target.value.replace(/\D/g, "").slice(0, 6))}
                 aria-label={`Confirm new PIN for ${member.name}`}
                 placeholder="Confirm PIN"
-                className="input mono text-base sm:text-[13.5px]"
+                enterKeyHint="done"
+                className="input mono text-base sm:text-[13px]"
               />
             </div>
             {pinError && <p role="alert" className="text-[12px] text-[#FF6961]">{pinError}</p>}
@@ -1097,19 +1151,23 @@ function StaffEditor({
           </div>
         </section>
 
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button variant="secondary" className="flex-1" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            className="flex-1"
-            disabled={!name.trim()}
-            onClick={() => onSave({ name, active, role, permissions })}
-          >
-            Save
-          </Button>
-        </div>
-      </div>
+        <ModalFooter
+          secondary={
+            <Button variant="ghost" disabled={saving} onClick={onCancel}>
+              Cancel
+            </Button>
+          }
+          primary={
+            <Button
+              disabled={!name.trim()}
+              loading={saving}
+              onClick={() => onSave({ name, active, role, permissions })}
+            >
+              Save
+            </Button>
+          }
+        />
+      </ModalBody>
     </>
   );
 }
@@ -1119,10 +1177,14 @@ function StaffEditor({
 /* ------------------------------------------------------------------ */
 
 function AddStaffForm({
+  nameRef,
   onCancel,
+  onBusyChange,
   onAdd,
 }: {
+  nameRef: RefObject<HTMLInputElement | null>;
   onCancel: () => void;
+  onBusyChange: (busy: boolean) => void;
   onAdd: (input: { name: string; role: StaffRole; pin: string }) => Promise<void>;
 }) {
   const [name, setName] = useState("");
@@ -1132,19 +1194,26 @@ function AddStaffForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const valid = name.trim().length > 0 && /^\d{4,6}$/.test(pin) && pin === confirm;
+  useEffect(() => {
+    onBusyChange(busy);
+    return () => onBusyChange(false);
+  }, [busy, onBusyChange]);
 
   return (
     <>
-      <ModalHeader title="Add staff" subtitle="A local till role, never a wallet signer" onClose={busy ? undefined : onCancel} />
-      <div className="space-y-4 p-4 sm:p-5">
+      <ModalHeader title="Add Staff" subtitle="A local till role, never a wallet signer" onClose={onCancel} />
+      <ModalBody>
         <div>
           <span className="field-label">Name</span>
           <input
+            ref={nameRef}
             type="text"
             value={name}
             onChange={(event) => setName(event.target.value)}
             aria-label="Staff name"
-            className="input text-base sm:text-[13.5px]"
+            enterKeyHint="next"
+            autoCapitalize="words"
+            className="input text-base sm:text-[14px]"
           />
         </div>
         <div>
@@ -1171,7 +1240,8 @@ function AddStaffForm({
               onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
               aria-label="New staff PIN"
               placeholder="4 to 6 digits"
-              className="input mono text-base sm:text-[13.5px]"
+              enterKeyHint="next"
+              className="input mono text-base sm:text-[13px]"
             />
             <input
               type="password"
@@ -1182,31 +1252,35 @@ function AddStaffForm({
               onChange={(event) => setConfirm(event.target.value.replace(/\D/g, "").slice(0, 6))}
               aria-label="Confirm new staff PIN"
               placeholder="Confirm PIN"
-              className="input mono text-base sm:text-[13.5px]"
+              enterKeyHint="done"
+              className="input mono text-base sm:text-[13px]"
             />
           </div>
         </div>
         {error && <p role="alert" className="text-[12px] text-[#FF6961]">{error}</p>}
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button variant="secondary" className="flex-1" disabled={busy} onClick={onCancel}>Cancel</Button>
-          <Button
-            className="flex-1"
-            loading={busy}
-            disabled={!valid}
-            onClick={() => {
-              setBusy(true);
-              setError(null);
-              void onAdd({ name, role, pin })
-                .catch((cause: unknown) => {
-                  setError(cause instanceof Error ? cause.message : "Staff could not be added.");
-                })
-                .finally(() => setBusy(false));
-            }}
-          >
-            Add staff
-          </Button>
-        </div>
-      </div>
+        <ModalFooter
+          secondary={
+            <Button variant="ghost" disabled={busy} onClick={onCancel}>Cancel</Button>
+          }
+          primary={
+            <Button
+              loading={busy}
+              disabled={!valid}
+              onClick={() => {
+                setBusy(true);
+                setError(null);
+                void onAdd({ name, role, pin })
+                  .catch((cause: unknown) => {
+                    setError(cause instanceof Error ? cause.message : "Staff could not be added.");
+                  })
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Add Staff
+            </Button>
+          }
+        />
+      </ModalBody>
     </>
   );
 }
@@ -1230,18 +1304,14 @@ function ThisDevice({
 }) {
   return (
     <section aria-labelledby="device-title">
-      <h2
-        id="device-title"
-        className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
-      >
-        This device
-      </h2>
+      <SectionHeader as="h2"
+        id="device-title" className="px-1 pb-2">This device</SectionHeader>
 
       <div className="list-group">
         <div className="flex w-full items-center gap-3.5 px-4 py-3.5">
           <span
             aria-hidden="true"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-white shadow-sm"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-[var(--color-oncolor)] shadow-sm"
           >
             <IconTerminal size={16} />
           </span>
@@ -1258,7 +1328,7 @@ function ThisDevice({
         <div className="flex w-full items-center gap-3.5 px-4 py-3.5 ios-sep">
           <span
             aria-hidden="true"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#FF9F0A] text-white shadow-sm"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#FF9F0A] text-[var(--color-oncolor)] shadow-sm"
           >
             <IconClock size={16} />
           </span>

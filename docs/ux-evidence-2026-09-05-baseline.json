@@ -1,0 +1,509 @@
+{
+  "source": "synthetic-local-next-frame-DOM-proxies",
+  "browser": "151.0.7922.34",
+  "runs": 3,
+  "listSize": 0,
+  "profiles": {
+    "desktop": {
+      "cpuRate": 1,
+      "network": "local",
+      "cache": "fresh context; warm repeats in same page; routing disables HTTP cache",
+      "summary": {
+        "coldAppDcl": {
+          "median": 52,
+          "slowest": 107.8,
+          "n": 3
+        },
+        "coldAppReadyUpperBound": {
+          "median": 199,
+          "slowest": 246.9,
+          "n": 3
+        },
+        "coldActivityControlsReady": {
+          "median": 18.2,
+          "slowest": 18.4,
+          "n": 3
+        },
+        "coldAssetDetailsShell": {
+          "median": 15.5,
+          "slowest": 15.6,
+          "n": 3
+        },
+        "coldSendShell": {
+          "median": 18.4,
+          "slowest": 18.4,
+          "n": 3
+        },
+        "coldPrivateSelected": {
+          "median": 54,
+          "slowest": 54,
+          "n": 3
+        },
+        "coldPrivateGateReady": {
+          "median": 167.2,
+          "slowest": 167.9,
+          "n": 3
+        },
+        "coldFormReview": {
+          "median": 45.6,
+          "slowest": 46.1,
+          "n": 3
+        },
+        "coldPrepareFeedback": {
+          "median": 44.9,
+          "slowest": 47.1,
+          "n": 3
+        },
+        "warmActivityControlsReady": {
+          "median": 17,
+          "slowest": 17.1,
+          "n": 3
+        },
+        "warmAssetDetailsShell": {
+          "median": 15.5,
+          "slowest": 15.8,
+          "n": 3
+        },
+        "warmSendShell": {
+          "median": 17.4,
+          "slowest": 45.1,
+          "n": 3
+        },
+        "warmPrivateSelected": {
+          "median": 47.1,
+          "slowest": 52.6,
+          "n": 3
+        },
+        "warmPrivateGateReady": {
+          "median": 47.1,
+          "slowest": 52.6,
+          "n": 3
+        },
+        "warmFormReview": {
+          "median": 46,
+          "slowest": 46.2,
+          "n": 3
+        },
+        "warmPrepareFeedback": {
+          "median": 45.9,
+          "slowest": 46.3,
+          "n": 3
+        },
+        "interactionNonInputShiftSum": {
+          "median": 0,
+          "slowest": 0,
+          "n": 3
+        },
+        "interactionLongTaskMax": {
+          "median": 0,
+          "slowest": 0,
+          "n": 3
+        },
+        "interactionEventDurationMax": {
+          "median": 264,
+          "slowest": 264,
+          "n": 3
+        }
+      },
+      "samples": [
+        {
+          "coldAppDcl": 107.79999999701977,
+          "coldAppReadyUpperBound": 246.8999999910593,
+          "coldActivityControlsReady": 18.399999991059303,
+          "coldAssetDetailsShell": 15.599999994039536,
+          "coldSendShell": 18.399999991059303,
+          "coldPrivateSelected": 54,
+          "coldPrivateGateReady": 167.90000000596046,
+          "coldFormReview": 45.599999994039536,
+          "coldPrepareFeedback": 47.099999994039536,
+          "warmActivityControlsReady": 17.099999994039536,
+          "warmAssetDetailsShell": 15.800000011920929,
+          "warmSendShell": 45.099999994039536,
+          "warmPrivateSelected": 52.6000000089407,
+          "warmPrivateGateReady": 52.6000000089407,
+          "warmFormReview": 45.5,
+          "warmPrepareFeedback": 46.29999999701977,
+          "interactionNonInputShiftSum": 0,
+          "interactionLongTaskMax": 0,
+          "interactionEventDurationMax": 208
+        },
+        {
+          "coldAppDcl": 52,
+          "coldAppReadyUpperBound": 199,
+          "coldActivityControlsReady": 18.200000002980232,
+          "coldAssetDetailsShell": 15.5,
+          "coldSendShell": 18.200000002980232,
+          "coldPrivateSelected": 47.400000005960464,
+          "coldPrivateGateReady": 98.30000001192093,
+          "coldFormReview": 45.6000000089407,
+          "coldPrepareFeedback": 44.8999999910593,
+          "warmActivityControlsReady": 16.80000001192093,
+          "warmAssetDetailsShell": 15.5,
+          "warmSendShell": 17.399999991059303,
+          "warmPrivateSelected": 47.1000000089407,
+          "warmPrivateGateReady": 47.1000000089407,
+          "warmFormReview": 46,
+          "warmPrepareFeedback": 45.099999994039536,
+          "interactionNonInputShiftSum": 0,
+          "interactionLongTaskMax": 0,
+          "interactionEventDurationMax": 264
+        },
+        {
+          "coldAppDcl": 50.599999994039536,
+          "coldAppReadyUpperBound": 196.8999999910593,
+          "coldActivityControlsReady": 17.69999998807907,
+          "coldAssetDetailsShell": 15.400000005960464,
+          "coldSendShell": 18.399999991059303,
+          "coldPrivateSelected": 54,
+          "coldPrivateGateReady": 167.20000000298023,
+          "coldFormReview": 46.099999994039536,
+          "coldPrepareFeedback": 44.80000001192093,
+          "warmActivityControlsReady": 17,
+          "warmAssetDetailsShell": 15.100000008940697,
+          "warmSendShell": 17.100000008940697,
+          "warmPrivateSelected": 45.3999999910593,
+          "warmPrivateGateReady": 45.5,
+          "warmFormReview": 46.20000000298023,
+          "warmPrepareFeedback": 45.900000005960464,
+          "interactionNonInputShiftSum": 0,
+          "interactionLongTaskMax": 0,
+          "interactionEventDurationMax": 264
+        }
+      ]
+    },
+    "mobile-4x": {
+      "cpuRate": 4,
+      "network": "150ms RTT / 1.6Mbps down / 0.75Mbps up before navigation; mocked data responses local",
+      "cache": "fresh context; warm repeats in same page; routing disables HTTP cache",
+      "summary": {
+        "coldAppDcl": {
+          "median": 3626,
+          "slowest": 3632.1,
+          "n": 3
+        },
+        "coldAppReadyUpperBound": {
+          "median": 6533.7,
+          "slowest": 6546,
+          "n": 3
+        },
+        "coldActivityControlsReady": {
+          "median": 13.4,
+          "slowest": 14.8,
+          "n": 3
+        },
+        "coldAssetDetailsShell": {
+          "median": 36,
+          "slowest": 39.6,
+          "n": 3
+        },
+        "coldSendShell": {
+          "median": 52.8,
+          "slowest": 57.7,
+          "n": 3
+        },
+        "coldPrivateSelected": {
+          "median": 12.2,
+          "slowest": 12.7,
+          "n": 3
+        },
+        "coldPrivateGateReady": {
+          "median": 896.3,
+          "slowest": 902.2,
+          "n": 3
+        },
+        "coldFormReview": {
+          "median": 21.4,
+          "slowest": 21.4,
+          "n": 3
+        },
+        "coldPrepareFeedback": {
+          "median": 22.7,
+          "slowest": 22.9,
+          "n": 3
+        },
+        "warmActivityControlsReady": {
+          "median": 8.2,
+          "slowest": 8.7,
+          "n": 3
+        },
+        "warmAssetDetailsShell": {
+          "median": 18.3,
+          "slowest": 23.7,
+          "n": 3
+        },
+        "warmSendShell": {
+          "median": 23.8,
+          "slowest": 25.2,
+          "n": 3
+        },
+        "warmPrivateSelected": {
+          "median": 11.6,
+          "slowest": 23.1,
+          "n": 3
+        },
+        "warmPrivateGateReady": {
+          "median": 11.6,
+          "slowest": 23.1,
+          "n": 3
+        },
+        "warmFormReview": {
+          "median": 9.4,
+          "slowest": 22.3,
+          "n": 3
+        },
+        "warmPrepareFeedback": {
+          "median": 15.5,
+          "slowest": 22.4,
+          "n": 3
+        },
+        "interactionNonInputShiftSum": {
+          "median": 0.02,
+          "slowest": 0.02,
+          "n": 3
+        },
+        "interactionLongTaskMax": {
+          "median": 64,
+          "slowest": 70,
+          "n": 3
+        },
+        "interactionEventDurationMax": {
+          "median": 80,
+          "slowest": 88,
+          "n": 3
+        }
+      },
+      "samples": [
+        {
+          "coldAppDcl": 3632.0999999940395,
+          "coldAppReadyUpperBound": 6546,
+          "coldActivityControlsReady": 14.799999997019768,
+          "coldAssetDetailsShell": 39.599999994039536,
+          "coldSendShell": 57.70000000298023,
+          "coldPrivateSelected": 12.700000002980232,
+          "coldPrivateGateReady": 896.2999999970198,
+          "coldFormReview": 21.399999991059303,
+          "coldPrepareFeedback": 22.899999991059303,
+          "warmActivityControlsReady": 8.700000002980232,
+          "warmAssetDetailsShell": 18.299999997019768,
+          "warmSendShell": 23.200000002980232,
+          "warmPrivateSelected": 11.599999994039536,
+          "warmPrivateGateReady": 11.599999994039536,
+          "warmFormReview": 7.399999991059303,
+          "warmPrepareFeedback": 15.5,
+          "interactionNonInputShiftSum": 0.02271057120046451,
+          "interactionLongTaskMax": 64,
+          "interactionEventDurationMax": 88
+        },
+        {
+          "coldAppDcl": 3625.5,
+          "coldAppReadyUpperBound": 6533.70000000298,
+          "coldActivityControlsReady": 13.399999991059303,
+          "coldAssetDetailsShell": 35.29999999701977,
+          "coldSendShell": 50.79999999701977,
+          "coldPrivateSelected": 12.200000002980232,
+          "coldPrivateGateReady": 893.5,
+          "coldFormReview": 21.399999991059303,
+          "coldPrepareFeedback": 19.799999997019768,
+          "warmActivityControlsReady": 8.099999994039536,
+          "warmAssetDetailsShell": 16.700000002980232,
+          "warmSendShell": 23.799999997019768,
+          "warmPrivateSelected": 8.200000002980232,
+          "warmPrivateGateReady": 8.200000002980232,
+          "warmFormReview": 22.299999997019768,
+          "warmPrepareFeedback": 15.299999997019768,
+          "interactionNonInputShiftSum": 0.02271057120046451,
+          "interactionLongTaskMax": 64,
+          "interactionEventDurationMax": 80
+        },
+        {
+          "coldAppDcl": 3626,
+          "coldAppReadyUpperBound": 6532,
+          "coldActivityControlsReady": 13.199999988079071,
+          "coldAssetDetailsShell": 36,
+          "coldSendShell": 52.80000001192093,
+          "coldPrivateSelected": 7.9000000059604645,
+          "coldPrivateGateReady": 902.2000000029802,
+          "coldFormReview": 14.799999997019768,
+          "coldPrepareFeedback": 22.700000002980232,
+          "warmActivityControlsReady": 8.199999988079071,
+          "warmAssetDetailsShell": 23.69999998807907,
+          "warmSendShell": 25.200000002980232,
+          "warmPrivateSelected": 23.099999994039536,
+          "warmPrivateGateReady": 23.099999994039536,
+          "warmFormReview": 9.400000005960464,
+          "warmPrepareFeedback": 22.400000005960464,
+          "interactionNonInputShiftSum": 0.02271057120046451,
+          "interactionLongTaskMax": 70,
+          "interactionEventDurationMax": 80
+        }
+      ]
+    },
+    "reduced-motion": {
+      "cpuRate": 1,
+      "network": "local",
+      "cache": "fresh context; warm repeats in same page; routing disables HTTP cache",
+      "summary": {
+        "coldAppDcl": {
+          "median": 50.5,
+          "slowest": 51.1,
+          "n": 3
+        },
+        "coldAppReadyUpperBound": {
+          "median": 151.7,
+          "slowest": 156.5,
+          "n": 3
+        },
+        "coldActivityControlsReady": {
+          "median": 6.8,
+          "slowest": 7.3,
+          "n": 3
+        },
+        "coldAssetDetailsShell": {
+          "median": 7.8,
+          "slowest": 8.1,
+          "n": 3
+        },
+        "coldSendShell": {
+          "median": 11.6,
+          "slowest": 12.3,
+          "n": 3
+        },
+        "coldPrivateSelected": {
+          "median": 40,
+          "slowest": 40.2,
+          "n": 3
+        },
+        "coldPrivateGateReady": {
+          "median": 83.4,
+          "slowest": 310.2,
+          "n": 3
+        },
+        "coldFormReview": {
+          "median": 39.7,
+          "slowest": 40.3,
+          "n": 3
+        },
+        "coldPrepareFeedback": {
+          "median": 7.3,
+          "slowest": 7.4,
+          "n": 3
+        },
+        "warmActivityControlsReady": {
+          "median": 37.3,
+          "slowest": 40.4,
+          "n": 3
+        },
+        "warmAssetDetailsShell": {
+          "median": 4.5,
+          "slowest": 6.7,
+          "n": 3
+        },
+        "warmSendShell": {
+          "median": 6.8,
+          "slowest": 10.9,
+          "n": 3
+        },
+        "warmPrivateSelected": {
+          "median": 38,
+          "slowest": 38.9,
+          "n": 3
+        },
+        "warmPrivateGateReady": {
+          "median": 38.1,
+          "slowest": 38.9,
+          "n": 3
+        },
+        "warmFormReview": {
+          "median": 41.3,
+          "slowest": 77.7,
+          "n": 3
+        },
+        "warmPrepareFeedback": {
+          "median": 5.6,
+          "slowest": 38.1,
+          "n": 3
+        },
+        "interactionNonInputShiftSum": {
+          "median": 0,
+          "slowest": 0,
+          "n": 3
+        },
+        "interactionLongTaskMax": {
+          "median": 0,
+          "slowest": 0,
+          "n": 3
+        },
+        "interactionEventDurationMax": {
+          "median": 176,
+          "slowest": 176,
+          "n": 3
+        }
+      },
+      "samples": [
+        {
+          "coldAppDcl": 51.099999994039536,
+          "coldAppReadyUpperBound": 156.5,
+          "coldActivityControlsReady": 7.299999997019768,
+          "coldAssetDetailsShell": 7.700000002980232,
+          "coldSendShell": 11.599999994039536,
+          "coldPrivateSelected": 40,
+          "coldPrivateGateReady": 82.90000000596046,
+          "coldFormReview": 39.1000000089407,
+          "coldPrepareFeedback": 7.4000000059604645,
+          "warmActivityControlsReady": 37.30000001192093,
+          "warmAssetDetailsShell": 6.700000002980232,
+          "warmSendShell": 6.799999997019768,
+          "warmPrivateSelected": 38.900000005960464,
+          "warmPrivateGateReady": 38.900000005960464,
+          "warmFormReview": 77.70000000298023,
+          "warmPrepareFeedback": 38.099999994039536,
+          "interactionNonInputShiftSum": 0,
+          "interactionLongTaskMax": 0,
+          "interactionEventDurationMax": 176
+        },
+        {
+          "coldAppDcl": 50.5,
+          "coldAppReadyUpperBound": 151.70000000298023,
+          "coldActivityControlsReady": 6.799999997019768,
+          "coldAssetDetailsShell": 8.100000008940697,
+          "coldSendShell": 12.299999997019768,
+          "coldPrivateSelected": 2.0999999940395355,
+          "coldPrivateGateReady": 310.20000000298023,
+          "coldFormReview": 39.70000000298023,
+          "coldPrepareFeedback": 4.5,
+          "warmActivityControlsReady": 36.80000001192093,
+          "warmAssetDetailsShell": 4.5,
+          "warmSendShell": 5.200000002980232,
+          "warmPrivateSelected": 38,
+          "warmPrivateGateReady": 38.099999994039536,
+          "warmFormReview": 41.29999999701977,
+          "warmPrepareFeedback": 5.600000008940697,
+          "interactionNonInputShiftSum": 0,
+          "interactionLongTaskMax": 0,
+          "interactionEventDurationMax": 168
+        },
+        {
+          "coldAppDcl": 48.29999999701977,
+          "coldAppReadyUpperBound": 148.70000000298023,
+          "coldActivityControlsReady": 6.700000002980232,
+          "coldAssetDetailsShell": 7.799999997019768,
+          "coldSendShell": 11.400000005960464,
+          "coldPrivateSelected": 40.19999998807907,
+          "coldPrivateGateReady": 83.3999999910593,
+          "coldFormReview": 40.29999999701977,
+          "coldPrepareFeedback": 7.299999997019768,
+          "warmActivityControlsReady": 40.3999999910593,
+          "warmAssetDetailsShell": 3.7999999970197678,
+          "warmSendShell": 10.900000005960464,
+          "warmPrivateSelected": 6.600000008940697,
+          "warmPrivateGateReady": 6.600000008940697,
+          "warmFormReview": 39.8999999910593,
+          "warmPrepareFeedback": 2.8999999910593033,
+          "interactionNonInputShiftSum": 0,
+          "interactionLongTaskMax": 0,
+          "interactionEventDurationMax": 176
+        }
+      ]
+    }
+  }
+}

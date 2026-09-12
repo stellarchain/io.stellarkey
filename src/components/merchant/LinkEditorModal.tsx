@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { FIAT_SYMBOLS, memoByteLength } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
@@ -27,13 +27,18 @@ import {
   CopyButton,
   ErrorText,
   Field,
+  FieldLabelRow,
   Modal,
+  ModalBody,
+  ModalFooter,
   ModalHeader,
   NetworkBadge,
   Notice,
   SegmentedControl,
   Select,
   Toggle,
+  useModalContext,
+  useRetainedForExit,
 } from "../ui";
 import { IconCheck, IconClose, IconGift, IconPlus } from "../icons";
 import { IconQr, IconTag } from "./icons";
@@ -90,22 +95,66 @@ function dateInput(timestamp: number | null): string {
 }
 
 function expiryTimestamp(value: string): number | null {
-  if (!value) return null;
+  if (value === "") return null;
   const timestamp = new Date(`${value}T23:59:59.999`).getTime();
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 export function CodeEditorModal({
+  open,
   code,
   onClose,
 }: {
+  open: boolean;
   code: CounterCode | null;
   onClose: () => void;
 }) {
-  return <CodeEditor key={code?.id ?? "new-code"} code={code} onClose={onClose} />;
+  // Keyed per code so stepping between rows starts clean; an edited code stays
+  // rendered through the exit so the key never flips mid-animation.
+  const retained = useRetainedForExit(code);
+  const shownCode = open ? code : retained;
+  const [pending, setPending] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const titleRef = useRef<HTMLInputElement>(null);
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      wide
+      busy={pending}
+      busyReason="Wait for the counter code to be saved before closing."
+      dirty={dirty}
+      initialFocus={titleRef}
+    >
+      <CodeEditor
+        key={shownCode?.id ?? "new-code"}
+        code={shownCode}
+        onClose={onClose}
+        titleRef={titleRef}
+        pending={pending}
+        onPendingChange={setPending}
+        onDirtyChange={setDirty}
+      />
+    </Modal>
+  );
 }
 
-function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () => void }) {
+function CodeEditor({
+  code,
+  onClose,
+  titleRef,
+  pending,
+  onPendingChange,
+  onDirtyChange,
+}: {
+  code: CounterCode | null;
+  onClose: () => void;
+  titleRef: React.RefObject<HTMLInputElement | null>;
+  pending: boolean;
+  onPendingChange: (pending: boolean) => void;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
+  const modal = useModalContext();
   const { network } = useWalletIdentity();
   const {
     counterCodeBlockedReason,
@@ -114,7 +163,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
     createCounterCode,
     updateCounterCode,
   } = useMerchantRecords();
-  const { quotableAssets } = useMerchantStatus();
+  const { quotableAssets, marketPriceStatus, retryMarketPrices } = useMerchantStatus();
   const { settings } = useMerchantConfiguration();
   const { staff } = useMerchantStaff();
   const { toast } = useToast();
@@ -137,6 +186,20 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
   const [previewRoutingId] = useState(() => code?.routingId ?? createMerchantRoutingId());
   const [today] = useState(() => dateInput(Date.now()));
   const [error, setError] = useState("");
+  const [pricesRefreshing, setPricesRefreshing] = useState(false);
+  const priceRetryPending = useRef(false);
+
+  async function retryPrices() {
+    if (priceRetryPending.current) return;
+    priceRetryPending.current = true;
+    setPricesRefreshing(true);
+    try {
+      await retryMarketPrices();
+    } finally {
+      priceRetryPending.current = false;
+      setPricesRefreshing(false);
+    }
+  }
 
   const currency = code?.currency ?? settings.currency;
   const symbol = FIAT_SYMBOLS[currency].trim();
@@ -166,6 +229,25 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
   }
   const amountMinor = parseAmount(amountText);
   const memoBytes = memoByteLength(effectiveMemo ?? memoSuffix);
+
+  /* Unsaved edits: anything that differs from the code, or from a blank form. */
+  const draftKey = JSON.stringify({
+    title,
+    kind,
+    amountText,
+    suggested,
+    memoPrefix: memoTouched ? memoPrefix : null,
+    staffId,
+    expiry,
+    active,
+    assetKeys,
+  });
+  const [initialKey] = useState(draftKey);
+  const isDirty = draftKey !== initialKey;
+  useEffect(() => {
+    onDirtyChange(isDirty);
+    return () => onDirtyChange(false);
+  }, [isDirty, onDirtyChange]);
   const activeStaff = staff.filter((member) => member.active);
   const uri = previewAsset && effectiveMemo
     ? isEdit
@@ -190,7 +272,6 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
 
   function toggleAsset(asset: AcceptedAsset) {
     if (isEdit) return;
-    triggerHaptic("selection");
     const key = assetKey(asset);
     setAssetKeys((previous) =>
       previous.includes(key) ? previous.filter((entry) => entry !== key) : [...previous, key],
@@ -212,11 +293,12 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
     setSuggested((previous) => [...previous, minor].sort((a, b) => a - b));
     setSuggestionText("");
     setError("");
-    triggerHaptic("light");
   }
 
   async function handleSave() {
+    if (pending) return;
     setError("");
+    onPendingChange(true);
     try {
       const saved = code
         ? await updateCounterCode({
@@ -240,18 +322,20 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
             routingId: previewRoutingId,
           });
       triggerHaptic("success");
-      toast(`${saved.title} ${code ? "updated" : "published"}.`, "success");
+      toast(`${saved.title} ${code ? "updated" : "published"}.`, "success", { silent: true });
       onClose();
     } catch (caught) {
       triggerHaptic("error");
       setError(caught instanceof Error ? caught.message : "The counter code could not be saved.");
+    } finally {
+      onPendingChange(false);
     }
   }
 
   return (
-    <Modal open onClose={onClose} wide>
+    <>
       <ModalHeader
-        title={isEdit ? "Edit counter code" : "New counter code"}
+        title={isEdit ? "Edit counter code" : "New Counter Code"}
         subtitle={
           code
             ? `${CODE_KIND_META[code.kind].label} · ${code.payments} payments`
@@ -260,7 +344,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
         onClose={onClose}
       />
 
-      <div className="space-y-5 p-4 sm:p-6">
+      <ModalBody gap={5}>
         {!isEdit && counterCodeBlockedReason && <Notice tone="warn">{counterCodeBlockedReason}</Notice>}
         {isEdit && (
           <Notice tone="warn">
@@ -271,12 +355,14 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
 
         <Field label="Title">
           <input
-            className="input"
+            ref={titleRef}
+            className="input text-base sm:text-[14px]"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="Tip jar"
+            placeholder="What this code is for"
             maxLength={48}
-            autoFocus
+            enterKeyHint="next"
+            autoCapitalize="words"
           />
         </Field>
 
@@ -297,7 +383,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
         </div>
 
         {kind === "fixed" ? (
-          <Field label="Shop price" hint={isEdit ? "publication value" : "quoted when saved"}>
+          <Field label="Shop Price" hint={isEdit ? "publication value" : "quoted when saved"}>
             <div className="input flex items-center gap-2">
               <span className="mono text-[13px] text-neutral-500">{symbol}</span>
               <input
@@ -306,6 +392,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
                 onChange={(event) => setAmountText(event.target.value)}
                 placeholder="0.00"
                 inputMode="decimal"
+                enterKeyHint="next"
                 autoComplete="off"
                 disabled={isEdit}
                 aria-label="Shop price"
@@ -314,21 +401,20 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
           </Field>
         ) : (
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="field-label !pb-0">Suggested amounts</span>
-              <span className="text-[11px] text-neutral-400">{suggested.length || "none"}</span>
-            </div>
+            <FieldLabelRow label="Suggested Amounts" meta={suggested.length || "none"} className="!pb-0" />
             <div className="flex flex-wrap gap-2">
               {suggested.map((minor) => (
-                <span key={minor} className="chip !cursor-default gap-1.5 !py-1.5 !pr-1.5">
+                <span key={minor} className="chip !cursor-default gap-1 !py-0 !pr-0">
                   {fmtMinor(minor, currency)}
                   <button
                     type="button"
-                    className="flex h-6 w-6 items-center justify-center rounded-full bg-white/[0.1] text-neutral-400"
+                    className="flex items-center justify-center rounded-full text-neutral-400 transition-colors hover:text-[var(--color-oncolor)]"
                     aria-label={`Remove ${fmtMinor(minor, currency)}`}
                     onClick={() => setSuggested((previous) => previous.filter((value) => value !== minor))}
                   >
-                    <IconClose size={10} />
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/[0.1]">
+                      <IconClose size={10} />
+                    </span>
                   </button>
                 </span>
               ))}
@@ -348,6 +434,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
                   }}
                   placeholder="2.00"
                   inputMode="decimal"
+                  enterKeyHint="done"
                   aria-label="New suggested amount"
                 />
               </div>
@@ -381,7 +468,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
                     onClick={() => toggleAsset(asset)}
                     className={`row-hover flex w-full items-center gap-3 px-3.5 py-3 text-left disabled:cursor-default ${index > 0 ? "border-t border-white/[0.08]" : ""}`}
                   >
-                    <span className={`flex h-[22px] w-[22px] items-center justify-center rounded-[7px] ${selected ? "bg-[#0A84FF] text-white" : "bg-white/[0.09] text-transparent"}`}>
+                    <span className={`flex h-[22px] w-[22px] items-center justify-center rounded-[7px] ${selected ? "bg-[#0A84FF] text-[var(--color-oncolor)]" : "bg-white/[0.09] text-transparent"}`}>
                       <IconCheck size={12} />
                     </span>
                     <span className="min-w-0 flex-1">
@@ -398,7 +485,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
         </div>
 
         <Field
-          label="Reference suffix"
+          label="Reference Suffix"
           hint={effectiveMemo ? `${effectiveMemo} · ${memoBytes} of 28 bytes` : "Use uppercase letters or numbers"}
         >
           <input
@@ -411,11 +498,13 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
             }}
             placeholder="TIP"
             autoComplete="off"
+            autoCapitalize="characters"
+            enterKeyHint="next"
           />
         </Field>
 
         {kind === "tip" && (
-          <Field label="Attributed to" hint="optional">
+          <Field label="Attributed To" hint="optional">
             <Select
               value={staffId}
               ariaLabel="Staff member this tip code is attributed to"
@@ -432,13 +521,14 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
           </Field>
         )}
 
-        <Field label="Stops reconciling after" hint="optional · end of local day">
+        <Field label="Stops Reconciling After" hint="optional · end of local day">
           <input
-            className="input"
+            className="input text-base sm:text-[14px]"
             type="date"
             value={expiry}
             min={today}
             onChange={(event) => setExpiry(event.target.value)}
+            enterKeyHint="done"
           />
         </Field>
 
@@ -470,7 +560,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
                     type="button"
                     aria-pressed={selected}
                     onClick={() => setPreviewKey(key)}
-                    className={`mono rounded-full px-2.5 py-1 text-[11px] font-semibold ${selected ? "bg-[#0A84FF] text-white" : "bg-white/[0.08] text-neutral-400"}`}
+                    className={`mono rounded-full px-3.5 text-[12px] font-semibold transition-colors ${selected ? "bg-[#0A84FF] text-[var(--color-oncolor)]" : "bg-white/[0.08] text-neutral-400 hover:text-[var(--color-oncolor)]"}`}
                   >
                     {asset.code}
                   </button>
@@ -503,13 +593,37 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
         </section>
 
         <ErrorText message={error} />
-        <div className="grid grid-cols-2 gap-3">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button disabled={!isEdit && Boolean(counterCodeBlockedReason)} onClick={handleSave}>
-            {isEdit ? "Save changes" : "Publish code"}
-          </Button>
-        </div>
-      </div>
-    </Modal>
+        {!isEdit && kind === "fixed" && (quotableAssets.length === 0 || error.startsWith("No live price")) && (
+          <div className="space-y-2">
+            <p className="text-xs text-neutral-400">{marketPriceStatus}</p>
+            <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={retryPrices}>Retry Prices</Button>
+          </div>
+        )}
+        <ModalFooter
+          secondary={
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                if (modal) modal.requestClose("close");
+                else onClose();
+              }}
+            >
+              Cancel
+            </Button>
+          }
+          primary={
+            <Button
+              type="button"
+              disabled={!isEdit && Boolean(counterCodeBlockedReason)}
+              loading={pending}
+              onClick={handleSave}
+            >
+              {isEdit ? "Save Changes" : "Publish Code"}
+            </Button>
+          }
+        />
+      </ModalBody>
+    </>
   );
 }

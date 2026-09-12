@@ -1,14 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Keypair } from '@stellar/stellar-sdk';
-import { encodePrivateAddress } from '@stellarkey/private-balance';
+import {
+  derivePrivateAddressDeploymentTag,
+  encodePrivateAddress,
+} from '@stellarkey/private-balance';
 import { PrivateBalanceWorkerClient } from '../src/features/private-balance/worker/client.ts';
 
+const DEPLOYMENT_BINDING = new Uint8Array(32).fill(0x05);
 const TEST_PRIVATE_ADDRESS = encodePrivateAddress({
-  diversifier: new Uint8Array(4),
+  deploymentTag: derivePrivateAddressDeploymentTag(DEPLOYMENT_BINDING),
+  diversifier: Uint8Array.of(0, 0, 0, 1),
   ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
   hpkePublicKey: new Uint8Array(32).fill(2),
-}, 'tks');
+}, 'tskpay_');
 
 const manifest = {
   schemaVersion: 1,
@@ -20,10 +25,23 @@ const manifest = {
   networkId: 'cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472',
   realmId: '02'.repeat(32),
   poolContractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4',
-  assetContractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
   guardianAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+  assetAdminAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+  assets: [{
+    index: 0,
+    kind: 'native',
+    code: 'XLM',
+    issuer: null,
+    name: 'Stellar Lumens',
+    decimals: 7,
+    displayDecimals: 7,
+    contractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
+  }],
   stealthAnnouncerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
-  deploymentBindingHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+  witnessRpcUrl: 'https://witness.example.test',
+  deploymentCheckpoint: { ledger: 0, hash: '00'.repeat(32) },
+  registryCheckpoint: { ledger: 0, hash: '00'.repeat(32), assetCount: 1 },
+  deploymentBindingHash: Buffer.from(DEPLOYMENT_BINDING).toString('hex'),
   artifacts: {
     r1csSha256: 'a1'.repeat(32),
     r1csConstraints: 57_838,
@@ -35,16 +53,19 @@ const manifest = {
     vkBinSha256: 'a5'.repeat(32),
   },
   constants: {
-    treeDepth: 32,
-    pageCapacity: 32,
-    publicInputs: 13,
+    treeDepth: 17,
+    treeArity: 3,
+    rootWindowLedgers: 1440,
+    publicInputs: 11,
     notePlaintextBytes: 128,
     recipientEnvelopeBytes: 181,
-    outputPackageBytes: 213,
-    addressPayloadBytes: 68,
-    addressAsciiBytes: 119,
-    addressContextTagBytes: 0,
-    addressChecksumBytes: 6,
+    outgoingEnvelopeBytes: 157,
+    outputPackageBytes: 370,
+    outputsPerAction: 3,
+    addressPayloadBytes: 84,
+    addressAsciiBytes: 128,
+    addressContextTagBytes: 16,
+    addressChecksumBytes: 4,
   },
   hpke: { kemId: '0x0020', kdfId: '0x0001', aeadId: '0x0001' },
 };
@@ -112,7 +133,7 @@ test('worker lifecycle: proof progress is correlated without completing the requ
   assert.deepEqual(progress, [10, 80]);
 });
 
-test('worker lifecycle: cancellation targets the proof operation and keeps the session usable', async () => {
+test('worker lifecycle: proof cancellation destroys the worker and requires a fresh session', async () => {
   let terminated = false;
   const fakeWorker = {
     onmessage: null,
@@ -129,46 +150,20 @@ test('worker lifecycle: cancellation targets the proof operation and keeps the s
     {},
     { signal: controller.signal },
   );
-  const proofRequest = fakeWorker.messages.at(-1);
-
   controller.abort();
 
   await assert.rejects(proving, error => error?.name === 'AbortError');
-  assert.ok(fakeWorker.messages.some(message => (
-    message.type === 'CANCEL' && message.targetOperationId === proofRequest.id
-  )));
-  // Aborting one request must not kill the shared worker or wipe the session.
-  assert.equal(terminated, false);
-  assert.equal(fakeWorker.messages.some(message => message.type === 'LOCK'), false);
-
-  // A late result for the cancelled operation is ignored and the same client
-  // still serves subsequent operations without a full resync.
-  fakeWorker.onmessage({ data: responseFor(proofRequest, {
-    type: 'PROOF_OK',
-    proof: { pi_a: [], pi_b: [], pi_c: [] },
-    publicSignals: [],
-    sorobanProofHex: '',
-  }) });
-  const scanning = client.scanPage({
-    records: [],
-    expectedPriorRecordHash: new Uint8Array(32),
-  });
-  const scanRequest = fakeWorker.messages.at(-1);
-  assert.equal(scanRequest.type, 'SCAN_PAGE');
-  fakeWorker.onmessage({ data: responseFor(scanRequest, {
-    type: 'SCAN_OK',
-    notes: [],
-    activities: [],
-    tree: { nextIndex: 0, frontier: [], currentRoot: new Uint8Array(32) },
-    lastRecordHash: new Uint8Array(32),
-    spentNullifierHexes: [],
-    nullifiersByCommitment: [],
-  }) });
-  await scanning;
-
-  client.terminate();
+  assert.equal(client.failed, true);
   assert.equal(terminated, true);
-  assert.ok(fakeWorker.messages.some(message => message.type === 'LOCK'));
+  assert.equal(fakeWorker.messages.some(message => message.type === 'CANCEL'), false);
+  assert.equal(fakeWorker.messages.some(message => message.type === 'LOCK'), false);
+  await assert.rejects(
+    () => client.scanPage({
+      records: [],
+      expectedPriorRecordHash: new Uint8Array(32),
+    }),
+    error => error?.name === 'AbortError',
+  );
 });
 
 test('worker lifecycle: a crash rejects every pending request and fails the client', async () => {

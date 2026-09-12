@@ -245,6 +245,15 @@ test("CSV and JSON exports are stable, escaped, and retain ledger identity", asy
   assert.equal(crypto.asset.issuer, ISSUER);
 });
 
+test("CSV exports neutralize spreadsheet formulas in string cells", async () => {
+  const { neutralizeSpreadsheetFormula } = await reportingDomain();
+  for (const value of ["=1+1", "+cmd", "-2+3", "@SUM(A1:A2)", "  =HYPERLINK(\"x\")"]) {
+    assert.equal(neutralizeSpreadsheetFormula(value), `'${value}`);
+  }
+  assert.equal(neutralizeSpreadsheetFormula("Coffee"), "Coffee");
+  assert.equal(neutralizeSpreadsheetFormula(-42), "-42");
+});
+
 test("export commits an actor audit only for truthful supported output", async () => {
   const { createReportExport } = await reportingDomain();
   const { member, store } = fixtureStore();
@@ -264,6 +273,19 @@ test("export commits an actor audit only for truthful supported output", async (
   assert.equal(created.store.exportRecords[0].fileName, created.file.fileName);
   assert.throws(() => createReportExport(store, { ...input, id: "xero", format: "xero" }), /not available/i);
   assert.throws(() => createReportExport(store, { ...input, id: "settled", basis: "settlement" }), /settlement.*not available/i);
+
+  const anotherActiveMember = {
+    ...member,
+    id: "staff-other",
+    name: "Other",
+  };
+  assert.throws(
+    () => createReportExport(
+      { ...store, staff: [...store.staff, anotherActiveMember] },
+      { ...input, id: "wrong-session", actor: anotherActiveMember },
+    ),
+    /active staff member/i,
+  );
 });
 
 test("production reports contain no sample data and download only supported files", () => {

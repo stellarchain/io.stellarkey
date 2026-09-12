@@ -21,9 +21,44 @@ Repository configuration is part of the release boundary even though it cannot b
 
 The checked-in Dependabot configuration and SHA-pinned workflows express intent; they do not prove that these dashboard controls are still active.
 
+#### Configuration read-back — 2026-09-12
+
+GitHub API read-backs confirmed these settings on `stellarchain/io.stellarkey`:
+
+- `main` requires an up-to-date branch and the GitHub Actions checks `verify`,
+  `Private Balance Gate A` and `Private Balance Rust Security` (app 15368).
+  One approving review, approval of the latest push, dismissal of stale reviews,
+  and resolved conversations are required. Administrators are included;
+  force pushes and deletion are disabled.
+- The active [Immutable release tags rule](https://github.com/stellarchain/io.stellarkey/rules/23045616)
+  blocks updates and deletion of `refs/tags/v*`, with no bypass actors.
+- Repository release immutability is enabled for future publications. The
+  release assets and associated tag are locked after publication; enabling this
+  setting does not retroactively make existing releases immutable.
+- Dependabot alerts and security updates, secret scanning and push protection
+  are enabled. CodeQL default setup is configured on a weekly schedule for
+  JavaScript/TypeScript, Actions and Rust. Its
+  [initial setup analyses](https://github.com/stellarchain/io.stellarkey/actions/runs/34693212497)
+  completed successfully against the then-published default branch.
+- The existing `production` environment remains restricted to `v*` tags.
+  It has no required reviewer; the separate trusted-maintainer approval,
+  hardware/distribution and physical-device requirements above still apply.
+
+This is a dated configuration snapshot, not evidence that a particular commit
+passed hosted CI or that a release was published. Recheck settings and required
+checks at promotion.
+
 ## 2. Trezor production gate
 
 The source retains optional Trezor support, but `@trezor/connect-web` is separately licensed. Before distributing a production bundle containing it, obtain and archive written permission or authorization for the intended public distribution, or replace it with a permissibly licensed integration. Confirm the registered Trezor production origin is exactly `https://stellarkey.io`, the popup flow works from that origin, and the current dependency license notice is shipped. This is a release blocker, not a documentation-only check.
+
+The installed high/critical dependency gate passes as of 2026-09-07 after a scoped
+TOML parser override. Ten low-severity vulnerable packages remain under one
+`elliptic` advisory. The override does not update the SDK's prebundled browser
+parser or Trezor's remote popup core; review the [dependency evidence and runtime
+limits](dependency-security.md) before release. The installed stable 9.7.3 license,
+registered-origin approval, and physical-device checks still apply independently
+of the audit result.
 
 ## 3. DNS, mail, and TLS
 
@@ -76,7 +111,19 @@ Deploy the exact artifact to an isolated preview origin first. Compare its relea
 
 Promote the same bytes to production. On physical iPhone/iPad and a desktop browser, verify install, safe areas, no form zoom, passkey capability handling, cross-origin popup behavior, and the optional hardware path. A Trezor test must use the registered production origin and a physical device.
 
-Private Payments may run as an explicitly unaudited `testnet-preview` only when the deployed static archive pins the exact manifest, proof artifacts, and Testnet contract IDs, the wallet is connected to Stellar Testnet, and the interface does not claim ceremony, audit, or production evidence that is absent. Mainnet must reject this state. A `testnet-beta` or `production` manifest remains disabled unless the same immutable archive contains the exact reviewed ceremony, audit, deployment, recovery, semantic-review, CSP, and physical-device evidence. Never create evidence records from a production build or substitute development hashes.
+Private Payments must remain `development`, Testnet-only, and explicitly disclosed while production-hosted builds permit the exact pinned development fixture. `snarkjs zkey verify` confirms circuit/Powers-of-Tau compatibility; it does not make the single-party setup ceremony-secure. Mainnet and any real-value promotion remain blocked until the same immutable archive contains a reviewed public ceremony, audit, deployment, recovery, semantic-review, CSP, and physical-device evidence. Never create evidence records from a production build or substitute development hashes.
+
+Direct mode self-submits a shielded transfer or withdrawal from the user's public Stellar account,
+which is visible on chain and can deanonymise the spend. Fee-bump sponsorship does not remove the
+inner source. The wallet supports direct submission only; peer relaying, helper earnings,
+and Waku/Nostr infrastructure have been removed. Stale relayed reviews are rejected rather
+than converted to direct payments. Encrypted legacy records remain readable and reconcile-only
+under their original route; removing obsolete consent never releases exposed inputs.
+
+Do not add `Cross-Origin-Embedder-Policy` based on desktop estimates. Cross-origin isolation may
+enable multithreaded proving, but it can also break wallet and hardware integrations whose resources
+do not opt into CORP. Adoption requires a complete subresource audit and before/after p50, p95, peak-
+memory, cancellation, popup, and hardware checks on the supported physical browser/device matrix.
 
 ## 6. External probes and monitoring
 

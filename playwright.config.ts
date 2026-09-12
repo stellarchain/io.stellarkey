@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+process.env.PLAYWRIGHT_NO_COPY_PROMPT = "1";
+
 const port = Number(process.env.E2E_PORT ?? 3187);
 const baseURL = `http://127.0.0.1:${port}`;
 const useDevelopmentServer = process.env.E2E_NEXT_DEV === "1";
@@ -12,20 +14,31 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? "github" : "list",
+  reporter: [["./scripts/testing/safe-wallet-reporter.mjs"]],
+  globalSetup: "./scripts/testing/wallet-test-policy.mjs",
+  // Locator error contexts can still be written before normal cleanup. Only
+  // non-usable fixtures may run; the live import/runner guard fails beforehand.
+  preserveOutput: "never",
   use: {
     baseURL,
     headless: true,
+    colorScheme: "light",
     actionTimeout: 10_000,
     navigationTimeout: 15_000,
     contextOptions: { reducedMotion: "reduce" },
-    trace: "retain-on-failure",
-    screenshot: "only-on-failure",
+    trace: "off",
+    screenshot: "off",
+    video: "off",
   },
   projects: [
     {
       name: "desktop-chromium",
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "desktop-chromium-dark",
+      testMatch: /accessibility\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], colorScheme: "dark" },
     },
     {
       name: "desktop-firefox-private",
@@ -39,12 +52,12 @@ export default defineConfig({
     },
     {
       name: "iphone-webkit",
-      testMatch: /(?:accessibility|merchant-webkit|public-release|browser-smoke|public-private-continuity|overlay-contract)\.spec\.ts/,
+      testMatch: /(?:accessibility|theme|merchant-webkit|market-freshness|public-release|browser-smoke|public-private-continuity|overlay-contract|modal-motion|private-manifest-security|restore-feedback)\.spec\.ts/,
       use: { ...devices["iPhone 16"], serviceWorkers: "block" },
     },
     {
       name: "ipad-webkit",
-      testMatch: /(?:accessibility|public-release|browser-smoke)\.spec\.ts/,
+      testMatch: /(?:accessibility|theme|public-release|browser-smoke)\.spec\.ts/,
       use: { ...devices["iPad (gen 11)"] },
     },
   ],

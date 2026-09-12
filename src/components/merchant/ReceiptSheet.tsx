@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import QRCode from "qrcode";
-import { triggerHaptic } from "@/lib/haptics";
 import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import {
   distribute,
@@ -12,6 +12,7 @@ import {
   linePayableMinor,
   minorToDecimal,
 } from "@/lib/merchant/money";
+import { samePayerAccount } from "@/lib/merchant/payer";
 import { NETWORKS } from "@/lib/stellar";
 import type {
   MerchantProfile,
@@ -22,7 +23,17 @@ import type {
   TaxRate,
 } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
-import { CopyButton, HashValue, Modal, ModalHeader, Notice, Spinner } from "../ui";
+import {
+  Button,
+  CopyButton,
+  HashValue,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Notice,
+  Spinner,
+} from "../ui";
 import { IconAlert, IconEye, IconFileText, IconSend } from "../icons";
 import { IconInfo, IconPrinter, IconQr, IconXCircle } from "./icons";
 
@@ -320,19 +331,25 @@ const PRINT_CSS = `
     backdrop-filter: none !important;
     animation: none !important;
   }
-  .modal-dialog {
+  .modal-dialog,
+  .modal-sheet {
     position: static !important;
+    height: auto !important;
     max-width: none !important;
     max-height: none !important;
     overflow: visible !important;
     border: 0 !important;
     border-radius: 0 !important;
+    padding: 0 !important;
     background: #ffffff !important;
     box-shadow: none !important;
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
     animation: none !important;
   }
+  /* The shell's sticky header and sheet grabber are chrome, not receipt. */
+  [data-modal-shell] > .sticky,
+  .modal-grabber,
   .receipt-no-print { display: none !important; }
   .receipt-shell { padding: 0 !important; }
   .receipt-scroll { overflow: visible !important; }
@@ -367,12 +384,23 @@ export function ReceiptSheet({
 }: {
   open: boolean;
   onClose: () => void;
-  order: Order;
+  /** Owners keep the last order through the exit (`useRetainedForExit`), so null only means "nothing yet". */
+  order: Order | null;
   /** The settling payment's hash — the artefact the receipt is verifiable by. */
   transactionHash?: string | null;
 }) {
-  if (!open) return null;
-  return <ReceiptSheetInner onClose={onClose} order={order} transactionHash={transactionHash} />;
+  return (
+    <Modal open={open && order !== null} onClose={onClose} wide>
+      {order && (
+        <ReceiptSheetInner
+          key={order.id}
+          onClose={onClose}
+          order={order}
+          transactionHash={transactionHash}
+        />
+      )}
+    </Modal>
+  );
 }
 
 function ReceiptSheetInner({
@@ -394,8 +422,9 @@ function ReceiptSheetInner({
   const [qr, setQr] = useState<{ url: string; dataUrl: string } | null>(null);
 
   const profile = settings.profile;
-  const loyalty = order.payerAddress
-    ? customers.find((customer) => customer.address === order.payerAddress)?.loyalty ?? null
+  const payerAddress = order.payerAddress;
+  const loyalty = payerAddress
+    ? customers.find((customer) => samePayerAccount(customer.address, payerAddress))?.loyalty ?? null
     : null;
   const rows = useMemo(
     () => vatRows(order, settings.taxRates, settings.taxMode),
@@ -442,28 +471,25 @@ function ReceiptSheetInner({
   const qrDataUrl = qr !== null && qrTarget !== null && qr.url === qrTarget ? qr.dataUrl : null;
 
   const subject = `${profile.name || "Receipt"} — order ${order.number}`;
-  const smsHref = `sms:${phone.trim()}?&body=${encodeURIComponent(body)}`;
-  const mailHref = `mailto:${email.trim()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const smsHref = `sms:${encodeURIComponent(phone.trim()).replaceAll("%2B", "+").replaceAll("%20", " ")}?&body=${encodeURIComponent(body)}`;
+  const mailHref = `mailto:${encodeURIComponent(email.trim()).replaceAll("%40", "@").replaceAll("%2B", "+")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
   function print() {
-    triggerHaptic("light");
     toast("Sent to the browser's print dialog — the receipt prints alone.");
     window.print();
   }
 
   return (
-    <Modal open onClose={onClose} wide>
+    <>
       <style>{PRINT_CSS}</style>
 
-      <div className="receipt-no-print">
-        <ModalHeader
-          title="Receipt"
-          subtitle={`Order ${order.number} · ${fmtMinor(order.totals.totalMinor, order.currency)}`}
-          onClose={onClose}
-        />
-      </div>
+      <ModalHeader
+        title="Receipt"
+        subtitle={`Order ${order.number} · ${fmtMinor(order.totals.totalMinor, order.currency)}`}
+        onClose={onClose}
+      />
 
-      <div className="receipt-shell space-y-4 p-4 sm:p-6">
+      <ModalBody className="receipt-shell">
         {/* ---------------- the chooser ---------------- */}
         <div className="receipt-no-print grid grid-cols-2 gap-2 sm:grid-cols-5">
           {CHANNELS.map((option) => {
@@ -473,10 +499,7 @@ function ReceiptSheetInner({
                 key={option.value}
                 type="button"
                 aria-pressed={on}
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setChannel(option.value);
-                }}
+                onClick={() => setChannel(option.value)}
                 className={`flex min-h-[88px] flex-col items-center justify-center gap-1.5 rounded-2xl px-2 py-3 text-center transition-colors ${
                   option.value === "none" ? "col-span-2 sm:col-span-1" : ""
                 } ${
@@ -582,9 +605,7 @@ function ReceiptSheetInner({
 
               {/* The hash is the receipt. Everything above it is bookkeeping. */}
               <div className="border-t border-white/[0.08] px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-                  Paid by {tenderLabel(order).toLowerCase()}
-                </p>
+                <SectionHeader>Paid by {tenderLabel(order).toLowerCase()}</SectionHeader>
                 {transactionHash ? (
                   <>
                     <div className="mt-2 flex items-center justify-between gap-3">
@@ -592,7 +613,7 @@ function ReceiptSheetInner({
                       <CopyButton value={transactionHash} label="Copy" />
                     </div>
                     <div className="mt-3 flex items-center gap-3">
-                      <div className="shrink-0 rounded-2xl bg-white p-2">
+                      <div className="shrink-0 rounded-2xl bg-[var(--color-oncolor)] p-2">
                         {qrDataUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -642,9 +663,7 @@ function ReceiptSheetInner({
               )}
             </div>
 
-            <button type="button" onClick={onClose} className="btn btn-primary w-full">
-              Done
-            </button>
+            <ModalFooter primary={<Button onClick={onClose}>Done</Button>} />
           </div>
         )}
 
@@ -667,17 +686,18 @@ function ReceiptSheetInner({
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="+351 000 000 000"
-                className="input input-mono text-base sm:text-[15px]"
+                enterKeyHint="done"
+                className="input mono text-base sm:text-[15px]"
               />
             </div>
             <DraftPreview body={body} />
-            <a
-              href={smsHref}
-              onClick={() => triggerHaptic("light")}
-              className="btn btn-primary w-full"
-            >
-              Open the message
-            </a>
+            <ModalFooter
+              primary={
+                <a href={smsHref} className="btn btn-primary tap w-full">
+                  Open the message
+                </a>
+              }
+            />
           </div>
         )}
 
@@ -700,17 +720,19 @@ function ReceiptSheetInner({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@example.com"
-                className="input text-base sm:text-[15px]"
+                autoCapitalize="none"
+                enterKeyHint="done"
+                className="input text-base sm:text-[14px]"
               />
             </div>
             <DraftPreview body={body} />
-            <a
-              href={mailHref}
-              onClick={() => triggerHaptic("light")}
-              className="btn btn-primary w-full"
-            >
-              Open the draft
-            </a>
+            <ModalFooter
+              primary={
+                <a href={mailHref} className="btn btn-primary tap w-full">
+                  Open the draft
+                </a>
+              }
+            />
           </div>
         )}
 
@@ -750,18 +772,22 @@ function ReceiptSheetInner({
             <div className="receipt-scroll overflow-x-auto">
               <div
                 id="merchant-receipt-paper"
-                className="mx-auto w-full min-w-[320px] max-w-[380px] rounded-2xl bg-white px-4 py-5"
+                className="mx-auto w-full min-w-[320px] max-w-[380px] rounded-2xl bg-[var(--color-oncolor)] px-4 py-5"
               >
-                <pre className="mono whitespace-pre text-[9.5px] leading-[1.5] text-black sm:text-[11px]">
+                <pre className="mono whitespace-pre text-[11px] leading-[1.5] text-black">
                   {paper.join("\n")}
                 </pre>
               </div>
             </div>
 
             <div className="receipt-no-print space-y-2">
-              <button type="button" onClick={print} className="btn btn-primary w-full">
-                <IconPrinter size={16} /> Print
-              </button>
+              <ModalFooter
+                primary={
+                  <Button onClick={print}>
+                    <IconPrinter size={16} /> Print
+                  </Button>
+                }
+              />
               <p className="text-center text-[11.5px] leading-relaxed text-neutral-500">
                 The print stylesheet hides the app and the sheet chrome, so the page that comes out
                 is the receipt and nothing else.
@@ -778,17 +804,19 @@ function ReceiptSheetInner({
               the customer can still verify the payment from their own wallet — they have the
               transaction.
             </Notice>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("light");
-                toast("No receipt issued. The order keeps its record.");
-                onClose();
-              }}
-              className="btn btn-secondary w-full"
-            >
-              Finish without a receipt
-            </button>
+            <ModalFooter
+              primary={
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    toast("No receipt issued. The order keeps its record.");
+                    onClose();
+                  }}
+                >
+                  Finish without a receipt
+                </Button>
+              }
+            />
           </div>
         )}
 
@@ -796,8 +824,8 @@ function ReceiptSheetInner({
           <IconQr size={13} className="mt-0.5 shrink-0" />
           Served by {order.staffName} on {order.terminalName}.
         </p>
-      </div>
-    </Modal>
+      </ModalBody>
+    </>
   );
 }
 
@@ -813,9 +841,7 @@ function Row({ label, value }: { label: string; value: string }) {
 function DraftPreview({ body }: { body: string }) {
   return (
     <div className="panel-inset max-h-[180px] overflow-y-auto px-3.5 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-        What it carries
-      </p>
+      <SectionHeader>What it carries</SectionHeader>
       <pre className="mono mt-1.5 whitespace-pre-wrap break-words text-[11.5px] leading-relaxed text-neutral-300">
         {body}
       </pre>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { useMerchantConfiguration, useMerchantTill } from "@/hooks/useMerchant";
 import type { FiatCurrency } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
@@ -151,9 +152,9 @@ export function CataloguePage({ onBack }: { onBack?: () => void }) {
             <button
               type="button"
               onClick={() => openEditor(null)}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-white shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-all hover:bg-[#2492ff] active:scale-90"
-              title="New item"
-              aria-label="New item"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-[var(--color-oncolor)] shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-[background-color,transform] hover:bg-[#2492ff] active:scale-90"
+              title="New Item"
+              aria-label="New Item"
             >
               <IconPlus size={17} />
             </button>
@@ -234,9 +235,7 @@ export function CataloguePage({ onBack }: { onBack?: () => void }) {
             <div className="mt-4 space-y-5">
               {sections.map(([name, items]) => (
                 <div key={name}>
-                  <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
-                    {name}
-                  </p>
+                  <SectionHeader className="px-2 pb-1.5">{name}</SectionHeader>
                   {view === "rows" ? (
                     <div className="list-group">
                       {items.map((item, index) => (
@@ -269,9 +268,7 @@ export function CataloguePage({ onBack }: { onBack?: () => void }) {
         </>
       )}
 
-      {editorOpen && (
-        <ItemEditorModal item={editing} onClose={() => setEditorOpen(false)} />
-      )}
+      <ItemEditorModal open={editorOpen} item={editing} onClose={() => setEditorOpen(false)} />
     </section>
   );
 }
@@ -307,7 +304,7 @@ function ItemRow({
         className="row-icon text-[12.5px] font-bold"
         style={{
           background: `color-mix(in srgb, ${item.colour} 20%, transparent)`,
-          color: "#fff",
+          color: "var(--color-ink)",
         }}
       >
         {initialsOf(item.name)}

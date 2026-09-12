@@ -182,6 +182,94 @@ test("refunding an unmatched payment never reduces the order's refundable sale v
   );
 });
 
+test("payment reversals close reconciliation only after canonical confirmation", () => {
+  const duplicate = observedPayment("payment-confirmation", "60.0000000");
+  const base = {
+    ...paymentStore(),
+    paymentReconciliations: [{
+      id: duplicate.id,
+      network: "testnet",
+      payment: duplicate,
+      outcome: "duplicate",
+      chargeId: "charge-1",
+      orderId: "order-1",
+      invoiceId: null,
+      amountMinor: 6_000,
+      reversalAmount: "60.0000000",
+      observedAt: 2,
+      resolution: null,
+    }],
+    unmatched: [{
+      ...duplicate,
+      seenAt: 2,
+      reconciliationOutcome: "duplicate",
+      candidateChargeId: "charge-1",
+    }],
+  };
+  const reversal = {
+    ...refund("confirmation-required", 6_000, "status_unknown"),
+    kind: "payment_reversal",
+    sourcePaymentId: duplicate.id,
+    reason: "duplicate",
+    amount: "60.0000000",
+    submittedById: "staff-1",
+    submittedBy: "Alex",
+  };
+
+  const recorded = recordRefundSubmission(base, reversal);
+  const accepted = reconcileRefundSubmission(recorded, reversal.id, "accepted", 20);
+  assert.equal(accepted.paymentReconciliations[0].resolution, null);
+  assert.equal(accepted.unmatched.length, 1);
+
+  const confirmed = reconcileRefundSubmission(accepted, reversal.id, "confirmed", 30);
+  assert.equal(confirmed.paymentReconciliations[0].resolution.kind, "refund_submitted");
+  assert.equal(confirmed.paymentReconciliations[0].resolution.refundId, reversal.id);
+  assert.equal(confirmed.paymentReconciliations[0].resolution.staffId, "staff-1");
+  assert.equal(confirmed.paymentReconciliations[0].resolution.at, 30);
+  assert.deepEqual(confirmed.unmatched, []);
+});
+
+test("a canonically failed reversal reopens a legacy prematurely closed reconciliation", () => {
+  const duplicate = observedPayment("payment-reopen", "60.0000000");
+  const reversal = {
+    ...refund("legacy-unknown", 6_000, "status_unknown"),
+    kind: "payment_reversal",
+    sourcePaymentId: duplicate.id,
+    reason: "duplicate",
+    amount: "60.0000000",
+  };
+  const closed = {
+    ...paymentStore(),
+    refunds: [reversal],
+    paymentReconciliations: [{
+      id: duplicate.id,
+      network: "testnet",
+      payment: duplicate,
+      outcome: "duplicate",
+      chargeId: "charge-1",
+      orderId: "order-1",
+      invoiceId: null,
+      amountMinor: 6_000,
+      reversalAmount: "60.0000000",
+      observedAt: 2,
+      resolution: {
+        kind: "refund_submitted",
+        staffId: "staff-1",
+        staffName: "Alex",
+        at: 10,
+        targetChargeId: null,
+        refundId: reversal.id,
+      },
+    }],
+    unmatched: [],
+  };
+
+  const reopened = reconcileRefundSubmission(closed, reversal.id, "failed", 30);
+  assert.equal(reopened.paymentReconciliations[0].resolution, null);
+  assert.equal(reopened.unmatched.length, 1);
+  assert.equal(reopened.unmatched[0].id, duplicate.id);
+});
+
 test("ordinary refunds require the exact payment on a settled charge", () => {
   for (const chargeStatus of ["underpaid", "overpaid", "expired"]) {
     const store = paymentStore({ chargeStatus, orderStatus: "awaiting" });

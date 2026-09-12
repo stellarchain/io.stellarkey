@@ -1,5 +1,6 @@
 'use client';
 
+import type { PrivateActionSubmission } from '../features/private-balance/runtime/submission';
 import {
   createContext,
   useCallback,
@@ -19,15 +20,19 @@ import type {
   PrivateChainedSendProgress,
   PrivateChainedSendResult,
 } from '@/features/private-balance/runtime/chained-send';
+import type { AuthorizePrivateProofDisclosure } from '@/features/private-balance/runtime/proof-disclosure';
+import type { PrivateOutgoingHistoryMode } from '@/features/private-balance/runtime/outgoing-history';
 import type { IncomingPrivateTransferSummary } from '@/features/private-balance/runtime/sync-machine';
 import type {
   PrivatePendingAction,
+  PrivateSpendRecovery,
   PrivateRecentRecipient,
   ShieldedActivityRecord,
   ShieldedCheckpoint,
 } from '@/features/private-balance/runtime/types';
+import type { PrivateArchiveRestorationProgress } from '@/features/private-balance/runtime/archive-restoration';
 import type { PrivateBalanceAsset } from '@/lib/private-balance-assets';
-import type { PrivatePortfolioEntry } from '@/features/private-balance/runtime/portfolio';
+import type { PrivateAccountPortfolioBalances, PrivatePortfolioEntry } from '@/features/private-balance/runtime/portfolio';
 import type { StealthOwnedPayment } from '@/features/private-balance/runtime/stealth-cache';
 
 export type PrivateBalanceRuntimePhase =
@@ -37,6 +42,7 @@ export type PrivateBalanceRuntimePhase =
   | 'reading-meta'
   | 'scanning-live'
   | 'current'
+  | 'status-unknown'
   | 'safe-error';
 
 export interface PrivateBalanceRuntimeControlValue {
@@ -66,11 +72,18 @@ export interface PrivateBalanceRecoveryEvidence {
   feeRange: string;
 }
 
+export interface PrivateBalanceOptInOptions {
+  /** Warm shared proving files after authenticated setup finishes. */
+  prefetchArtifacts?: boolean;
+}
+
 export interface PrivateBalanceDeploymentSummary {
   manifestStatus: 'development' | 'testnet-preview' | 'testnet-beta' | 'production' | null;
   network: 'testnet' | 'mainnet' | null;
   poolContractId: string | null;
   assetContractId: string | null;
+  assetAdminAddress: string | null;
+  networkId: string | null;
   realmId: string | null;
   artifactVersion: string | null;
   manifestHash: string | null;
@@ -106,17 +119,25 @@ export interface PrivateBalanceRuntimeDataValue {
   verifiedBalanceStroops: string;
   lastVerifiedActionIndex: number | null;
   error: string | null;
+  restoreRequiredActionIndex: number | null;
   deployment: PrivateBalanceDeploymentSummary;
   privateAddress: string | null;
+  /** In-memory vault session that authenticated the published receive identity. */
+  receiveSessionId: number | null;
   publicAddress: string | null;
   networkLabel: 'Testnet' | 'Mainnet';
   protocolVersion: number;
   noteCount: number;
   activities: ShieldedActivityRecord[];
   pendingActions: PrivatePendingAction[];
+  spendRecovery: PrivateSpendRecovery | null;
   recentPrivateRecipients: PrivateRecentRecipient[];
+  outgoingHistoryMode: PrivateOutgoingHistoryMode;
+  setOutgoingHistoryMode(mode: PrivateOutgoingHistoryMode, options?: { acknowledgeRecoveryLoss?: boolean }): Promise<void>;
   checkpoint: ShieldedCheckpoint | null;
   selectedRpc: string | null;
+  witnessRpc: string | null;
+  rpcWitnessEnabled: boolean;
   encryptedStorageBytes: number | null;
   asset: PrivateBalanceAsset | null;
   stealthMetaAddress: string | null;
@@ -124,8 +145,12 @@ export interface PrivateBalanceRuntimeDataValue {
   stealthLatestLedger: number | null;
   stealthSyncing: boolean;
   stealthError: string | null;
-  optIn(): Promise<void>;
+  optIn(options?: PrivateBalanceOptInOptions): Promise<void>;
   refreshSync(): Promise<void>;
+  restorePrivateHistory(
+    onProgress?: (progress: PrivateArchiveRestorationProgress) => void,
+    signal?: AbortSignal,
+  ): Promise<void>;
   refreshStealth(): Promise<void>;
   prepareStealthSweep(
     payment: StealthOwnedPayment,
@@ -139,9 +164,19 @@ export interface PrivateBalanceRuntimeDataValue {
     draft: PrivateActionDraft,
     onProgress?: (stage: PrivateActionProgressStage) => void,
     signal?: AbortSignal,
+    authorizeDisclosure?: AuthorizePrivateProofDisclosure,
   ): Promise<PreparedPrivateActionReview>;
   cancelAction(actionId: string): Promise<void>;
-  submitAction(review: PreparedPrivateActionReview): Promise<'broadcast' | 'ambiguous'>;
+  prepareSpendRecovery(
+    actionId: string,
+    onProgress?: (stage: PrivateActionProgressStage) => void,
+    signal?: AbortSignal,
+    authorizeDisclosure?: AuthorizePrivateProofDisclosure,
+    feePayerAccountId?: string,
+  ): Promise<PreparedPrivateActionReview>;
+  submitAction(
+    review: PreparedPrivateActionReview,
+  ): Promise<PrivateActionSubmission>;
   prepareChainedSend(draft: PrivateChainedSendDraft): Promise<PrivateChainedSendApproval>;
   submitChainedSend(
     approval: PrivateChainedSendApproval,
@@ -152,6 +187,7 @@ export interface PrivateBalanceRuntimeDataValue {
     listener: (event: IncomingPrivateTransferSummary) => void,
   ): () => void;
   takeoverLeadership(): void;
+  setRpcWitnessEnabled(enabled: boolean): void;
   runFullVerification(): Promise<void>;
   disableLocalData(confirmation: string): Promise<void>;
 }
@@ -205,16 +241,23 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   verifiedBalanceStroops: '0',
   lastVerifiedActionIndex: null,
   error: null,
+  restoreRequiredActionIndex: null,
   privateAddress: null,
+  receiveSessionId: null,
   publicAddress: null,
   networkLabel: 'Testnet',
   protocolVersion: 1,
   noteCount: 0,
   activities: [],
   pendingActions: [],
+  spendRecovery: null,
   recentPrivateRecipients: [],
+  outgoingHistoryMode: 'recoverable',
+  setOutgoingHistoryMode: unavailable,
   checkpoint: null,
   selectedRpc: null,
+  witnessRpc: null,
+  rpcWitnessEnabled: true,
   encryptedStorageBytes: null,
   asset: null,
   stealthMetaAddress: null,
@@ -227,6 +270,8 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
     network: null,
     poolContractId: null,
     assetContractId: null,
+    assetAdminAddress: null,
+    networkId: null,
     realmId: null,
     artifactVersion: null,
     manifestHash: null,
@@ -243,6 +288,7 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   },
   optIn: unavailable,
   refreshSync: unavailable,
+  restorePrivateHistory: unavailable,
   refreshStealth: unavailable,
   prepareStealthSweep: unavailableStealthSweep,
   submitStealthSweep: unavailableSubmission,
@@ -251,12 +297,14 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   },
   validateRecipient: unavailableRecipient,
   prepareAction: unavailableReview,
+  prepareSpendRecovery: unavailableReview,
   cancelAction: unavailable,
-  submitAction: unavailableSubmission,
+  submitAction: async () => { throw new Error('Private Payments are unavailable.'); },
   prepareChainedSend: unavailableChainedApproval,
   submitChainedSend: unavailableChainedSubmission,
   onIncomingPrivatePayment: () => () => {},
   takeoverLeadership: () => {},
+  setRpcWitnessEnabled: () => {},
   runFullVerification: unavailable,
   disableLocalData: unavailable,
 };
@@ -268,52 +316,106 @@ const PrivateBalanceRuntimeDataContext =
 
 export interface PrivateBalancePortfolioValue {
   entries: PrivatePortfolioEntry[];
+  accountBalances: PrivateAccountPortfolioBalances;
+  refreshAccountBalances(): Promise<void>;
 }
 
-const PrivateBalancePortfolioContext = createContext<PrivateBalancePortfolioValue>({ entries: [] });
+const EMPTY_ACCOUNT_BALANCES: PrivateAccountPortfolioBalances = {};
+const noopPortfolioRefresh = async () => {};
+const PrivateBalancePortfolioContext = createContext<PrivateBalancePortfolioValue>({ entries: [], accountBalances: EMPTY_ACCOUNT_BALANCES, refreshAccountBalances: noopPortfolioRefresh });
+
+interface PrivateBalanceRuntimeControlState {
+  scopeKey: string | null;
+  requested: boolean;
+  runtimeRequestVersion: number;
+  availableAssets: PrivateBalanceAssetOption[];
+  selectedDeploymentId: string | null;
+}
+
+function emptyRuntimeControlState(scopeKey: string | null): PrivateBalanceRuntimeControlState {
+  return {
+    scopeKey,
+    requested: false,
+    runtimeRequestVersion: 0,
+    availableAssets: [],
+    selectedDeploymentId: null,
+  };
+}
 
 export function PrivateBalanceRuntimeControlProvider({
   children,
+  scopeKey,
   availabilityReason = null,
 }: {
   children: ReactNode;
+  scopeKey: string | null;
   availabilityReason?: string | null;
 }) {
-  const [requested, setRequested] = useState(false);
-  const [runtimeRequestVersion, setRuntimeRequestVersion] = useState(0);
-  const [availableAssets, setAvailableAssets] = useState<PrivateBalanceAssetOption[]>([]);
-  const [selectedDeploymentId, setSelectedDeploymentId] = useState<string | null>(null);
-  const requestRuntime = useCallback(() => setRequested(true), []);
+  const [state, setState] = useState<PrivateBalanceRuntimeControlState>(
+    () => emptyRuntimeControlState(scopeKey),
+  );
+  // Account/network changes must publish an empty control view during this
+  // render, before asynchronous catalogue discovery for the new scope begins.
+  const scopedState = state.scopeKey === scopeKey
+    ? state
+    : emptyRuntimeControlState(scopeKey);
+  const requestRuntime = useCallback(() => {
+    setState(current => {
+      const scoped = current.scopeKey === scopeKey
+        ? current
+        : emptyRuntimeControlState(scopeKey);
+      return scoped.requested ? scoped : { ...scoped, requested: true };
+    });
+  }, [scopeKey]);
   const retryRuntime = useCallback(() => {
-    setRequested(true);
-    setRuntimeRequestVersion(current => current + 1);
-  }, []);
+    setState(current => {
+      const scoped = current.scopeKey === scopeKey
+        ? current
+        : emptyRuntimeControlState(scopeKey);
+      return {
+        ...scoped,
+        requested: true,
+        runtimeRequestVersion: scoped.runtimeRequestVersion + 1,
+      };
+    });
+  }, [scopeKey]);
   const selectAsset = useCallback((deploymentId: string) => {
     // Selection is user intent, while the verified catalogue is asynchronous.
     // Retain the intent here and let selectPrivateBalanceDeploymentId validate
     // it against the verified deployment list before a runtime can mount.
-    setSelectedDeploymentId(deploymentId);
-  }, []);
+    setState(current => {
+      const scoped = current.scopeKey === scopeKey
+        ? current
+        : emptyRuntimeControlState(scopeKey);
+      return { ...scoped, selectedDeploymentId: deploymentId };
+    });
+  }, [scopeKey]);
   const registerAvailableAssets = useCallback((
     assets: PrivateBalanceAssetOption[],
     preferredDeploymentId: string | null,
   ) => {
-    setAvailableAssets(assets);
-    setSelectedDeploymentId(current => {
-      if (current && assets.some(option => option.deploymentId === current)) return current;
-      if (preferredDeploymentId && assets.some(option => option.deploymentId === preferredDeploymentId)) {
-        return preferredDeploymentId;
-      }
-      return assets[0]?.deploymentId ?? null;
+    setState(current => {
+      const scoped = current.scopeKey === scopeKey
+        ? current
+        : emptyRuntimeControlState(scopeKey);
+      const selectedDeploymentId =
+        scoped.selectedDeploymentId &&
+        assets.some(option => option.deploymentId === scoped.selectedDeploymentId)
+          ? scoped.selectedDeploymentId
+          : preferredDeploymentId &&
+              assets.some(option => option.deploymentId === preferredDeploymentId)
+            ? preferredDeploymentId
+            : assets[0]?.deploymentId ?? null;
+      return { ...scoped, availableAssets: assets, selectedDeploymentId };
     });
-  }, []);
+  }, [scopeKey]);
   const value = useMemo(
     () => ({
-      requested,
-      runtimeRequestVersion,
+      requested: scopedState.requested,
+      runtimeRequestVersion: scopedState.runtimeRequestVersion,
       availabilityReason,
-      availableAssets,
-      selectedDeploymentId,
+      availableAssets: scopedState.availableAssets,
+      selectedDeploymentId: scopedState.selectedDeploymentId,
       requestRuntime,
       retryRuntime,
       selectAsset,
@@ -321,14 +423,14 @@ export function PrivateBalanceRuntimeControlProvider({
     }),
     [
       availabilityReason,
-      availableAssets,
       registerAvailableAssets,
       requestRuntime,
-      requested,
       retryRuntime,
-      runtimeRequestVersion,
+      scopedState.availableAssets,
+      scopedState.requested,
+      scopedState.runtimeRequestVersion,
+      scopedState.selectedDeploymentId,
       selectAsset,
-      selectedDeploymentId,
     ],
   );
   return (
@@ -355,11 +457,15 @@ export function PrivateBalanceRuntimeDataProvider({
 export function PrivateBalancePortfolioProvider({
   children,
   entries,
+  accountBalances = EMPTY_ACCOUNT_BALANCES,
+  refreshAccountBalances = noopPortfolioRefresh,
 }: {
   children: ReactNode;
   entries: PrivatePortfolioEntry[];
+  accountBalances?: PrivateAccountPortfolioBalances;
+  refreshAccountBalances?: () => Promise<void>;
 }) {
-  const value = useMemo(() => ({ entries }), [entries]);
+  const value = useMemo(() => ({ entries, accountBalances, refreshAccountBalances }), [entries, accountBalances, refreshAccountBalances]);
   return (
     <PrivateBalancePortfolioContext.Provider value={value}>
       {children}

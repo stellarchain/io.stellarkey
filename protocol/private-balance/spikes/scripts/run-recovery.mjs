@@ -8,11 +8,13 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Aes128Gcm, CipherSuite, HkdfSha256 } from '@hpke/core';
 import { DhkemX25519HkdfSha256 } from '@hpke/dhkem-x25519';
+import { StrKey } from '@stellar/stellar-sdk';
 import {
   ActionKind,
   appendCommitments,
   computeCommitment,
   computeAssetField,
+  computeDummyNullifier,
   computeContextField,
   computeContextHash,
   computeGenesisRecordHash,
@@ -20,10 +22,13 @@ import {
   createEmptyTree,
   deriveHpkeAad,
   deriveHpkeInfo,
+  deriveOutgoingAad,
   deriveKeysFromSeed,
   deriveDiversifiedAddressKeys,
   deriveX25519SharedSecret,
+  encodeOutgoingPlaintext,
   encodeNotePlaintext,
+  sealOutgoingEnvelope,
   toViewingKey,
 } from '@stellarkey/private-balance';
 
@@ -38,7 +43,19 @@ const PROJECT_ROOT = path.resolve(
 );
 registerHooks({
   resolve(specifier, context, nextResolve) {
-    const resolved = nextResolve(specifier, context);
+    let resolved;
+    try {
+      resolved = nextResolve(specifier, context);
+    } catch (error) {
+      if (
+        error?.code !== 'ERR_MODULE_NOT_FOUND' ||
+        !specifier.startsWith('.') ||
+        path.extname(specifier)
+      ) {
+        throw error;
+      }
+      resolved = nextResolve(`${specifier}.ts`, context);
+    }
     return resolved.url.endsWith('.ts')
       ? { ...resolved, format: 'module-typescript' }
       : resolved;
@@ -68,11 +85,21 @@ function equalBytes(left, right) {
   return left.length === right.length && left.every((byte, index) => byte === right[index]);
 }
 
-function deterministicEkm(actionIndex) {
+function deterministicEkm(actionIndex, outputIndex, actionNonce) {
   return createHash('sha256')
     .update('StellarKey recovery gate HPKE EKM v1\0', 'utf8')
-    .update(String(actionIndex), 'utf8')
+    .update(`${actionIndex}:${outputIndex}`, 'utf8')
+    .update(actionNonce)
     .digest();
+}
+
+function deterministicOutgoingNonce(actionIndex, outputIndex, actionNonce) {
+  return createHash('sha256')
+    .update('StellarKey recovery gate outgoing nonce v1\0', 'utf8')
+    .update(`${actionIndex}:${outputIndex}`, 'utf8')
+    .update(actionNonce)
+    .digest()
+    .subarray(0, 12);
 }
 
 async function deterministicOutputPackage({
@@ -85,20 +112,25 @@ async function deterministicOutputPackage({
   commitment,
   actionNonce,
   actionIndex,
+  outputIndex,
+  outgoingViewingKey,
+  outgoingPlaintext,
+  deploymentBindingHash,
+  assetField,
 }) {
   const sender = await suite.createSenderContext({
     recipientPublicKey,
     info: deriveHpkeInfo(2, contextHash),
-    ekm: deterministicEkm(actionIndex),
+    ekm: deterministicEkm(actionIndex, outputIndex, actionNonce),
   });
   const ciphertext = new Uint8Array(await sender.seal(
     noteBytes,
-    deriveHpkeAad(contextHash, commitment, actionNonce, 0),
+    deriveHpkeAad(contextHash, commitment, actionNonce, outputIndex),
   ));
   const enc = new Uint8Array(sender.enc);
   const sharedSecret = await deriveX25519SharedSecret(recipientPrivateKey, enc);
   const viewTag = createHash('sha256')
-    .update('StellarKey private view tag v2', 'utf8')
+    .update('StellarKey private view tag v1', 'utf8')
     .update(sharedSecret)
     .update(contextHash)
     .update(enc)
@@ -109,7 +141,21 @@ async function deterministicOutputPackage({
   envelope.set(diversifier, 1);
   envelope.set(enc, 5);
   envelope.set(ciphertext, 37);
-  return { cm: commitment, recipientEnvelope: envelope };
+  const outgoingEnvelope = await sealOutgoingEnvelope(
+    outgoingViewingKey,
+    enc,
+    outgoingPlaintext,
+    deriveOutgoingAad(
+      deploymentBindingHash,
+      contextHash,
+      assetField,
+      commitment,
+      actionNonce,
+      outputIndex,
+    ),
+    deterministicOutgoingNonce(actionIndex, outputIndex, actionNonce),
+  );
+  return { cm: commitment, recipientEnvelope: envelope, outgoingEnvelope };
 }
 
 function ownedActionIndexes(actionCount) {
@@ -162,6 +208,8 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
   const poolId = bytes(3);
   const assetId = bytes(4);
   const asset = { kind: 1, payload: assetId };
+  const assetIndex = 0;
+  const assetContractId = StrKey.encodeContract(assetId);
   const assetField = computeAssetField(asset);
   const accountPublicKey = bytes(5);
   const deploymentBindingHash = bytes(6);
@@ -227,12 +275,29 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       rho,
       memoLength: 0,
       memo: new Uint8Array(32),
-      reserved: new Uint8Array(15),
+      assetIndex,
+      reserved: new Uint8Array(11),
     };
     const commitment = computeCommitment(contextField, assetField, ownerCommitment, value, rho);
+    const recipientHpkePublicKey = owned
+      ? walletKeys.hpkePublicKey
+      : externalKeys.hpkePublicKey;
+    const outgoingPlaintext = encodeOutgoingPlaintext({
+      protocolVersion: 1,
+      flags: 0,
+      value,
+      diversifier,
+      ownerCommitment,
+      recipientHpkePublicKey,
+      memoLength: 0,
+      memo: new Uint8Array(32),
+      assetIndex,
+      reserved: new Uint8Array(11),
+    });
+    const senderKeys = owned ? walletKeys : externalKeys;
     const output = await deterministicOutputPackage({
       recipientPublicKey: owned ? walletHpkeKey : externalHpkeKey,
-      recipientPublicKeyBytes: owned ? walletKeys.hpkePublicKey : externalKeys.hpkePublicKey,
+      recipientPublicKeyBytes: recipientHpkePublicKey,
       recipientPrivateKey: owned
         ? walletAddressKeys.hpkePrivateKey
         : externalAddressKeys.hpkePrivateKey,
@@ -242,11 +307,78 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       commitment,
       actionNonce,
       actionIndex,
+      outputIndex: 0,
+      outgoingViewingKey: senderKeys.outgoingViewingKey,
+      outgoingPlaintext,
+      deploymentBindingHash,
+      assetField,
     });
-    const outputs = [
-      output,
-      { cm: new Uint8Array(32), recipientEnvelope: new Uint8Array(181) },
+    outgoingPlaintext.fill(0);
+
+    const dummyOutputs = [];
+    for (let outputIndex = 1; outputIndex < 3; outputIndex += 1) {
+      const dummyRho = u64Field(
+        options.actionCount + actionIndex * 2 + outputIndex,
+      );
+      const dummyCommitment = computeCommitment(
+        contextField,
+        assetField,
+        externalKeys.ownerCommitment,
+        0n,
+        dummyRho,
+      );
+      const dummyNoteBytes = encodeNotePlaintext({
+        protocolVersion: 1,
+        flags: 1,
+        value: 0n,
+        diversifier,
+        ownerCommitment: externalKeys.ownerCommitment,
+        rho: dummyRho,
+        memoLength: 0,
+        memo: new Uint8Array(32),
+        assetIndex,
+        reserved: new Uint8Array(11),
+      });
+      const dummyOutgoingPlaintext = encodeOutgoingPlaintext({
+        protocolVersion: 1,
+        flags: 1,
+        value: 0n,
+        diversifier,
+        ownerCommitment: externalKeys.ownerCommitment,
+        recipientHpkePublicKey: externalKeys.hpkePublicKey,
+        memoLength: 0,
+        memo: new Uint8Array(32),
+        assetIndex,
+        reserved: new Uint8Array(11),
+      });
+      dummyOutputs.push(await deterministicOutputPackage({
+        recipientPublicKey: externalHpkeKey,
+        recipientPublicKeyBytes: externalKeys.hpkePublicKey,
+        recipientPrivateKey: externalAddressKeys.hpkePrivateKey,
+        diversifier,
+        noteBytes: dummyNoteBytes,
+        contextHash,
+        commitment: dummyCommitment,
+        actionNonce,
+        actionIndex,
+        outputIndex,
+        outgoingViewingKey: senderKeys.outgoingViewingKey,
+        outgoingPlaintext: dummyOutgoingPlaintext,
+        deploymentBindingHash,
+        assetField,
+      }));
+      dummyNoteBytes.fill(0);
+      dummyOutgoingPlaintext.fill(0);
+    }
+    const outputs = [output, ...dummyOutputs];
+    const nullifierSecret0 = u64Field(options.actionCount * 2 + actionIndex * 2 + 1);
+    const nullifierSecret1 = u64Field(options.actionCount * 2 + actionIndex * 2 + 2);
+    const nullifiers = [
+      computeDummyNullifier(contextField, nullifierSecret0),
+      computeDummyNullifier(contextField, nullifierSecret1),
     ];
+    nullifierSecret0.fill(0);
+    nullifierSecret1.fill(0);
     const treeRootAfter = await appendCommitments(tree, outputs.map(item => item.cm));
     const depositSource = {
       kind: 0,
@@ -255,21 +387,21 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
     const action = {
       protocolVersion: 1,
       kind: ActionKind.Deposit,
+      assetIndex,
       asset,
       actionNonce,
       anchorRoot: new Uint8Array(32),
-      nullifiers: [new Uint8Array(32), new Uint8Array(32)],
+      nullifiers,
       outputs,
       publicValue: value,
-      relayerFee: 0n,
-      relayer: undefined,
       depositSource,
     };
     const record = {
       actionIndex,
       ledgerSequence: actionIndex + 1,
-      startingLeafIndex: actionIndex * 2,
+      startingLeafIndex: actionIndex * 3,
       actionKind: ActionKind.Deposit,
+      assetIndex,
       asset,
       actionNonce,
       anchorRoot: action.anchorRoot,
@@ -277,8 +409,6 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       nullifiers: action.nullifiers,
       outputs,
       publicValue: value,
-      relayerFee: 0n,
-      relayer: undefined,
       depositSource,
     };
     records.push(record);
@@ -305,6 +435,9 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       poolId,
       contextHash,
       contextField,
+      deploymentBindingHash,
+      addressPrefix: 'tskpay_',
+      assets: [{ index: assetIndex, contractId: assetContractId }],
       accountAddress: { kind: 0, payload: accountPublicKey },
     },
     expectedPriorRecordHash: computeGenesisRecordHash(contextHash, deploymentBindingHash),

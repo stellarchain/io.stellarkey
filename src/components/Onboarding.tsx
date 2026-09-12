@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { useWalletLifecycleActions } from "@/hooks/useWallet";
+import { createLatestRequestLane } from "@/hooks/useWalletResources";
 import { isEncryptedBackup, looksLikeMnemonic, validateStellarSecret } from "@/lib/vault";
 import { triggerHaptic } from "@/lib/haptics";
 import {
@@ -11,6 +13,10 @@ import {
 } from "@/lib/password-strength";
 import { markBackupVerified } from "@/lib/backup-health";
 import { BRAND_NAME } from "@/lib/brand";
+import {
+  MAX_BACKUP_FILE_BYTES,
+  readBoundedTextFile,
+} from "@/lib/import-limits";
 import {
   readStandaloneDisplay,
   shouldPrioritizeStandaloneRestore,
@@ -70,6 +76,14 @@ export function Onboarding() {
   const [selectedWords, setSelectedWords] = useState<string[]>([]);
   const [verifyFailed, setVerifyFailed] = useState(false);
   const [standaloneLaunch] = useState(readStandaloneDisplay);
+  const restoreLane = useRef(createLatestRequestLane());
+  const restoreInput = useRef<HTMLInputElement>(null);
+  const [readingBackup, setReadingBackup] = useState(false);
+
+  useEffect(() => {
+    const lane = restoreLane.current;
+    return () => lane.cancel();
+  }, []);
 
   // Preload + init the connect bundle when the user lands on the hardware
   // step so the device interaction can start immediately after their click.
@@ -89,22 +103,41 @@ export function Onboarding() {
   const passwordStrength = estimatePasswordStrength(password);
 
   async function handleRestoreBackupFile(file: File) {
-    const json = await file.text();
-    if (isEncryptedBackup(json)) {
-      // Fully-encrypted backup — ask for the backup's password first
-      setPendingBackupJson(json);
-      setError(null);
-      setMode("restore");
-      setStep("password");
-      return;
+    const request = restoreLane.current.begin();
+    setReadingBackup(true);
+    setError(null);
+    setPendingBackupJson(null);
+    try {
+      const json = await readBoundedTextFile(file, MAX_BACKUP_FILE_BYTES, "Backup file");
+      if (!request.isCurrent()) return;
+      if (isEncryptedBackup(json)) {
+        // Only retain the encrypted file while its explicit restore workflow owns it.
+        setPendingBackupJson(json);
+        setMode("restore");
+        setStep("password");
+        return;
+      }
+      triggerHaptic("error");
+      setError("This file is not an encrypted Wallet backup — choose a current encrypted backup and retry.");
+    } catch {
+      if (!request.isCurrent()) return;
+      triggerHaptic("error");
+      setError(file.size > MAX_BACKUP_FILE_BYTES
+        ? "This backup file exceeds the 64 MiB limit. Choose a smaller encrypted backup."
+        : "Could not read this backup file. Choose the file again and retry.");
+    } finally {
+      if (request.isCurrent()) setReadingBackup(false);
     }
-    triggerHaptic("error");
-    setError(
-      "This file is not an encrypted Wallet backup — it may be an outdated legacy export.",
-    );
+  }
+
+  function cancelBackupRead() {
+    restoreLane.current.cancel();
+    setReadingBackup(false);
+    setPendingBackupJson(null);
   }
 
   function go(to: Step, m?: Mode) {
+    cancelBackupRead();
     triggerHaptic("selection");
     if (m) setMode(m);
     setError(null);
@@ -173,7 +206,7 @@ export function Onboarding() {
       try {
         if (!pendingBackupJson) throw new Error("Choose an encrypted backup file first.");
         await restoreWalletFromBackup(pendingBackupJson, password);
-        markBackupVerified();
+        markBackupVerified(pendingBackupJson);
         triggerHaptic("success");
       } catch (e) {
         triggerHaptic("error");
@@ -230,6 +263,7 @@ export function Onboarding() {
   }
 
   function backToChoose() {
+    cancelBackupRead();
     setStep("choose");
     setError(null);
     setPassword("");
@@ -271,19 +305,26 @@ export function Onboarding() {
       walletExists: false,
     });
     const restorePath = (
-      <label className="group flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3.5 text-left transition-all hover:border-[#30D158]/40 hover:bg-[#30D158]/[0.06] active:scale-[0.99]">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#30D158]/12 text-[#30D158]">
-          <IconRefresh size={16} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[14px] font-semibold text-white">
-            Restore From Backup
-          </span>
-          <span className="mt-0.5 block truncate text-[12px] text-neutral-400">
-            Encrypted wallet-backup .json file
-          </span>
+      <>
+        <OnboardPath
+          icon={<IconRefresh size={17} />}
+          tint="#30D158"
+          title="Restore From Backup"
+          sub={readingBackup ? "Reading encrypted backup…" : "Encrypted wallet-backup .json file"}
+          busy={readingBackup}
+          onClick={() => restoreInput.current?.click()}
+        />
+        <span
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          aria-label={readingBackup ? "Reading encrypted backup" : undefined}
+          className="sr-only"
+        >
+          {readingBackup ? "Reading encrypted backup…" : ""}
         </span>
         <input
+          ref={restoreInput}
           type="file"
           accept="application/json,.json,application/octet-stream"
           className="hidden"
@@ -293,12 +334,12 @@ export function Onboarding() {
             e.target.value = "";
           }}
         />
-      </label>
+      </>
     );
     return (
-      <div className="relative z-10 min-h-screen w-full overflow-hidden">
+      <div data-app-surface className="relative z-10 min-h-screen w-full overflow-hidden">
         <Ambient />
-        <div className="app-safe-top app-safe-top-pad-14 fade-up relative mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 items-center gap-12 px-6 py-14 lg:grid-cols-2 lg:gap-16">
+        <div className="app-safe-top app-safe-top-pad-14 fade-up relative mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 items-start gap-12 px-6 py-14 lg:grid-cols-2 lg:items-center-safe lg:gap-16">
           {/* Brand / pitch column */}
           <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
             <LogoMark size={56} />
@@ -352,7 +393,7 @@ export function Onboarding() {
 
           {/* Action card */}
           <div className="mx-auto w-full max-w-[440px]">
-            <div className="rounded-[28px] border border-white/[0.12] bg-[#121214]/95 p-6 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
+            <div className="rounded-[28px] border border-white/[0.12] bg-[var(--color-elevated)] p-6 shadow-[0_25px_70px_-15px_var(--shadow-strong)] backdrop-blur-2xl">
               {prioritizeRestore && (
                 <div role="status" className="mb-4 rounded-2xl border border-[#0A84FF]/25 bg-[#0A84FF]/[0.08] p-4">
                   <p className="text-[13px] font-semibold text-white">Restore your encrypted backup first</p>
@@ -362,9 +403,7 @@ export function Onboarding() {
                   </p>
                 </div>
               )}
-              <p className="px-1 pb-4 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                {prioritizeRestore ? "Continue your wallet" : "Get started"}
-              </p>
+              <SectionHeader className="px-1 pb-4">{prioritizeRestore ? "Continue your wallet" : "Get started"}</SectionHeader>
               <div className="space-y-2.5">
                 {prioritizeRestore && restorePath}
                 <OnboardPath
@@ -437,7 +476,7 @@ export function Onboarding() {
           </>
         ) : (
           <>
-            <div className="rounded-2xl border border-[#30D158]/25 bg-[#30D158]/[0.07] p-4">
+            <Notice tone="pos">
               <p className="flex items-center gap-2 text-[12px] font-semibold text-[#30D158]">
                 <IconCheck size={13} /> Address read from device
               </p>
@@ -447,7 +486,7 @@ export function Onboarding() {
                 className="mt-2.5 justify-center text-center text-[12.5px] leading-loose text-white"
               />
               <p className="mono mt-2 text-center text-[11px] text-neutral-500">{hwInfo.path}</p>
-            </div>
+            </Notice>
             <p className="text-center text-[11.5px] text-neutral-500">
               Does it match the address shown on your Trezor screen?
             </p>
@@ -566,7 +605,7 @@ export function Onboarding() {
               <span className="block text-[14px] font-semibold text-white">
                 Require password to sign
               </span>
-              <span className="mt-1 block truncate text-[12px] leading-relaxed text-neutral-400">
+              <span className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-neutral-400">
                 Recommended · Password required to disable
               </span>
             </span>
@@ -620,20 +659,15 @@ export function Onboarding() {
         }}
         backLabel="Start Over"
       >
-        <div className="flex items-start gap-2.5 rounded-2xl border border-[#FF9F0A]/25 bg-[#FF9F0A]/10 px-3.5 py-3">
-          <IconAlert size={15} className="mt-0.5 shrink-0 text-[#FF9F0A]" />
-          <p className="text-[11.5px] leading-relaxed text-[#FF9F0A]">
-            Anyone with these words controls your funds. Never share them — not even with
-            support.
-          </p>
-        </div>
+        <Notice tone="warn" compact icon={<IconAlert size={15} />}>
+          Anyone with these words controls your funds. Never share them — not even with
+          support.
+        </Notice>
 
         <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              {revealedKind === "mnemonic" ? "Recovery Phrase" : "Secret Key"}
-            </span>
-            <CopyButton value={revealed ?? ""} label="Copy" />
+            <SectionHeader as="span">{revealedKind === "mnemonic" ? "Recovery Phrase" : "Secret Key"}</SectionHeader>
+            <CopyButton value={revealed ?? ""} label="Copy" sensitive />
           </div>
           {revealedKind === "mnemonic" ? (
             <div className="grid grid-cols-3 gap-2">
@@ -664,7 +698,7 @@ export function Onboarding() {
         >
           <span
             className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all ${
-              saved ? "border-[#0A84FF] bg-[#0A84FF] text-white" : "border-white/20 bg-white/[0.05]"
+              saved ? "border-[#0A84FF] bg-[#0A84FF] text-[var(--color-oncolor)]" : "border-white/20 bg-white/[0.05]"
             }`}
           >
             {saved && <IconCheck size={12} />}
@@ -740,9 +774,7 @@ export function Onboarding() {
       </div>
 
       <div>
-        <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
-          Word Bank
-        </p>
+        <SectionHeader className="mb-2 px-1">Word Bank</SectionHeader>
         <div className="flex flex-wrap gap-2">
           {wordBank.map((w) => {
             const isPicked = selectedWords.includes(w);
@@ -816,6 +848,7 @@ function OnboardPath({
   sub,
   onClick,
   primary = false,
+  busy = false,
 }: {
   icon: React.ReactNode;
   tint: string;
@@ -823,12 +856,14 @@ function OnboardPath({
   sub: string;
   onClick: () => void;
   primary?: boolean;
+  busy?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group flex w-full items-center gap-3.5 rounded-2xl border px-4 py-3.5 text-left transition-all active:scale-[0.99] ${
+      aria-busy={busy}
+      className={`group flex w-full items-center gap-3.5 rounded-2xl border px-4 py-3.5 text-left transition-[background-color,border-color,transform,scale] active:scale-[0.99] ${
         primary
           ? "border-[#0A84FF]/40 bg-[#0A84FF]/[0.10] hover:bg-[#0A84FF]/[0.16]"
           : "border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.06]"
@@ -917,7 +952,7 @@ function StepShell({
   backDisabled?: boolean;
 }) {
   return (
-    <div className="relative z-10 min-h-screen w-full overflow-hidden">
+    <div data-app-surface className="relative z-10 min-h-screen w-full overflow-hidden">
       <Ambient />
       <div className="app-safe-top app-safe-top-pad-14 fade-up relative mx-auto flex min-h-screen w-full max-w-[520px] flex-col justify-center px-6 py-14">
         <div className="mb-6 flex items-center justify-between">
@@ -953,7 +988,7 @@ function StepShell({
         <h1 className="display-h text-[30px] font-bold tracking-tight text-white">{title}</h1>
         <p className="mt-2 text-[14px] leading-relaxed text-neutral-400">{subtitle}</p>
 
-        <div className="mt-7 space-y-4 rounded-[28px] border border-white/[0.12] bg-[#121214]/95 p-6 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
+        <div className="mt-7 space-y-4 rounded-[28px] border border-white/[0.12] bg-[var(--color-elevated)] p-6 shadow-[0_25px_70px_-15px_var(--shadow-strong)] backdrop-blur-2xl">
           {children}
         </div>
         <BuildIdentity className="mt-6 self-center text-[10px] text-neutral-500 transition-colors hover:text-neutral-300" />

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
@@ -23,6 +24,7 @@ import {
   fetchBalances,
   mergeAccount,
   networkFeeXlm,
+  parseFeeStats,
   selectRecommendedBaseFee,
   sendBatchPayments,
   sendPayment,
@@ -34,6 +36,7 @@ import {
   activityAmountLines,
   formatActivityAmount,
   generateActivityCsv,
+  isValidAmount,
   normalizeAmount,
 } from "../src/lib/format.ts";
 import {
@@ -47,9 +50,11 @@ import {
   applyMultisigConfig,
   cosignTransaction,
   explainTransaction,
+  prepareCosignPayment,
   requiredWeightForTx,
 } from "../src/lib/multisig.ts";
 import * as multisig from "../src/lib/multisig.ts";
+import * as stellarDomain from "../src/lib/stellar.ts";
 import {
   assetMetadataCacheKey,
   extractCurrencyInfo,
@@ -73,6 +78,26 @@ import {
 import * as transactionReview from "../src/lib/transaction-review.ts";
 
 const { knownAssetIssuer, lookupKnownAsset, POPULAR_ASSETS } = assetDirectory;
+const { NETWORKS } = stellarDomain;
+
+test("private balance explorer links require a real public boundary transaction", () => {
+  assert.equal(typeof stellarDomain.privateBalanceExplorerTxHash, "function");
+  const hash = "ab".repeat(32);
+
+  assert.equal(stellarDomain.privateBalanceExplorerTxHash?.("deposit", hash), hash);
+  assert.equal(stellarDomain.privateBalanceExplorerTxHash?.("withdraw", hash), hash);
+  assert.equal(stellarDomain.privateBalanceExplorerTxHash?.("transfer", hash), null);
+  assert.equal(
+    stellarDomain.privateBalanceExplorerTxHash?.("deposit", "private:testnet-xlm-v1:restored"),
+    null,
+  );
+});
+
+test("amount validation rejects values outside Stellar's signed int64 range", () => {
+  assert.equal(isValidAmount("922337203685.4775807"), true);
+  assert.equal(isValidAmount("922337203685.4775808"), false);
+  assert.equal(isValidAmount("9".repeat(10_000)), false);
+});
 
 const USDC_ISSUER = "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN";
 const TESTNET_USDC_ISSUER = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
@@ -91,6 +116,30 @@ function canonicalSubmissionHash(init) {
   assert.ok(xdr, "expected submitted transaction XDR");
   const transaction = TransactionBuilder.fromXdr(xdr, Networks.TESTNET);
   return Buffer.from(transaction.hash()).toString("hex");
+}
+
+function multisigAuthorityFingerprintForTest(info) {
+  const normalized = {
+    thresholds: {
+      low: info.thresholds.low_threshold,
+      medium: info.thresholds.med_threshold,
+      high: info.thresholds.high_threshold,
+    },
+    signers: [...info.signers]
+      .sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0)
+      .map(({ key, type, weight }) => ({ key, type, weight })),
+  };
+  return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
+}
+
+function multisigAuthorityForTest(thresholds, signers, confirmedNewSignerKeys = []) {
+  return {
+    expectedFingerprint: multisigAuthorityFingerprintForTest({
+      thresholds,
+      signers: signers.map((signer) => ({ ...signer, type: "ed25519_public_key" })),
+    }),
+    confirmedNewSignerKeys,
+  };
 }
 
 function mockPaymentHorizon(t, sourcePublicKey, destinationPublicKey) {
@@ -479,6 +528,11 @@ test("every broadcast builder applies the shared surge fee per operation", async
       low: 1,
       medium: 1,
       high: 1,
+      authority: multisigAuthorityForTest(
+        { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        [{ key: source.publicKey(), weight: 1 }],
+        [cosigner],
+      ),
     },
     onPrepared: prepared,
   });
@@ -507,7 +561,7 @@ test("every broadcast builder applies the shared surge fee per operation", async
 test("active transaction UIs use the selected fee for display and native reserve", () => {
   const wallet = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
   const send = readFileSync(new URL("../src/components/SendModal.tsx", import.meta.url), "utf8");
-  const batch = readFileSync(new URL("../src/components/BatchSendModal.tsx", import.meta.url), "utf8");
+  const batch = readFileSync(new URL("../src/components/BatchSendModalBody.tsx", import.meta.url), "utf8");
   const swap = readFileSync(new URL("../src/components/SwapPage.tsx", import.meta.url), "utf8");
   const assets = readFileSync(new URL("../src/components/AddAssetModal.tsx", import.meta.url), "utf8");
   const settings = readFileSync(new URL("../src/components/SettingsPage.tsx", import.meta.url), "utf8");
@@ -526,6 +580,24 @@ test("active transaction UIs use the selected fee for display and native reserve
     /networkFeeXlm\([\s\S]*Math\.min\(selected\.length, MAX_TRUSTLINE_SELECTIONS\)/,
   );
   assert.match(settings, /networkFeeXlm\(recommendedBaseFeeStroops, 1\)/);
+});
+
+test("fee statistics reject values that cannot be rendered or signed safely", () => {
+  assert.deepEqual(parseFeeStats({
+    last_ledger_base_fee: "NaN",
+    fee_charged: {
+      min: "-1",
+      mode: "1.5",
+      p90: "999999999999999999999999",
+      p99: "200",
+    },
+  }), {
+    lastLedgerBaseFee: 100,
+    minAcceptedFee: 100,
+    modeAcceptedFee: 100,
+    p90AcceptedFee: 150,
+    p99AcceptedFee: 200,
+  });
 });
 
 test("trustline selection rejects the 101st unique operation without breaking fee display", () => {
@@ -554,6 +626,20 @@ test("trustline selection rejects the 101st unique operation without breaking fe
   assert.match(source, /toggleTrustlineSelection/);
   assert.match(source, /Math\.min\(selected\.length, MAX_TRUSTLINE_SELECTIONS\)/);
   assert.match(source, /setError\(update\.error\)/);
+});
+
+test("trustline selection preserves Stellar asset-code case", () => {
+  const issuer = Keypair.random().publicKey();
+  const lower = addTrustlineSelection([], { code: "yXLM", issuer });
+  const distinct = addTrustlineSelection(lower.selected, { code: "YXLM", issuer });
+  assert.equal(distinct.error, null);
+  assert.deepEqual(distinct.selected.map((asset) => asset.code), ["yXLM", "YXLM"]);
+
+  const source = readFileSync(new URL("../src/components/AddAssetModal.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /asset\.code\.toUpperCase\(\)/);
+  assert.doesNotMatch(source, /code\.trim\(\)\.toUpperCase\(\)/);
+  assert.doesNotMatch(source, /setCode\(e\.target\.value\.toUpperCase\(\)\)/);
+  assert.match(source, /\^\[A-Za-z0-9\]\{1,12\}\$/);
 });
 
 test("batch payments activate an unfunded native destination", async (t) => {
@@ -785,7 +871,7 @@ test("approval signing stays bound to the exact reviewed XDR and network", () =>
 
 test("approval review renders every security-sensitive address in full", () => {
   const source = readFileSync(
-    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    new URL("../src/components/MultiSigStudioModalBody.tsx", import.meta.url),
     "utf8",
   );
   const approvalReview = source
@@ -795,6 +881,28 @@ test("approval review renders every security-sensitive address in full", () => {
   assert.ok(approvalReview, "expected the Approvals review section");
   assert.doesNotMatch(approvalReview, /<HashValue\b/);
   assert.match(approvalReview, /l\.kind === "address"[\s\S]*EXACT_REVIEW_VALUE_CLASS/);
+});
+
+test("multisig review renders every changed signer key in full", () => {
+  const source = readFileSync(
+    new URL("../src/components/MultiSigStudioModalBody.tsx", import.meta.url),
+    "utf8",
+  );
+  const changeReview = source
+    .split("Exact signer changes")[1]
+    ?.split("<Notice tone=\"warn\">")[0];
+  const disableReview = source
+    .split("This removes every cosigner")[1]
+    ?.split("Disable Multi-Sig")[0];
+
+  assert.ok(changeReview, "expected the changed-signer review section");
+  assert.match(changeReview, /break-all/);
+  assert.match(changeReview, /\{change\.key\}/);
+  assert.doesNotMatch(changeReview, /<HashValue\b|truncate|line-clamp/);
+  assert.ok(disableReview, "expected the disable-multisig review section");
+  assert.match(disableReview, /break-all/);
+  assert.match(disableReview, /\{signer\.key\}/);
+  assert.doesNotMatch(disableReview, /<HashValue\b|truncate|line-clamp/);
 });
 
 test("local signer revalidates live authorization around password access", () => {
@@ -808,14 +916,17 @@ test("local signer revalidates live authorization around password access", () =>
   assert.ok(handler, "expected the local signer handler");
 
   const firstAuthorization = handler.indexOf("await assertCanAddTransactionSignature");
-  const passwordAccess = handler.indexOf("await revealSecret");
+  const passwordAccess = handler.indexOf("await verifyVaultPassword");
+  const revocableSigner = handler.indexOf("await withSigningKeypair");
   const secondAuthorization = handler.indexOf(
     "await assertCanAddTransactionSignature",
     firstAuthorization + 1,
   );
   const signing = handler.indexOf("tx.sign(kp)");
   assert.ok(firstAuthorization >= 0 && firstAuthorization < passwordAccess);
-  assert.ok(passwordAccess < secondAuthorization && secondAuthorization < signing);
+  assert.ok(passwordAccess < revocableSigner && revocableSigner < secondAuthorization);
+  assert.ok(secondAuthorization < signing);
+  assert.doesNotMatch(handler, /revealSecret|Keypair\.fromSecret/);
 });
 
 test("local signer preserves decoded effects and offers authorization retry", () => {
@@ -829,7 +940,7 @@ test("local signer preserves decoded effects and offers authorization retry", ()
 
 test("multisig signer-info loading discards stale account or network responses", () => {
   const source = readFileSync(
-    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    new URL("../src/components/MultiSigStudioModalBody.tsx", import.meta.url),
     "utf8",
   );
   assert.match(source, /signerInfoRequestGeneration\s*=\s*useRef/);
@@ -843,7 +954,7 @@ test("multisig signer-info loading discards stale account or network responses",
 
 test("multisig UI never presents unavailable signer state as single-signature", () => {
   const source = readFileSync(
-    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    new URL("../src/components/MultiSigStudioModalBody.tsx", import.meta.url),
     "utf8",
   );
   const uiSource = readFileSync(
@@ -1072,6 +1183,13 @@ test("multisig configuration returns a partial envelope when current high thresh
       low: 1,
       medium: 2,
       high: 2,
+      authority: multisigAuthorityForTest(
+        { low_threshold: 1, med_threshold: 2, high_threshold: 2 },
+        [
+          { key: account.publicKey(), weight: 1 },
+          { key: cosigner.publicKey(), weight: 1 },
+        ],
+      ),
     },
   });
 
@@ -1079,6 +1197,177 @@ test("multisig configuration returns a partial envelope when current high thresh
   assert.equal("submitted" in outcome, false);
   assert.ok(outcome.xdr);
   assert.equal(calls.some((call) => call.url.endsWith("/transactions")), false);
+});
+
+test("multisig configuration explicitly writes every retained signer", async (t) => {
+  const account = Keypair.random();
+  const reportedCosigner = Keypair.random();
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${account.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        signers: [
+          { key: account.publicKey(), weight: 1, type: "ed25519_public_key" },
+          { key: reportedCosigner.publicKey(), weight: 1, type: "ed25519_public_key" },
+        ],
+      }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  const outcome = await applyMultisigConfig({
+    network: "testnet",
+    accountPublicKey: account.publicKey(),
+    secretKey: account.secret(),
+    config: {
+      signers: [
+        { key: account.publicKey(), weight: 1 },
+        { key: reportedCosigner.publicKey(), weight: 1 },
+      ],
+      low: 1,
+      medium: 1,
+      high: 1,
+      authority: multisigAuthorityForTest(
+        { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        [
+          { key: account.publicKey(), weight: 1 },
+          { key: reportedCosigner.publicKey(), weight: 1 },
+        ],
+      ),
+    },
+  });
+
+  const tx = TransactionBuilder.fromXdr(outcome.xdr, Networks.TESTNET);
+  assert.ok(
+    tx.operations.some(
+      (operation) =>
+        operation.type === "setOptions" &&
+        operation.signer?.ed25519PublicKey === reportedCosigner.publicKey() &&
+        operation.signer.weight === 1,
+    ),
+    "the envelope must guarantee a retained signer instead of trusting Horizon",
+  );
+});
+
+test("multisig rejects signer authority seeded by a conflicting custom Horizon", async (t) => {
+  const account = Keypair.random();
+  const attacker = Keypair.random();
+  const customHorizon = "https://hostile-horizon.example";
+  const values = new Map([
+    ["wallet.endpoint.horizon.testnet.v1", customHorizon],
+  ]);
+  globalThis.window = {
+    localStorage: {
+      getItem: key => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, String(value)),
+      removeItem: key => values.delete(key),
+    },
+  };
+  t.after(() => { delete globalThis.window; });
+  const customInfo = {
+    sequence: "0",
+    thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+    signers: [
+      { key: account.publicKey(), weight: 1, type: "ed25519_public_key" },
+      { key: attacker.publicKey(), weight: 5, type: "ed25519_public_key" },
+    ],
+  };
+  const canonicalInfo = {
+    sequence: "0",
+    thresholds: { low_threshold: 10, med_threshold: 10, high_threshold: 10 },
+    signers: [
+      { key: account.publicKey(), weight: 10, type: "ed25519_public_key" },
+    ],
+  };
+  let submitted = false;
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    if (stringUrl === `${customHorizon}/accounts/${account.publicKey()}`) {
+      return new Response(JSON.stringify(customInfo), { status: 200 });
+    }
+    if (stringUrl === `${NETWORKS.testnet.horizonUrl}/accounts/${account.publicKey()}`) {
+      return new Response(JSON.stringify(canonicalInfo), { status: 200 });
+    }
+    if (stringUrl === `${customHorizon}/transactions`) {
+      submitted = true;
+      return new Response(JSON.stringify({ hash: canonicalSubmissionHash(init) }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await assert.rejects(
+    applyMultisigConfig({
+      network: "testnet",
+      accountPublicKey: account.publicKey(),
+      secretKey: account.secret(),
+      feeStroops: 100,
+      config: {
+        signers: [
+          { key: account.publicKey(), weight: 1 },
+          { key: attacker.publicKey(), weight: 5 },
+        ],
+        low: 2,
+        medium: 2,
+        high: 2,
+        authority: {
+          expectedFingerprint: multisigAuthorityFingerprintForTest(customInfo),
+          confirmedNewSignerKeys: [attacker.publicKey()],
+        },
+      },
+    }),
+    /canonical signer configuration changed|reload.*signer/i,
+  );
+  assert.equal(submitted, false);
+});
+
+test("multisig refuses a positive signer addition without explicit session provenance", async (t) => {
+  const account = Keypair.random();
+  const unconfirmed = Keypair.random();
+  const canonicalInfo = {
+    sequence: "0",
+    thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+    signers: [
+      { key: account.publicKey(), weight: 1, type: "ed25519_public_key" },
+    ],
+  };
+  let submitted = false;
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${account.publicKey()}`)) {
+      return new Response(JSON.stringify(canonicalInfo), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      submitted = true;
+      return new Response(JSON.stringify({ hash: canonicalSubmissionHash(init) }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await assert.rejects(
+    applyMultisigConfig({
+      network: "testnet",
+      accountPublicKey: account.publicKey(),
+      secretKey: account.secret(),
+      feeStroops: 100,
+      config: {
+        signers: [
+          { key: account.publicKey(), weight: 1 },
+          { key: unconfirmed.publicKey(), weight: 1 },
+        ],
+        low: 1,
+        medium: 1,
+        high: 1,
+        authority: {
+          expectedFingerprint: multisigAuthorityFingerprintForTest(canonicalInfo),
+          confirmedNewSignerKeys: [],
+        },
+      },
+    }),
+    /new signer.*explicitly added|confirm.*new signer/i,
+  );
+  assert.equal(submitted, false);
 });
 
 test("multisig replaces a signer at full capacity without exceeding 20 additional signers", async (t) => {
@@ -1123,6 +1412,14 @@ test("multisig replaces a signer at full capacity without exceeding 20 additiona
       low: 2,
       medium: 2,
       high: 2,
+      authority: multisigAuthorityForTest(
+        { low_threshold: 2, med_threshold: 2, high_threshold: 2 },
+        [
+          { key: account.publicKey(), weight: 1 },
+          ...currentCosigners.map((signer) => ({ key: signer.publicKey(), weight: 1 })),
+        ],
+        [replacement.publicKey()],
+      ),
     },
   });
   assert.equal(partial.submission, null);
@@ -1205,6 +1502,13 @@ test("multisig recovery transitions lower the high threshold before removing sig
       low: 0,
       medium: 0,
       high: 0,
+      authority: multisigAuthorityForTest(
+        { low_threshold: 2, med_threshold: 2, high_threshold: 2 },
+        [
+          { key: account.publicKey(), weight: 1 },
+          { key: cosigner.publicKey(), weight: 1 },
+        ],
+      ),
     },
   });
   const tx = TransactionBuilder.fromXdr(outcome.xdr, Networks.TESTNET);
@@ -1250,6 +1554,13 @@ test("recovery restores a zero-weight master before removing recovery signers", 
       low: 0,
       medium: 0,
       high: 0,
+      authority: multisigAuthorityForTest(
+        { low_threshold: 2, med_threshold: 2, high_threshold: 2 },
+        [
+          { key: account.publicKey(), weight: 0 },
+          { key: recovery.publicKey(), weight: 2 },
+        ],
+      ),
     },
   });
   const partialTx = TransactionBuilder.fromXdr(partial.xdr, Networks.TESTNET);
@@ -1784,6 +2095,25 @@ test("review blocks imported envelopes without time bounds", () => {
   assert.match(review.blockingReasons.join(" "), /time bounds.*required.*Trezor/i);
 });
 
+test("review blocks imported envelopes whose time bounds never expire", () => {
+  const source = Keypair.random();
+  const tx = new TransactionBuilder(new Account(source.publicKey(), "0"), {
+    fee: "100",
+    networkPassphrase: Networks.TESTNET,
+    timebounds: { minTime: "0", maxTime: "0" },
+  })
+    .addOperation(Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }))
+    .build();
+  const review = reviewTransactionEnvelope(tx.toXdr(), "testnet");
+
+  assert.equal(review.signable, false);
+  assert.match(review.blockingReasons.join(" "), /finite expiry/i);
+});
+
 test("review blocks invalid UTF-8 text memo bytes and preserves their hex identity", () => {
   const source = Keypair.random();
   const tx = buildReviewTransaction(source, [
@@ -1967,6 +2297,164 @@ test("payment preserves an ID memo in the signed XDR", async (t) => {
   const memo = submittedTransaction(calls).memo;
   assert.equal(memo.type, "id");
   assert.equal(memo.value.toString(), "18446744073709551615");
+});
+
+test("SEP-29 blocks a non-muxed payment when the destination requires a memo", async (t) => {
+  const source = Keypair.random();
+  const destination = Keypair.random().publicKey();
+  let submitted = false;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({ sequence: "0" }), { status: 200 });
+    }
+    if (stringUrl.endsWith(`/accounts/${destination}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        data: { "config.memo_required": "MQ==" },
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) submitted = true;
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await assert.rejects(
+    sendPayment({
+      network: "testnet",
+      secretKey: source.secret(),
+      destination,
+      amount: "1",
+      assetCode: "XLM",
+    }),
+    /requires a memo/i,
+  );
+  assert.equal(submitted, false);
+});
+
+test("SEP-29 accepts a required memo and exempts a muxed destination", async (t) => {
+  const source = Keypair.random();
+  const destination = Keypair.random();
+  const muxed = new MuxedAccount(new Account(destination.publicKey(), "0"), "42").accountId();
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    calls.push({ url: stringUrl, init });
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({ sequence: "0" }), { status: 200 });
+    }
+    if (stringUrl.endsWith(`/accounts/${destination.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        data: { "config.memo_required": "MQ==" },
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      return new Response(JSON.stringify({ hash: canonicalSubmissionHash(init) }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await sendPayment({
+    network: "testnet",
+    secretKey: source.secret(),
+    destination: destination.publicKey(),
+    amount: "1",
+    assetCode: "XLM",
+    memo: { type: "id", value: "42" },
+  });
+  await sendPayment({
+    network: "testnet",
+    secretKey: source.secret(),
+    destination: muxed,
+    amount: "1",
+    assetCode: "XLM",
+  });
+  assert.equal(calls.filter(({ url }) => url.endsWith("/transactions")).length, 2);
+});
+
+test("SEP-29 blocks batch submission when any non-muxed destination requires a memo", async (t) => {
+  const source = Keypair.random();
+  const destination = Keypair.random().publicKey();
+  let submitted = false;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({ sequence: "0" }), { status: 200 });
+    }
+    if (stringUrl.endsWith(`/accounts/${destination}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        data: { "config.memo_required": "MQ==" },
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) submitted = true;
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await assert.rejects(
+    sendBatchPayments({
+      network: "testnet",
+      secretKey: source.secret(),
+      payments: [{ destination, amount: "1", assetCode: "XLM" }],
+    }),
+    /requires a memo/i,
+  );
+  assert.equal(submitted, false);
+});
+
+test("SEP-29 blocks exporting a co-signed payment without the required memo", async (t) => {
+  const source = Keypair.random();
+  const destination = Keypair.random().publicKey();
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({ sequence: "0" }), { status: 200 });
+    }
+    if (stringUrl.endsWith(`/accounts/${destination}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        data: { "config.memo_required": "MQ==" },
+      }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await assert.rejects(
+    prepareCosignPayment({
+      network: "testnet",
+      sourcePublicKey: source.publicKey(),
+      destination,
+      amount: "1",
+      assetCode: "XLM",
+      secretKey: source.secret(),
+    }),
+    /requires a memo/i,
+  );
+});
+
+test("payment authorization is rechecked at the signing boundary", async (t) => {
+  const source = Keypair.random();
+  const destination = Keypair.random().publicKey();
+  const calls = mockPaymentHorizon(t, source.publicKey(), destination);
+  let checks = 0;
+
+  await assert.rejects(
+    sendPayment({
+      network: "testnet",
+      secretKey: source.secret(),
+      destination,
+      amount: "1",
+      assetCode: "XLM",
+      beforeSign: () => {
+        checks += 1;
+        throw new Error("Operator authorization was revoked.");
+      },
+    }),
+    /authorization was revoked/i,
+  );
+
+  assert.equal(checks, 1);
+  assert.equal(calls.some(({ url }) => url.endsWith("/transactions")), false);
 });
 
 test("an issued asset named XLM stays a credit asset", async (t) => {
@@ -2256,6 +2744,26 @@ test("issuer-aware activity presentation and CSV retain the full asset identity"
   assert.match(csv, new RegExp(`"USDC:${USDC_ISSUER}"`));
 });
 
+test("activity CSV neutralizes spreadsheet formulas in every string cell", () => {
+  const csv = generateActivityCsv([{
+    id: "formula",
+    type: "=HYPERLINK(\"https://example.invalid\")",
+    title: "Unknown operation",
+    direction: "neutral",
+    amount: null,
+    assetCode: null,
+    assetIssuer: null,
+    counterparty: "+CMD|'/C calc'!A0",
+    hash: "@SUM(A1:A2)",
+    createdAt: "2026-01-01T00:00:00Z",
+    successful: true,
+  }]);
+
+  assert.match(csv, /"'=HYPERLINK\(""https:\/\/example\.invalid""\)"/);
+  assert.match(csv, /"'\+CMD\|'\/C calc'!A0"/);
+  assert.match(csv, /"'@SUM\(A1:A2\)"/);
+});
+
 test("derives and validates network-specific SAC contract IDs", () => {
   const native = {
     key: "native",
@@ -2298,6 +2806,9 @@ test("preserves selling liabilities and excludes them from spendable balance", a
           balance: "20",
           limit: "100",
           selling_liabilities: "4.5",
+          is_authorized: true,
+          is_authorized_to_maintain_liabilities: true,
+          is_clawback_enabled: true,
         },
       ],
     }), { status: 200 }),
@@ -2306,6 +2817,9 @@ test("preserves selling liabilities and excludes them from spendable balance", a
   const balances = await fetchBalances(publicKey, "mainnet");
   assert.equal(balances[0].sellingLiabilities, "1.25");
   assert.equal(balances[1].sellingLiabilities, "4.5");
+  assert.equal(balances[1].isAuthorized, true);
+  assert.equal(balances[1].isAuthorizedToMaintainLiabilities, true);
+  assert.equal(balances[1].isClawbackEnabled, true);
   assert.equal(spendableAssetBalance(balances[0], ["3", "0.00001"]), "5.74999");
   assert.equal(spendableAssetBalance(balances[1]), "15.5");
   assert.deepEqual(assetDetailBalanceSummary(balances[1], null), {
@@ -2314,6 +2828,30 @@ test("preserves selling liabilities and excludes them from spendable balance", a
     minimumBalance: null,
     spendable: "15.5",
   });
+
+  assert.equal(
+    spendableAssetBalance({
+      ...balances[1],
+      isAuthorized: false,
+      isAuthorizedToMaintainLiabilities: true,
+    }),
+    "0",
+  );
+});
+
+test("issued balances fail closed when Horizon omits trustline authorization", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+    balances: [{
+      asset_type: "credit_alphanum4",
+      asset_code: "USDC",
+      asset_issuer: USDC_ISSUER,
+      balance: "20",
+      selling_liabilities: "0",
+    }],
+  }), { status: 200 }));
+  const [balance] = await fetchBalances(Keypair.random().publicKey(), "mainnet");
+  assert.equal(balance.isAuthorized, false);
+  assert.equal(spendableAssetBalance(balance), "0");
 });
 
 test("maps path payments to the destination asset code and issuer", async (t) => {

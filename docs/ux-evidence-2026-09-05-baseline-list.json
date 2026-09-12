@@ -1,0 +1,191 @@
+{
+  "source": "synthetic-local-next-frame-DOM-proxies",
+  "browser": "151.0.7922.34",
+  "runs": 3,
+  "listSize": 200,
+  "profiles": {
+    "mobile-4x": {
+      "cpuRate": 4,
+      "network": "150ms RTT / 1.6Mbps down / 0.75Mbps up before navigation; mocked data responses local",
+      "cache": "fresh context; warm repeats in same page; routing disables HTTP cache",
+      "samples": [
+        {
+          "coldAppDcl": 3676.8999999910593,
+          "coldAppReadyUpperBound": 6572.5999999940395,
+          "coldActivityControlsReady": 64.59999999403954,
+          "coldListReady": 69.29999999701977,
+          "coldAssetDetailsShell": 34.3999999910593,
+          "coldSendShell": 50.900000005960464,
+          "coldPrivateSelected": 8.900000005960464,
+          "coldPrivateGateReady": 899.2000000029802,
+          "coldFormReview": 20.400000005960464,
+          "coldPrepareFeedback": 18.799999997019768,
+          "warmActivityControlsReady": 63.400000005960464,
+          "warmListReady": 67.70000000298023,
+          "warmAssetDetailsShell": 18.899999991059303,
+          "warmSendShell": 24,
+          "warmPrivateSelected": 12.5,
+          "warmPrivateGateReady": 12.5,
+          "warmFormReview": 8.899999991059303,
+          "warmPrepareFeedback": 15.700000002980232,
+          "interactionNonInputShiftSum": 0.05132502903178981,
+          "interactionLongTaskMax": 67,
+          "interactionEventDurationMax": 96
+        },
+        {
+          "coldAppDcl": 3598.199999988079,
+          "coldAppReadyUpperBound": 6509.0999999940395,
+          "coldActivityControlsReady": 62.30000001192093,
+          "coldListReady": 67.30000001192093,
+          "coldAssetDetailsShell": 33.8999999910593,
+          "coldSendShell": 50.8999999910593,
+          "coldPrivateSelected": 13.399999991059303,
+          "coldPrivateGateReady": 894.5999999940395,
+          "coldFormReview": 21.899999991059303,
+          "coldPrepareFeedback": 17.899999991059303,
+          "warmActivityControlsReady": 62.20000000298023,
+          "warmListReady": 66.29999999701977,
+          "warmAssetDetailsShell": 20.599999994039536,
+          "warmSendShell": 24.5,
+          "warmPrivateSelected": 11.800000011920929,
+          "warmPrivateGateReady": 11.900000005960464,
+          "warmFormReview": 8.200000002980232,
+          "warmPrepareFeedback": 14.899999991059303,
+          "interactionNonInputShiftSum": 0.02271057120046451,
+          "interactionLongTaskMax": 63,
+          "interactionEventDurationMax": 104
+        },
+        {
+          "coldAppDcl": 3599.7999999970198,
+          "coldAppReadyUpperBound": 7011.100000008941,
+          "coldActivityControlsReady": 65.90000000596046,
+          "coldListReady": 70.59999999403954,
+          "coldAssetDetailsShell": 32.1000000089407,
+          "coldSendShell": 49.29999999701977,
+          "coldPrivateSelected": 8.899999991059303,
+          "coldPrivateGateReady": 938.5999999940395,
+          "coldFormReview": 15.299999997019768,
+          "coldPrepareFeedback": 22.399999991059303,
+          "warmActivityControlsReady": 62,
+          "warmListReady": 66.20000000298023,
+          "warmAssetDetailsShell": 22.299999997019768,
+          "warmSendShell": 26,
+          "warmPrivateSelected": 10.299999997019768,
+          "warmPrivateGateReady": 10.200000002980232,
+          "warmFormReview": 7.600000008940697,
+          "warmPrepareFeedback": 14.799999997019768,
+          "interactionNonInputShiftSum": 0.02271057120046451,
+          "interactionLongTaskMax": 66,
+          "interactionEventDurationMax": 104
+        }
+      ],
+      "summary": {
+        "coldAppDcl": {
+          "median": 3599.8,
+          "slowest": 3676.9,
+          "n": 3
+        },
+        "coldAppReadyUpperBound": {
+          "median": 6572.6,
+          "slowest": 7011.1,
+          "n": 3
+        },
+        "coldActivityControlsReady": {
+          "median": 64.6,
+          "slowest": 65.9,
+          "n": 3
+        },
+        "coldListReady": {
+          "median": 69.3,
+          "slowest": 70.6,
+          "n": 3
+        },
+        "coldAssetDetailsShell": {
+          "median": 33.9,
+          "slowest": 34.4,
+          "n": 3
+        },
+        "coldSendShell": {
+          "median": 50.9,
+          "slowest": 50.9,
+          "n": 3
+        },
+        "coldPrivateSelected": {
+          "median": 8.9,
+          "slowest": 13.4,
+          "n": 3
+        },
+        "coldPrivateGateReady": {
+          "median": 899.2,
+          "slowest": 938.6,
+          "n": 3
+        },
+        "coldFormReview": {
+          "median": 20.4,
+          "slowest": 21.9,
+          "n": 3
+        },
+        "coldPrepareFeedback": {
+          "median": 18.8,
+          "slowest": 22.4,
+          "n": 3
+        },
+        "warmActivityControlsReady": {
+          "median": 62.2,
+          "slowest": 63.4,
+          "n": 3
+        },
+        "warmListReady": {
+          "median": 66.3,
+          "slowest": 67.7,
+          "n": 3
+        },
+        "warmAssetDetailsShell": {
+          "median": 20.6,
+          "slowest": 22.3,
+          "n": 3
+        },
+        "warmSendShell": {
+          "median": 24.5,
+          "slowest": 26,
+          "n": 3
+        },
+        "warmPrivateSelected": {
+          "median": 11.8,
+          "slowest": 12.5,
+          "n": 3
+        },
+        "warmPrivateGateReady": {
+          "median": 11.9,
+          "slowest": 12.5,
+          "n": 3
+        },
+        "warmFormReview": {
+          "median": 8.2,
+          "slowest": 8.9,
+          "n": 3
+        },
+        "warmPrepareFeedback": {
+          "median": 14.9,
+          "slowest": 15.7,
+          "n": 3
+        },
+        "interactionNonInputShiftSum": {
+          "median": 0.02,
+          "slowest": 0.05,
+          "n": 3
+        },
+        "interactionLongTaskMax": {
+          "median": 66,
+          "slowest": 67,
+          "n": 3
+        },
+        "interactionEventDurationMax": {
+          "median": 104,
+          "slowest": 104,
+          "n": 3
+        }
+      }
+    }
+  }
+}

@@ -7,11 +7,18 @@ import {
   type xdr,
 } from '@stellar/stellar-sdk';
 import type { PrivateBalanceManifest } from '../../../lib/private-balance-manifest';
+import type { PrivateFeePayer } from './fee-policy';
+
+export type PrivateBalanceTransactionManifest = Pick<
+  PrivateBalanceManifest,
+  'networkPassphrase' | 'poolContractId'
+> & {
+  assets: ReadonlyArray<{ index: number; contractId: string }>;
+};
 
 export interface PrivateBalanceTransactionReviewRequest {
   envelopeXdr: string;
-  manifest: Pick<PrivateBalanceManifest, 'networkPassphrase' | 'poolContractId'>;
-  assetContractId: string;
+  manifest: PrivateBalanceTransactionManifest;
   source: string;
   sequence: string;
   timeBounds: { minTime: string; maxTime: string };
@@ -22,9 +29,11 @@ export interface PrivateBalanceTransactionReviewRequest {
 }
 
 export interface PrivateBalanceTransactionReview {
+  feePayer?: PrivateFeePayer;
   envelopeXdr: string;
   transactionHash: string;
   method: 'deposit' | 'transfer' | 'withdraw';
+  refreshesAnchor: boolean;
   classicFeeStroops: bigint;
   resourceFeeStroops: bigint;
   expiresAt: number;
@@ -119,17 +128,24 @@ function validateDepositAuthorization(
   const fields = action as Record<string, unknown>;
   if (
     fields.deposit_source !== request.source ||
-    fields.asset !== request.assetContractId ||
     typeof fields.public_value !== 'bigint'
   ) {
     throw new Error('Private deposit source or amount does not match the reviewed action');
+  }
+  const assetIndex = fields.asset_index;
+  if (typeof assetIndex !== 'number' || !Number.isSafeInteger(assetIndex)) {
+    throw new Error('Private deposit asset index is malformed');
+  }
+  const asset = request.manifest.assets[assetIndex];
+  if (!asset || asset.index !== assetIndex) {
+    throw new Error('Private deposit asset is not in the authenticated registry metadata');
   }
 
   const transferInvocation = root.subInvocations[0];
   const transfer = contractInvocation(transferInvocation);
   const transferArgs = transfer.args.map(value => scValToNative(value) as unknown);
   if (
-    Address.fromScAddress(transfer.contractAddress).toString() !== request.assetContractId ||
+    Address.fromScAddress(transfer.contractAddress).toString() !== asset.contractId ||
     transfer.functionName.toString() !== 'transfer' ||
     transferInvocation.subInvocations.length !== 0 ||
     transferArgs.length !== 3 ||
@@ -241,6 +257,7 @@ export function reviewPrivateBalanceTransaction(
     envelopeXdr,
     transactionHash: bytesToHex(parsed.hash()),
     method,
+    refreshesAnchor: method !== 'deposit',
     classicFeeStroops,
     resourceFeeStroops,
     expiresAt: Number(request.timeBounds.maxTime),

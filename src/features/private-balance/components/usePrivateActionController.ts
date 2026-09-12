@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { triggerHaptic } from '@/lib/haptics';
 import {
@@ -15,6 +15,9 @@ import type {
   PrivateChainedSendProgress,
 } from '../runtime/chained-send';
 import { PrivateActionReviewExpiredError } from '../runtime/submission';
+import { completePrivateActionOperation } from './private-action-operation';
+import { PrivateProofConsent, type PrivateProofDisclosure } from '../runtime/proof-disclosure';
+import { PrivateProofExposedError } from '../runtime/proof-exposure';
 
 export type PrivateSubmissionOutcome = 'broadcast' | 'ambiguous';
 
@@ -45,9 +48,14 @@ export function usePrivateActionController(
     submitAction,
     prepareChainedSend,
     submitChainedSend,
+    asset,
+    deployment,
+    publicAddress,
   } = usePrivateBalanceRuntimeData();
   const abortRef = useRef<AbortController | null>(null);
   const draftRef = useRef<PrivateActionDraft | null>(null);
+  const proofConsentRef = useRef(new PrivateProofConsent());
+  const [disclosure, setDisclosure] = useState<Readonly<PrivateProofDisclosure> | null>(null);
   const [review, setReview] = useState<PreparedPrivateActionReview | null>(null);
   const [chained, setChained] = useState<PrivateChainedReview | null>(null);
   const [chainProgress, setChainProgress] = useState<PrivateChainedSendProgress | null>(null);
@@ -65,17 +73,50 @@ export function usePrivateActionController(
   /** The broadcast transaction hash, for the success screen's explorer link. */
   const [submittedHash, setSubmittedHash] = useState<string | null>(null);
 
-  const prepare = useCallback(async (draft: PrivateActionDraft) => {
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    proofConsentRef.current.cancel();
+    setPreparing(false);
+    setWorking(false);
+    setChained(null);
+    setChainProgress(null);
+    setDisclosure(null);
+    setReview(null);
+  }, [asset?.contractId, deployment.networkId, deployment.poolContractId, publicAddress]);
+
+  const prepare = useCallback(async (
+    draft: PrivateActionDraft,
+  ) => {
     const controller = new AbortController();
+    abortRef.current?.abort();
     abortRef.current = controller;
     draftRef.current = draft;
     setPreparing(true);
+    setWorking(false);
     setError(null);
     setErrorCause(null);
     setSubmission(null);
     setSubmittedHash(null);
     setChained(null);
+    setReview(null);
+    setDisclosure(null);
     setProgress('checking-chain');
+    const authorizeDisclosure = async (request: Readonly<PrivateProofDisclosure>) => {
+      if (controller.signal.aborted || abortRef.current !== controller) {
+        throw new DOMException('Private proof sharing cancelled.', 'AbortError');
+      }
+      const waiting = proofConsentRef.current.wait(request.actionId, controller.signal);
+      setDisclosure(request);
+      setPreparing(false);
+      setProgress(null);
+      try { await waiting; } finally {
+        if (abortRef.current === controller) {
+          setDisclosure(null);
+          setPreparing(!controller.signal.aborted);
+        }
+      }
+    };
     try {
       const prepared = await prepareAction(
         draft,
@@ -83,6 +124,7 @@ export function usePrivateActionController(
           if (!controller.signal.aborted) setProgress(stage);
         },
         controller.signal,
+        authorizeDisclosure,
       );
       if (controller.signal.aborted) {
         // The person already went back; release the late preparation quietly.
@@ -92,13 +134,17 @@ export function usePrivateActionController(
       setReview(prepared);
     } catch (cause: unknown) {
       if (controller.signal.aborted) return;
-      if (cause instanceof PrivateConsolidationRequiredError && draft.kind === 'transfer') {
+      if (
+        cause instanceof PrivateConsolidationRequiredError &&
+        draft.kind === 'transfer'
+      ) {
         // The send needs the balance prepared first: fold it into one
         // approval that covers every step, preflighting the public XLM the
         // whole chain needs before anything is shown for approval.
         try {
           const chainedDraft: PrivateChainedSendDraft = {
             kind: 'transfer',
+            ...(draft.feePayerAccountId ? { feePayerAccountId: draft.feePayerAccountId } : {}),
             amount: draft.amount,
             recipientAddress: draft.recipientAddress,
             ...(draft.memo ? { memo: draft.memo } : {}),
@@ -118,81 +164,111 @@ export function usePrivateActionController(
       setError(cause instanceof Error ? cause.message : 'Private action stopped safely.');
       setErrorCause(cause instanceof Error ? cause : null);
     } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      setPreparing(false);
-      setProgress(null);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setPreparing(false);
+        setProgress(null);
+      }
     }
   }, [cancelAction, prepareAction, prepareChainedSend]);
 
   const cancelPrepared = useCallback(async () => {
     abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    proofConsentRef.current.cancel();
+    setDisclosure(null);
     const current = review;
     setReview(null);
     setChained(null);
     setChainProgress(null);
+    setWorking(false);
+    setPreparing(false);
+    setProgress(null);
     setError(null);
     setErrorCause(null);
     if (current && !submission) {
       try {
         await cancelAction(current.id);
       } catch (cause: unknown) {
-        setError(cause instanceof Error ? cause.message : 'The prepared action could not be released.');
-        setErrorCause(cause instanceof Error ? cause : null);
+        if (abortRef.current === controller && !controller.signal.aborted) {
+          setError(cause instanceof Error ? cause.message : 'The prepared action could not be released.');
+          setErrorCause(cause instanceof Error ? cause : null);
+        }
       }
     }
+    if (abortRef.current === controller) abortRef.current = null;
   }, [cancelAction, review, submission]);
 
   const close = useCallback(() => {
     abortRef.current?.abort();
+    abortRef.current = null;
+    proofConsentRef.current.cancel();
     if (review && !submission) void cancelAction(review.id).catch(() => undefined);
     onClose();
   }, [cancelAction, onClose, review, submission]);
 
   const submit = useCallback(async () => {
+    // React's working state is stale within one render; retain the first owner.
+    // Proof consent is the one submit action that belongs to an active preparation.
+    if (abortRef.current && !disclosure) return;
     setError(null);
     setErrorCause(null);
+    if (disclosure) { proofConsentRef.current.approve(disclosure.actionId); return; }
     if (chained) {
+      const controller = new AbortController();
+      abortRef.current = controller;
       setWorking(true);
       setChainProgress({ step: 1, totalSteps: chained.approval.steps, stage: 'preparing' });
-      try {
-        // The runtime resolves the chained outcome; newer contracts also carry
-        // the final send's transaction hash for the success screen's explorer
-        // chip. Read both shapes defensively so either contract works.
-        const outcome = (await submitChainedSend(
-          chained.approval,
-          chained.draft,
-          setChainProgress,
-        )) as
-          | PrivateSubmissionOutcome
-          | { status: PrivateSubmissionOutcome; finalTransactionHash?: string };
-        const status = typeof outcome === 'string' ? outcome : outcome.status;
-        if (typeof outcome !== 'string' && outcome.finalTransactionHash) {
-          setSubmittedHash(outcome.finalTransactionHash);
-        }
-        setSubmission(status);
-        onSubmission?.(status);
-      } catch (cause: unknown) {
-        // A chained approval dies on its first failure; continuing needs a
-        // fresh consent, so the person returns to the form.
-        setChained(null);
-        triggerHaptic('error');
-        setError(cause instanceof Error ? cause.message : 'Private action stopped safely.');
-        setErrorCause(cause instanceof Error ? cause : null);
-      } finally {
-        setWorking(false);
-        setChainProgress(null);
-      }
+      await completePrivateActionOperation({
+        controller, current: abortRef,
+        run: async () => {
+          // Accept both supported runtime outcome shapes for the explorer chip.
+          const updateProgress = (value: PrivateChainedSendProgress) => {
+            if (abortRef.current === controller && !controller.signal.aborted) setChainProgress(value);
+          };
+          return (await submitChainedSend(chained.approval, chained.draft, updateProgress)) as
+              | PrivateSubmissionOutcome
+              | { status: PrivateSubmissionOutcome; finalTransactionHash?: string };
+        },
+        success: outcome => {
+          const status = typeof outcome === 'string' ? outcome : outcome.status;
+          if (typeof outcome !== 'string' && outcome.finalTransactionHash) {
+            setSubmittedHash(outcome.finalTransactionHash);
+          }
+          setSubmission(status);
+          onSubmission?.(status);
+        },
+        failure: cause => {
+          // A failed chain needs fresh consent; only its own UI is invalidated.
+          setChained(null);
+          triggerHaptic('error');
+          setError(cause instanceof Error ? cause.message : 'Private action stopped safely.');
+          setErrorCause(cause instanceof Error ? cause : null);
+        },
+        finish: () => {
+          setWorking(false);
+          setPreparing(false);
+          setChainProgress(null);
+        },
+      });
       return;
     }
     if (!review) return;
+    if (working) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const ownsOperation = () => abortRef.current === controller && !controller.signal.aborted;
     setWorking(true);
     try {
-      const status = await submitAction(review);
-      setSubmission(status);
-      setSubmittedHash(review.transaction.transactionHash);
-      onSubmission?.(status);
+      const submitted = await submitAction(review);
+      if (!ownsOperation()) return;
+      setSubmission(submitted.status);
+      setSubmittedHash(submitted.transactionHash);
+      onSubmission?.(submitted.status);
     } catch (cause: unknown) {
-      if (cause instanceof PrivateActionReviewExpiredError && draftRef.current) {
+      if (!ownsOperation()) return;
+      if (cause instanceof PrivateActionReviewExpiredError && draftRef.current?.kind === 'deposit') {
         // The review sat open past its window. Nothing was signed; release
         // the expired action and rebuild the review from the same draft — at
         // most once per confirm tap, and never auto-submitting the result.
@@ -202,21 +278,27 @@ export function usePrivateActionController(
         } catch {
           // The runtime released it on failure already.
         }
+        if (!ownsOperation()) return;
         setWorking(false);
         await prepare(draftRef.current);
         return;
       }
       setReview(null);
       triggerHaptic('error');
-      setError(cause instanceof Error ? cause.message : 'Private action was not signed.');
-      setErrorCause(cause instanceof Error ? cause : null);
+      const visible = review.kind === 'deposit' ? cause : new PrivateProofExposedError(cause);
+      setError(visible instanceof Error ? visible.message : 'Private action was not signed.');
+      setErrorCause(visible instanceof Error ? visible : null);
     } finally {
-      setWorking(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setWorking(false);
+      }
     }
-  }, [cancelAction, chained, onSubmission, prepare, review, submitAction, submitChainedSend]);
+  }, [cancelAction, chained, disclosure, onSubmission, prepare, review, submitAction, submitChainedSend, working]);
 
   return {
     review,
+    disclosure,
     chained,
     chainProgress,
     progress,

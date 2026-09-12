@@ -1,9 +1,11 @@
-import { getHorizonUrl } from "../stellar-endpoints";
-import type { NetworkKey } from "../stellar";
+import { NETWORKS, type NetworkKey } from "../stellar";
 import { getHorizonJson } from "../horizon";
+import { amountToStroops } from "../stellar-domain";
+import { isValidPaymentAddress, isValidPublicAddress } from "../vault";
 import type { ObservedPayment } from "./match";
 import type { AcceptedAsset } from "./types";
 import { isMerchantRoutingId } from "./routing";
+import { observedPayerAddress, samePayerAccount } from "./payer";
 export { merchantCursorKey, merchantWatchDestinations } from "./watch-targets";
 
 /**
@@ -49,6 +51,25 @@ interface RawPayment {
 
 interface PaymentsPage {
   _embedded?: { records?: RawPayment[] };
+}
+
+function assertSuccessfulPaymentRecord(record: RawPayment): void {
+  if (
+    !record ||
+    typeof record.id !== "string" ||
+    !record.id ||
+    typeof record.type !== "string" ||
+    typeof record.paging_token !== "string" ||
+    !/^[1-9][0-9]*$/.test(record.paging_token) ||
+    typeof record.transaction_hash !== "string" ||
+    !/^[0-9a-f]{64}$/i.test(record.transaction_hash) ||
+    record.transaction_successful !== true ||
+    record.transaction?.successful !== true ||
+    typeof record.created_at !== "string" ||
+    !Number.isFinite(Date.parse(record.created_at))
+  ) {
+    throw new Error("Invalid Horizon payment: explicit successful transaction evidence is required.");
+  }
 }
 
 export interface WatchResult {
@@ -122,7 +143,7 @@ export async function fetchIncomingPayments({
   limit = 50,
   signal,
 }: FetchPaymentsInput): Promise<WatchResult> {
-  const url = new URL(`${getHorizonUrl(network)}/accounts/${publicKey}/payments`);
+  const url = new URL(`${NETWORKS[network].horizonUrl}/accounts/${publicKey}/payments`);
   url.searchParams.set("limit", String(Math.min(Math.max(limit, 1), 200)));
   url.searchParams.set("join", "transactions");
   // Ascending from the cursor keeps paging forward; without one, start at the
@@ -131,7 +152,8 @@ export async function fetchIncomingPayments({
   if (cursor) url.searchParams.set("cursor", cursor);
 
   const page = await getHorizonJson<PaymentsPage>(url.toString(), { signal });
-  const records = page?._embedded?.records ?? [];
+  const records = page?._embedded?.records;
+  if (!Array.isArray(records)) throw new Error("Invalid Horizon payments response.");
   const ordered = cursor ? records : [...records].reverse();
 
   const payments: ObservedPayment[] = [];
@@ -139,27 +161,39 @@ export async function fetchIncomingPayments({
   let lastToken: string | null = null;
 
   for (const record of ordered) {
+    assertSuccessfulPaymentRecord(record);
     lastToken = record.paging_token ?? lastToken;
     const ledger = ledgerFromPagingToken(record.paging_token ?? "");
     if (ledger && (latestLedger === null || ledger > latestLedger)) latestLedger = ledger;
 
-    if (record.transaction_successful === false) continue;
-    if (record.transaction?.successful === false) continue;
     // create_account funds an account but is not a payment against a charge.
     if (record.type !== "payment" && record.type !== "path_payment_strict_send" &&
         record.type !== "path_payment_strict_receive") continue;
+    if (
+      typeof record.to !== "string" ||
+      !isValidPublicAddress(record.to) ||
+      typeof record.from !== "string" ||
+      !isValidPaymentAddress(record.from)
+    ) {
+      throw new Error("Invalid Horizon payment endpoint.");
+    }
     if (record.to !== publicKey) continue;
-    if (record.from === publicKey) continue;
+    if (samePayerAccount(record.from, publicKey)) continue;
 
     const asset = assetOf(record);
-    if (!asset || !record.amount) continue;
+    if (!asset || !record.amount) throw new Error("Invalid Horizon payment asset.");
+    try {
+      if (amountToStroops(record.amount) <= BigInt(0)) throw new Error("zero amount");
+    } catch {
+      throw new Error("Invalid Horizon payment amount.");
+    }
     const routing = routingOf(record);
 
     payments.push({
       id: record.id,
       transactionHash: record.transaction_hash,
       ledger: ledger ?? 0,
-      from: record.from_muxed ?? record.from ?? "",
+      from: observedPayerAddress(record.from, record.from_muxed),
       destination: record.to,
       amount: record.amount,
       asset,

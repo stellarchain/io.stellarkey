@@ -100,11 +100,13 @@ export function MerchantSettingsSheetContent({
   const symbol = FIAT_SYMBOLS[settings.currency] ?? "";
   const accountOptions = useMemo(
     () =>
-      accounts.map((account) => ({
+      accounts
+        .filter((account) => !account.watchOnly || Boolean(account.hardware))
+        .map((account) => ({
         value: account.publicKey,
-        label: account.label,
+        label: account.hardware ? `${account.label} · ${account.hardware}` : account.label,
         sublabel: formatTrezorAddress(account.publicKey),
-      })),
+        })),
     [accounts],
   );
   const receivingAccount = accounts.find(
@@ -143,8 +145,17 @@ export function MerchantSettingsSheetContent({
     });
   }
 
+  async function saveSettings(patch: Parameters<typeof updateSettings>[0]): Promise<void> {
+    try {
+      await updateSettings(patch);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Merchant settings could not be saved.", "error");
+      throw error;
+    }
+  }
+
   function toggleAsset(asset: AcceptedAsset, on: boolean) {
-    updateSettings({
+    void saveSettings({
       acceptedAssets: on
         ? [...settings.acceptedAssets, asset]
         : settings.acceptedAssets.filter((existing) => !sameAsset(existing, asset)),
@@ -186,7 +197,7 @@ export function MerchantSettingsSheetContent({
     return (
       <>
         <ModalHeader
-          title="Business details"
+          title="Business Details"
           subtitle="Shown on receipts and payment references"
           onClose={onClose}
         />
@@ -201,8 +212,7 @@ export function MerchantSettingsSheetContent({
               placeholder="Rua Coffee"
               onCommit={(next) => {
                 const name = next.trim();
-                updateSettings({ profile: { ...settings.profile, name } });
-                return name;
+                return saveSettings({ profile: { ...settings.profile, name } }).then(() => name);
               }}
             />
             <TextRow
@@ -214,8 +224,7 @@ export function MerchantSettingsSheetContent({
               className="mono"
               onCommit={(next) => {
                 const taxId = next.trim();
-                updateSettings({ profile: { ...settings.profile, taxId } });
-                return taxId;
+                return saveSettings({ profile: { ...settings.profile, taxId } }).then(() => taxId);
               }}
             />
             <ChoiceRow
@@ -234,8 +243,8 @@ export function MerchantSettingsSheetContent({
                     .split("\n")
                     .map((line) => line.trim())
                     .filter((line) => line.length > 0);
-                  updateSettings({ profile: { ...settings.profile, addressLines } });
-                  return addressLines.join("\n");
+                  const value = addressLines.join("\n");
+                  return saveSettings({ profile: { ...settings.profile, addressLines } }).then(() => value);
                 }}
               />
             </ChoiceRow>
@@ -247,8 +256,7 @@ export function MerchantSettingsSheetContent({
               placeholder="Thank you. See you again."
               onCommit={(next) => {
                 const receiptFooter = next.trim();
-                updateSettings({ profile: { ...settings.profile, receiptFooter } });
-                return receiptFooter;
+                return saveSettings({ profile: { ...settings.profile, receiptFooter } }).then(() => receiptFooter);
               }}
             />
           </div>
@@ -264,7 +272,7 @@ export function MerchantSettingsSheetContent({
     return (
       <>
         <ModalHeader
-          title="Payment setup"
+          title="Payment Setup"
           subtitle="Where payments arrive and how charges behave"
           onClose={onClose}
         />
@@ -275,7 +283,7 @@ export function MerchantSettingsSheetContent({
             </Notice>
           )}
           <div className="list-group">
-            <SettingsRow
+            <ChoiceRow
               first
               icon={<IconWallet size={16} />}
               tint="#30D158"
@@ -288,17 +296,18 @@ export function MerchantSettingsSheetContent({
             >
               <Select
                 size="sm"
-                className="shrink-0"
+                className="w-full"
                 value={settings.receivingPublicKey ?? ""}
                 options={accountOptions}
                 placeholder="Choose"
                 ariaLabel="Receiving account"
-                onChange={(receivingPublicKey) => updateSettings({ receivingPublicKey })}
+                onChange={(receivingPublicKey) => void saveSettings({ receivingPublicKey })}
               />
-            </SettingsRow>
+            </ChoiceRow>
             <NoteRow>
-              Issued requests keep their original receiving account and remain monitored until
-              resolved.
+              Changing this account requires your wallet password. Existing unpaid requests stop
+              accepting automatic settlement until they are replaced or the original account is
+              restored.
             </NoteRow>
             <SettingsRow
               icon={<span className="mono text-[12px] font-bold">{symbol}</span>}
@@ -318,7 +327,7 @@ export function MerchantSettingsSheetContent({
                 ariaLabel="Display currency"
                 onChange={(next) => {
                   const currency = CURRENCIES.find((code) => code === next);
-                  if (currency) updateSettings({ currency });
+                  if (currency) void saveSettings({ currency });
                 }}
               />
             </SettingsRow>
@@ -339,7 +348,7 @@ export function MerchantSettingsSheetContent({
                 ariaLabel="Charge expiry"
                 onChange={(next) => {
                   const chargeExpirySeconds = Number.parseInt(next, 10);
-                  if (Number.isFinite(chargeExpirySeconds)) updateSettings({ chargeExpirySeconds });
+                  if (Number.isFinite(chargeExpirySeconds)) void saveSettings({ chargeExpirySeconds });
                 }}
               />
             </SettingsRow>
@@ -359,7 +368,7 @@ export function MerchantSettingsSheetContent({
                   return (settings.toleranceBps / 100).toFixed(2);
                 }
                 const toleranceBps = Math.round(percent * 100);
-                updateSettings({ toleranceBps });
+                void saveSettings({ toleranceBps });
                 return (toleranceBps / 100).toFixed(2);
               }}
             />
@@ -373,7 +382,7 @@ export function MerchantSettingsSheetContent({
                 on={settings.holdAutoLockDuringCharge}
                 label="Hold auto-lock while a charge is open"
                 onChange={() =>
-                  updateSettings({
+                  void saveSettings({
                     holdAutoLockDuringCharge: !settings.holdAutoLockDuringCharge,
                   })
                 }
@@ -393,7 +402,7 @@ export function MerchantSettingsSheetContent({
     return (
       <>
         <ModalHeader
-          title="Accepted assets"
+          title="Accepted Assets"
           subtitle="Choose the exact assets this till can quote"
           onClose={onClose}
         />
@@ -455,7 +464,7 @@ export function MerchantSettingsSheetContent({
                   { label: "Included", value: "inclusive" },
                   { label: "Added", value: "added" },
                 ]}
-                onChange={(taxMode) => updateSettings({ taxMode })}
+                onChange={(taxMode) => void saveSettings({ taxMode })}
               />
             </ChoiceRow>
             <SettingsRow
@@ -474,13 +483,13 @@ export function MerchantSettingsSheetContent({
                   sublabel: `${rate.percent} %`,
                 }))}
                 ariaLabel="Rate applied to keypad amounts"
-                onChange={(defaultTaxRateId) => updateSettings({ defaultTaxRateId })}
+                onChange={(defaultTaxRateId) => void saveSettings({ defaultTaxRateId })}
               />
             </SettingsRow>
             <SettingsRow
               icon={<IconFileText size={16} />}
               tint="#BF5AF2"
-              label="Tax records"
+              label="Tax Records"
               sub="Filing periods, exports and adjustments"
               chevron={Boolean(onNavigate)}
               onClick={onNavigate ? () => navigateFromSheet("tax") : undefined}
@@ -500,7 +509,7 @@ export function MerchantSettingsSheetContent({
     return (
       <>
         <ModalHeader
-          title="Tax rates"
+          title="Tax Rates"
           subtitle="Names and percentages used by catalogue items"
           onClose={onClose}
         />
@@ -521,7 +530,7 @@ export function MerchantSettingsSheetContent({
                     onCommit={(next) => {
                       const label = next.trim();
                       if (!label) return rate.label;
-                      updateSettings({
+                      void saveSettings({
                         taxRates: settings.taxRates.map((existing) =>
                           existing.id === rate.id ? { ...existing, label } : existing,
                         ),
@@ -544,7 +553,7 @@ export function MerchantSettingsSheetContent({
                         toast("Enter a tax rate between 0 and 100 percent.", "error");
                         return String(rate.percent);
                       }
-                      updateSettings({
+                      void saveSettings({
                         taxRates: settings.taxRates.map((existing) =>
                           existing.id === rate.id ? { ...existing, percent } : existing,
                         ),
@@ -585,7 +594,7 @@ export function MerchantSettingsSheetContent({
                   { label: "Percent", value: "percent" },
                   { label: "Fixed", value: "fixed" },
                 ]}
-                onChange={(mode) => updateSettings({ tips: { ...settings.tips, mode } })}
+                onChange={(mode) => void saveSettings({ tips: { ...settings.tips, mode } })}
               />
             </ChoiceRow>
             {settings.tips.mode === "percent" && (
@@ -606,8 +615,8 @@ export function MerchantSettingsSheetContent({
                     toast("Enter at least one percentage between 0 and 100.", "error");
                     return settings.tips.percents.join(", ");
                   }
-                  updateSettings({ tips: { ...settings.tips, percents } });
-                  return percents.join(", ");
+                  const value = percents.join(", ");
+                  return saveSettings({ tips: { ...settings.tips, percents } }).then(() => value);
                 }}
               />
             )}
@@ -626,8 +635,8 @@ export function MerchantSettingsSheetContent({
                     toast("Enter at least one amount, such as 0.50, 1.00.", "error");
                     return settings.tips.fixedMinor.map(minorToDecimal).join(", ");
                   }
-                  updateSettings({ tips: { ...settings.tips, fixedMinor } });
-                  return fixedMinor.map(minorToDecimal).join(", ");
+                  const value = fixedMinor.map(minorToDecimal).join(", ");
+                  return saveSettings({ tips: { ...settings.tips, fixedMinor } }).then(() => value);
                 }}
               />
             )}
@@ -646,8 +655,8 @@ export function MerchantSettingsSheetContent({
                     toast("Enter a single amount, such as 10.00.", "error");
                     return minorToDecimal(settings.tips.thresholdMinor);
                   }
-                  updateSettings({ tips: { ...settings.tips, thresholdMinor: parsed[0] } });
-                  return minorToDecimal(parsed[0]);
+                  const value = minorToDecimal(parsed[0]);
+                  return saveSettings({ tips: { ...settings.tips, thresholdMinor: parsed[0] } }).then(() => value);
                 }}
               />
             )}
@@ -662,7 +671,7 @@ export function MerchantSettingsSheetContent({
                   on={settings.tips.onNet}
                   label="Calculate tips on the net"
                   onChange={() =>
-                    updateSettings({ tips: { ...settings.tips, onNet: !settings.tips.onNet } })
+                    void saveSettings({ tips: { ...settings.tips, onNet: !settings.tips.onNet } })
                   }
                 />
               </SettingsRow>
@@ -677,7 +686,7 @@ export function MerchantSettingsSheetContent({
     return (
       <>
         <ModalHeader
-          title="Settlement rules"
+          title="Settlement Rules"
           subtitle="Prompts only. Every movement still requires a signature."
           onClose={onClose}
         />
@@ -892,7 +901,7 @@ export function MerchantSettingsSheetContent({
     return (
       <>
         <ModalHeader
-          title="This device"
+          title="This Device"
           subtitle="Terminal identity and local storage"
           onClose={onClose}
         />
@@ -908,8 +917,7 @@ export function MerchantSettingsSheetContent({
               placeholder="Front counter"
               onCommit={(next) => {
                 const terminalName = next.trim() || "This device";
-                updateSettings({ terminalName });
-                return terminalName;
+                return saveSettings({ terminalName }).then(() => terminalName);
               }}
             />
             <SettingsRow

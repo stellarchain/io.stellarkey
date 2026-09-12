@@ -26,44 +26,62 @@ async function expectAccessibleSurface(
   }));
   if (clientWidth < 768) await expectMobileContainment(page, label);
   expect(scrollWidth, `${label} must not overflow horizontally`).toBeLessThanOrEqual(clientWidth);
-  expect(viewport).toContain("maximum-scale=1");
-  expect(viewport).toContain("user-scalable=no");
-  const disabledRules = ["meta-viewport"];
+  expect(viewport).not.toContain("maximum-scale=1");
+  expect(viewport).not.toContain("user-scalable=no");
+  // An auto-dismissal can begin after settleMotion snapshots active animations.
+  // Page audits wait for notification expiry; the component gate separately
+  // audits visible resting toasts in both themes and tests their full lifecycle.
+  await expect(page.locator('.app-safe-toast > div')).toHaveCount(0);
+  const disabledRules: string[] = [];
   if (browserName === "webkit") {
     // axe/WebKit resolves transparent blurred backgrounds as opaque light
     // layers. Chromium remains the authoritative automated contrast gate.
     disabledRules.push("color-contrast");
   }
+  await settleMotion(page);
   const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-    // Product requirement: native-feeling installed iOS UI intentionally disables zoom.
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .disableRules(disabledRules)
     .analyze();
   const blocking = results.violations.filter(
     (violation) => violation.impact === "critical" || violation.impact === "serious",
   );
-  expect(blocking, `${label} has blocking accessibility violations`).toEqual([]);
+  expect(blocking.map(({ id, impact, nodes }) => ({ id, impact, nodes: nodes.map(node => ({
+    tag: node.html.match(/^<([a-z]+)/)?.[1],
+    classes: node.html.match(/class="([^"]*)"/)?.[1],
+    contrast: node.any.filter(check => check.id === 'color-contrast').map(check => ({
+      foreground: check.data?.fgColor, background: check.data?.bgColor, ratio: check.data?.contrastRatio,
+    })),
+    targetSize: node.any.filter(check => check.id === 'target-size').map(check => ({
+      width: check.data?.width, height: check.data?.height, minimum: check.data?.minSize, reason: check.data?.messageKey,
+      overlapping: check.relatedNodes?.map(related => ({ tag: related.html.match(/^<([a-z]+)/)?.[1], classes: related.html.match(/class="([^"]*)"/)?.[1] })),
+    })),
+  })) })), `${label} has blocking accessibility violations`).toEqual([]);
+}
+
+/** Overlays crossfade in; scan the resting surface, not a translucent frame. */
+async function settleMotion(page: Page): Promise<void> {
+  await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined))));
 }
 
 async function expectMobileContainment(page: Page, label: string): Promise<void> {
-  const failures = await page.evaluate(() => {
+  const measure = () => page.evaluate(() => {
     const viewportWidth = document.documentElement.clientWidth;
     const escaped: string[] = [];
     const describe = (element: Element) => {
       const html = element as HTMLElement;
       const rect = html.getBoundingClientRect();
-      const name =
-        html.getAttribute("aria-label") ??
-        html.textContent?.replace(/\s+/g, " ").trim().slice(0, 80) ??
-        element.tagName.toLowerCase();
-      return `${element.tagName.toLowerCase()}${element.className ? `.${String(element.className).split(/\s+/).slice(0, 3).join(".")}` : ""} [${Math.round(rect.left)}…${Math.round(rect.right)}; ${html.clientWidth}/${html.scrollWidth}] “${name}”`;
+      // Structural diagnostics only: never serialize wallet text into failures.
+      const caption = ['Amount', 'Memo (Optional)', 'Recipient Address or Federation'].find(value => element.querySelector('label')?.textContent === value) ?? '';
+      return `${element.tagName.toLowerCase()}.${String(element.className).split(/\s+/).slice(0, 4).join('.')} ${caption} [${Math.round(rect.left)}…${Math.round(rect.right)}; ${html.clientWidth}/${html.scrollWidth}]`;
     };
 
     for (const element of document.querySelectorAll<HTMLElement>("body *")) {
       if (element.classList.contains("sr-only")) continue;
       if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) continue;
       const rect = element.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > innerHeight) continue;
+      if (rect.width === 0 || rect.height === 0) continue;
+      if ((rect.bottom < 0 || rect.top > innerHeight) && !element.closest('[data-modal-shell]')) continue;
       const style = getComputedStyle(element);
       if (style.pointerEvents === "none" && !element.textContent?.trim()) continue;
       const allowsHorizontalScroll =
@@ -113,7 +131,7 @@ async function expectMobileContainment(page: Page, label: string): Promise<void>
     return [...new Set(escaped)].slice(0, 12);
   });
 
-  expect(failures, `${label} must not clip or escape mobile content`).toEqual([]);
+  await expect.poll(measure, { message: `${label} must not clip or escape mobile content` }).toEqual([]);
 }
 
 async function clickPrimaryNavigation(page: Page, name: string): Promise<void> {
@@ -155,10 +173,35 @@ async function visitSettingsSubpage(
   browserName: string,
 ): Promise<void> {
   await page.getByRole("button", { name: rowName }).click();
-  await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+  const destination = page.getByRole("heading", { name: heading, exact: true });
+  await expect(destination).toBeVisible();
+  await expect(destination).toBeInViewport({ ratio: 1 });
+  await expect(destination).toBeFocused();
+  await expect.poll(() => destination.evaluate(element => {
+    const chromeBottom = Math.max(0, ...[...document.querySelectorAll<HTMLElement>('.app-scroll-sticky-top, .app-mobile-sticky-header')]
+      .filter(header => header.getBoundingClientRect().height > 0)
+      .map(header => header.getBoundingClientRect().bottom));
+    return element.getBoundingClientRect().top >= chromeBottom;
+  })).toBe(true);
   await expectAccessibleSurface(page, `${heading} settings`, browserName);
+  if (heading === 'Network') {
+    const draft = page.getByRole('textbox', { name: 'Stellar RPC endpoint' });
+    // A real edit begins with the field visible. Check the controlled update
+    // independently of Chromium's native keyboard-caret reveal scrolling.
+    await draft.evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+    await draft.click();
+    await draft.fill('https://rpc.synthetic.invalid');
+    await expect(draft).toBeInViewport({ ratio: 1 });
+    const scrollPosition = () => page.evaluate(() => [window.scrollY, document.querySelector<HTMLElement>('[data-app-scroll-owner]')?.scrollTop ?? 0]);
+    const beforeEdit = await scrollPosition();
+    await draft.fill('https://rpc.synthetic.invalidx');
+    await expect(draft).toHaveValue('https://rpc.synthetic.invalidx');
+    await expect(draft).toBeFocused();
+    await expect.poll(scrollPosition).toEqual(beforeEdit);
+  }
   await page.getByRole("button", { name: "Back to Settings" }).click();
   await expect(page.getByRole("heading", { name: "Recovery", exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Wallet settings', exact: true })).toBeFocused();
 }
 
 async function prepareImportedWallet(
@@ -192,10 +235,10 @@ async function openWalletSettings(page: Page): Promise<void> {
 async function enableMerchantMode(page: Page): Promise<void> {
   await openWalletSettings(page);
   await page.getByRole("switch", { name: "Merchant Mode" }).click();
-  const setup = page.getByRole("dialog", { name: /Set up Merchant Mode/ });
-  await setup.getByLabel("Shop name").fill("Accessibility Coffee");
+  const setup = page.getByRole("dialog", { name: /Set Up Merchant Mode/ });
+  await setup.getByLabel("Shop Name").fill("Accessibility Coffee");
   await setup.getByRole("button", { name: "Continue" }).click();
-  await setup.getByRole("button", { name: "Settlement asset" }).click();
+  await setup.getByRole("button", { name: "Settlement Asset" }).click();
   await page.getByRole("option", { name: /XLM/ }).click();
   await setup.getByRole("switch", { name: "Accept USDC" }).click();
   await expect(setup.getByText("Native — no trustline, no reserve", { exact: true })).toBeVisible();
@@ -204,7 +247,7 @@ async function enableMerchantMode(page: Page): Promise<void> {
   await setup.getByRole("button", { name: "Continue" }).click();
   await setup.getByRole("textbox", { name: "Staff PIN", exact: true }).fill("2468");
   await setup.getByRole("textbox", { name: "Confirm staff PIN", exact: true }).fill("2468");
-  await setup.getByRole("button", { name: "Open the till" }).click();
+  await setup.getByRole("button", { name: "Open the Till" }).click();
   await expect(setup).toBeHidden();
   await expect(page.getByText("Till locked · no open shift", { exact: true })).toBeVisible();
 }
@@ -336,6 +379,38 @@ test("critical wallet screens remain operable and accessible", async ({ page, br
   await expectAccessibleSurface(page, "send review", browserName);
   await review.getByRole("button", { name: "Back", exact: true }).click();
   await send.getByRole("button", { name: "Close" }).click();
+  // Typed amount and recipient: closing asks before discarding them.
+  const discard = page.getByRole("dialog", { name: "Discard changes?", exact: true });
+  await expect(discard).toBeVisible();
+  await discard.getByRole("button", { name: "Discard", exact: true }).click();
+  await expect(send).toBeHidden();
+});
+
+test("wallet overlays reflow at 200-percent-equivalent and narrow widths without losing form state", async ({ page, browserName }) => {
+  await importTestWallet(page);
+  // 1280x900 at 200% browser zoom has a 640x450 CSS layout viewport.
+  // This tests reflow, not a physical-device pinch gesture or screen reader.
+  await page.setViewportSize({ width: 640, height: 450 });
+  await page.getByRole("main").getByRole("button", { name: "Send", exact: true }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Send Payment", exact: true });
+  await dialog.getByLabel("Amount", { exact: true }).fill("1");
+  const shell = await dialog.locator("[data-modal-shell]").elementHandle();
+  for (const width of [640, 320]) {
+    await page.setViewportSize({ width, height: 450 });
+    await expectAccessibleSurface(page, "zoom-equivalent send", browserName);
+    await expect(dialog.getByLabel("Amount", { exact: true })).toHaveValue("1");
+    expect(await shell!.evaluate(node => node.isConnected)).toBe(true);
+    await dialog.getByRole("button", { name: "Close", exact: true }).focus();
+    await expect(dialog.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+  }
+  const touchAction = await page.evaluate(() => getComputedStyle(document.body).touchAction);
+  expect(touchAction === "manipulation" || touchAction.split(" ").includes("pinch-zoom")).toBe(true);
+  await dialog.getByRole("button", { name: "Close", exact: true }).press("Escape");
+  // The typed amount makes the form dirty, so Escape asks first.
+  const discard = page.getByRole("dialog", { name: "Discard changes?", exact: true });
+  await expect(discard).toBeVisible();
+  await discard.getByRole("button", { name: "Discard", exact: true }).click();
+  await expect(dialog).toBeHidden();
 });
 
 test("critical wallet settings remain operable and accessible", async ({ page, browserName }) => {
@@ -386,10 +461,10 @@ test("critical wallet settings remain operable and accessible", async ({ page, b
   await page.getByRole("button", { name: "Back to Settings" }).click();
 
   await page.getByRole("button", { name: /Reset Wallet/ }).click();
-  const reset = page.getByRole("dialog", { name: /Erase & Reset Wallet/ });
+  const reset = page.getByRole("dialog", { name: "Erase this wallet?" });
   await expect(reset).toBeVisible();
-  await expectAccessibleSurface(page, "reset wallet sheet", browserName);
-  await reset.getByRole("button", { name: "Close" }).click();
+  await expectAccessibleSurface(page, "reset wallet alert", browserName);
+  await reset.getByRole("button", { name: "Cancel" }).click();
 });
 
 test("critical merchant screens remain operable and accessible", async ({ page, browserName }) => {
@@ -413,29 +488,29 @@ test("critical merchant screens remain operable and accessible", async ({ page, 
   await expectAccessibleSurface(page, "merchant counter codes", browserName);
 
   await clickMerchantSection(page, "Till");
-  await page.getByRole("button", { name: "Open shift", exact: true }).first().click();
-  const shift = page.getByRole("dialog", { name: /Open shift/ });
+  await page.getByRole("button", { name: "Open Shift", exact: true }).first().click();
+  const shift = page.getByRole("dialog", { name: /Open Shift/ });
   await expect(shift).toBeVisible();
   await expectAccessibleSurface(page, "open shift sheet", browserName);
   await shift.getByRole("button", { name: "Close", exact: true }).click();
 
   await clickMerchantSection(page, "Catalogue");
-  await page.getByRole("button", { name: "New item", exact: true }).click();
-  const item = page.getByRole("dialog", { name: "New item" });
+  await page.getByRole("button", { name: "New Item", exact: true }).click();
+  const item = page.getByRole("dialog", { name: "New Item" });
   await expect(item).toBeVisible();
   await expectAccessibleSurface(page, "new catalogue item sheet", browserName);
   await item.getByRole("button", { name: "Close", exact: true }).click();
 
   await clickMerchantSection(page, "Invoices");
-  await page.getByRole("button", { name: "New invoice", exact: true }).first().click();
-  const invoice = page.getByRole("dialog", { name: "New invoice" });
+  await page.getByRole("button", { name: "New Invoice", exact: true }).first().click();
+  const invoice = page.getByRole("dialog", { name: "New Invoice" });
   await expect(invoice).toBeVisible();
   await expectAccessibleSurface(page, "new invoice sheet", browserName);
   await invoice.getByRole("button", { name: "Close", exact: true }).click();
 
   await clickMerchantSection(page, "Counter codes");
-  await page.getByRole("button", { name: "New code", exact: true }).first().click();
-  const counterCode = page.getByRole("dialog", { name: "New counter code" });
+  await page.getByRole("button", { name: "New Code", exact: true }).first().click();
+  const counterCode = page.getByRole("dialog", { name: "New Counter Code" });
   await expect(counterCode).toBeVisible();
   await expectAccessibleSurface(page, "new counter code sheet", browserName);
   await counterCode.getByRole("button", { name: "Close", exact: true }).click();
@@ -448,14 +523,14 @@ test("critical merchant settings remain operable and accessible", async ({ page,
   await expectAccessibleSurface(page, "merchant settings", browserName);
 
   for (const [row, title] of [
-    [/^Business details/, "Business details"],
-    [/^Payment setup/, "Payment setup"],
-    [/^Accepted assets/, "Accepted assets"],
-    [/^Settlement rules/, "Settlement rules"],
+    [/^Business Details/, "Business Details"],
+    [/^Payment Setup/, "Payment Setup"],
+    [/^Accepted Assets/, "Accepted Assets"],
+    [/^Settlement Rules/, "Settlement Rules"],
     [/^Tax Calculation/, "Tax"],
-    [/^Tax rates/, "Tax rates"],
+    [/^Tax Rates/, "Tax Rates"],
     [/^Tips/, "Tips"],
-    [/^This device/, "This device"],
+    [/^This Device/, "This Device"],
   ] as const) {
     await page.getByRole("button", { name: row }).click();
     const dialog = page.getByRole("dialog", { name: title, exact: true });
@@ -465,20 +540,20 @@ test("critical merchant settings remain operable and accessible", async ({ page,
   }
 
   for (const [row, heading] of [
-    [/^Staff & terminals/, "Staff & this device"],
-    [/^Tax records/, "Tax records"],
+    [/^Staff & Terminals/, "Staff & This Device"],
+    [/^Tax Records/, "Tax Records"],
     [/^Peripherals/, "Peripherals"],
   ] as const) {
     await page.getByRole("button", { name: row }).click();
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     await expectAccessibleSurface(page, `${heading} merchant settings`, browserName);
 
-    if (heading === "Staff & this device") {
+    if (heading === "Staff & This Device") {
       for (const [action, title, close] of [
-        [/^Operator locking/, "Operator locking", "Done"],
-        [/Add operator/, "Add operator", "Done"],
-        [/^Manage$/, "On this shift", "Done"],
-        [/^Add staff$/, "Add staff", "Close"],
+        [/^Operator Locking/, "Operator Locking", "Done"],
+        [/Add Operator/, "Add Operator", "Done"],
+        [/^Manage$/, "On This Shift", "Done"],
+        [/^Add Staff$/, "Add Staff", "Close"],
       ] as const) {
         await page.getByRole("button", { name: action }).click();
         const dialog = page.getByRole("dialog", { name: title, exact: true });
@@ -488,15 +563,15 @@ test("critical merchant settings remain operable and accessible", async ({ page,
       }
     }
 
-    if (heading === "Tax records") {
+    if (heading === "Tax Records") {
       for (const [action, title] of [
-        [/^Reporting period/, "Reporting period"],
-        [/^Tax rates/, "Tax rates"],
-        [/^Export report/, "Export report"],
-        [/^Encrypted archive/, "Encrypted archive"],
+        [/^Reporting Period/, "Reporting Period"],
+        [/^Tax Rates/, "Tax Rates"],
+        [/^Export Report/, "Export Report"],
+        [/^Encrypted Archive/, "Encrypted Archive"],
         [/^Retention/, "Retention"],
-        [/^Export history/, "Export history"],
-        [/^About tax records/, "About tax records"],
+        [/^Export History/, "Export History"],
+        [/^About Tax Records/, "About Tax Records"],
       ] as const) {
         await page.getByRole("button", { name: action }).click();
         const dialog = page.getByRole("dialog", { name: title, exact: true });
@@ -509,8 +584,8 @@ test("critical merchant settings remain operable and accessible", async ({ page,
     await page.getByRole("button", { name: "Back to Merchant settings" }).click();
   }
 
-  await page.getByRole("button", { name: /^Turn off Merchant Mode/ }).click();
-  const turnOff = page.getByRole("dialog", { name: /Turn off Merchant Mode/ });
+  await page.getByRole("button", { name: /^Turn Off Merchant Mode/ }).click();
+  const turnOff = page.getByRole("dialog", { name: /Turn Off Merchant Mode/ });
   await expect(turnOff).toBeVisible();
   await expectAccessibleSurface(page, "turn off Merchant Mode sheet", browserName);
   await turnOff.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -560,6 +635,6 @@ test("the completed swap receipt remains usable at the narrowest iPhone width", 
   await expect(page.getByRole("heading", { name: "Swap complete" })).toBeVisible();
   await expectAccessibleSurface(page, "completed swap receipt", browserName);
   await expect(page.getByRole("button", { name: "Done", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "View activity", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Swap again", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View Activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Swap Again", exact: true })).toBeVisible();
 });

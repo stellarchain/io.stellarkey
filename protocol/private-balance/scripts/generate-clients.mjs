@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = process.cwd();
@@ -36,5 +36,21 @@ packageJson.private = true;
 packageJson.dependencies['@stellar/stellar-sdk'] = '17.0.1';
 packageJson.devDependencies.typescript = '6.0.3';
 writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
+
+const tsconfigPath = join(outputDir, 'tsconfig.json');
+const tsconfigSource = readFileSync(tsconfigPath, 'utf8');
+writeFileSync(
+  tsconfigPath,
+  tsconfigSource.replace(
+    '"module": "NodeNext",',
+    '"module": "NodeNext",\n    "rootDir": "./src",',
+  ),
+);
+
+const generatedGitignore = join(outputDir, '.gitignore');
+const generatedGitignoreSource = readFileSync(generatedGitignore, 'utf8');
+if (!generatedGitignoreSource.split(/\r?\n/u).includes('dist/')) {
+  appendFileSync(generatedGitignore, 'dist/\n');
+}
 
 console.log('✓ Generated and dependency-pinned Private Balance pool bindings.');

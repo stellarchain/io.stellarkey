@@ -30,6 +30,7 @@ export async function signStealthSweepEnvelope(input: {
     ephemeralPublicKey: string;
   };
   network: StealthNetwork;
+  deploymentBindingHash: Uint8Array;
   networkPassphrase: string;
   envelopeXdr: string;
   expectedTransactionHash: string;
@@ -59,7 +60,11 @@ export async function signStealthSweepEnvelope(input: {
     input.payment.ephemeralPublicKey,
     'Stealth sweep announcement key',
   );
-  const metaKeys = deriveStealthMetaKeys(input.rootKey, input.network);
+  const metaKeys = deriveStealthMetaKeys(
+    input.rootKey,
+    input.network,
+    input.deploymentBindingHash,
+  );
   let recipient: Awaited<ReturnType<typeof deriveStealthRecipientKey>> | null = null;
   try {
     recipient = await deriveStealthRecipientKey(

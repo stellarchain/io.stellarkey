@@ -3,6 +3,7 @@ import {
   proveAction,
   verifyProofLocally,
   encodePrivateAddress,
+  derivePrivateAddressDeploymentTag,
   deriveDiversifiedAddressKeys,
   deriveExpandedSpendingKey,
   randomBytes32,
@@ -11,6 +12,7 @@ import {
 import type { PrivateBalanceKeyContext, WorkerRequest, WorkerResponse } from './messages';
 import { PRIVATE_BALANCE_WORKER_MESSAGE_VERSION } from './messages';
 import { redactSensitiveData } from './redaction';
+import { wipePrivateBalanceSpendingKey } from './key-hygiene';
 import { scanArchiveRecords } from '../runtime/scanner';
 import { preparePrivateAction, type PreparedPrivateAction } from './action-builder';
 
@@ -33,12 +35,7 @@ function toHex(bytes: Uint8Array): string {
 function clearCurrentEsk(): void {
   clearPreparedAction();
   if (currentEsk) {
-    currentEsk.ask.fill(0);
-    currentEsk.nk.fill(0);
-    currentEsk.baseOwnerCommitment.fill(0);
-    currentEsk.ownerCommitment.fill(0);
-    currentEsk.hpkePrivateKey.fill(0);
-    currentEsk.hpkePublicKey.fill(0);
+    wipePrivateBalanceSpendingKey(currentEsk);
   }
   currentEsk = null;
   currentSessionId = null;
@@ -47,7 +44,9 @@ function clearCurrentEsk(): void {
   currentAddressDiversifier = null;
 }
 
-function zeroWitnessValue(value: string | string[] | string[][]): void {
+type WitnessValue = string | WitnessValue[];
+
+function zeroWitnessValue(value: WitnessValue): void {
   if (!Array.isArray(value)) return;
   for (let index = 0; index < value.length; index += 1) {
     const item = value[index];
@@ -79,10 +78,33 @@ function activeSession(req: WorkerRequest): {
   return { esk: currentEsk, keyContext: currentKeyContext };
 }
 
+function freshAddressDiversifier(): Uint8Array {
+  // Zero is the legacy default; new addresses use a fresh diversifier.
+  // Bound rejection sampling so unavailable/broken entropy cannot wedge a worker.
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    const entropy = randomBytes32();
+    let diversifier: Uint8Array;
+    try {
+      diversifier = entropy.slice(0, 4);
+    } finally {
+      entropy.fill(0);
+    }
+    if (
+      diversifier.some(byte => byte !== 0) &&
+      !currentAddressDiversifier?.every((byte, index) => byte === diversifier[index])
+    ) {
+      return diversifier;
+    }
+    diversifier.fill(0);
+  }
+  throw new Error('Could not create a fresh private address. Try again.');
+}
+
 async function selectAddressIdentity(
   esk: ExpandedSpendingKey,
   keyContext: PrivateBalanceKeyContext,
   diversifier: Uint8Array,
+  updateCurrent = true,
 ): Promise<{ ownerCommitmentHex: string; address: string }> {
   if (diversifier.length !== 4) throw new Error('Private address diversifier must be 4 bytes');
   const identity = await deriveDiversifiedAddressKeys(
@@ -91,13 +113,14 @@ async function selectAddressIdentity(
     diversifier,
   );
   try {
-    esk.ownerCommitment.set(identity.ownerCommitment);
-    esk.hpkePublicKey.set(identity.hpkePublicKey);
-    currentAddressDiversifier?.fill(0);
-    currentAddressDiversifier = identity.diversifier.slice();
+    if (updateCurrent) {
+      currentAddressDiversifier?.fill(0);
+      currentAddressDiversifier = identity.diversifier.slice();
+    }
     return {
       ownerCommitmentHex: toHex(identity.ownerCommitment),
       address: encodePrivateAddress({
+        deploymentTag: derivePrivateAddressDeploymentTag(keyContext.deploymentBindingHash),
         diversifier: identity.diversifier,
         ownerCommitment: identity.ownerCommitment,
         hpkePublicKey: identity.hpkePublicKey,
@@ -133,11 +156,13 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           currentSessionId = req.sessionId;
           currentKeyContext = context;
 
-          const identity = await selectAddressIdentity(
-            currentEsk,
-            context,
-            req.addressDiversifier ?? new Uint8Array(4),
-          );
+          const diversifier = req.addressDiversifier?.slice() ?? freshAddressDiversifier();
+          let identity: { ownerCommitmentHex: string; address: string };
+          try {
+            identity = await selectAddressIdentity(currentEsk, context, diversifier);
+          } finally {
+            diversifier.fill(0);
+          }
 
           const resp: WorkerResponse = {
             messageVersion: PRIVATE_BALANCE_WORKER_MESSAGE_VERSION,
@@ -156,18 +181,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
       case 'GENERATE_ADDRESS': {
         const { esk, keyContext } = activeSession(req);
-        let entropy: Uint8Array | null = null;
-        let diversifier: Uint8Array | null = null;
+        const diversifier = freshAddressDiversifier();
         try {
-          do {
-            entropy?.fill(0);
-            diversifier?.fill(0);
-            entropy = randomBytes32();
-            diversifier = entropy.slice(0, 4);
-          } while (
-            currentAddressDiversifier &&
-            diversifier.every((byte, index) => byte === currentAddressDiversifier?.[index])
-          );
           const identity = await selectAddressIdentity(esk, keyContext, diversifier);
           self.postMessage({
             messageVersion: PRIVATE_BALANCE_WORKER_MESSAGE_VERSION,
@@ -178,8 +193,29 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
             address: identity.address,
           } satisfies WorkerResponse);
         } finally {
-          entropy?.fill(0);
-          diversifier?.fill(0);
+          diversifier.fill(0);
+        }
+        break;
+      }
+
+      case 'DERIVE_ADDRESS': {
+        const { esk, keyContext } = activeSession(req);
+        const diversifier = req.diversifier.slice();
+        try {
+          if (diversifier.length !== 4 || diversifier.every(byte => byte === 0)) {
+            throw new Error('Private address diversifier must be four bytes and nonzero');
+          }
+          const identity = await selectAddressIdentity(esk, keyContext, diversifier, false);
+          self.postMessage({
+            messageVersion: PRIVATE_BALANCE_WORKER_MESSAGE_VERSION,
+            id: req.id,
+            sessionId: req.sessionId,
+            type: 'ADDRESS_DERIVED',
+            ownerCommitmentHex: identity.ownerCommitmentHex,
+            address: identity.address,
+          } satisfies WorkerResponse);
+        } finally {
+          diversifier.fill(0);
         }
         break;
       }
@@ -201,6 +237,9 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
               keyContext.poolId,
             ),
             contextField: keyContext.contextField,
+            deploymentBindingHash: keyContext.deploymentBindingHash,
+            addressPrefix: keyContext.addressPrefix,
+            assets: keyContext.assets,
             accountAddress: { kind: 0, payload: keyContext.accountPublicKey },
           },
           expectedPriorRecordHash: req.expectedPriorRecordHash,
@@ -235,7 +274,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           esk,
           keyContext,
           availableNotes: req.availableNotes,
-          commitments: req.commitments,
+          merklePaths: req.merklePaths,
           intent: req.intent,
         });
         const preparedActionId = toHex(randomBytes32());
@@ -253,10 +292,10 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           preparedActionId,
           action: prepared.action,
           actionFieldHex: toHex(prepared.actionField),
-          actionBindingHex: toHex(prepared.actionBinding),
           reservedNoteIds: prepared.reservedNoteIds,
           inputValue: prepared.inputValue,
           changeValue: prepared.changeValue,
+          recipientOutputCommitment: prepared.recipientOutputCommitment,
           anchorExpiresAtLedger: prepared.anchorExpiresAtLedger,
         };
         self.postMessage(resp);

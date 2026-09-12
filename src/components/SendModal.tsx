@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import { SectionHeader } from "@/components/ui";
 import dynamic from "next/dynamic";
 import { Federation } from "@stellar/stellar-sdk";
 import {
@@ -13,7 +14,6 @@ import {
 } from "@/hooks/useWallet";
 import {
   usePrivateBalanceRuntime,
-  usePrivateBalanceRuntimeData,
 } from "@/hooks/usePrivateBalanceRuntime";
 import { isValidPaymentAddress } from "@/lib/vault";
 import { NETWORKS } from "@/lib/stellar";
@@ -37,11 +37,14 @@ import {
 } from "@/lib/api";
 import type { Contact } from "@/lib/contacts";
 import {
+  bindPublicPaymentReview,
   clearFederationMemoForDestinationChange,
   memoReviewPresentation,
   normalizeFederationMemo,
+  requireCurrentPublicPaymentReview,
   resolveRequestedAsset,
   spendableAssetBalance,
+  type PublicPaymentReview,
 } from "@/lib/transaction-intent";
 import { triggerHaptic } from "@/lib/haptics";
 import {
@@ -50,19 +53,41 @@ import {
 } from "@/lib/private-address";
 import type { SubmissionResult } from "@/lib/submission";
 import type { SettlementSweepIntent } from "@/lib/merchant/settlement";
-import { Button, CopyButton, ErrorText, HashValue, LoadingRegion, Modal, ModalHeader, QrScannerBox, SegmentedControl, Select, Spinner, Tabs } from "./ui";
+import {
+  Button,
+  CopyButton,
+  ErrorText,
+  FieldAction,
+  FieldLabelRow,
+  HashValue,
+  LoadingRegion,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Notice,
+  QrScannerBox,
+  QuickAmountChips,
+  SegmentedControl,
+  Select,
+  Spinner,
+  Tabs,
+} from "./ui";
 import { FiatValue } from "./FiatValue";
+import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 import {
   IconCheck,
   IconAlert,
   IconExternal,
   IconQrScan,
   IconShieldStellar,
+  IconStar,
   IconUsers,
   IconWallet,
   IconTrezor,
   IconLedger,
 } from "./icons";
+import { IconInfo } from "./merchant/icons";
 
 type Stage = "form" | "review" | "sending" | "cosign" | "done" | "status_unknown";
 type MemoType = StellarMemoInput["type"];
@@ -80,9 +105,9 @@ const PrivateSend = dynamic(
     loading: () => <LoadingRegion label="Opening private payment" />,
   },
 );
-const PrivateSetupContent = dynamic(
-  () => import("@/features/private-balance/components/PrivateSetupContent").then(
-    (module) => module.PrivateSetupContent,
+const PrivatePaymentAccessGate = dynamic(
+  () => import("@/features/private-balance/components/PrivatePaymentAccessGate").then(
+    (module) => module.PrivatePaymentAccessGate,
   ),
   {
     ssr: false,
@@ -93,6 +118,11 @@ const PrivateSetupContent = dynamic(
 export type SendPrefill = PayUriPayload & {
   settlementIntent?: SettlementSweepIntent;
 };
+
+/** Header override an embedded flow reports so the shell shows stage-aware titles. */
+export type SendHeader = { title: string; subtitle?: string; onBack?: () => void };
+
+const MEMO_TYPE_LABELS = { text: "Text", id: "ID", hash: "Hash", return: "Return" } as const;
 
 export function SendModal({
   open,
@@ -105,40 +135,86 @@ export function SendModal({
   prefill?: SendPrefill | null;
   initialMode?: "public" | "private";
 }) {
+  const [surfaceBusy, setSurfaceBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [header, setHeader] = useState<SendHeader | null>(null);
+  const privateCloseHandler = useRef<(() => void) | null>(null);
+
+  const setPrivateCloseHandler = useCallback((handler: (() => void) | null) => {
+    privateCloseHandler.current = handler;
+  }, []);
+
+  const requestClose = useCallback(() => {
+    const closePrivate = privateCloseHandler.current;
+    if (closePrivate) {
+      closePrivate();
+      return;
+    }
+    onClose();
+  }, [onClose]);
+
+  return (
+    <Modal
+      open={open}
+      onClose={requestClose}
+      wide
+      busy={surfaceBusy}
+      busyReason="Wait for the payment to finish before closing."
+      dirty={dirty}
+    >
+      <ModalHeader
+        title={header?.title ?? "Send Payment"}
+        subtitle={header ? header.subtitle : "Choose a public or private payment"}
+        onBack={header?.onBack}
+        onClose={requestClose}
+      />
+      <SendSurface
+        initialMode={initialMode}
+        prefill={prefill}
+        surfaceBusy={surfaceBusy}
+        onClose={onClose}
+        onBusyChange={setSurfaceBusy}
+        onDirtyChange={setDirty}
+        onHeaderChange={setHeader}
+        onPrivateCloseHandlerChange={setPrivateCloseHandler}
+      />
+    </Modal>
+  );
+}
+
+// Mounted with the shell and unmounted after its exit, so every opening starts
+// on the requested mode with a clean form.
+function SendSurface({
+  initialMode,
+  prefill,
+  surfaceBusy,
+  onClose,
+  onBusyChange,
+  onDirtyChange,
+  onHeaderChange,
+  onPrivateCloseHandlerChange,
+}: {
+  initialMode: "public" | "private";
+  prefill?: SendPrefill | null;
+  surfaceBusy: boolean;
+  onClose: () => void;
+  onBusyChange: (busy: boolean) => void;
+  onDirtyChange: (dirty: boolean) => void;
+  onHeaderChange: (header: SendHeader | null) => void;
+  onPrivateCloseHandlerChange: (handler: (() => void) | null) => void;
+}) {
   const {
     availableAssets,
     requestRuntime,
   } = usePrivateBalanceRuntime();
-  const { configured } = usePrivateBalanceRuntimeData();
   const [sendMode, setSendMode] = useState<"public" | "private">(initialMode);
   const [, startRuntimeTransition] = useTransition();
   const [privatePrefill, setPrivatePrefill] = useState<string | undefined>(undefined);
-  const [surfaceBusy, setSurfaceBusy] = useState(false);
-  const privateCloseHandler = useRef<(() => void) | null>(null);
   const privateLeaveHandler = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
-    if (open && initialMode === "private") requestRuntime();
-  }, [initialMode, open, requestRuntime]);
-
-  const close = useCallback(() => {
-    privateCloseHandler.current = null;
-    privateLeaveHandler.current = null;
-    setSendMode("public");
-    setPrivatePrefill(undefined);
-    setSurfaceBusy(false);
-    onClose();
-  }, [onClose]);
-
-  const requestClose = useCallback(() => {
-    if (sendMode === "private" && privateCloseHandler.current) {
-      privateCloseHandler.current();
-      return;
-    }
-    close();
-  }, [close, sendMode]);
-
-  if (!open) return null;
+    if (initialMode === "private") requestRuntime();
+  }, [initialMode, requestRuntime]);
 
   const changeMode = (next: "public" | "private") => {
     if (next === sendMode || surfaceBusy) return;
@@ -152,61 +228,52 @@ export function SendModal({
     setSendMode("private");
     startRuntimeTransition(requestRuntime);
   };
+  // Unsigned form/review can change mode (resetting the public draft).
+  // Busy preparation/signing blocks activation; result screens hide the switch.
+  const [publicStage, setPublicStage] = useState<Stage>("form");
   const panel = sendMode === "private" ? (
-    configured ? (
+    <PrivatePaymentAccessGate action="send">
       <PrivateSend
-        onClose={close}
+        onClose={onClose}
         prefill={privatePrefill ? { recipient: privatePrefill } : undefined}
         showAssetSelector
         embedded
-        onCloseHandlerChange={(handler) => {
-          privateCloseHandler.current = handler;
-        }}
+        onCloseHandlerChange={onPrivateCloseHandlerChange}
         onBeforeLeaveChange={(handler) => {
           privateLeaveHandler.current = handler;
         }}
-        onWorkingChange={setSurfaceBusy}
+        onWorkingChange={onBusyChange}
+        onHeaderChange={onHeaderChange}
       />
-    ) : (
-      <PrivateSetupContent action="send" />
-    )
+    </PrivatePaymentAccessGate>
   ) : (
     <SendInner
-      onClose={close}
+      onClose={onClose}
       prefill={prefill}
       openPrivateSend={openPrivateSend}
-      onBusyChange={setSurfaceBusy}
-      embedded
+      onBusyChange={onBusyChange}
+      onDirtyChange={onDirtyChange}
+      onHeaderChange={onHeaderChange}
+      onStageChange={setPublicStage}
     />
   );
 
   return (
-    <Modal open onClose={requestClose} wide dismissable={!surfaceBusy}>
-      <ModalHeader
-        title="Send Payment"
-        subtitle="Choose a public or private payment"
-        onClose={requestClose}
-        closeDisabled={surfaceBusy}
-      />
-      {availableAssets.length > 0 ? (
-        <Tabs
-          value={sendMode}
-          onChange={changeMode}
-          ariaLabel="Send type"
-          options={[
-            { value: "public", label: "Public", disabled: surfaceBusy },
-            { value: "private", label: "Private", disabled: surfaceBusy },
-          ]}
-          panelBusy={surfaceBusy}
-          tabListClassName="mx-4 mt-4 sm:mx-6"
-          panelClassName="min-h-56"
-        >
-          {panel}
-        </Tabs>
-      ) : (
-        panel
-      )}
-    </Modal>
+    <Tabs
+      value={sendMode}
+      onChange={changeMode}
+      ariaLabel="Send type"
+      activationMode="manual"
+      options={[
+        { value: "public", label: "Public", disabled: surfaceBusy },
+        { value: "private", label: "Private", disabled: surfaceBusy || availableAssets.length === 0 },
+      ]}
+      panelBusy={surfaceBusy}
+      tabListClassName={(availableAssets.length > 0 || sendMode === "private") && (sendMode === "private" || publicStage === "form" || publicStage === "review") ? "mx-4 mt-4 sm:mx-6" : "hidden"}
+      panelClassName="min-h-56"
+    >
+      {panel}
+    </Tabs>
   );
 }
 
@@ -215,13 +282,17 @@ function SendInner({
   prefill,
   openPrivateSend,
   onBusyChange,
-  embedded = false,
+  onDirtyChange,
+  onHeaderChange,
+  onStageChange,
 }: {
   onClose: () => void;
   prefill?: SendPrefill | null;
   openPrivateSend(address: string): void;
   onBusyChange(busy: boolean): void;
-  embedded?: boolean;
+  onDirtyChange?(dirty: boolean): void;
+  onHeaderChange?(header: SendHeader | null): void;
+  onStageChange?(stage: Stage): void;
 }) {
   const { network, activeAccount, accounts } = useWalletIdentity();
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
@@ -230,6 +301,7 @@ function SendInner({
   const { submissionStatus } = useWalletSubmission();
   const {
     send,
+    captureSigningContext,
     prepareStealthPayment,
     submitStealthPayment,
     prepareCosignPayment,
@@ -249,6 +321,33 @@ function SendInner({
       ? { assetKey: null, error: null }
     : { assetKey: "native", error: null };
   const [stage, setStage] = useState<Stage>("form");
+  useEffect(() => {
+    onStageChange?.(stage);
+  }, [stage, onStageChange]);
+  const publicReviewAuthorization = useRef<(() => void) | null>(null);
+  const resultHeading = useRef<HTMLHeadingElement>(null);
+  const resultFocus = useRef(false);
+  const confirmButtonRef = useCallback((node: HTMLButtonElement | null) => {
+    if (!node) return;
+    // Only hand off focus actually owned by this button when it disappears.
+    return () => { resultFocus.current = document.activeElement === node; };
+  }, []);
+  useLayoutEffect(() => {
+    const moved = () => { resultFocus.current = false; };
+    document.addEventListener("focusin", moved);
+    document.addEventListener("pointerdown", moved, true);
+    return () => {
+      document.removeEventListener("focusin", moved);
+      document.removeEventListener("pointerdown", moved, true);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    const heading = resultHeading.current;
+    if (heading && resultFocus.current && document.activeElement === document.body && !heading.closest("[inert]")) {
+      heading.focus({ preventScroll: true });
+    }
+    resultFocus.current = false;
+  }, [stage]);
   const [destination, setDestination] = useState(acceptedPrefill?.destination ?? "");
   const [amount, setAmount] = useState(
     acceptedPrefill?.amount && isValidAmount(acceptedPrefill.amount) ? acceptedPrefill.amount : "",
@@ -268,6 +367,7 @@ function SendInner({
   const [submission, setSubmission] = useState<SubmissionResult | null>(null);
   const [cosignXdr, setCosignXdr] = useState<string | null>(null);
   const [stealthReview, setStealthReview] = useState<StealthReview | null>(null);
+  const [publicReview, setPublicReview] = useState<PublicPaymentReview | null>(null);
   const [preparingReview, setPreparingReview] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [resolvingFed, setResolvingFed] = useState(false);
@@ -281,11 +381,30 @@ function SendInner({
 
   const [signerInfo, setSignerInfo] = useState<AccountSignerInfo | null>(null);
   const trackedSubmissionStatus = submission ? submissionStatus(submission) : null;
+  const receiptNetwork = submission?.network ?? publicReview?.network ?? stealthReview?.network ?? network;
 
   useEffect(() => {
-    onBusyChange(stage === "sending");
+    onBusyChange(stage === "sending" || preparingReview);
     return () => onBusyChange(false);
-  }, [onBusyChange, stage]);
+  }, [onBusyChange, preparingReview, stage]);
+
+  // Typed recipient or amount is unsaved input until the review is signed.
+  const dirty = stage === "form" && (destination.trim() !== "" || amount.trim() !== "");
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
+
+  const backToForm = useCallback(() => {
+    setPublicReview(null);
+    setError(null);
+    setStage("form");
+  }, []);
+  useLayoutEffect(() => {
+    if (!onHeaderChange) return;
+    onHeaderChange(sendStageHeader(stage, backToForm));
+    return () => onHeaderChange(null);
+  }, [backToForm, onHeaderChange, stage]);
 
   useEffect(() => {
     let alive = true;
@@ -359,7 +478,6 @@ function SendInner({
         : null
     : null;
   const effectiveError = error ?? pendingPrefillAsset?.error ?? settlementContextError;
-  const reviewMemo = memoReviewPresentation(memo, memoType);
 
   // Recent recipients derived from outgoing activity (most recent first)
   const recentRecipients = useMemo(() => {
@@ -375,7 +493,7 @@ function SendInner({
   }, [activity]);
 
   const isFederation = destination.includes("*");
-  // A tks1/sks1 paste is a Private Payments recipient — a regular Stellar
+  // An skpay_/tskpay_ paste is a Private Payments recipient — a regular Stellar
   // payment can never reach it, so offer the one-tap handoff instead.
   const privateDestination = isPrivateReceiveAddressLike(destination);
   // A tsm1/ssm1 reusable handle is funded from the public account, but derives
@@ -469,7 +587,13 @@ function SendInner({
   const stealthAssetError = stealthDestination && selectedAsset && !selectedAsset.isNative
     ? "Reusable private recipients currently support XLM only. Choose XLM to continue."
     : null;
-  const sendError = effectiveError ?? stealthAssetError;
+  const trustlineAuthorizationError =
+    selectedAsset && !selectedAsset.isNative && selectedAsset.isAuthorized !== true
+      ? selectedAsset.isAuthorizedToMaintainLiabilities
+        ? `${selectedAsset.code} is authorized to maintain liabilities only and cannot be sent.`
+        : `${selectedAsset.code} is frozen or not authorized by its issuer and cannot be sent.`
+      : null;
+  const sendError = effectiveError ?? stealthAssetError ?? trustlineAuthorizationError;
   const canReview =
     (destOk || Boolean(fedResolvedAddr)) &&
     amountOk &&
@@ -488,18 +612,67 @@ function SendInner({
   const reviewedTotalDebitXlm = stealthReview
     ? stroopsToAmount(BigInt(stealthReview.totalDebitStroops))
     : null;
+  const reviewedAmount = stealthReview ? amount : publicReview?.amount ?? amount;
+  const reviewedAsset = publicReview?.asset ?? selectedAsset;
+  const reviewedBalance = publicReview?.asset.balanceBefore ?? balance;
+  const reviewedDestination = stealthReview
+    ? destination.trim()
+    : publicReview?.destination ?? effectiveDestination;
+  const reviewedSourcePublicKey = publicReview?.sourcePublicKey ?? activeAccount?.publicKey ?? "";
+  const reviewedAccount = accounts.find((account) => account.publicKey === reviewedSourcePublicKey)
+    ?? activeAccount;
+  const reviewedContact = contacts.find((contact) => contact.address === reviewedDestination);
+  const reviewedMemo = publicReview?.memo ?? (memo.trim()
+    ? { type: memoType, value: memo.trim() }
+    : undefined);
+  const reviewMemo = reviewedMemo
+    ? memoReviewPresentation(reviewedMemo.value, reviewedMemo.type)
+    : null;
+  const reviewNeedsCosigners = stealthReview
+    ? needsCosigners
+    : publicReview?.needsCosigners ?? needsCosigners;
   const reviewedFeeXlm = stealthReview
     ? stroopsToAmount(BigInt(stealthReview.networkFeeStroops))
-    : feeXlm;
+    : publicReview
+      ? stroopsToAmount(BigInt(publicReview.feeStroops))
+      : feeXlm;
   const remainingBalance = reviewedTotalDebitXlm
-    ? subtractStellarAmounts(balance, [reviewedTotalDebitXlm])
-    : isValidAmount(amount)
-      ? subtractStellarAmounts(balance, [amount, ...(selectedAsset?.isNative ? [feeXlm] : [])])
-    : balance;
+    ? subtractStellarAmounts(reviewedBalance, [reviewedTotalDebitXlm])
+    : isValidAmount(reviewedAmount)
+      ? subtractStellarAmounts(
+          reviewedBalance,
+          [reviewedAmount, ...(reviewedAsset?.isNative ? [reviewedFeeXlm] : [])],
+        )
+      : reviewedBalance;
 
   async function handleReview() {
     if (!stealthDestination) {
-      triggerHaptic("selection");
+      if (!selectedAsset || !activeAccount) return;
+      try {
+        publicReviewAuthorization.current = captureSigningContext();
+      } catch {
+        setError("Wallet context changed. Review the payment again before signing.");
+        return;
+      }
+      const paymentMemo: StellarMemoInput | undefined = memo.trim()
+        ? { type: memoType, value: memo.trim() }
+        : undefined;
+      setPublicReview(bindPublicPaymentReview({
+        sourcePublicKey: activeAccount.publicKey,
+        network,
+        destination: effectiveDestination,
+        amount,
+        asset: {
+          key: selectedAsset.key,
+          code: selectedAsset.code,
+          issuer: selectedAsset.issuer,
+          isNative: selectedAsset.isNative,
+          balanceBefore: selectedAsset.balance,
+        },
+        memo: paymentMemo,
+        feeStroops,
+        needsCosigners,
+      }));
       setStealthReview(null);
       setStage("review");
       return;
@@ -508,6 +681,7 @@ function SendInner({
     setPreparingReview(true);
     setError(null);
     try {
+      setPublicReview(null);
       const review = await prepareStealthPayment({
         metaAddress: destination.trim(),
         amount,
@@ -525,7 +699,6 @@ function SendInner({
       }
       setStealthReview(review);
       setStage("review");
-      triggerHaptic("selection");
     } catch (cause) {
       setStealthReview(null);
       setError(cause instanceof Error ? cause.message : "Could not prepare this private recipient.");
@@ -580,18 +753,23 @@ function SendInner({
         window.setTimeout(() => void refresh(), 4000);
         return;
       }
-      const paymentMemo: StellarMemoInput | undefined = memo.trim()
-        ? { type: memoType, value: memo.trim() }
-        : undefined;
-      if (needsCosigners) {
+      const reviewed = requireCurrentPublicPaymentReview(publicReview, {
+        sourcePublicKey: activeAccount?.publicKey ?? "",
+        network,
+      });
+      const authorizeBeforeSigning = publicReviewAuthorization.current;
+      if (!authorizeBeforeSigning) throw new Error("Review this payment before signing it.");
+      authorizeBeforeSigning();
+      if (reviewed.needsCosigners) {
         // Multi-sig account: collect our signature, share the envelope instead of submitting
         const result = await prepareCosignPayment({
-          destination: effectiveDestination,
-          amount,
-          assetCode: selectedAsset.code,
-          issuer: selectedAsset.issuer,
-          memo: paymentMemo,
-          feeStroops,
+          destination: reviewed.destination,
+          amount: reviewed.amount,
+          assetCode: reviewed.asset.code,
+          issuer: reviewed.asset.issuer ?? undefined,
+          memo: reviewed.memo,
+          feeStroops: reviewed.feeStroops,
+          authorizeBeforeSigning,
         });
         setCosignXdr(result.xdr);
         setStage("cosign");
@@ -599,12 +777,13 @@ function SendInner({
         return;
       }
       const result = await send({
-        destination: effectiveDestination,
-        amount,
-        assetCode: selectedAsset.code,
-        issuer: selectedAsset.issuer,
-        memo: paymentMemo,
-        feeStroops,
+        destination: reviewed.destination,
+        amount: reviewed.amount,
+        assetCode: reviewed.asset.code,
+        issuer: reviewed.asset.issuer ?? undefined,
+        memo: reviewed.memo,
+        feeStroops: reviewed.feeStroops,
+        authorizeBeforeSigning,
       });
       setHash(result.hash);
       setSubmission(result);
@@ -669,48 +848,20 @@ function SendInner({
     }
   }
 
-  const knownSelected = selectedAsset
-    ? lookupKnownAsset(selectedAsset.code, selectedAsset.issuer, network)
+  const knownSelected = reviewedAsset
+    ? lookupKnownAsset(reviewedAsset.code, reviewedAsset.issuer, receiptNetwork)
     : null;
 
   return (
-    <>
-      {!embedded && <ModalHeader
-        title={
-          stage === "done"
-            ? trackedSubmissionStatus === "confirmed" ? "Payment Confirmed" : "Payment Accepted"
-            : stage === "status_unknown"
-              ? "Payment Status Unknown"
-            : stage === "cosign"
-              ? "Awaiting Cosigners"
-              : stage === "review" || stage === "sending"
-                ? "Review Transfer"
-                : "Send Payment"
-        }
-        subtitle={
-          stage === "done"
-            ? trackedSubmissionStatus === "confirmed"
-              ? `Confirmed on Stellar ${NETWORKS[network].label}`
-              : `Accepted on Stellar ${NETWORKS[network].label} — confirming on-chain`
-            : stage === "status_unknown"
-              ? `Tracking the canonical hash on Stellar ${NETWORKS[network].label}`
-            : stage === "cosign"
-              ? "Signed — share the envelope to collect signatures"
-              : stage === "review" || stage === "sending"
-                ? "Verify details before broadcasting"
-                : `Transfer assets on Stellar ${NETWORKS[network].label}`
-        }
-        onClose={stage === "sending" ? undefined : onClose}
-      />}
-      <div className="p-4 sm:p-6">
+    <ModalBody>
         {stage === "done" ? (
           <div className="flex flex-col items-center py-4">
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]">
               <IconCheck size={28} />
             </span>
-            <p className="display-h mt-4 text-xl font-light text-white">
+            <h2 ref={resultHeading} data-modal-return-focus tabIndex={-1} className="display-h mt-4 text-xl font-light text-white outline-none">
               {trackedSubmissionStatus === "confirmed" ? "Payment Confirmed" : "Payment Accepted"}
-            </p>
+            </h2>
             <p className="mt-1 text-[13px] text-neutral-400">
               {trackedSubmissionStatus === "confirmed"
                 ? "The payment is confirmed on-chain."
@@ -718,43 +869,39 @@ function SendInner({
             </p>
             {hash && (
               <a
-                className="chip mt-4"
-                href={NETWORKS[network].explorerTxUrl(hash)}
+                className="chip mt-4 tap"
+                href={NETWORKS[receiptNetwork].explorerTxUrl(hash)}
                 target="_blank"
                 rel="noopener noreferrer"
               >
                 View on Explorer <IconExternal size={11} />
               </a>
             )}
-            <Button variant="ghost" className="mt-6 w-full" onClick={onClose}>
-              Done
-            </Button>
+            <ModalFooter className="w-full" primary={<Button onClick={onClose}>Done</Button>} />
           </div>
         ) : stage === "status_unknown" ? (
           <div className="flex flex-col items-center py-4 text-center">
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]">
               <IconAlert size={28} />
             </span>
-            <p className="display-h mt-4 text-xl font-light text-white">Submission Status Unknown</p>
+            <h2 ref={resultHeading} data-modal-return-focus tabIndex={-1} className="display-h mt-4 text-xl font-light text-white outline-none">Submission Status Unknown</h2>
             <p className="mt-2 max-w-md text-[13px] leading-relaxed text-neutral-300">
               Horizon did not confirm whether it accepted this transaction. Do not resubmit blindly.
               The wallet will keep checking the canonical hash.
             </p>
             {hash && (
               <p className="mt-4 w-full break-all rounded-xl bg-white/[0.04] p-3 font-mono text-[10.5px] text-neutral-300">
-                {network} · {hash}
+                {receiptNetwork} · {hash}
               </p>
             )}
-            <Button variant="ghost" className="mt-6 w-full" onClick={onClose}>
-              Close and Keep Tracking
-            </Button>
+            <ModalFooter className="w-full" primary={<Button onClick={onClose}>Done</Button>} />
           </div>
         ) : stage === "cosign" ? (
           <div className="flex flex-col items-center py-2 text-center">
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]">
               <IconUsers size={26} />
             </span>
-            <p className="display-h mt-4 text-xl font-light text-white">Awaiting Cosigners</p>
+            <h2 ref={resultHeading} data-modal-return-focus tabIndex={-1} className="display-h mt-4 text-xl font-light text-white outline-none">Awaiting Cosigners</h2>
             <p className="mt-1 max-w-[340px] text-[13px] leading-relaxed text-neutral-400">
               Your signature is collected (weight {myWeight} of{" "}
               {signerInfo?.thresholds.med_threshold ?? 0} needed). Share this envelope with a
@@ -766,21 +913,19 @@ function SendInner({
             <CopyButton
               value={cosignXdr ?? ""}
               label="Copy Envelope XDR"
-              className="chip mt-3 w-full justify-center"
+              className="chip mt-3 tap w-full justify-center"
             />
             <p className="mt-2.5 text-[11px] leading-relaxed text-neutral-500">
               Cosigners open Multi-Sig Studio → Approvals, paste the envelope, and sign — it
               submits automatically once the threshold is met.
             </p>
-            <Button variant="ghost" className="mt-4 w-full" onClick={onClose}>
-              Done
-            </Button>
+            <ModalFooter className="w-full" primary={<Button onClick={onClose}>Done</Button>} />
           </div>
         ) : stage === "review" || stage === "sending" ? (
-          <>
+          <div>
             <div className="flex flex-col items-center pb-2">
               <p className="display-h text-[36px] text-white">
-                {fmtAmount(amount)}
+                {fmtAmount(reviewedAmount)}
               </p>
               <div className="mt-2 flex items-center gap-2">
                 <span
@@ -788,22 +933,20 @@ function SendInner({
                   style={
                     knownSelected
                       ? { background: knownSelected.color, color: "#fff" }
-                      : selectedAsset?.isNative
-                        ? { background: "#fdda24", color: "#0d0d0d" }
-                        : { background: "rgba(255,255,255,0.08)", color: "#fff" }
+                      : { background: "var(--color-fill-strong)", color: "var(--color-ink)" }
                   }
                 >
-                  {selectedAsset?.code}
+                  {reviewedAsset?.code}
                 </span>
                 {knownSelected && (
                   <span className="text-[12px] text-neutral-400">{knownSelected.name}</span>
                 )}
               </div>
               <FiatValue
-                amount={amount}
-                code={selectedAsset?.code ?? "XLM"}
-                issuer={selectedAsset?.issuer}
-                isNative={selectedAsset?.isNative}
+                amount={reviewedAmount}
+                code={reviewedAsset?.code ?? "XLM"}
+                issuer={reviewedAsset?.issuer ?? undefined}
+                isNative={reviewedAsset?.isNative}
                 className="mt-2 text-[13px] text-neutral-400"
               />
             </div>
@@ -811,7 +954,7 @@ function SendInner({
             <div className="panel-inset mt-6 divide-y divide-white/[0.08] px-4">
               <Row label="To">
                 <HashValue
-                  value={stealthDestination ? destination.trim() : effectiveDestination}
+                  value={reviewedDestination}
                   className="justify-end text-[12px] text-white"
                 />
               </Row>
@@ -828,15 +971,15 @@ function SendInner({
                   <span className="text-[13px] text-white">{destination}</span>
                 </Row>
               )}
-              {matchedContact && (
+              {reviewedContact && (
                 <Row label="Contact">
-                  <span className="text-[13px] text-white">{matchedContact.name}</span>
+                  <span className="text-[13px] text-white">{reviewedContact.name}</span>
                 </Row>
               )}
-              {!selectedAsset?.isNative && (
+              {!reviewedAsset?.isNative && (
                 <Row label="Issuer">
                   <HashValue
-                    value={selectedAsset?.issuer ?? ""}
+                    value={reviewedAsset?.issuer ?? ""}
                     className="justify-end text-[12px] text-neutral-300"
                   />
                 </Row>
@@ -855,8 +998,13 @@ function SendInner({
               )}
               {stealthReview && (
                 <Row label="Sweep fee buffer">
-                  <span className="mono text-[13px] text-neutral-300">
-                    {stroopsToAmount(BigInt(stealthReview.sweepFeeBufferStroops))} XLM
+                  <span className="flex flex-col items-end text-[13px] text-neutral-300">
+                    <span className="mono">
+                      {stroopsToAmount(BigInt(stealthReview.sweepFeeBufferStroops))} XLM
+                    </span>
+                    <XlmFeeFiatValue
+                      amount={stroopsToAmount(BigInt(stealthReview.sweepFeeBufferStroops))}
+                    />
                   </span>
                 </Row>
               )}
@@ -868,8 +1016,11 @@ function SendInner({
                 </Row>
               )}
               <Row label="Network Fee">
-                <span className="mono text-[13px] text-neutral-300">
-                  {reviewedFeeXlm} XLM <span className="text-[11px] text-neutral-500">({stealthReview?.networkFeeStroops ?? feeStroops} stroops)</span>
+                <span className="flex flex-col items-end text-[13px] text-neutral-300">
+                  <span className="mono">
+                    {reviewedFeeXlm} XLM <span className="text-[11px] text-neutral-500">({stealthReview?.networkFeeStroops ?? publicReview?.feeStroops ?? feeStroops} stroops)</span>
+                  </span>
+                  <XlmFeeFiatValue amount={reviewedFeeXlm} />
                 </span>
               </Row>
               <Row label="Transaction Valid For">
@@ -881,21 +1032,22 @@ function SendInner({
 
             {/* Pre-Flight Balance Delta Simulator */}
             <div className="panel-inset mt-3 p-3.5 space-y-1.5 text-[12px]">
-              <p className="text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400">
-                Pre-Flight Balance Simulation
-              </p>
+              <SectionHeader>Pre-Flight Balance Simulation</SectionHeader>
               <div className="flex justify-between text-neutral-300">
                 <span>Balance Before</span>
-                <span className="mono">{fmtAmount(balance)} {selectedAsset?.code}</span>
+                <span className="mono">{fmtAmount(reviewedBalance)} {reviewedAsset?.code}</span>
               </div>
-              <div className="flex justify-between text-[#FF453A]">
+              <div className="flex justify-between text-neutral-300">
                 <span>Transfer Amount</span>
-                <span className="mono">−{fmtAmount(amount)} {selectedAsset?.code}</span>
+                <span className="mono text-[#FF6961]">−{fmtAmount(reviewedAmount)} {reviewedAsset?.code}</span>
               </div>
-              {selectedAsset?.isNative && (
+              {reviewedAsset?.isNative && (
                 <div className="flex justify-between text-neutral-400">
                   <span>Network Gas Fee</span>
-                  <span className="mono">−{reviewedFeeXlm} XLM</span>
+                  <span className="flex flex-col items-end">
+                    <span className="mono">−{reviewedFeeXlm} XLM</span>
+                    <XlmFeeFiatValue amount={reviewedFeeXlm} />
+                  </span>
                 </div>
               )}
               {stealthReview && (
@@ -914,15 +1066,20 @@ function SendInner({
                   </div>
                   <div className="flex justify-between text-neutral-400">
                     <span>Sweep Fee Buffer</span>
-                    <span className="mono">
-                      −{stroopsToAmount(BigInt(stealthReview.sweepFeeBufferStroops))} XLM
+                    <span className="flex flex-col items-end">
+                      <span className="mono">
+                        −{stroopsToAmount(BigInt(stealthReview.sweepFeeBufferStroops))} XLM
+                      </span>
+                      <XlmFeeFiatValue
+                        amount={stroopsToAmount(BigInt(stealthReview.sweepFeeBufferStroops))}
+                      />
                     </span>
                   </div>
                 </>
               )}
               <div className="border-t border-white/10 pt-1.5 flex justify-between font-semibold text-white">
                 <span>Balance After</span>
-                <span className="mono">{remainingBalance} {selectedAsset?.code}</span>
+                <span className="mono">{remainingBalance} {reviewedAsset?.code}</span>
               </div>
             </div>
 
@@ -935,52 +1092,47 @@ function SendInner({
                   be private after the recipient moves the funds into Private Balance.
                 </p>
                 <p className="mt-1 text-neutral-400">
-                  The 0.1 XLM sweep buffer pays that later transaction; any unused portion can remain
-                  in the one-time account in this release.
+                  The funded sweep buffer covers the wallet&apos;s full reviewed Private Balance fee
+                  cap. If the one-time account cannot preserve its reserve and that fee budget, the
+                  recipient wallet refuses before signing.
                 </p>
               </div>
             )}
 
             {/* Multi-sig cosigner requirement warning */}
-            {needsCosigners && (
-              <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12px] leading-relaxed text-[#FF9F0A]">
-                <span className="shrink-0 text-[16px]">✍️</span>
-                <span>
+            {reviewNeedsCosigners && (
+              <Notice tone="warn" compact className="mt-3" icon={<IconUsers size={16} />}>
                   <strong>Multi-signature account.</strong> Your signature weight ({myWeight}) is
                   below the required threshold ({signerInfo?.thresholds.med_threshold}). Additional
                   signatures are needed before this transaction reaches the ledger.
-                </span>
-              </div>
+              </Notice>
             )}
 
             {/* Hardware Security Badge */}
-            {activeAccount?.hardware && (
+            {reviewedAccount?.hardware && (
               <div className="panel-inset mt-3 p-3 flex items-center justify-between bg-[#0A84FF]/[0.08] border border-[#0A84FF]/30 text-[12px]">
                 <div className="flex items-center gap-2 text-[#0A84FF]">
-                  {activeAccount.hardware === "ledger" ? (
+                  {reviewedAccount.hardware === "ledger" ? (
                     <IconLedger size={16} className="text-[#64D2FF]" />
                   ) : (
                     <IconTrezor size={16} className="text-emerald-400" />
                   )}
                   <span className="font-semibold">
-                    Confirm &amp; Sign on {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Hardware Device
+                    Confirm &amp; Sign on {reviewedAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Hardware Device
                   </span>
                 </div>
                 <span className="mono text-[11px] text-neutral-400">
-                  {activeAccount.path ?? "m/44'/148'/0'"}
+                  {reviewedAccount.path ?? "Path unavailable"}
                 </span>
               </div>
             )}
 
             {/* Hardware signing pending hint */}
-            {stage === "sending" && activeAccount?.hardware && (
-              <div className="mt-3 flex items-center gap-2.5 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3 text-[12px] leading-relaxed text-[#FF9F0A]">
-                <Spinner size={13} />
-                <span>
-                  Waiting for your {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"}{" "}
+            {stage === "sending" && reviewedAccount?.hardware && (
+              <Notice tone="warn" compact className="mt-3" icon={<Spinner size={13} />}>
+                  Waiting for your {reviewedAccount.hardware === "ledger" ? "Ledger" : "Trezor"}{" "}
                   — review and confirm the transaction on the device.
-                </span>
-              </div>
+              </Notice>
             )}
 
             {/* Transaction Safety Shield Verification */}
@@ -1001,37 +1153,31 @@ function SendInner({
               </div>
             )}
 
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <Button
-                variant="ghost"
-                disabled={stage === "sending"}
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setStage("form");
-                }}
-              >
-                Back
-              </Button>
-              <Button
-                loading={stage === "sending"}
-                loadingLabel={needsCosigners ? "Signing transaction" : "Sending payment"}
-                disabled={stage === "sending"}
-                onClick={() => void handleConfirm()}
-              >
-                {needsCosigners ? "Sign & Share for Approval" : "Confirm Send"}
-              </Button>
-            </div>
-          </>
+            <ModalFooter
+              primary={
+                <Button
+                  ref={confirmButtonRef}
+                  loading={stage === "sending"}
+                  focusableWhenDisabled
+                  loadingLabel={reviewNeedsCosigners ? "Signing transaction" : "Sending payment"}
+                  disabled={stage === "sending"}
+                  onClick={() => void handleConfirm()}
+                >
+                  {reviewNeedsCosigners ? "Sign & Share for Approval" : "Confirm Send"}
+                </Button>
+              }
+            />
+          </div>
         ) : (
           <div className="space-y-4">
             {settlementIntent && (
-              <div className="rounded-2xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-3.5">
+              <Notice tone="accent" compact>
                 <p className="text-[12.5px] font-semibold text-white">Merchant settlement handoff</p>
                 <p className="mt-1 text-[11.5px] leading-relaxed text-neutral-300">
                   Rule context {settlementIntent.contextId}. Destination, asset, and exact amount
                   were carried here for review; no transaction has been signed.
                 </p>
-              </div>
+              </Notice>
             )}
                             {/* Asset picker and Amount Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1057,26 +1203,25 @@ function SendInner({
 
                 {/* Amount */}
                 <div>
-                  <div className="flex items-center justify-between pb-1">
-                    <label htmlFor={amountInputId} className="field-label !pb-0">Amount</label>
-                    {selectedAsset && (
-                      <button
-                        type="button"
+                  <FieldLabelRow
+                    htmlFor={amountInputId}
+                    label="Amount"
+                    action={selectedAsset && (
+                      <FieldAction
                         onClick={() => {
-                          triggerHaptic("selection");
                           setStealthReview(null);
                           setAmount(maxSendable);
                         }}
-                        className="text-[12px] font-medium text-[#0A84FF] hover:underline"
                       >
                         Max: {fmtAmount(maxSendable)} {selectedAsset.code}
-                      </button>
+                      </FieldAction>
                     )}
-                  </div>
+                  />
                   <input
                     id={amountInputId}
                     type="text"
                     inputMode="decimal"
+                    enterKeyHint="next"
                     autoComplete="off"
                     placeholder="0.00"
                     value={amount}
@@ -1104,48 +1249,29 @@ function SendInner({
               </div>
 
               {/* Quick Amount Chips */}
-              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-                {[10, 25, 50, 100].map((val) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setStealthReview(null);
-                      setAmount(String(val));
-                    }}
-                    className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-[11.5px] font-medium text-neutral-300 hover:bg-white/[0.12]"
-                  >
-                    {val}
-                  </button>
-                ))}
-                {selectedAsset && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setStealthReview(null);
-                      setAmount(maxSendable);
-                    }}
-                    className="rounded-lg bg-[#0A84FF]/15 border border-[#0A84FF]/30 px-2.5 py-1 text-[11.5px] font-bold text-[#0A84FF]"
-                  >
-                    MAX
-                  </button>
-                )}
-              </div>
+              <QuickAmountChips
+                onPick={(value) => {
+                  setStealthReview(null);
+                  setAmount(value);
+                }}
+                max={selectedAsset ? maxSendable : null}
+                onMax={() => {
+                  setStealthReview(null);
+                  setAmount(maxSendable);
+                }}
+              />
               {/* Destination */}
               <div>
-                <div className="flex items-center justify-between pb-1">
-                  <label htmlFor={destinationInputId} className="field-label !pb-0">Recipient Address or Federation</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowScanner((s) => !s)}
-                    className="text-[12px] font-medium text-[#0A84FF] hover:underline flex items-center gap-1"
-                  >
-                    <IconQrScan size={13} />
-                    <span>{showScanner ? "Hide QR Input" : "Paste QR Payload"}</span>
-                  </button>
-                </div>
+                <FieldLabelRow
+                  htmlFor={destinationInputId}
+                  label="Recipient Address or Federation"
+                  action={
+                    <FieldAction aria-expanded={showScanner} onClick={() => setShowScanner((s) => !s)}>
+                      <IconQrScan size={13} />
+                      <span>{showScanner ? "Hide QR Input" : "Paste QR Payload"}</span>
+                    </FieldAction>
+                  }
+                />
                 <input
                   id={destinationInputId}
                   type="text"
@@ -1154,12 +1280,14 @@ function SendInner({
                   onChange={(e) => handleDestinationChange(e.target.value)}
                   className="input mono text-base sm:text-[13px]"
                   spellCheck={false}
+                  autoCapitalize="none"
                   autoComplete="off"
+                  enterKeyHint="next"
                 />
 
                 {/* Private-address handoff card */}
                 {privateDestination && (
-                  <div className="fade-up mt-2 rounded-2xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-3.5">
+                  <Notice tone="accent" compact className="fade-up mt-2">
                     <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-white">
                       <IconShieldStellar size={16} className="shrink-0 text-[#0A84FF]" />
                       <span>This is a private address</span>
@@ -1170,14 +1298,11 @@ function SendInner({
                     </p>
                     <Button
                       className="mt-2.5 w-full"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        openPrivateSend(destination.trim());
-                      }}
+                      onClick={() => openPrivateSend(destination.trim())}
                     >
                       Send Privately
                     </Button>
-                  </div>
+                  </Notice>
                 )}
 
                 {stealthDestination && (
@@ -1206,11 +1331,8 @@ function SendInner({
                         <button
                           key={acc.id}
                           type="button"
-                          onClick={() => {
-                            triggerHaptic("selection");
-                            handleDestinationChange(acc.publicKey);
-                          }}
-                          className="chip !py-0.5 !px-2 text-[11.5px] text-neutral-200 hover:text-white bg-[#0A84FF]/10 border border-[#0A84FF]/25 font-medium flex items-center gap-1"
+                          onClick={() => handleDestinationChange(acc.publicKey)}
+                          className="chip border border-[#0A84FF]/25 bg-[#0A84FF]/10 font-medium text-neutral-200 hover:text-white"
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-[#0A84FF]" />
                           <span>{acc.label}</span>
@@ -1229,17 +1351,14 @@ function SendInner({
                         <button
                           key={c.address}
                           type="button"
-                          onClick={() => {
-                            triggerHaptic("selection");
-                            handleDestinationChange(c.address);
-                          }}
-                          className={`chip !py-0.5 !px-2 text-[11.5px] flex items-center gap-1 transition-[background-color,color,border-color,box-shadow] ${
+                          onClick={() => handleDestinationChange(c.address)}
+                          className={`chip transition-[background-color,color,border-color,box-shadow] ${
                             c.favorite
-                              ? "bg-[#FFD60A]/15 border border-[#FFD60A]/30 text-white font-medium"
+                              ? "border border-[#FFD60A]/30 bg-[#FFD60A]/15 font-medium text-white"
                               : "text-neutral-300 hover:text-white"
                           }`}
                         >
-                          {c.favorite && <span className="text-[#FFD60A] text-[10px]">★</span>}
+                          {c.favorite && <IconStar size={11} className="shrink-0 text-[#FFD60A]" />}
                           <span>{c.name}</span>
                         </button>
                       ))}
@@ -1252,11 +1371,8 @@ function SendInner({
                       <button
                         key={addr}
                         type="button"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          handleDestinationChange(addr);
-                        }}
-                        className="chip !py-0.5 !px-2 text-[11.5px] text-neutral-300 hover:text-white"
+                        onClick={() => handleDestinationChange(addr)}
+                        className="chip text-neutral-300 hover:text-white"
                       >
                         {formatTrezorAddress(addr)}
                       </button>
@@ -1267,8 +1383,9 @@ function SendInner({
                   <p className="mt-1 text-[11px] text-[#0A84FF]">Resolving federation address…</p>
                 )}
                 {fedResolvedAddr && (
-                  <p className="mt-1 mono text-[11px] text-[#30D158] truncate">
-                    ✓ Resolved: {fedResolvedAddr}
+                  <p className="mono mt-1 flex items-center gap-1 text-[11px] text-[#30D158]">
+                    <IconCheck size={11} className="shrink-0" aria-hidden="true" />
+                    <span className="truncate">Resolved: {fedResolvedAddr}</span>
                   </p>
                 )}
                 {matchedContact && (
@@ -1283,7 +1400,6 @@ function SendInner({
                   onScan={(text) => {
                     handleDestinationChange(text);
                     setShowScanner(false);
-                    triggerHaptic("success");
                   }}
                 />
               )}
@@ -1295,7 +1411,6 @@ function SendInner({
                   ariaLabel="Speed and network fee"
                   value={feeTier}
                   onChange={(val) => {
-                    triggerHaptic("selection");
                     setStealthReview(null);
                     setFeeTier(val as FeeTier);
                   }}
@@ -1313,6 +1428,9 @@ function SendInner({
                     Normal {normalStroops} · Priority {priorityStroops} · Urgent {urgentStroops} stroops
                   </span>
                 </p>
+                <p className="pt-1 text-[11px] text-neutral-500">
+                  Selected {feeXlm} XLM · <XlmFeeFiatValue amount={feeXlm} />
+                </p>
               </div>
 
               {/* Memo & Preset Tags */}
@@ -1324,7 +1442,7 @@ function SendInner({
                   </p>
                 </div>
               ) : <div>
-                <div className="flex items-center justify-between pb-1">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 pb-1">
                   <div className="flex items-center gap-2">
                     <label htmlFor={memoInputId} className="field-label !pb-0">Memo (Optional)</label>
                     {memoType === "text" && (
@@ -1338,20 +1456,18 @@ function SendInner({
                       </span>
                     )}
                   </div>
-                  <div className="flex gap-2 text-[11px]">
+                  <div role="group" aria-label="Memo type" className="pointer-coarse:-my-2 flex items-center rounded-lg bg-white/[0.08] p-0.5">
                     {(["text", "id", "hash", "return"] as const).map((t) => (
                       <button
                         key={t}
                         type="button"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          setMemoType(t);
-                        }}
-                        className={`capitalize ${
-                          memoType === t ? "text-white font-semibold" : "text-neutral-500"
+                        aria-pressed={memoType === t}
+                        onClick={() => setMemoType(t)}
+                        className={`tap-reset rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors ${
+                          memoType === t ? "bg-white/[0.16] text-white" : "text-neutral-400 hover:text-white"
                         }`}
                       >
-                        {t}
+                        {MEMO_TYPE_LABELS[t]}
                       </button>
                     ))}
                   </div>
@@ -1369,63 +1485,82 @@ function SendInner({
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
                   autoComplete="off"
+                  inputMode={memoType === "id" ? "numeric" : undefined}
+                  enterKeyHint="done"
                   aria-describedby={memoType === "text" ? memoCounterId : undefined}
                   aria-invalid={memoType === "text" && memoBytes > 28 ? true : undefined}
                   className={`input text-base sm:text-[13px] ${memoBytes > 28 && memoType === "text" ? "!ring-2 !ring-[#FF453A]" : ""}`}
                 />
                 {memoType === "text" && (
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10.5px] text-neutral-500">Presets:</span>
-                    {[
-                      { label: "⚡ Payment", val: "Payment" },
-                      { label: "🧾 Invoice", val: "Invoice" },
-                      { label: "🎁 Gift", val: "Gift" },
-                      { label: "☕ Tip", val: "Tip" },
-                    ].map((p) => (
+                    <span className="text-[12px] text-neutral-500">Presets:</span>
+                    {["Payment", "Invoice", "Gift", "Tip"].map((preset) => (
                       <button
-                        key={p.val}
+                        key={preset}
                         type="button"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          setMemo(p.val);
-                        }}
-                        className={`rounded-md bg-white/[0.06] px-2 py-0.5 text-[10.5px] font-medium transition-colors ${
-                          memo === p.val ? "bg-[#0A84FF] text-white font-semibold" : "text-neutral-400 hover:text-white"
-                        }`}
+                        aria-pressed={memo === preset}
+                        onClick={() => setMemo(preset)}
+                        className={`chip ${memo === preset ? "!bg-[#0A84FF]/20 !text-[#0A84FF]" : ""}`}
                       >
-                        {p.label}
+                        {preset}
                       </button>
                     ))}
                   </div>
                 )}
                 {!memo.trim() && (
-                  <p className="mt-1.5 text-[11px] text-neutral-400">
-                    💡 Sending to an exchange (Binance, Coinbase, etc.)? Enter a Memo ID to prevent lost funds.
+                  <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-neutral-400">
+                    <IconInfo size={13} className="mt-px shrink-0" aria-hidden="true" />
+                    <span>Sending to an exchange (Binance, Coinbase, etc.)? Enter a Memo ID to prevent lost funds.</span>
                   </p>
                 )}
               </div>}
 
-              <Button
-                className="!mt-6 w-full"
-                disabled={!canReview}
-                loading={preparingReview}
-                loadingLabel="Preparing transfer review"
-                onClick={() => void handleReview()}
-              >
-                Review Transfer
-              </Button>
               {sendError && <ErrorText message={sendError} />}
+              <ModalFooter
+                primary={
+                  <Button
+                    disabled={!canReview}
+                    loading={preparingReview}
+                    loadingLabel="Preparing transfer review"
+                    onClick={() => void handleReview()}
+                  >
+                    Review Transfer
+                  </Button>
+                }
+              />
           </div>
         )}
-      </div>
-    </>
+    </ModalBody>
   );
 }
 
+/** Stage-aware header the shell renders; the form keeps the shell's default. */
+function sendStageHeader(stage: Stage, backToForm: () => void): SendHeader | null {
+  switch (stage) {
+    case "form":
+      return null;
+    case "review":
+      return {
+        title: "Send Payment",
+        subtitle: "Review before signing · Step 2 of 2",
+        onBack: backToForm,
+      };
+    case "sending":
+      return { title: "Send Payment", subtitle: "Signing and sending…", onBack: backToForm };
+    case "cosign":
+      return { title: "Signature Collected", subtitle: "Share the envelope with a cosigner" };
+    case "status_unknown":
+      return { title: "Payment Status", subtitle: "Tracking the canonical hash" };
+    case "done":
+      return { title: "Payment Sent" };
+  }
+}
+
+/** Favourite marker on contact chips; `./icons` has no star glyph yet. */
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-2.5 text-[13px]">
-      <span className="shrink-0 pt-px text-neutral-400">{label}</span>
+    <div className="flex items-baseline justify-between gap-4 py-2.5 text-[13px]">
+      <span className="shrink-0 text-neutral-400">{label}</span>
       <span className="min-w-0 text-right">{children}</span>
     </div>
   );

@@ -153,9 +153,12 @@ function scopedOrders(store: MerchantStore, shift: Shift, until: number) {
   return store.orders.filter(
     (order) =>
       order.network === shift.network &&
-      order.terminalName === shift.terminalName &&
       order.createdAt <= until &&
-      (order.createdAt >= shift.openedAt || (order.paidAt !== null && order.paidAt >= shift.openedAt)),
+      (order.shiftId !== undefined && order.shiftId !== null
+        ? order.shiftId === shift.id
+        : order.terminalName === shift.terminalName &&
+          (order.createdAt >= shift.openedAt ||
+            (order.paidAt !== null && order.paidAt >= shift.openedAt))),
   );
 }
 
@@ -197,7 +200,6 @@ export function unresolvedShiftFlows(
     }
   }
 
-  const paymentIds = new Set<string>();
   for (const record of store.paymentReconciliations) {
     if (
       record.network === shift.network &&
@@ -205,13 +207,7 @@ export function unresolvedShiftFlows(
       record.resolution === null &&
       inWindow(record.observedAt, shift, until)
     ) {
-      paymentIds.add(record.id);
       flows.push({ kind: "payment", id: record.id, label: "An incoming payment still needs review." });
-    }
-  }
-  for (const payment of store.unmatched) {
-    if (!paymentIds.has(payment.id) && inWindow(payment.seenAt, shift, until)) {
-      flows.push({ kind: "payment", id: payment.id, label: "An incoming payment still needs review." });
     }
   }
 
@@ -223,14 +219,14 @@ function deriveLiveReport(store: MerchantStore, shift: Shift, generatedAt: numbe
   const settled = allOrders.filter(
     (order) =>
       order.paidAt !== null &&
-      inWindow(order.paidAt, shift, generatedAt) &&
+      order.paidAt <= generatedAt &&
       (order.status === "paid" || order.status === "refunded" || order.status === "partially_refunded"),
   );
   const scopedOrderIds = new Set(allOrders.map((order) => order.id));
   const adjustments = store.adjustments
     .filter(
       (adjustment) =>
-        scopedOrderIds.has(adjustment.orderId) && inWindow(adjustment.at, shift, generatedAt),
+        scopedOrderIds.has(adjustment.orderId) && adjustment.at <= generatedAt,
     )
     .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
     .map(cloneAdjustment);
@@ -239,7 +235,7 @@ function deriveLiveReport(store: MerchantStore, shift: Shift, generatedAt: numbe
       refund.kind === "order" &&
       refund.network === shift.network &&
       refund.submissionStatus === "confirmed" &&
-      inWindow(refund.createdAt, shift, generatedAt),
+      scopedOrderIds.has(refund.orderId) && refund.createdAt <= generatedAt,
   );
 
   const taxByRate: Record<string, Minor> = {};

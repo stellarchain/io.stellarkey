@@ -80,6 +80,46 @@ test("market chart explains the selected period without changing its plot", () =
   assert.match(chart, /<polyline[\s\S]*?points=\{line\}/);
 });
 
+test("range switches keep the visible series labelled correctly and share the latest-request lane", () => {
+  const dashboard = read("src/components/Dashboard.tsx");
+  const wallet = read("src/hooks/useWallet.tsx");
+  const priceCard = dashboard.slice(dashboard.indexOf("function PriceCard()"));
+  const changeRange = wallet.slice(
+    wallet.indexOf("const changePriceRange"),
+    wallet.indexOf("const togglePrivacy"),
+  );
+
+  assert.match(priceCard, /const displayedRange = priceData\?\.range \?\? priceRange/);
+  assert.match(priceCard, /\[displayedRange\]/);
+  assert.equal(priceCard.match(/range=\{displayedRange\}/g)?.length, 2);
+  assert.match(priceCard, /priceLoading[\s\S]*?className="absolute/);
+
+  assert.match(changeRange, /const request = marketRefreshLane\.begin\(\)/);
+  assert.match(changeRange, /fetchXlmSeries\(r, request\.signal\)/);
+  assert.match(changeRange, /if \(!request\.isCurrent\(\)\) return/);
+  assert.match(changeRange, /if \(request\.isCurrent\(\)\) setPriceRequestStatus\(outcome\)/);
+  assert.match(changeRange, /isMarketObservationFresh\(cached\.observedAt\)/);
+  assert.match(wallet, /cachedSeries && isMarketObservationFresh\(cachedSeries\.observedAt\)/);
+  assert.doesNotMatch(priceCard, /marketDataLabel/);
+});
+
+test("the main balance and market chart omit rate timestamps and the chart refresh button", () => {
+  const dashboard = read("src/components/Dashboard.tsx");
+  const priceCard = dashboard.slice(dashboard.indexOf("function PriceCard()"));
+  assert.doesNotMatch(dashboard, /marketDataLabel/);
+  assert.doesNotMatch(priceCard, /Retry chart|IconRefresh|<Button/);
+  assert.match(priceCard, /Chart refresh unavailable/);
+  assert.match(priceCard, /aria-label="Chart range"/);
+});
+
+test("retained converter rates disclose their observation rather than claiming to be current", () => {
+  const converter = read("src/components/CurrencyConverterModalBody.tsx");
+  assert.match(converter, /marketDataLabel/);
+  assert.match(converter, /xlmPriceSample/);
+  assert.match(converter, /fiatRateSamples/);
+  assert.doesNotMatch(converter, /Live Currency Converter|Current XLM price and live/);
+});
+
 test("chart inspection replaces the single top-right market readout", () => {
   const dashboard = read("src/components/Dashboard.tsx");
   const priceCard = dashboard.slice(dashboard.indexOf("function PriceCard()"));

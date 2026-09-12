@@ -135,16 +135,12 @@ self.addEventListener("fetch", (event) => {
 
   if (!isShellAsset(url)) return;
   event.respondWith((async () => {
-    const names = await caches.keys();
-    const shellNames = cacheSearchOrder(names, CACHE_PREFIX, CACHE_NAME);
-    for (const name of shellNames) {
-      const cached = await caches.open(name).then((cache) => cache.match(request));
-      if (cached) return cached;
-    }
-    const response = await fetch(request);
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    const response = await fetch(request, { cache: "no-store" });
     // Lazy, content-addressed Next chunks become available offline after use.
     if (response.ok && url.pathname.startsWith("/_next/static/")) {
-      const cache = await caches.open(CACHE_NAME);
       await cache.put(request, response.clone());
     }
     return response;

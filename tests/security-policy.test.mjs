@@ -67,7 +67,7 @@ test("the document and response CSP compose the shipped static security boundary
   assert.match(scriptDirective, /^script-src 'self'/);
   assert.match(scriptDirective, /'wasm-unsafe-eval'/);
   assert.doesNotMatch(scriptDirective, /unsafe-inline|(?:^|\s)'unsafe-eval'(?:\s|$)|nonce-/);
-  assert.match(documentPolicy, /connect-src 'self' https: wss:\/\/\*\.trezor\.io/);
+  assert.match(documentPolicy, /connect-src 'self' https: wss:/);
   assert.doesNotMatch(documentPolicy, /(?:^|\s)'unsafe-eval'(?:\s|;|$)|nonce-|frame-ancestors/);
 
   const responsePolicy = renderStaticHeaders({ template: read("public/_headers") });
@@ -104,8 +104,8 @@ test("static export and service worker enforce a hash-bound shell-only boundary"
   assert.doesNotMatch(worker, /DOMParser/);
   assert.match(layout, /ServiceWorkerRegistration/);
   assert.doesNotMatch(page, /next\/server|connection\(\)/);
-  assert.match(layout, /maximumScale:\s*1,/);
-  assert.match(layout, /userScalable:\s*false,/);
+  assert.doesNotMatch(layout, /maximumScale:\s*1,/);
+  assert.doesNotMatch(layout, /userScalable:\s*false,/);
   assert.match(packageJson.scripts.build, /generate-static-headers/);
   assert.match(packageJson.scripts.build, /generate-service-worker/);
   assert.match(packageJson.scripts.start, /static-server/);

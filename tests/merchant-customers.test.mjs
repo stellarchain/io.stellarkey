@@ -3,9 +3,11 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { emptyStore } from "../src/lib/merchant/defaults.ts";
+import { muxedAddressForRouting } from "../src/lib/merchant/routing.ts";
 
 const NOW = 1_800_000_000_000;
 const CUSTOMER = "GCUXWZHL7FGVL3MVYH6N5G3RACCKAC7ZLTUBKKN4I5MCCTDPJXITNGFD";
+const MUXED_CUSTOMER = muxedAddressForRouting(CUSTOMER, "42");
 const OTHER = "GDVPZQMATHMBM6B3V5JK4SYOFBTCVTLV4TLFNP5LMFW3NAU7D63ZFKIO";
 const ISSUER = "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN";
 const USDC = { code: "USDC", issuer: ISSUER };
@@ -23,7 +25,7 @@ function source(path) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-function actor() {
+function actor(overrides = {}) {
   return {
     id: "staff-owner",
     name: "Ari",
@@ -41,6 +43,7 @@ function actor() {
     pinDigest: null,
     pinSetAt: null,
     active: true,
+    ...overrides,
   };
 }
 
@@ -215,6 +218,50 @@ test("payer visits are durable, contact-matched, and idempotent", async () => {
   assert.deepEqual(second.customers[0].preferredAsset, XLM);
 });
 
+test("muxed refund destinations map to one base-account customer identity", async () => {
+  const { customerHistory, recordCustomerVisit } = await customerDomain();
+  const paidOrder = order("42", MUXED_CUSTOMER, 450, NOW, USDC);
+  let store = {
+    ...emptyStore(),
+    orders: [paidOrder],
+    charges: [paidOrder.charge],
+  };
+  store = recordCustomerVisit(store, {
+    sourceId: "order:42",
+    address: MUXED_CUSTOMER,
+    amountMinor: 450,
+    asset: USDC,
+    at: NOW,
+    contacts: [{ name: "Muxed Marta", address: CUSTOMER }],
+  });
+
+  assert.equal(store.customers[0].address, CUSTOMER);
+  assert.equal(store.customers[0].name, "Muxed Marta");
+  assert.equal(customerHistory(store, CUSTOMER)[0].id, "42");
+  assert.equal(paidOrder.charge.payment.from, MUXED_CUSTOMER);
+});
+
+test("customer-ledger enrichment fails independently of the financial settlement", async () => {
+  const { reconcileCustomerSettlementsNonFatal } = await customerDomain();
+  const paidOrder = order(
+    "9",
+    CUSTOMER,
+    700,
+    NOW,
+    { code: "bad asset code", issuer: ISSUER },
+  );
+  const current = {
+    ...emptyStore(),
+    orders: [paidOrder],
+    charges: [paidOrder.charge],
+  };
+  const result = reconcileCustomerSettlementsNonFatal(emptyStore(), current, { contacts: [] });
+
+  assert.equal(result.store, current);
+  assert.match(result.warning ?? "", /customer history/i);
+  assert.equal(result.store.orders[0].status, "paid");
+});
+
 test("only new crypto settlements create customer visits and history is exact", async () => {
   const { customerHistory, reconcileCustomerSettlements } = await customerDomain();
   const firstOrder = order("1", CUSTOMER, 700, NOW - 1000, USDC);
@@ -248,7 +295,8 @@ test("only new crypto settlements create customer visits and history is exact", 
 
 test("contact synchronization and notes persist without inventing identity", async () => {
   const { recordCustomerVisit, syncCustomerContacts, updateCustomerNote } = await customerDomain();
-  let store = recordCustomerVisit(emptyStore(), {
+  const { member, store: base } = storeWithActor();
+  let store = recordCustomerVisit(base, {
     sourceId: "order:1",
     address: CUSTOMER,
     amountMinor: 100,
@@ -259,9 +307,31 @@ test("contact synchronization and notes persist without inventing identity", asy
   assert.equal(store.customers[0].name, null);
   store = syncCustomerContacts(store, [{ name: "Owned contact", address: CUSTOMER }]);
   assert.equal(store.customers[0].name, "Owned contact");
-  store = updateCustomerNote(store, CUSTOMER, "Oat flat white");
+  store = updateCustomerNote(store, {
+    address: CUSTOMER,
+    note: "Oat flat white",
+    actor: member,
+    eventId: "customer-note-1",
+    now: NOW + 1,
+  });
   assert.equal(store.customers[0].note, "Oat flat white");
-  assert.throws(() => updateCustomerNote(store, CUSTOMER, "x".repeat(141)), /140/);
+  assert.deepEqual(store.customerEvents, [{
+    id: "customer-note-1",
+    kind: "note_updated",
+    addressHash: store.customerEvents[0].addressHash,
+    actorId: member.id,
+    actorName: member.name,
+    at: NOW + 1,
+  }]);
+  assert.match(store.customerEvents[0].addressHash, /^[0-9a-f]{64}$/);
+  assert.notEqual(store.customerEvents[0].addressHash, CUSTOMER);
+  assert.throws(() => updateCustomerNote(store, {
+    address: CUSTOMER,
+    note: "x".repeat(141),
+    actor: member,
+    eventId: "customer-note-2",
+    now: NOW + 2,
+  }), /140/);
   assert.equal(syncCustomerContacts(store, []).customers[0].name, null);
 });
 
@@ -330,8 +400,11 @@ test("loyalty opening, earning, and redemption retain an actor audit", async () 
 test("forget removes only the local profile and leaves financial history intact", async () => {
   const { forgetCustomer, recordCustomerVisit } = await customerDomain();
   const paidOrder = order("1", CUSTOMER, 700, NOW, USDC);
+  const member = actor();
   let store = {
     ...emptyStore(),
+    staff: [member],
+    activeStaffId: member.id,
     orders: [paidOrder],
     charges: [paidOrder.charge],
   };
@@ -343,10 +416,67 @@ test("forget removes only the local profile and leaves financial history intact"
     at: NOW,
     contacts: [],
   });
-  const forgotten = forgetCustomer(store, CUSTOMER);
+  const forgotten = forgetCustomer(store, {
+    address: CUSTOMER,
+    actor: member,
+    eventId: "customer-forgotten-1",
+    now: NOW + 1,
+  });
   assert.deepEqual(forgotten.customers, []);
   assert.equal(forgotten.orders.length, 1);
   assert.equal(forgotten.charges.length, 1);
+  assert.deepEqual(forgotten.customerEvents, [{
+    id: "customer-forgotten-1",
+    kind: "forgotten",
+    addressHash: forgotten.customerEvents[0].addressHash,
+    actorId: member.id,
+    actorName: member.name,
+    at: NOW + 1,
+  }]);
+  assert.match(forgotten.customerEvents[0].addressHash, /^[0-9a-f]{64}$/);
+});
+
+test("customer mutations re-resolve current domain authority", async () => {
+  const { forgetCustomer, recordCustomerVisit, updateCustomerNote } = await customerDomain();
+  const accountant = actor({
+    id: "staff-accountant",
+    name: "Alex",
+    role: "accountant",
+    permissions: {
+      ...actor().permissions,
+      takePayment: false,
+      comp: false,
+      void: false,
+    },
+  });
+  let store = recordCustomerVisit({
+    ...emptyStore(),
+    staff: [accountant],
+    activeStaffId: accountant.id,
+  }, {
+    sourceId: "order:accountant",
+    address: CUSTOMER,
+    amountMinor: 100,
+    asset: XLM,
+    at: NOW,
+    contacts: [],
+  });
+
+  assert.throws(() => updateCustomerNote(store, {
+    address: CUSTOMER,
+    note: "Hidden rewrite",
+    actor: accountant,
+    eventId: "customer-note-accountant",
+    now: NOW + 1,
+  }), /not allowed to manage customers/i);
+  assert.throws(() => forgetCustomer(store, {
+    address: CUSTOMER,
+    actor: accountant,
+    eventId: "customer-forget-accountant",
+    now: NOW + 2,
+  }), /only an active owner/i);
+  assert.equal(store.customers.length, 1);
+  assert.deepEqual(store.customerEvents, []);
 });
 
 test("production customer surfaces use persisted actions, contacts, real history, and receipts", () => {

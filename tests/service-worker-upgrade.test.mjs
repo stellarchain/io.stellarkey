@@ -128,6 +128,14 @@ test("a worker update waits for consent and keeps the previous shell available",
     "stellarkey-shell-build-two",
   ]);
 
+  let oldWorkerResponse;
+  firstWorker.listeners.get("fetch")?.({
+    request: new Request(`${ORIGIN}/_next/static/chunks/old-build.js`),
+    respondWith(promise) { oldWorkerResponse = promise; },
+  });
+  assert.ok(oldWorkerResponse, "the active old worker must keep its own shell available");
+  assert.equal(await (await oldWorkerResponse).text(), "/_next/static/chunks/old-build.js");
+
   await dispatchExtendable(secondWorker.listeners.get("activate"));
   assert.deepEqual(await caches.keys(), [
     "stellarkey-shell-build-one",
@@ -142,9 +150,8 @@ test("a worker update waits for consent and keeps the previous shell available",
     request: new Request(`${ORIGIN}/_next/static/chunks/old-build.js`),
     respondWith(promise) { responseWork = promise; },
   });
-  assert.ok(responseWork, "the staged worker must handle old shell chunks");
-  const oldChunk = await responseWork;
-  assert.equal(await oldChunk.text(), "/_next/static/chunks/old-build.js");
+  assert.ok(responseWork, "the activated worker must handle same-origin chunk requests");
+  await assert.rejects(responseWork, /old chunk is no longer on the deployment origin/);
 
   let invalidWork;
   secondWorker.listeners.get("message")?.({
@@ -204,4 +211,12 @@ test("generated workers precache only same-origin shell resources", async () => 
   assert.ok(paths.includes("/_next/static/chunks/app.css"));
   assert.ok(paths.includes("/_next/static/chunks/app.js"));
   assert.equal(paths.some((path) => path.includes("horizon.stellar.org")), false);
+});
+
+test("lazy chunks never fall back to an older shell cache or the immutable HTTP cache", () => {
+  const source = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
+  const lazyShell = source.split('if (!isShellAsset(url)) return;')[1] ?? "";
+  assert.match(lazyShell, /caches\.open\(CACHE_NAME\)/);
+  assert.doesNotMatch(lazyShell, /cacheSearchOrder/);
+  assert.match(lazyShell, /fetch\(request, \{ cache: "no-store" \}\)/);
 });

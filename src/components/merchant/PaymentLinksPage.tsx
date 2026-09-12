@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   useMerchantConfiguration,
   useMerchantRecords,
@@ -13,8 +13,8 @@ import { counterCodeAvailability } from "@/lib/merchant/counter-codes";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { FiatCurrency } from "@/lib/format";
 import type { CounterCode, Minor } from "@/lib/merchant/types";
-import { useToast } from "../Toast";
-import { Button, Dropdown, Notice, SegmentedControl, Toggle } from "../ui";
+import { Button, Dropdown, ErrorText, Notice, SegmentedControl, Toggle } from "../ui";
+import { useMerchantAction } from "./useMerchantAction";
 import { IconCopy, IconPlus } from "../icons";
 import { IconPrinter, IconQr, IconTag } from "./icons";
 import { Stat, StatStrip } from "./Stat";
@@ -85,11 +85,9 @@ export function PaymentLinksPage() {
   const {
     counterCodes: codes,
     counterPayments,
-    setCounterCodeActive,
   } = useMerchantRecords();
   const { settings } = useMerchantConfiguration();
   const { pollNow, watchError, watching } = useMerchantStatus();
-  const { toast } = useToast();
 
   const [filter, setFilter] = useState<CodeFilter>("all");
   const now = useLiveNow();
@@ -118,20 +116,6 @@ export function PaymentLinksPage() {
     triggerHaptic("selection");
     setEditing(code);
     setEditorOpen(true);
-  }
-
-  async function handleToggle(code: CounterCode, next: boolean) {
-    try {
-      await setCounterCodeActive(code.id, next);
-      toast(
-        next
-          ? `${code.title} is back in reconciliation`
-          : `${code.title} is retired. A printed card still resolves — take it off the counter.`,
-        next ? "success" : "info",
-      );
-    } catch (error) {
-      toast(error instanceof Error ? error.message : "The counter code could not be updated.", "error");
-    }
   }
 
   return (
@@ -177,9 +161,9 @@ export function PaymentLinksPage() {
         <button
           type="button"
           onClick={() => openEditor(null)}
-          className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-white shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-all hover:bg-[#2492ff] active:scale-90"
-          title="New code"
-          aria-label="New code"
+          className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-[var(--color-oncolor)] shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-[background-color,transform] hover:bg-[#2492ff] active:scale-90"
+          title="New Code"
+          aria-label="New Code"
         >
           <IconPlus size={17} />
         </button>
@@ -203,7 +187,7 @@ export function PaymentLinksPage() {
               variant="secondary"
               onClick={() => (codes.length === 0 ? openEditor(null) : setFilter("all"))}
             >
-              {codes.length === 0 ? "New code" : "Show all codes"}
+              {codes.length === 0 ? "New Code" : "Show all codes"}
             </Button>
           </div>
         </div>
@@ -215,7 +199,6 @@ export function PaymentLinksPage() {
               code={code}
               sep={i > 0}
               now={now}
-              onToggle={(next) => handleToggle(code, next)}
               onEdit={() => openEditor(code)}
               onPoster={() => {
                 triggerHaptic("selection");
@@ -226,15 +209,14 @@ export function PaymentLinksPage() {
         </div>
       )}
 
-      {editorOpen && (
-        <CodeEditorModal
-          code={editing}
-          onClose={() => {
-            setEditorOpen(false);
-            setEditing(null);
-          }}
-        />
-      )}
+      <CodeEditorModal
+        open={editorOpen}
+        code={editing}
+        onClose={() => {
+          setEditorOpen(false);
+          setEditing(null);
+        }}
+      />
 
       <CounterPosterModal code={posterCode} onClose={() => setPosterCode(null)} />
       {/* The explanation lives under the codes: the figures lead, and the
@@ -271,21 +253,20 @@ function CodeRow({
   code,
   sep,
   now,
-  onToggle,
   onEdit,
   onPoster,
 }: {
   code: CounterCode;
   sep: boolean;
   now: number;
-  onToggle: (next: boolean) => void;
   onEdit: () => void;
   onPoster: () => void;
 }) {
-  const { counterCodePayUriFor } = useMerchantRecords();
+  const { counterCodePayUriFor, setCounterCodeActive } = useMerchantRecords();
   const { settings } = useMerchantConfiguration();
   const { staff: staffRoster } = useMerchantStaff();
-  const { toast } = useToast();
+  const toggleAction = useMerchantAction();
+  const row = useRef<HTMLDivElement>(null);
   const meta = CODE_KIND_META[code.kind];
   const staff = staffRoster.find((member) => member.id === code.staffId) ?? null;
   const availability = counterCodeAvailability(code, now);
@@ -296,6 +277,14 @@ function CodeRow({
   const uri = asset ? counterCodePayUriFor(code, asset) : null;
   const canShare =
     availability === "active" && code.destination === settings.receivingPublicKey && uri !== null;
+  const copyScope = useMemo(() => {
+    // The token retains no request data. A changed URI or eligibility revokes
+    // its feedback while the outstanding physical clipboard write finishes.
+    void uri;
+    void canShare;
+    return {};
+  }, [uri, canShare]);
+  const copyAction = useMerchantAction(copyScope);
 
   const amountLine =
     code.kind === "fixed" && code.amountMinor !== null
@@ -320,23 +309,20 @@ function CodeRow({
     .filter((part): part is string => Boolean(part))
     .join(" · ");
 
-  async function copyRequest() {
-    if (!uri) return;
-    try {
-      await navigator.clipboard.writeText(uri);
-      triggerHaptic("selection");
-      toast(`${code.title} request copied`);
-    } catch {
-      toast("Could not reach the clipboard");
-    }
+  function copyRequest() {
+    if (!canShare || !uri) return;
+    void copyAction.run(() => navigator.clipboard.writeText(uri),
+      "Payment request copied.", "The request could not be copied. Try again.");
   }
 
   return (
     <div
-      className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left ${
+      ref={row}
+      className={`row-hover w-full px-4 py-3.5 text-left ${
         sep ? "ios-sep" : ""
       }`}
     >
+      <div className="flex items-center gap-3.5">
       <span
         aria-hidden="true"
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
@@ -364,10 +350,16 @@ function CodeRow({
 
         {/* The switch is the state: in use or filed away. */}
         <Toggle
+          focusableWhenDisabled
           checked={availability === "active"}
-          disabled={availability === "expired"}
+          disabled={availability === "expired" || toggleAction.pending}
           label={`${code.title} in use`}
-          onChange={(value) => onToggle(value ?? !code.active)}
+          onChange={(value) => {
+            const next = value ?? !code.active;
+            void toggleAction.run(() => setCounterCodeActive(code.id, next),
+              next ? "Counter code is back in reconciliation." : "Counter code retired. Remove any printed copies from the counter.",
+              "The counter code could not be updated. Try again.");
+          }}
         />
 
         {/* Copying, editing and the poster are second-order: one menu, not three
@@ -393,6 +385,7 @@ function CodeRow({
                 <button
                   type="button"
                   role="menuitem"
+                  disabled={copyAction.pending}
                   className="menu-item !rounded-xl"
                   onClick={() => {
                     close();
@@ -431,6 +424,22 @@ function CodeRow({
           )}
         </Dropdown>
       </span>
+      </div>
+      {(toggleAction.pending || copyAction.pending) && <p role="status" className="mt-2 text-[12px] text-neutral-400">
+        {toggleAction.pending ? "Updating code…" : "Copying request…"}
+      </p>}
+      {toggleAction.error && <div className="mt-2"><ErrorText message={toggleAction.error} /></div>}
+      {copyAction.error && <div className="mt-2 space-y-2">
+        <ErrorText message={copyAction.error} />
+        {canShare && <Button variant="secondary" onClick={(event) => {
+          // Retry feedback disappears immediately; keep its keyboard owner in
+          // this row, at the same return destination as the menu copy action.
+          if (document.activeElement === event.currentTarget) {
+            row.current?.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')?.focus({ preventScroll: true });
+          }
+          copyRequest();
+        }}>Retry copy</Button>}
+      </div>}
     </div>
   );
 }

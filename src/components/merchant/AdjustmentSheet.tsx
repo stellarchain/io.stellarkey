@@ -23,7 +23,18 @@ import type {
   StaffMember,
 } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
-import { Modal, ModalHeader, Notice, SegmentedControl } from "../ui";
+import {
+  Button,
+  ConfirmModal,
+  ErrorText,
+  Field,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Notice,
+  SegmentedControl,
+} from "../ui";
 import { IconAlert, IconCheck, IconLock } from "../icons";
 import { IconPercent, IconTag, IconXCircle } from "./icons";
 
@@ -101,13 +112,23 @@ export function AdjustmentSheet({
   lineId: string | null;
   onOrderFinalized?: (order: Order) => void;
 }) {
-  if (!open) return null;
+  const [pending, setPending] = useState(false);
   return (
-    <AdjustmentSheetInner
+    <Modal
+      open={open}
       onClose={onClose}
-      lineId={lineId}
-      onOrderFinalized={onOrderFinalized}
-    />
+      wide
+      busy={pending}
+      busyReason="Wait for the adjustment to be saved before closing."
+    >
+      <AdjustmentSheetInner
+        onClose={onClose}
+        lineId={lineId}
+        onOrderFinalized={onOrderFinalized}
+        pending={pending}
+        onPendingChange={setPending}
+      />
+    </Modal>
   );
 }
 
@@ -115,10 +136,14 @@ function AdjustmentSheetInner({
   onClose,
   lineId,
   onOrderFinalized,
+  pending,
+  onPendingChange,
 }: {
   onClose: () => void;
   lineId: string | null;
   onOrderFinalized?: (order: Order) => void;
+  pending: boolean;
+  onPendingChange: (pending: boolean) => void;
 }) {
   const { settings } = useMerchantConfiguration();
   const { activeStaff, staff } = useMerchantStaff();
@@ -133,6 +158,8 @@ function AdjustmentSheetInner({
   const [percentRaw, setPercentRaw] = useState("10");
   const [amountRaw, setAmountRaw] = useState("");
   const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [confirmingVoid, setConfirmingVoid] = useState(false);
   const [openedAt] = useState(Date.now);
 
   const actor = activeStaff;
@@ -154,7 +181,7 @@ function AdjustmentSheetInner({
 
   const typedAmount = useMemo<Minor | null>(() => {
     const raw = amountRaw.trim();
-    if (!raw) return null;
+    if (raw === "") return null;
     try {
       const minor = toMinor(raw);
       return minor > 0 ? minor : null;
@@ -221,24 +248,37 @@ function AdjustmentSheetInner({
     }));
 
   async function apply() {
+    if (pending) return;
+    setError("");
+    onPendingChange(true);
     try {
       const finalized = kind === "discount"
         ? await applyAdjustment({ lineId, amountMinor, reasonCode: reason })
         : kind === "comp"
           ? await compLine(lineId, reason)
           : await voidLine(lineId, reason);
-      triggerHaptic(kind === "void" ? "warning" : "success");
+      triggerHaptic("success");
       toast(
         `${kind === "discount" ? "Discount" : kind === "comp" ? "Comp" : "Void"} saved · ${reason}.`,
         "success",
+        { silent: true },
       );
       if (finalized) onOrderFinalized?.(finalized);
       onClose();
-    } catch (error) {
-      triggerHaptic("warning");
-      toast(error instanceof Error ? error.message : "The adjustment could not be saved.", "error");
+    } catch (failure) {
+      triggerHaptic("error");
+      setError(failure instanceof Error ? failure.message : "The adjustment could not be saved.");
+    } finally {
+      onPendingChange(false);
     }
   }
+
+  const primaryLabel =
+    kind === "discount"
+      ? `Discount ${fmtMinor(amountMinor, currency)}`
+      : kind === "comp"
+        ? `Comp ${fmtMinor(baseMinor, currency)}`
+        : `Void ${line ? line.name : "the ticket"}`;
 
   const todayStart = new Date(openedAt);
   todayStart.setHours(0, 0, 0, 0);
@@ -247,14 +287,14 @@ function AdjustmentSheetInner({
     .sort((a, b) => b.at - a.at);
 
   return (
-    <Modal open onClose={onClose} wide>
+    <>
       <ModalHeader
         title="Adjust"
         subtitle={line ? line.name : `Order ${orderNumber} · whole ticket`}
         onClose={onClose}
       />
 
-      <div className="space-y-4 p-4 sm:p-6">
+      <ModalBody>
         <SegmentedControl<AdjustmentKind>
           ariaLabel="Adjustment type"
           value={kind}
@@ -345,10 +385,7 @@ function AdjustmentSheetInner({
                         key={preset}
                         type="button"
                         aria-pressed={on}
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          setPercentRaw(String(preset));
-                        }}
+                        onClick={() => setPercentRaw(String(preset))}
                         className={`mono min-h-[44px] min-w-0 flex-1 rounded-xl text-[14px] font-semibold transition-colors ${
                           on
                             ? "bg-[#0A84FF]/20 text-[#0A84FF]"
@@ -360,43 +397,46 @@ function AdjustmentSheetInner({
                     );
                   })}
                 </div>
-                <div className="flex items-center gap-2">
+                <Field
+                  label="Discount Percentage"
+                  hint="0 – 100 %"
+                  error={
+                    percentValid
+                      ? undefined
+                      : "A discount is somewhere between nothing and all of it — 0 to 100 %."
+                  }
+                >
                   <input
                     type="text"
                     inputMode="decimal"
+                    enterKeyHint="done"
                     value={percentRaw}
                     onChange={(e) => setPercentRaw(e.target.value)}
-                    aria-label="Discount percentage"
-                    aria-invalid={!percentValid}
-                    className="input input-mono text-base sm:text-[15px]"
+                    className="input mono text-base sm:text-[15px]"
                   />
-                  <span className="mono shrink-0 text-[15px] text-neutral-400">%</span>
-                </div>
-                {!percentValid && (
-                  <p className="text-[12px] text-[#FF9F0A]">
-                    A discount is somewhere between nothing and all of it — 0 to 100 %.
-                  </p>
-                )}
+                </Field>
               </div>
             ) : (
-              <div className="space-y-2">
+              <Field
+                label="Discount Amount"
+                error={
+                  amountRaw.trim() !== "" && typedAmount === null
+                    ? "Enter an amount such as 2.50."
+                    : typedAmount !== null && typedAmount > baseMinor
+                      ? `Capped at ${fmtMinor(baseMinor, currency)} — a discount cannot take off more than is owed.`
+                      : undefined
+                }
+              >
                 <input
                   type="text"
                   inputMode="decimal"
+                  enterKeyHint="done"
                   value={amountRaw}
                   onChange={(e) => setAmountRaw(e.target.value)}
                   placeholder="0.00"
-                  aria-label="Discount amount"
-                  aria-invalid={amountRaw.trim() !== "" && typedAmount === null}
-                  className="input input-mono text-base sm:text-[15px]"
+                  className="input mono text-base sm:text-[15px]"
                 />
-                {typedAmount !== null && typedAmount > baseMinor && (
-                  <p className="text-[12px] text-[#FF9F0A]">
-                    Capped at {fmtMinor(baseMinor, currency)} — a discount cannot take off more
-                    than is owed.
-                  </p>
-                )}
-              </div>
+              </Field>
             )}
           </section>
         ) : (
@@ -421,17 +461,14 @@ function AdjustmentSheetInner({
                   key={code}
                   type="button"
                   aria-pressed={on}
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setReason(code);
-                  }}
+                  onClick={() => setReason(code)}
                   className={`row-hover flex min-h-[44px] w-full items-center gap-3 px-4 py-3 text-left ${
                     index > 0 ? "border-t border-white/[0.08]" : ""
                   }`}
                 >
                   <span
                     className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
-                      on ? "bg-[#0A84FF] text-white" : "bg-white/[0.1] text-transparent"
+                      on ? "bg-[#0A84FF] text-[var(--color-oncolor)]" : "bg-white/[0.1] text-transparent"
                     }`}
                   >
                     <IconCheck size={12} />
@@ -496,18 +533,24 @@ function AdjustmentSheetInner({
           </p>
         )}
 
-        <button
-          type="button"
-          disabled={!ready}
-          onClick={apply}
-          className={`btn w-full ${kind === "void" ? "btn-danger" : "btn-primary"}`}
-        >
-          {kind === "discount"
-            ? `Discount ${fmtMinor(amountMinor, currency)}`
-            : kind === "comp"
-              ? `Comp ${fmtMinor(baseMinor, currency)}`
-              : `Void ${line ? line.name : "the ticket"}`}
-        </button>
+        <ErrorText message={error} />
+
+        <ModalFooter
+          primary={
+            <Button
+              type="button"
+              variant={kind === "void" ? "danger" : "primary"}
+              disabled={!ready}
+              loading={pending}
+              onClick={() => {
+                if (kind === "void") setConfirmingVoid(true);
+                else void apply();
+              }}
+            >
+              {primaryLabel}
+            </Button>
+          }
+        />
 
         <p className="text-center text-[11.5px] leading-relaxed text-neutral-500">
           {actor
@@ -560,7 +603,24 @@ function AdjustmentSheetInner({
             <IconAlert size={12} /> Nothing is rung up, so there is nothing to adjust.
           </p>
         )}
-      </div>
-    </Modal>
+      </ModalBody>
+
+      <ConfirmModal
+        open={confirmingVoid}
+        title={line ? `Void ${line.name}?` : "Void the whole ticket?"}
+        message={
+          line
+            ? `${fmtMinor(baseMinor, currency)} comes off the ticket and the line is un-rung · ${reason}.`
+            : `Every line is un-rung and nothing is owed · ${reason}.`
+        }
+        confirmLabel={line ? "Void line" : "Void ticket"}
+        destructive
+        onClose={() => setConfirmingVoid(false)}
+        onConfirm={() => {
+          setConfirmingVoid(false);
+          void apply();
+        }}
+      />
+    </>
   );
 }

@@ -211,9 +211,9 @@ export function InvoicesPage() {
         <button
           type="button"
           onClick={() => openComposer(null)}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-white shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-all hover:bg-[#2492ff] active:scale-90"
-          title="New invoice"
-          aria-label="New invoice"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-[var(--color-oncolor)] shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-[background-color,transform] hover:bg-[#2492ff] active:scale-90"
+          title="New Invoice"
+          aria-label="New Invoice"
         >
           <IconPlus size={17} />
         </button>
@@ -227,7 +227,7 @@ export function InvoicesPage() {
             body="Bill a customer who is not standing at the counter."
             action={
               <Button variant="secondary" onClick={() => openComposer(null)}>
-                <IconPlus size={15} /> New invoice
+                <IconPlus size={15} /> New Invoice
               </Button>
             }
           />

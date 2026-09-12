@@ -11,14 +11,16 @@ import {
 } from '../src/features/private-balance/runtime/stealth-payment.ts';
 
 const bytes = value => new Uint8Array(32).fill(value);
+const deploymentBindingHash = bytes(70);
+const deploymentBindingHex = Buffer.from(deploymentBindingHash).toString('hex');
 const sender = Keypair.fromRawEd25519Seed(bytes(71));
 const announcer = Keypair.fromRawEd25519Seed(bytes(72)).publicKey();
 const recipient = encodeStealthMetaAddress(
-  deriveStealthMetaKeys(bytes(73), 'testnet'),
+  deriveStealthMetaKeys(bytes(73), 'testnet', deploymentBindingHash),
   'testnet',
 );
 const mainnetRecipient = encodeStealthMetaAddress(
-  deriveStealthMetaKeys(bytes(76), 'mainnet'),
+  deriveStealthMetaKeys(bytes(76), 'mainnet', deploymentBindingHash),
   'mainnet',
 );
 
@@ -28,6 +30,7 @@ test('stealth payment review binds the one-time destination and complete public 
     metaAddress: recipient,
     network: 'testnet',
     announcerPublicKey: announcer,
+    deploymentBindingHash: deploymentBindingHex,
     amount: '2.5',
     baseFeeStroops: 100,
     loadSourceSequence: async () => '123',
@@ -38,10 +41,10 @@ test('stealth payment review binds the one-time destination and complete public 
 
   assert.equal(review.amountStroops, '25000000');
   assert.equal(review.reserveStroops, '10000000');
-  assert.equal(review.sweepFeeBufferStroops, '1000000');
+  assert.equal(review.sweepFeeBufferStroops, '10000100');
   assert.equal(review.announcementStroops, '1');
   assert.equal(review.networkFeeStroops, '300');
-  assert.equal(review.totalDebitStroops, '36000301');
+  assert.equal(review.totalDebitStroops, '45000401');
   assert.equal(review.expiresAt, 1_180);
   assert.equal(validatePreparedStealthPayment(review, sender.publicKey(), 'testnet', 1_001).source, sender.publicKey());
   const transaction = TransactionBuilder.fromXdr(review.envelopeXdr, Networks.TESTNET);
@@ -54,6 +57,7 @@ test('stealth payment review rejects tampering, expiry, account changes, and net
     metaAddress: recipient,
     network: 'testnet',
     announcerPublicKey: announcer,
+    deploymentBindingHash: deploymentBindingHex,
     amount: '1',
     baseFeeStroops: 100,
     loadSourceSequence: async () => '123',
@@ -87,6 +91,7 @@ test('stealth payment preparation rejects mainnet before reading network state',
       metaAddress: mainnetRecipient,
       network: 'mainnet',
       announcerPublicKey: announcer,
+      deploymentBindingHash: deploymentBindingHex,
       amount: '1',
       baseFeeStroops: 100,
       loadSourceSequence: async () => {

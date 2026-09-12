@@ -1,9 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { useWalletContacts } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
 import type { Contact } from "@/lib/contacts";
+import {
+  MAX_CONTACTS_FILE_BYTES,
+  readBoundedTextFile,
+} from "@/lib/import-limits";
 import { triggerHaptic } from "@/lib/haptics";
 import { Avatar, Button, HashValue } from "./ui";
 import { EditContactModal } from "./EditContactModal";
@@ -69,9 +74,10 @@ export function AddressBookPage({
 
   async function handleImport(file: File) {
     try {
-      const text = await file.text();
+      const text = await readBoundedTextFile(file, MAX_CONTACTS_FILE_BYTES, "Contacts file");
       const list = JSON.parse(text) as Contact[];
       if (!Array.isArray(list)) throw new Error("Invalid contacts file format.");
+      if (list.length > 5_000) throw new Error("Contacts file contains too many records.");
       const knownAddresses = new Set(contacts.map((contact) => contact.address));
       let imported = 0;
       for (const c of list) {
@@ -104,9 +110,9 @@ export function AddressBookPage({
   }
 
   return (
-    <section className="fade-up mx-auto w-full max-w-[720px] pt-2">
+    <section className="fade-up mx-auto w-full max-w-[1000px] pt-2">
       {/* Header: search + add (app chrome already carries the view title) */}
-      <div className="flex items-center gap-2.5 pb-5">
+      <div className="flex items-center gap-2.5 pb-5 empty:hidden">
         {contacts.length > 0 && (
           <div className="search-field flex-1">
             <IconSearch size={14} className="shrink-0 text-neutral-400" />
@@ -118,15 +124,18 @@ export function AddressBookPage({
             />
           </div>
         )}
+        {contacts.length > 0 && (
         <button
           type="button"
           onClick={() => openEditor(null)}
-          className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-white shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-all hover:bg-[#2492ff] active:scale-90"
+          className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-[var(--color-oncolor)] sm:w-auto sm:gap-1.5 sm:px-3.5 shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-all hover:bg-[#2492ff] active:scale-90"
           title="Add Contact"
           aria-label="Add Contact"
         >
           <IconPlus size={17} />
+          <span className="hidden text-[13px] font-semibold sm:inline">Add Contact</span>
         </button>
+        )}
       </div>
 
       {contacts.length === 0 ? (
@@ -152,7 +161,7 @@ export function AddressBookPage({
           {/* Favorites rail (iOS Phone-style pinned section) */}
           {favorites.length > 0 && (
             <div>
-              <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#FFD60A]">
+              <p className="px-2 pb-1.5 text-[12px] font-semibold uppercase tracking-wider text-[#FFD60A]">
                 ★ Favorites
               </p>
               <div className="list-group">
@@ -173,9 +182,7 @@ export function AddressBookPage({
           {/* Alphabetical sections */}
           {sections.map(([letter, list]) => (
             <div key={letter} className="pt-5 first:pt-0">
-              <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
-                {letter}
-              </p>
+              <SectionHeader className="px-2 pb-1.5">{letter}</SectionHeader>
               <div className="list-group">
                 {list.map((c, i) => (
                   <ContactRow
@@ -207,7 +214,7 @@ export function AddressBookPage({
             <span className="h-3 w-px bg-white/10" />
           </>
         )}
-        <label className="cursor-pointer transition-colors hover:text-[#0A84FF]">
+        <label className="cursor-pointer text-[#0A84FF] transition-colors hover:text-accent-2">
           Import JSON
           <input
             type="file"
@@ -266,7 +273,7 @@ function ContactRow({
           label={contact.name.trim()[0]?.toUpperCase()}
         />
         {contact.favorite && (
-          <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#FFD60A] text-[9px] font-bold text-black shadow ring-2 ring-black/60">
+          <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#FFD60A] text-[10px] font-bold text-black shadow ring-2 ring-black/60">
             ★
           </span>
         )}

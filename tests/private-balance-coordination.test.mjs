@@ -37,22 +37,22 @@ test('private runtime lease elects one scoped leader and transfers after expiry'
 
 test('private follower updates accept only a redacted exact schema', () => {
   const update = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     type: 'private-runtime-update',
     senderId: 'tab-a',
     nonce: 'nonce-a',
     phase: 'current',
     revision: 7,
-    verifiedBalanceStroops: '5000000',
     lastVerifiedActionIndex: 12,
   };
   assert.deepEqual(decodePrivateBalanceFollowerUpdate(JSON.stringify(update)), update);
   for (const extra of [
-    { privateAddress: `tks1${'q'.repeat(115)}` },
+    { privateAddress: `tskpay_${'2'.repeat(121)}` },
     { notes: [] },
     { commitments: [] },
     { memo: 'secret' },
     { transaction: 'AAAA' },
+    { verifiedBalanceStroops: '5000000' },
   ]) {
     assert.equal(
       decodePrivateBalanceFollowerUpdate(JSON.stringify({ ...update, ...extra })),
@@ -60,12 +60,12 @@ test('private follower updates accept only a redacted exact schema', () => {
     );
   }
   assert.equal(
-    decodePrivateBalanceFollowerUpdate(JSON.stringify({ ...update, verifiedBalanceStroops: '-1' })),
+    decodePrivateBalanceFollowerUpdate(JSON.stringify({ ...update, phase: 'proving-secret' })),
     null,
   );
   assert.equal(
-    decodePrivateBalanceFollowerUpdate(JSON.stringify({ ...update, phase: 'proving-secret' })),
-    null,
+    decodePrivateBalanceFollowerUpdate(JSON.stringify({ ...update, phase: 'status-unknown' }))?.phase,
+    'status-unknown',
   );
 });
 

@@ -1,9 +1,11 @@
 import { StrKey } from "@stellar/stellar-sdk";
+import { sha256 } from "@noble/hashes/sha2.js";
 
 import type { Contact } from "../contacts";
 import type { FiatCurrency } from "../format";
 import type {
   AcceptedAsset,
+  CustomerMutationEvent,
   CustomerRecord,
   LoyaltyCard,
   LoyaltyEvent,
@@ -11,6 +13,7 @@ import type {
   Minor,
   StaffMember,
 } from "./types";
+import { canonicalPayerAddress, samePayerAccount } from "./payer";
 
 const MAX_NOTE_LENGTH = 140;
 const MIN_LOYALTY_TARGET = 2;
@@ -46,17 +49,19 @@ export interface StartLoyaltyInput extends LoyaltyActionInput {
   target: number;
 }
 
+export interface UpdateCustomerNoteInput extends LoyaltyActionInput {
+  note: string;
+}
+
+export type ForgetCustomerInput = LoyaltyActionInput;
+
 function safeTime(value: number, label: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${label} is invalid.`);
   return value;
 }
 
 function validAddress(value: string): string {
-  const address = value.trim();
-  if (!StrKey.isValidEd25519PublicKey(address)) {
-    throw new Error("The customer address is not a valid Stellar public key.");
-  }
-  return address;
+  return canonicalPayerAddress(value);
 }
 
 function validAsset(asset: AcceptedAsset): AcceptedAsset {
@@ -69,7 +74,7 @@ function validAsset(asset: AcceptedAsset): AcceptedAsset {
 }
 
 function contactName(contacts: Contact[], address: string): string | null {
-  const contact = contacts.find((entry) => entry.address.trim() === address);
+  const contact = contacts.find((entry) => samePayerAccount(entry.address, address));
   const name = contact?.name.trim() ?? "";
   return name || null;
 }
@@ -93,14 +98,54 @@ function currentActor(
   store: MerchantStore,
   actor: StaffMember,
   permission: "takePayment" | "comp",
+  action = "manage loyalty",
 ): StaffMember {
   const member = store.staff.find(
     (entry) => entry.id === actor.id && entry.id === store.activeStaffId && entry.active,
   );
   if (!member || !member.permissions[permission]) {
-    throw new Error(`${actor.name || "This staff member"} is not allowed to manage loyalty.`);
+    throw new Error(`${actor.name || "This staff member"} is not allowed to ${action}.`);
   }
   return member;
+}
+
+function currentOwner(store: MerchantStore, actor: StaffMember): StaffMember {
+  const member = store.staff.find(
+    (entry) => entry.id === actor.id && entry.id === store.activeStaffId && entry.active,
+  );
+  if (!member || member.role !== "owner") {
+    throw new Error("Only an active owner can forget a customer.");
+  }
+  return member;
+}
+
+function addressHash(address: string): string {
+  return Array.from(sha256(new TextEncoder().encode(address)), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+function appendCustomerEvent(
+  store: MerchantStore,
+  input: LoyaltyActionInput,
+  actor: StaffMember,
+  kind: CustomerMutationEvent["kind"],
+  address: string,
+): MerchantStore {
+  const events = store.customerEvents ?? [];
+  const id = input.eventId.trim();
+  if (!id || events.some((event) => event.id === id)) {
+    throw new Error("That customer action is invalid or already recorded.");
+  }
+  const event: CustomerMutationEvent = {
+    id,
+    kind,
+    addressHash: addressHash(address),
+    actorId: actor.id,
+    actorName: actor.name,
+    at: safeTime(input.now ?? Date.now(), "Customer audit time"),
+  };
+  return { ...store, customerEvents: [...events, event] };
 }
 
 function validEventId(card: LoyaltyCard | null, value: string): string {
@@ -199,11 +244,15 @@ export function reconcileCustomerSettlements(
   for (const order of current.orders) {
     if (order.status !== "paid" || !order.payerAddress || order.paidAt === null) continue;
     const prior = previous.orders.find((entry) => entry.id === order.id);
-    if (prior?.status === "paid" && prior.payerAddress === order.payerAddress) continue;
+    if (
+      prior?.status === "paid" &&
+      prior.payerAddress &&
+      samePayerAccount(prior.payerAddress, order.payerAddress)
+    ) continue;
     const cryptoTender = order.tender.find((entry) => entry.kind === "crypto");
     if (!cryptoTender || cryptoTender.kind !== "crypto") continue;
     const charge = current.charges.find((entry) => entry.id === cryptoTender.chargeId);
-    if (!charge?.payment || charge.payment.from !== order.payerAddress) continue;
+    if (!charge?.payment || !samePayerAccount(charge.payment.from, order.payerAddress)) continue;
     next = recordCustomerVisit(next, {
       sourceId: `order:${order.id}`,
       address: order.payerAddress,
@@ -240,6 +289,30 @@ export function reconcileCustomerSettlements(
   return next;
 }
 
+export interface CustomerSettlementEnrichment {
+  store: MerchantStore;
+  warning: string | null;
+}
+
+/** Customer history is optional enrichment and must never roll back received money. */
+export function reconcileCustomerSettlementsNonFatal(
+  previous: MerchantStore,
+  current: MerchantStore,
+  input: { contacts: Contact[] },
+): CustomerSettlementEnrichment {
+  try {
+    return {
+      store: reconcileCustomerSettlements(previous, current, input),
+      warning: null,
+    };
+  } catch {
+    return {
+      store: current,
+      warning: "The payment was recorded, but customer history could not be updated.",
+    };
+  }
+}
+
 export function syncCustomerContacts(store: MerchantStore, contacts: Contact[]): MerchantStore {
   let changed = false;
   const customers = store.customers.map((customer) => {
@@ -253,18 +326,24 @@ export function syncCustomerContacts(store: MerchantStore, contacts: Contact[]):
 
 export function updateCustomerNote(
   store: MerchantStore,
-  addressInput: string,
-  noteInput: string,
+  input: UpdateCustomerNoteInput,
 ): MerchantStore {
-  const address = validAddress(addressInput);
+  const actor = currentActor(store, input.actor, "takePayment", "manage customers");
+  const address = validAddress(input.address);
   const customer = customerFor(store, address);
-  const note = noteInput.trim();
+  const note = input.note.trim();
   if (note.length > MAX_NOTE_LENGTH) {
     throw new Error(`A customer note can be at most ${MAX_NOTE_LENGTH} characters.`);
   }
   const updatedNote = note || null;
   if (customer.note === updatedNote) return store;
-  return replaceCustomer(store, { ...customer, note: updatedNote });
+  return appendCustomerEvent(
+    replaceCustomer(store, { ...customer, note: updatedNote }),
+    input,
+    actor,
+    "note_updated",
+    address,
+  );
 }
 
 export function startLoyaltyCard(
@@ -327,13 +406,14 @@ export function redeemLoyaltyReward(
   });
 }
 
-export function forgetCustomer(store: MerchantStore, addressInput: string): MerchantStore {
-  const address = validAddress(addressInput);
+export function forgetCustomer(store: MerchantStore, input: ForgetCustomerInput): MerchantStore {
+  const actor = currentOwner(store, input.actor);
+  const address = validAddress(input.address);
   if (!store.customers.some((customer) => customer.address === address)) return store;
-  return {
+  return appendCustomerEvent({
     ...store,
     customers: store.customers.filter((customer) => customer.address !== address),
-  };
+  }, input, actor, "forgotten", address);
 }
 
 export function customerHistory(
@@ -343,7 +423,11 @@ export function customerHistory(
   const address = validAddress(addressInput);
   const orders: CustomerHistoryEntry[] = store.orders
     .filter(
-      (order) => order.status === "paid" && order.payerAddress === address && order.paidAt !== null,
+      (order) =>
+        order.status === "paid" &&
+        order.payerAddress !== null &&
+        samePayerAccount(order.payerAddress, address) &&
+        order.paidAt !== null,
     )
     .map((order) => ({
       id: order.id,
@@ -356,7 +440,12 @@ export function customerHistory(
     }));
   const invoices: CustomerHistoryEntry[] = store.invoices.flatMap((invoice) =>
     invoice.payments
-      .filter((payment) => payment.kind === "stellar" && payment.from === address)
+      .filter(
+        (payment) =>
+          payment.kind === "stellar" &&
+          payment.from !== null &&
+          samePayerAccount(payment.from, address),
+      )
       .map((payment) => ({
         id: payment.id,
         kind: "invoice" as const,

@@ -54,8 +54,11 @@ export function LockScreen() {
   }
 
   return (
-    <div className="app-safe-top app-safe-top-pad-12 mx-auto flex min-h-screen w-full max-w-sm sm:max-w-md flex-col items-center justify-center px-6 py-12">
-      <div className={`w-full ${shaking ? "shake" : ""}`}>
+    <div
+      data-app-surface
+      className="app-safe-top app-safe-top-pad-12 mx-auto flex min-h-screen w-full max-w-3xl flex-col items-center justify-center py-12"
+    >
+      <div className={`w-full max-w-sm px-6 sm:max-w-md ${shaking ? "shake" : ""}`}>
         <div className="flex flex-col items-center text-center">
           <LogoMark size={56} />
           <h1 className="display-h mt-4 text-[26px] font-bold text-white">{BRAND_NAME}</h1>
@@ -70,7 +73,7 @@ export function LockScreen() {
             <>
               <Button
                 type="button"
-                className="w-full !py-3 text-[15px] font-semibold"
+                className="w-full"
                 loading={busy === "passkey"}
                 disabled={busy !== null}
                 onClick={() => void handlePasskeyUnlock()}
@@ -117,7 +120,7 @@ export function LockScreen() {
 
             <Button
               type="submit"
-              className="w-full !py-3 text-[15px] font-semibold"
+              className="w-full"
               loading={busy === "password"}
               disabled={!password || busy !== null}
             >
@@ -144,7 +147,7 @@ export function LockScreen() {
           }}
           className="mt-6 block w-full text-center text-[13px] text-neutral-500 hover:text-neutral-300 transition-colors"
         >
-          Forgot password? Reset wallet
+          Forgot password? <span className="text-[#0A84FF]">Reset wallet</span>
         </button>
       </div>
 
@@ -152,7 +155,9 @@ export function LockScreen() {
         open={confirmReset}
         onClose={() => setConfirmReset(false)}
       />
-      <PublicFooter compact showBuildIdentity={false} />
+      <div className="w-full px-6">
+        <PublicFooter compact showBuildIdentity={false} />
+      </div>
     </div>
   );
 }

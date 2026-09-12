@@ -19,4 +19,4 @@ pub use archive::{ArchiveMeta, ArchiveRecord};
 pub use contract::{PrivateBalancePool, PrivateBalancePoolClient};
 pub use errors::PoolError;
 pub use nullifier::SpentNullifier;
-pub use storage::{KnownRoot, PoolConfig, TreeStorage};
+pub use storage::{AssetConfig, AssetStatus, KnownRoot, PoolConfig, TreeStorage};

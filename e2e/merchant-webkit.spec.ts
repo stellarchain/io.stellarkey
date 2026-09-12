@@ -14,7 +14,7 @@ async function enterAmount(page: Page, keys: string[]): Promise<void> {
   for (const key of keys) {
     await page.getByRole("button", { name: key, exact: true }).first().click();
   }
-  await page.getByRole("button", { name: "Add to ticket" }).click();
+  await page.getByRole("button", { name: "Add to Ticket" }).click();
 }
 
 async function openAwaitingCharge(page: Page): Promise<{
@@ -79,10 +79,10 @@ test("iPhone reload catches up and settles an awaiting merchant charge", async (
 
   await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
   await page.getByRole("switch", { name: "Merchant Mode" }).click();
-  const setup = page.getByRole("dialog", { name: /Set up Merchant Mode/ });
-  await setup.getByLabel("Shop name").fill("WebKit Coffee");
+  const setup = page.getByRole("dialog", { name: /Set Up Merchant Mode/ });
+  await setup.getByLabel("Shop Name").fill("WebKit Coffee");
   await setup.getByRole("button", { name: "Continue" }).click();
-  await setup.getByRole("button", { name: "Settlement asset" }).click();
+  await setup.getByRole("button", { name: "Settlement Asset" }).click();
   await page.getByRole("option", { name: /XLM/ }).click();
   await setup.getByRole("switch", { name: "Accept USDC" }).click();
   await setup.getByRole("button", { name: "Continue" }).click();
@@ -90,13 +90,13 @@ test("iPhone reload catches up and settles an awaiting merchant charge", async (
   await setup.getByRole("button", { name: "Continue" }).click();
   await setup.getByRole("textbox", { name: "Staff PIN", exact: true }).fill("2468");
   await setup.getByRole("textbox", { name: "Confirm staff PIN", exact: true }).fill("2468");
-  await setup.getByRole("button", { name: "Open the till" }).click();
+  await setup.getByRole("button", { name: "Open the Till" }).click();
   await expect(setup).toBeHidden();
 
-  await page.getByRole("button", { name: "Open shift", exact: true }).first().click();
-  const opening = page.getByRole("dialog", { name: /Open shift/ });
+  await page.getByRole("button", { name: "Open Shift", exact: true }).first().click();
+  const opening = page.getByRole("dialog", { name: /Open Shift/ });
   await expect(opening.getByLabel("Opening float")).toHaveValue("0");
-  await opening.getByRole("button", { name: "Open shift", exact: true }).click();
+  await opening.getByRole("button", { name: "Open Shift", exact: true }).click();
   await expect(page.getByText(/Shift 1 · Front counter/)).toBeVisible();
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
 
@@ -104,15 +104,21 @@ test("iPhone reload catches up and settles an awaiting merchant charge", async (
   await expect.poll(() => page.evaluate(() => {
     const raw = localStorage.getItem("stellarkey.merchant-bootstrap.v1");
     return raw ? JSON.parse(raw) : null;
-  })).toEqual({ version: 1, enabled: true, configured: true });
+  })).toEqual({ version: 1, enabled: true, configured: true, recoveryRequired: false });
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect.poll(() => page.evaluate(() => {
     const raw = localStorage.getItem("stellarkey.merchant-bootstrap.v1");
     return raw ? JSON.parse(raw) : null;
-  })).toEqual({ version: 1, enabled: true, configured: true });
+  })).toEqual({ version: 1, enabled: true, configured: true, recoveryRequired: false });
   await page.getByPlaceholder("Enter password").fill(testPassword);
   await page.getByRole("button", { name: "Unlock Vault" }).click();
   await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+  await page.getByText("Staff & Terminals", { exact: true }).click();
+  await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+  const restoredOwnerPin = page.getByRole("dialog", { name: "Imported Account" });
+  await restoredOwnerPin.getByLabel("PIN for Imported Account").fill("2468");
+  await restoredOwnerPin.getByRole("button", { name: "Select", exact: true }).click();
   await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Merchant" }).click();
   await page.getByRole("button", { name: "Orders", exact: true }).click();
   await page.getByRole("button", { name: "Show the payment request for order #1001" }).click();
@@ -120,15 +126,20 @@ test("iPhone reload catches up and settles an awaiting merchant charge", async (
   await expect(restoredCharge.getByText("Watching for payment", { exact: true })).toBeVisible();
 
   incoming.push(paymentFor(charge, charge.amount));
-  const paidCharge = page.getByRole("dialog", { name: "Paid", exact: true });
-  await expect(paidCharge.getByText("Paid in full", { exact: true })).toBeVisible({
+  await expect(page.getByText("Payment received. Till locked.", { exact: true })).toBeVisible({
     timeout: 15_000,
   });
-  await paidCharge.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByText("Unlock an authorized staff member to continue.", { exact: true })).toBeVisible();
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByPlaceholder("Enter password").fill(testPassword);
   await page.getByRole("button", { name: "Unlock Vault" }).click();
+  await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+  await page.getByText("Staff & Terminals", { exact: true }).click();
+  await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+  const settledOwnerPin = page.getByRole("dialog", { name: "Imported Account" });
+  await settledOwnerPin.getByLabel("PIN for Imported Account").fill("2468");
+  await settledOwnerPin.getByRole("button", { name: "Select", exact: true }).click();
   await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Merchant" }).click();
   await page.getByRole("button", { name: "Orders", exact: true }).click();
   await expect(page.getByText(/^Paid ·/).first()).toBeVisible();

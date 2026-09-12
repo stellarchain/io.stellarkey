@@ -8,6 +8,7 @@ import { join } from 'node:path';
 const root = process.cwd();
 const checkReproducible = process.argv.includes('--check-reproducible');
 const STELLAR_CLI_VERSION = '27.0.0';
+if (checkReproducible) assertCanonicalReproductionHost();
 const circomVersion = execFileSync('circom', ['--version'], { encoding: 'utf8' }).trim();
 if (circomVersion !== 'circom compiler 2.2.3') {
   throw new Error(`Expected circom compiler 2.2.3, got ${circomVersion}.`);
@@ -20,6 +21,17 @@ if (stellarVersion !== STELLAR_CLI_VERSION) {
 
 function sha256(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function assertCanonicalReproductionHost() {
+  if (process.platform !== 'darwin' || process.arch !== 'arm64') {
+    throw new Error('Exact artifact reproduction requires the canonical macOS ARM64 host.');
+  }
+  const rustHost = execFileSync('rustc', ['+1.97.1', '--version', '--verbose'], { encoding: 'utf8' })
+    .match(/^host: (\S+)$/m)?.[1];
+  if (rustHost !== 'aarch64-apple-darwin') {
+    throw new Error('Exact artifact reproduction requires the canonical macOS ARM64 Rust host.');
+  }
 }
 
 function run(file, args, options = {}) {
@@ -38,7 +50,12 @@ function buildPool(outputDirectory, options = {}) {
     '--optimize=false',
   ];
   if (outputDirectory) args.push('--out-dir', outputDirectory);
-  run('stellar', args, options);
+  // Cargo resolves toolchains from its working directory, not --manifest-path.
+  // This entrypoint runs at the app root, outside the protocol's toolchain file.
+  run('stellar', args, {
+    ...options,
+    env: { ...process.env, ...options.env, RUSTUP_TOOLCHAIN: '1.97.1' },
+  });
 }
 
 if (!checkReproducible) {
