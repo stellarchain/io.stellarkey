@@ -172,7 +172,7 @@ function Keypad({
             type="button"
             onClick={() => press(key)}
             aria-label={key === "backspace" ? "Backspace" : key}
-            className="flex min-h-[64px] items-center justify-center rounded-2xl bg-white/[0.08] text-[28px] font-medium leading-none text-[var(--color-oncolor)] transition-[transform,background-color] hover:bg-white/[0.13] active:scale-95"
+            className="flex min-h-[64px] items-center justify-center rounded-2xl bg-white/[0.08] text-[28px] font-medium leading-none text-ink transition-[transform,background-color] hover:bg-white/[0.13] active:scale-95"
           >
             {key === "backspace" ? <BackspaceGlyph /> : key}
           </button>

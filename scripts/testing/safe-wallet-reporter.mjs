@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const statuses = new Set(['passed', 'failed', 'timedOut', 'skipped', 'interrupted']);
-const projects = new Set(['desktop-chromium', 'desktop-firefox-private', 'desktop-webkit-private', 'iphone-webkit', 'ipad-webkit', 'synthetic-safety-probe']);
+const projects = new Set(['desktop-chromium', 'desktop-chromium-dark', 'desktop-firefox-private', 'desktop-webkit-private', 'iphone-webkit', 'ipad-webkit', 'synthetic-safety-probe']);
 
 function safeSourceFile(file) {
   if (typeof file !== 'string' || !path.isAbsolute(file) || path.normalize(file) !== file) return null;

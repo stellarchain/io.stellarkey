@@ -2902,7 +2902,7 @@ export function Dashboard() {
                                 <span
                                   className="mono text-[10.5px] font-semibold rounded px-1.5 py-0.5"
                                   style={{
-                                    color: (priceData.changePct ?? 0) >= 0 ? "#30D158" : "#FF453A",
+                                    color: (priceData.changePct ?? 0) >= 0 ? "var(--color-pos)" : "var(--color-neg)",
                                     background: (priceData.changePct ?? 0) >= 0 ? "rgba(48,209,88,0.14)" : "rgba(255,69,58,0.14)",
                                   }}
                                 >
@@ -3640,7 +3640,7 @@ function ActivityLedgerRow({
         <span
           className="flex h-9 w-9 items-center justify-center rounded-full"
           style={{
-            color: neutral ? "#64D2FF" : incoming ? "#30D158" : "#FF453A",
+            color: neutral ? "var(--color-accent-2)" : incoming ? "var(--color-pos)" : "var(--color-neg)",
             background: neutral
               ? "rgba(100,210,255,0.12)"
               : incoming
@@ -4170,7 +4170,7 @@ function PriceCard() {
               <span
                 className="shrink-0 whitespace-nowrap rounded-lg px-2 py-0.5 text-[12px] font-semibold"
                 style={{
-                  color: up ? "#30D158" : "#FF453A",
+                  color: up ? "var(--color-pos)" : "var(--color-neg)",
                   background: up ? "rgba(48,209,88,0.15)" : "rgba(255,69,58,0.15)",
                 }}
               >

@@ -37,13 +37,13 @@ const MIX = ["#64D2FF", "#BF5AF2", "#5E5CE6", "#0A84FF"];
 const TODAY = "#0A84FF";
 /** A typical day of this weekday, behind today. Indigo, because it is not money. */
 const TYPICAL = "#5E5CE6";
-const POSITIVE = "#30D158";
+const POSITIVE = "var(--color-pos)";
 /** Down, not wrong. A quiet day is not an error, so it is never red. */
-const QUIET = "#FF9F0A";
+const QUIET = "var(--color-warn)";
 /** Money going back over the counter. */
-const NEGATIVE = "#FF453A";
+const NEGATIVE = "var(--color-neg)";
 /** No verdict: nothing to compare against, so nothing is claimed. */
-const UNTINTED = "rgba(235,235,245,0.66)";
+const UNTINTED = "var(--color-muted)";
 
 const AXIS = "rgba(235,235,245,0.38)";
 const AXIS_FAINT = "rgba(235,235,245,0.2)";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { IconTile } from "@/components/ui";
 import dynamic from "next/dynamic";
 import { useWallet, useWalletSecurity } from "@/hooks/useWallet";
@@ -45,7 +45,7 @@ import {
 } from "@/lib/transaction-review";
 import { assertCanAddTransactionSignature } from "@/lib/multisig";
 import { loadSoundPref, saveSoundPref } from "@/lib/sounds";
-import { getStoredThemePreference, setThemePreference, type ThemePreference } from "@/lib/theme";
+import { getStoredThemePreference, setThemePreference, subscribeThemePreference, type ThemePreference } from "@/lib/theme";
 import {
   BACKUP_HEALTH_CHANGED_EVENT,
   loadBackupHealth,
@@ -263,7 +263,7 @@ export function SettingsPage({
   }, [sub]);
 
   const [soundEnabled, setSoundEnabled] = useState(() => loadSoundPref());
-  const [themePref, setThemePref] = useState<ThemePreference>(() => getStoredThemePreference());
+  const themePref = useSyncExternalStore(subscribeThemePreference, getStoredThemePreference, () => 'system' as const);
   const [backupHealth, setBackupHealth] = useState<BackupHealth | null>(null);
   const [passkeyConfigured, setPasskeyConfigured] = useState(() => hasPasskeyUnlock());
   const [passkeyAvailable] = useState(() => canOfferPasskeyUnlock());
@@ -1033,7 +1033,6 @@ export function SettingsPage({
                     value={themePref}
                     onChange={(next) => {
                       triggerHaptic("selection");
-                      setThemePref(next);
                       setThemePreference(next);
                     }}
                     options={[
@@ -2646,4 +2645,3 @@ function RowButton({
     </Tag>
   );
 }
-

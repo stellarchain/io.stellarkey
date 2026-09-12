@@ -22,6 +22,7 @@ export default defineConfig({
   use: {
     baseURL,
     headless: true,
+    colorScheme: "light",
     actionTimeout: 10_000,
     navigationTimeout: 15_000,
     contextOptions: { reducedMotion: "reduce" },
@@ -35,6 +36,11 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      name: "desktop-chromium-dark",
+      testMatch: /accessibility\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], colorScheme: "dark" },
+    },
+    {
       name: "desktop-firefox-private",
       testMatch: /private-balance\/browser-smoke\.spec\.ts/,
       use: { ...devices["Desktop Firefox"], serviceWorkers: "block" },
@@ -46,12 +52,12 @@ export default defineConfig({
     },
     {
       name: "iphone-webkit",
-      testMatch: /(?:accessibility|merchant-webkit|market-freshness|public-release|browser-smoke|public-private-continuity|overlay-contract|modal-motion|private-manifest-security|restore-feedback)\.spec\.ts/,
+      testMatch: /(?:accessibility|theme|merchant-webkit|market-freshness|public-release|browser-smoke|public-private-continuity|overlay-contract|modal-motion|private-manifest-security|restore-feedback)\.spec\.ts/,
       use: { ...devices["iPhone 16"], serviceWorkers: "block" },
     },
     {
       name: "ipad-webkit",
-      testMatch: /(?:accessibility|public-release|browser-smoke)\.spec\.ts/,
+      testMatch: /(?:accessibility|theme|public-release|browser-smoke)\.spec\.ts/,
       use: { ...devices["iPad (gen 11)"] },
     },
   ],

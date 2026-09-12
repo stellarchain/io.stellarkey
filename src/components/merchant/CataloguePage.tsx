@@ -304,7 +304,7 @@ function ItemRow({
         className="row-icon text-[12.5px] font-bold"
         style={{
           background: `color-mix(in srgb, ${item.colour} 20%, transparent)`,
-          color: "#fff",
+          color: "var(--color-ink)",
         }}
       >
         {initialsOf(item.name)}
