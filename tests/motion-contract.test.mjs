@@ -75,10 +75,12 @@ test('the shell presents sheets on compact widths and alerts for confirmations',
 });
 
 test('the shell holds its exit geometry so owners can clear content on close', () => {
-  assert.match(ui, /const \[panelSize, setPanelSize\] = useState/);
+  assert.match(ui, /class ModalExitGeometry extends React\.Component/);
+  assert.match(ui, /getSnapshotBeforeUpdate/);
   assert.match(ui, /const width = panel\.offsetWidth;\s*const height = panel\.offsetHeight;/);
-  assert.match(ui, /new ResizeObserver\(record\)/);
-  assert.match(ui, /height: exitGeometry\.height/);
+  assert.doesNotMatch(ui, /const \[panelSize, setPanelSize\] = useState/);
+  assert.match(ui, /componentDidUpdate/);
+  assert.match(ui, /panel\.style\.height = `\$\{snapshot\.height\}px`/);
   assert.match(ui, /presentation: livePresentation,\s*wide,/);
 });
 

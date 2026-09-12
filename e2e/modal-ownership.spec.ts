@@ -168,7 +168,7 @@ test('synthetic modal fixture loads the actual claim review and account form', a
   await expect(page.getByLabel('Secret Key', { exact: true })).toBeVisible();
 });
 
-test('integration safety: closing a revealed import removes the field before the shell exits', async ({ page }) => {
+for (const lateLayout of [false, true]) test(`integration safety: closing a revealed import removes the field before the shell exits${lateLayout ? ' after same-task layout growth' : ''}`, async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.getByRole('button', { name: 'Open account modal', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Add Account', exact: true });
@@ -178,16 +178,38 @@ test('integration safety: closing a revealed import removes the field before the
   await expect(dialog.getByLabel('Secret Key', { exact: true })).toHaveAttribute('type', 'text');
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   const discard = page.getByRole('dialog', { name: 'Discard changes?', exact: true });
-  const result = await discard.getByRole('button', { name: 'Discard', exact: true }).evaluate(async node => {
+  const result = await discard.getByRole('button', { name: 'Discard', exact: true }).evaluate(async (node, lateLayout) => {
     const owner = document.querySelector<HTMLElement>('[data-modal-backdrop]')!;
     const shell = owner.querySelector<HTMLElement>('[data-modal-shell]')!;
+    // Simulate layout settling just before close, before ResizeObserver can
+    // publish. Change only synthetic field geometry, never read its contents.
+    if (lateLayout) shell.querySelector<HTMLInputElement>('input')!.style.height = '180px';
     const height = shell.offsetHeight;
+    const state = () => ({
+      closing: owner.dataset.overlayState === 'closing',
+      fieldRemoved: !owner.querySelector('input'),
+      connected: shell.isConnected,
+      heldStyleCurrent: parseFloat(shell.style.height) >= height - 1,
+      geometryHeld: shell.offsetHeight >= height - 1,
+    });
+    // Observe the close commit before timers can unmount the shell. On a slow
+    // WebKit frame, the next RAF can arrive after the entire exit has finished.
+    const committed = new Promise<ReturnType<typeof state>>(resolve => {
+      const observer = new MutationObserver(() => {
+        if (owner.dataset.overlayState !== 'closing') return;
+        observer.disconnect();
+        resolve(state());
+      });
+      observer.observe(owner, { attributes: true, attributeFilter: ['data-overlay-state'] });
+    });
     (node as HTMLButtonElement).click();
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    return { closing: owner.dataset.overlayState === 'closing', fieldRemoved: !owner.querySelector('input'),
-      geometryHeld: shell.offsetHeight >= height - 1 };
-  });
-  expect(result).toEqual({ closing: true, fieldRemoved: true, geometryHeld: true });
+    return committed;
+  }, lateLayout);
+  expect(result.closing).toBe(true);
+  expect(result.fieldRemoved).toBe(true);
+  expect(result.connected).toBe(true);
+  expect(result.heldStyleCurrent).toBe(true);
+  expect(result.geometryHeld).toBe(true);
   await closed(page, 'Open account modal');
 });
 
@@ -227,6 +249,7 @@ for (const motion of ['reduce', 'no-preference'] as const) {
           const result = await element.evaluate(async (node, replay) => {
             const element = node as HTMLElement;
             const original = element.getAnimations().find(animation => animation instanceof CSSAnimation)!;
+            await original.ready;
             const originalStart = original.startTime;
             element.addEventListener('animationstart', event => {
               if (event.target === element) element.dataset.syntheticReplayTrusted = String(event.isTrusted);
@@ -239,14 +262,26 @@ for (const motion of ['reduce', 'no-preference'] as const) {
               element.style.setProperty('animation', entrance, 'important');
               animation = element.getAnimations().find(animation => animation instanceof CSSAnimation)!;
             } else {
+              // Sample the real CSS animation back in its active phase before
+              // replaying. Slow WebKit frames can otherwise coalesce after ->
+              // active -> after and never emit a new animationstart event.
+              original.pause();
+              await original.ready;
               original.currentTime = 0;
+              await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
               original.play();
             }
+            // A replay's play task must settle before observing its completion.
+            await animation.ready;
             await animation.finished;
             return { sameObject: animation === original, completed: animation.playState === 'finished',
+              originalStartDefined: typeof originalStart === 'number',
               playbackChanged: animation !== original || animation.startTime !== originalStart };
           }, replay);
-          expect(result).toEqual({ sameObject: replay === 'original object', completed: true, playbackChanged: true });
+          expect(result.sameObject).toBe(replay === 'original object');
+          expect(result.completed).toBe(true);
+          expect(result.originalStartDefined).toBe(true);
+          expect(result.playbackChanged).toBe(true);
           await expect(element).toHaveAttribute('data-synthetic-replay-trusted', 'true');
           await expect(element).toHaveAttribute('data-synthetic-animations', '1');
         }

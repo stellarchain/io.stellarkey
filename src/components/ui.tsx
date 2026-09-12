@@ -606,6 +606,49 @@ function useSheetDrag({
   }, [enabled, panelRef, backdropRef, onDismiss]);
 }
 
+type ModalExitGeometryProps = {
+  closing: boolean;
+  presentation: ResolvedPresentation;
+  panelRef: React.RefObject<HTMLDivElement | null>;
+  children: React.ReactNode;
+};
+type ModalSize = { width: number; height: number };
+
+// Capture only non-sensitive shell dimensions at React's before-mutation
+// boundary. ResizeObserver can lag behind a last-moment layout change, while
+// layout effects run after the owner has already removed its private body.
+// React currently has no hook equivalent of getSnapshotBeforeUpdate.
+class ModalExitGeometry extends React.Component<ModalExitGeometryProps, object, ModalSize | null> {
+  getSnapshotBeforeUpdate(previous: ModalExitGeometryProps): ModalSize | null {
+    if (previous.closing || !this.props.closing || this.props.presentation === "fullscreen") return null;
+    const panel = this.props.panelRef.current;
+    if (!panel) return null;
+    const width = panel.offsetWidth;
+    const height = panel.offsetHeight;
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+
+  componentDidUpdate(previous: ModalExitGeometryProps, _state: object, snapshot: ModalSize | null) {
+    const panel = this.props.panelRef.current;
+    if (!panel) return;
+    if (snapshot) {
+      panel.style.height = `${snapshot.height}px`;
+      if (this.props.presentation !== "sheet") {
+        panel.style.width = `${snapshot.width}px`;
+        panel.style.maxWidth = "none";
+      }
+    } else if (previous.closing && !this.props.closing) {
+      panel.style.removeProperty("height");
+      panel.style.removeProperty("width");
+      panel.style.removeProperty("max-width");
+    }
+  }
+
+  render() {
+    return this.props.children;
+  }
+}
+
 export function Modal({
   open,
   onClose,
@@ -644,8 +687,6 @@ export function Modal({
   const [closing, setClosing] = useState(false);
   const [prevOpen, setPrevOpen] = useState(open);
   const [exitGeometry, setExitGeometry] = useState<{
-    width: number;
-    height: number;
     presentation: ResolvedPresentation;
     wide: boolean;
   } | null>(null);
@@ -658,7 +699,6 @@ export function Modal({
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const restoreFocusFrameRef = useRef<number | null>(null);
-  const [panelSize, setPanelSize] = useState<{ width: number; height: number } | null>(null);
   const discardActionRef = useRef<(() => void) | null>(null);
   const onCloseRef = useRef(onClose);
   const busyRef = useRef(busy);
@@ -701,8 +741,6 @@ export function Modal({
       setClosing(true);
       setConfirmingDiscard(false);
       setExitGeometry({
-        width: panelSize?.width ?? 0,
-        height: panelSize?.height ?? 0,
         presentation: livePresentation,
         wide,
       });
@@ -787,24 +825,6 @@ export function Modal({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [open, mounted]);
-
-  // Remember the rendered size so the shell can hold it through the exit.
-  useEffect(() => {
-    const panel = panelRef.current;
-    if (!mounted || !panel || typeof ResizeObserver === "undefined") return;
-    const record = () => {
-      // Layout size: transforms from the entrance or a drag must not distort it.
-      const width = panel.offsetWidth;
-      const height = panel.offsetHeight;
-      if (width > 0 && height > 0) {
-        setPanelSize((current) => current?.width === width && current.height === height ? current : { width, height });
-      }
-    };
-    record();
-    const observer = new ResizeObserver(record);
-    observer.observe(panel);
-    return () => observer.disconnect();
-  }, [mounted]);
 
   // iOS keeps a separate visual viewport while the keyboard is open. Following
   // it prevents a sheet from being centred behind the keyboard or clipped by
@@ -934,12 +954,6 @@ export function Modal({
         : `modal-dialog relative max-h-[90dvh] w-full min-w-0 overflow-y-auto md:max-h-[calc(100dvh-10rem)] scrollbar-none overscroll-contain ${MODAL_PANEL_CLASS} ${
             resolvedWide ? "max-w-xl" : "max-w-md"
           }`;
-  const holdStyle: React.CSSProperties | undefined = closing && exitGeometry && !isFullscreen
-    ? {
-        height: exitGeometry.height,
-        ...(isSheet ? {} : { width: exitGeometry.width, maxWidth: "none" }),
-      }
-    : undefined;
   const viewportReduced = visualViewport !== null
     && (visualViewport.offsetTop !== 0 || Math.abs(visualViewport.height - window.innerHeight) > 1);
   // Alerts always use their overlay's padded content height, including when
@@ -989,18 +1003,20 @@ export function Modal({
       className={`${overlayClass}${closing ? " closing" : ""}`}
     >
       <ModalLabelContext.Provider value={contextValue}>
-        <div
-          ref={panelRef}
-          data-modal-shell
-          inert={!open || closing}
-          tabIndex={-1}
-          style={{ ...heightStyle, ...holdStyle }}
-          className={`${panelClass} outline-none${closing ? " closing" : ""}`}
-        >
-          {isSheet && <div aria-hidden="true" data-sheet-handle className="modal-grabber" />}
-          <span id={busyReasonId} className="sr-only">{busy ? busyReason : ""}</span>
-          {children}
-        </div>
+        <ModalExitGeometry closing={closing} presentation={resolvedPresentation} panelRef={panelRef}>
+          <div
+            ref={panelRef}
+            data-modal-shell
+            inert={!open || closing}
+            tabIndex={-1}
+            style={heightStyle}
+            className={`${panelClass} outline-none${closing ? " closing" : ""}`}
+          >
+            {isSheet && <div aria-hidden="true" data-sheet-handle className="modal-grabber" />}
+            <span id={busyReasonId} className="sr-only">{busy ? busyReason : ""}</span>
+            {children}
+          </div>
+        </ModalExitGeometry>
         <ConfirmModal
           open={confirmingDiscard}
           title="Discard changes?"
