@@ -60,7 +60,7 @@
   --color-warn: #c93400;
 
   /* App-surface tokens (used by the custom component classes below). */
-  --color-elevated: rgba(255, 255, 255, 0.86);
+  --color-elevated: rgba(255, 255, 255, 0.92);
   --color-fill: rgba(118, 118, 128, 0.12);
   --color-fill-strong: rgba(120, 120, 128, 0.2);
   --color-hairline: rgba(0, 0, 0, 0.1);
@@ -72,6 +72,10 @@
   --color-scrim: 248, 248, 250;
   --shadow-strong: rgba(0, 0, 0, 0.16);
   --shadow-medium: rgba(0, 0, 0, 0.1);
+  --scrim-sheet: rgba(0, 0, 0, 0.18);
+  --scrim-alert: rgba(0, 0, 0, 0.24);
+  --scrim-dialog: rgba(0, 0, 0, 0.3);
+  --color-grabber: rgba(60, 60, 67, 0.3);
 
   /* Tailwind base palette, flipped. text-white -> dark ink, bg-white/x -> a
      dark tint, border-white/x -> a dark hairline, bg-black -> light. */
@@ -123,6 +127,10 @@
   --color-oncolor: #ffffff;
   --shadow-strong: rgba(0, 0, 0, 0.9);
   --shadow-medium: rgba(0, 0, 0, 0.7);
+  --scrim-sheet: rgba(0, 0, 0, 0.45);
+  --scrim-alert: rgba(0, 0, 0, 0.55);
+  --scrim-dialog: rgba(0, 0, 0, 0.75);
+  --color-grabber: rgba(255, 255, 255, 0.28);
 }
 
 .app-safe-top {
@@ -871,7 +879,7 @@ body::after {
     height: 5px;
     margin-left: -18px;
     border-radius: 3px;
-    background: rgba(255, 255, 255, 0.28);
+    background: var(--color-grabber);
   }
   [data-sheet-handle] {
     touch-action: pinch-zoom;
