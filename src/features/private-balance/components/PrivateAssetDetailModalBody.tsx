@@ -184,7 +184,7 @@ export function PrivateAssetDetailModalBody({
           </Button>
         }
         primary={
-          <Button type="button" variant="secondary" onClick={() => setStep('details')}>
+          <Button type="button" onClick={() => setStep('details')}>
             Private Payments settings
           </Button>
         }
