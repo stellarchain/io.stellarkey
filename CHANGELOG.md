@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Return keyboard focus to the payment result after a fast signing approval without overriding a newer focus choice.
+
 ## [1.5.0] - 2026-09-12
 
 ### Added

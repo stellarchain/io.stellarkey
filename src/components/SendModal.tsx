@@ -859,7 +859,7 @@ function SendInner({
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]">
               <IconCheck size={28} />
             </span>
-            <h2 ref={resultHeading} tabIndex={-1} className="display-h mt-4 text-xl font-light text-white outline-none">
+            <h2 ref={resultHeading} data-modal-return-focus tabIndex={-1} className="display-h mt-4 text-xl font-light text-white outline-none">
               {trackedSubmissionStatus === "confirmed" ? "Payment Confirmed" : "Payment Accepted"}
             </h2>
             <p className="mt-1 text-[13px] text-neutral-400">
@@ -884,7 +884,7 @@ function SendInner({
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]">
               <IconAlert size={28} />
             </span>
-            <h2 ref={resultHeading} tabIndex={-1} className="display-h mt-4 text-xl font-light text-white outline-none">Submission Status Unknown</h2>
+            <h2 ref={resultHeading} data-modal-return-focus tabIndex={-1} className="display-h mt-4 text-xl font-light text-white outline-none">Submission Status Unknown</h2>
             <p className="mt-2 max-w-md text-[13px] leading-relaxed text-neutral-300">
               Horizon did not confirm whether it accepted this transaction. Do not resubmit blindly.
               The wallet will keep checking the canonical hash.
@@ -901,7 +901,7 @@ function SendInner({
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]">
               <IconUsers size={26} />
             </span>
-            <h2 ref={resultHeading} tabIndex={-1} className="display-h mt-4 text-xl font-light text-white outline-none">Awaiting Cosigners</h2>
+            <h2 ref={resultHeading} data-modal-return-focus tabIndex={-1} className="display-h mt-4 text-xl font-light text-white outline-none">Awaiting Cosigners</h2>
             <p className="mt-1 max-w-[340px] text-[13px] leading-relaxed text-neutral-400">
               Your signature is collected (weight {myWeight} of{" "}
               {signerInfo?.thresholds.med_threshold ?? 0} needed). Share this envelope with a
