@@ -197,7 +197,7 @@ test("the changelog publishes the current release as semantic text", async ({ pa
     expect(category).toMatch(/^(Added|Changed|Deprecated|Removed|Fixed|Security)$/);
   }
   await expect(currentRelease.getByRole("heading", { level: 2, name: APPLICATION_VERSION })).toBeVisible();
-  await expect(currentRelease.locator('time[datetime="2026-09-01"]')).toHaveText("1 September 2026");
+  await expect(currentRelease.locator('time[datetime="2026-09-12"]')).toHaveText("12 September 2026");
   await expect(page.getByRole("link", { name: /source repository/i })).toHaveAttribute(
     "href",
     "https://github.com/stellarchain/io.stellarkey",
