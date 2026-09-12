@@ -917,12 +917,12 @@ export function Modal({
 
   const backdropDismisses = !isAlert && !isFullscreen;
   const overlayClass = isSheet
-    ? "modal-overlay app-safe-overlay fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0"
+    ? "modal-overlay app-safe-overlay fixed inset-0 z-50 flex items-end justify-center bg-[var(--scrim-sheet)] p-0"
     : isAlert
-      ? "modal-overlay app-safe-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-6 backdrop-blur-sm"
+      ? "modal-overlay app-safe-overlay fixed inset-0 z-50 flex items-center justify-center bg-[var(--scrim-alert)] p-6 backdrop-blur-sm"
       : isFullscreen
         ? "modal-overlay fixed inset-0 z-50 flex items-stretch justify-center bg-[var(--color-bg)] p-0"
-        : `modal-overlay app-safe-overlay fixed inset-0 z-50 flex ${anchor === "top" ? "items-start pt-[15vh]" : "items-center"} justify-center bg-black/75 p-4 backdrop-blur-md`;
+        : `modal-overlay app-safe-overlay fixed inset-0 z-50 flex ${anchor === "top" ? "items-start pt-[15vh]" : "items-center"} justify-center bg-[var(--scrim-dialog)] p-4 backdrop-blur-md`;
   const panelClass = isSheet
     ? `modal-sheet relative max-h-[calc(100dvh-var(--app-safe-area-top)-1.5rem)] w-full min-w-0 overflow-y-auto scrollbar-none overscroll-contain rounded-t-[28px] border border-b-0 border-white/[0.12] bg-[var(--color-elevated)] pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_50px_-20px_var(--shadow-strong)] ${
         resolvedWide ? "max-w-2xl" : "max-w-xl"
