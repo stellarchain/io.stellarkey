@@ -1,5 +1,6 @@
 # Private Balance Protocol Review — SOTA / Efficiency / Simplicity / Correctness / Speed
 
+**Date:** 2026-09-03
 **Revision reviewed:** `3db528e` (main, clean tree)
 **Scope:** `protocol/private-balance/` (circuits, `crates/protocol`, `crates/verifier`, `contracts/pool`, `packages/browser`) and `src/features/private-balance/`
 
