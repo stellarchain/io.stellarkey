@@ -33,6 +33,25 @@ test('every configured isolated component spec requires runner intent before bro
   }
 });
 
+test('synthetic component parallelism retains the full matrix and one fixture owner', async () => {
+  const { default: config } = await import('../playwright.private-components.config.ts');
+  const { default: base } = await import('../playwright.config.ts');
+  assert.equal(config.workers, 2);
+  assert.equal(config.fullyParallel, false, 'keep per-file ordering and independent browser contexts');
+  assert.equal(base.workers, 1, 'do not broaden parallelism into public or live-protocol runners');
+  assert.deepEqual(config.testMatch, [
+    'private-components.spec.ts', 'private-direct.spec.ts', 'ux-primitives.spec.ts',
+    'qr-freshness.spec.ts', 'modal-ownership.spec.ts', 'merchant-feedback.spec.ts', 'private-recovery.spec.ts',
+  ]);
+  assert.deepEqual(config.projects.map(project => project.name), ['desktop-chromium', 'iphone-webkit']);
+  assert.equal(config.metadata.requiredSyntheticComponents, true);
+  assert.equal(config.globalTeardown, './e2e/fixtures/private-components-teardown.mjs');
+  const runner = readFileSync(new URL('scripts/test-private-components.mjs', root), 'utf8');
+  assert.equal((runner.match(/\bspawn\(/g) ?? []).length, 1);
+  assert.match(runner, /await mkdir\(route\)/);
+  assert.match(runner, /constants\.COPYFILE_EXCL/);
+});
+
 test('wallet runner rejects capture overrides, unsafe reporters, and usable wallet imports', async () => {
   const policyUrl = new URL('scripts/testing/wallet-test-policy.mjs', root);
   assert.equal(existsSync(policyUrl), true, 'wallet runner needs a fail-closed capture policy');
