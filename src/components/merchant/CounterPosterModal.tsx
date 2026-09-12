@@ -408,7 +408,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
                         onClick={() => setChosenKey(key)}
                         className={`mono rounded-full px-3.5 text-[12px] font-semibold transition-colors ${
                           on
-                            ? "bg-[#0A84FF] text-white"
+                            ? "bg-[#0A84FF] text-[var(--color-oncolor)]"
                             : "bg-white/[0.08] text-neutral-400 hover:text-white"
                         }`}
                       >

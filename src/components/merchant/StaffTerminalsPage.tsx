@@ -282,7 +282,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                           {current && (
                             <span
                               aria-hidden="true"
-                              className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#17171a] bg-[#30D158]"
+                              className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[var(--color-panel)] bg-[#30D158]"
                             />
                           )}
                         </span>
@@ -314,7 +314,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                 onClick={() => setLockingOpen(true)}
                 className="row-hover ios-sep flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left"
               >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-white">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-[var(--color-oncolor)]">
                   <IconLock size={14} />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -1330,7 +1330,7 @@ function ThisDevice({
         <div className="flex w-full items-center gap-3.5 px-4 py-3.5">
           <span
             aria-hidden="true"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-white shadow-sm"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-[var(--color-oncolor)] shadow-sm"
           >
             <IconTerminal size={16} />
           </span>
@@ -1347,7 +1347,7 @@ function ThisDevice({
         <div className="flex w-full items-center gap-3.5 px-4 py-3.5 ios-sep">
           <span
             aria-hidden="true"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#FF9F0A] text-white shadow-sm"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#FF9F0A] text-[var(--color-oncolor)] shadow-sm"
           >
             <IconClock size={16} />
           </span>

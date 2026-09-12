@@ -37,7 +37,7 @@ function OpeningWalletFallback() {
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="min-h-11 rounded-xl bg-[#0A84FF] px-4 text-[14px] font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A84FF] focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+            className="min-h-11 rounded-xl bg-[#0A84FF] px-4 text-[14px] font-semibold text-[var(--color-oncolor)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A84FF] focus-visible:ring-offset-2 focus-visible:ring-offset-black"
           >
             Reload StellarKey
           </button>

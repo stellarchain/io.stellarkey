@@ -489,7 +489,7 @@ export function MerchantPage({
                     }}
                     className={`chip min-h-[44px] shrink-0 font-sans text-[13px] font-semibold ${
                       isActive
-                        ? "bg-[#0A84FF] text-white shadow-sm hover:bg-[#0A84FF]"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm hover:bg-[#0A84FF]"
                         : "text-neutral-300"
                     }`}
                   >

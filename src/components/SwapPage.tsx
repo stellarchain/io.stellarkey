@@ -448,7 +448,7 @@ export function SwapPage({
                 }}
                 className={`rounded-xl py-[5px] text-[12px] font-medium transition-all ${
                   slippage === val
-                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                     : "bg-white/[0.08] text-neutral-300 hover:text-white"
                 }`}
               >

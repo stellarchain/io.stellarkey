@@ -468,7 +468,7 @@ function CodeEditor({
                     onClick={() => toggleAsset(asset)}
                     className={`row-hover flex w-full items-center gap-3 px-3.5 py-3 text-left disabled:cursor-default ${index > 0 ? "border-t border-white/[0.08]" : ""}`}
                   >
-                    <span className={`flex h-[22px] w-[22px] items-center justify-center rounded-[7px] ${selected ? "bg-[#0A84FF] text-white" : "bg-white/[0.09] text-transparent"}`}>
+                    <span className={`flex h-[22px] w-[22px] items-center justify-center rounded-[7px] ${selected ? "bg-[#0A84FF] text-[var(--color-oncolor)]" : "bg-white/[0.09] text-transparent"}`}>
                       <IconCheck size={12} />
                     </span>
                     <span className="min-w-0 flex-1">
@@ -560,7 +560,7 @@ function CodeEditor({
                     type="button"
                     aria-pressed={selected}
                     onClick={() => setPreviewKey(key)}
-                    className={`mono rounded-full px-3.5 text-[12px] font-semibold transition-colors ${selected ? "bg-[#0A84FF] text-white" : "bg-white/[0.08] text-neutral-400 hover:text-white"}`}
+                    className={`mono rounded-full px-3.5 text-[12px] font-semibold transition-colors ${selected ? "bg-[#0A84FF] text-[var(--color-oncolor)]" : "bg-white/[0.08] text-neutral-400 hover:text-[var(--color-oncolor)]"}`}
                   >
                     {asset.code}
                   </button>

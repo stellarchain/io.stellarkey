@@ -1297,7 +1297,7 @@ export function SettingsPage({
                   href={item.href}
                   className={`row-hover flex min-h-14 w-full items-center gap-3.5 px-4 py-3.5 text-left ${index > 0 ? "ios-sep" : ""}`}
                 >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-white">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-[var(--color-oncolor)]">
                     <IconBook size={15} />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -1344,7 +1344,7 @@ export function SettingsPage({
                   rel="noreferrer"
                   className={`row-hover flex min-h-14 w-full items-center gap-3.5 px-4 py-3.5 text-left ${index > 0 ? "ios-sep" : ""}`}
                 >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#0A84FF] text-white">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#0A84FF] text-[var(--color-oncolor)]">
                     <IconShield size={15} />
                   </span>
                   <span className="min-w-0 flex-1">
