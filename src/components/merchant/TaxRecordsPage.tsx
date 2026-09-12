@@ -836,7 +836,7 @@ function Figure({
   tone?: "plain" | "neg";
 }) {
   return (
-    <div className="min-w-0 bg-[#1c1c1e] px-4 py-3">
+    <div className="min-w-0 bg-[var(--color-panel)] px-4 py-3">
       <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">{label}</p>
       <p
         className={`mono mt-0.5 truncate text-[16px] font-semibold ${

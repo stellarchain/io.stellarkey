@@ -130,7 +130,7 @@ export function ServiceWorkerRegistration() {
     <div
       role="status"
       aria-live="polite"
-      className="fade-up fixed inset-x-3 z-[120] mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#1c1c1e]/95 px-4 py-3 text-white shadow-2xl backdrop-blur-xl"
+      className="fade-up fixed inset-x-3 z-[120] mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[var(--color-elevated)] px-4 py-3 text-white shadow-2xl backdrop-blur-xl"
       style={{ bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
     >
       <span className="min-w-0">

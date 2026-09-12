@@ -127,7 +127,7 @@ export function AddressBookPage({
         <button
           type="button"
           onClick={() => openEditor(null)}
-          className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-white sm:w-auto sm:gap-1.5 sm:px-3.5 shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-all hover:bg-[#2492ff] active:scale-90"
+          className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-[var(--color-oncolor)] sm:w-auto sm:gap-1.5 sm:px-3.5 shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-all hover:bg-[#2492ff] active:scale-90"
           title="Add Contact"
           aria-label="Add Contact"
         >

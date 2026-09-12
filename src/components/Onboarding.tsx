@@ -392,7 +392,7 @@ export function Onboarding() {
 
           {/* Action card */}
           <div className="mx-auto w-full max-w-[440px]">
-            <div className="rounded-[28px] border border-white/[0.12] bg-[#121214]/95 p-6 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
+            <div className="rounded-[28px] border border-white/[0.12] bg-[var(--color-elevated)] p-6 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
               {prioritizeRestore && (
                 <div role="status" className="mb-4 rounded-2xl border border-[#0A84FF]/25 bg-[#0A84FF]/[0.08] p-4">
                   <p className="text-[13px] font-semibold text-white">Restore your encrypted backup first</p>
@@ -701,7 +701,7 @@ export function Onboarding() {
         >
           <span
             className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all ${
-              saved ? "border-[#0A84FF] bg-[#0A84FF] text-white" : "border-white/20 bg-white/[0.05]"
+              saved ? "border-[#0A84FF] bg-[#0A84FF] text-[var(--color-oncolor)]" : "border-white/20 bg-white/[0.05]"
             }`}
           >
             {saved && <IconCheck size={12} />}
@@ -993,7 +993,7 @@ function StepShell({
         <h1 className="display-h text-[30px] font-bold tracking-tight text-white">{title}</h1>
         <p className="mt-2 text-[14px] leading-relaxed text-neutral-400">{subtitle}</p>
 
-        <div className="mt-7 space-y-4 rounded-[28px] border border-white/[0.12] bg-[#121214]/95 p-6 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
+        <div className="mt-7 space-y-4 rounded-[28px] border border-white/[0.12] bg-[var(--color-elevated)] p-6 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
           {children}
         </div>
         <BuildIdentity className="mt-6 self-center text-[10px] text-neutral-500 transition-colors hover:text-neutral-300" />

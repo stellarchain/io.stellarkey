@@ -35,7 +35,7 @@ export function PrivateShieldNotch({
         <span
           role="tooltip"
           aria-hidden="true"
-          className="pointer-events-none absolute bottom-full left-0 z-20 mb-1.5 hidden whitespace-nowrap rounded-lg border border-white/10 bg-[#2c2c2e] px-2 py-1 text-[10px] font-semibold text-neutral-100 shadow-lg group-hover/private-notch:block group-focus-within/private-notch:block [:is(button,a):focus-visible_&]:block"
+          className="pointer-events-none absolute bottom-full left-0 z-20 mb-1.5 hidden whitespace-nowrap rounded-lg border border-white/10 bg-[var(--color-raised)] px-2 py-1 text-[10px] font-semibold text-neutral-100 shadow-lg group-hover/private-notch:block group-focus-within/private-notch:block [:is(button,a):focus-visible_&]:block"
         >
           {label}
         </span>

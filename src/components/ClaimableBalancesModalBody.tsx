@@ -396,7 +396,7 @@ export function ClaimableBalancesModalBody({
                       </span>
                       {ready ? (
                         checked && (
-                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-white">
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-[var(--color-oncolor)]">
                             <IconCheck size={11} />
                           </span>
                         )

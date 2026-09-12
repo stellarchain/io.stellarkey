@@ -346,7 +346,7 @@ export function AddAccountModalBody({
                   }}
                   className={`min-h-11 rounded-xl text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                     hardwareIndex === index
-                      ? "bg-[#0A84FF] text-white"
+                      ? "bg-[#0A84FF] text-[var(--color-oncolor)]"
                       : "bg-white/[0.06] text-neutral-300 hover:bg-white/[0.1] hover:text-white"
                   }`}
                 >

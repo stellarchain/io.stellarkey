@@ -59,7 +59,7 @@ function ActionButton({
     >
       <span className={`flex h-[clamp(48px,16vw,60px)] w-[clamp(48px,16vw,60px)] items-center justify-center rounded-full transition-[background-color,transform] group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.86] ${
         primary
-          ? 'bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_26px_-8px_rgba(10,132,255,0.55)]'
+          ? 'bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-[var(--color-oncolor)] shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_26px_-8px_rgba(10,132,255,0.55)]'
           : 'border border-white/[0.1] bg-white/[0.07] text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]'
       } ${disabled ? 'opacity-30' : 'group-hover:bg-white/[0.12]'}`}>
         {icon}

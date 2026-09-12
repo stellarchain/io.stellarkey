@@ -29,7 +29,7 @@ export function AssetAvatar({
         <span
           aria-hidden="true"
           className="flex items-center justify-center rounded-full border border-white/[0.12] text-white shadow-inner"
-          style={{ width: size, height: size, background: '#000000' }}
+          style={{ width: size, height: size, background: 'var(--color-raised)' }}
         >
           <IconStellar size={iconSize} />
         </span>

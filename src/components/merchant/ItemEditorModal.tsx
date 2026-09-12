@@ -485,7 +485,7 @@ function ItemEditor({
                     <span
                       aria-hidden="true"
                       className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[7px] transition-colors ${
-                        on ? "bg-[#0A84FF] text-white" : "bg-white/[0.09] text-transparent"
+                        on ? "bg-[#0A84FF] text-[var(--color-oncolor)]" : "bg-white/[0.09] text-transparent"
                       }`}
                     >
                       <IconCheck size={12} />

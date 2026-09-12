@@ -537,7 +537,7 @@ function SendPrivateFlow({
                   onClick={() => setMemo(preset)}
                   className={`flex items-center rounded-xl px-3 text-[12px] font-medium transition-colors ${
                     memo === preset
-                      ? 'bg-[#0A84FF] font-semibold text-white'
+                      ? 'bg-[#0A84FF] font-semibold text-[var(--color-oncolor)]'
                       : 'bg-white/[0.06] text-neutral-400 hover:text-white'
                   }`}
                 >

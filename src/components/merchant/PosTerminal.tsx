@@ -304,7 +304,7 @@ function ModifierSheetBody({
                     >
                       <span
                         className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
-                          on ? "bg-[#0A84FF] text-white" : "bg-white/[0.1] text-transparent"
+                          on ? "bg-[#0A84FF] text-[var(--color-oncolor)]" : "bg-white/[0.1] text-transparent"
                         }`}
                       >
                         <IconCheck size={12} />

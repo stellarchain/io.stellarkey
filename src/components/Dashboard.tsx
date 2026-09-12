@@ -1761,7 +1761,7 @@ export function Dashboard() {
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "merchant"
-                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                         : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
@@ -1790,7 +1790,7 @@ export function Dashboard() {
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "orders"
-                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                         : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
@@ -1827,7 +1827,7 @@ export function Dashboard() {
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "catalogue"
-                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                         : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
@@ -1846,7 +1846,7 @@ export function Dashboard() {
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "invoices" || view === "links"
-                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                         : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
@@ -1864,7 +1864,7 @@ export function Dashboard() {
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "customers"
-                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                         : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
@@ -1882,7 +1882,7 @@ export function Dashboard() {
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "insights"
-                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                         : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
@@ -1903,7 +1903,7 @@ export function Dashboard() {
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "home"
-                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                     : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                 }`}
               >
@@ -1923,7 +1923,7 @@ export function Dashboard() {
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "activity"
-                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                     : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                 }`}
               >
@@ -1946,7 +1946,7 @@ export function Dashboard() {
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "swap"
-                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                     : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                 }`}
               >
@@ -1964,7 +1964,7 @@ export function Dashboard() {
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "contacts"
-                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                     : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                 }`}
               >
@@ -2000,7 +2000,7 @@ export function Dashboard() {
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "settings"
-                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                     : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                 }`}
               >
@@ -2587,7 +2587,7 @@ export function Dashboard() {
                       }}
                       className={`max-w-[160px] truncate rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors ${
                         portfolioView === opt.id
-                          ? "bg-[#0A84FF] text-white shadow-sm"
+                          ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                           : "text-neutral-400 hover:text-white"
                       }`}
                     >
@@ -3811,7 +3811,7 @@ function ActionButton({
       <span
         className={`flex h-12 w-12 items-center justify-center rounded-full pointer-coarse:h-[clamp(48px,16vw,60px)] pointer-coarse:w-[clamp(48px,16vw,60px)] transition-[background-color,border-color,transform,filter] duration-[var(--motion-duration-emphasized)] ease-[cubic-bezier(0.34,1.4,0.64,1)] group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.84] group-active:duration-[var(--motion-duration-fast)] ${
           primary
-            ? "bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-1px_1px_rgba(0,0,0,0.15),0_10px_26px_-8px_rgba(10,132,255,0.6)] group-hover:brightness-110"
+            ? "bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-[var(--color-oncolor)] shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-1px_1px_rgba(0,0,0,0.15),0_10px_26px_-8px_rgba(10,132,255,0.6)] group-hover:brightness-110"
             : "border border-white/[0.1] bg-white/[0.07] text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_22px_-12px_rgba(0,0,0,0.7)] backdrop-blur-xl group-hover:border-white/[0.16] group-hover:bg-white/[0.12]"
         } ${disabled ? "opacity-30" : ""}`}
       >
@@ -3897,7 +3897,7 @@ function NetworkModal({
                 </div>
               </div>
               {isActive && (
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0A84FF] text-white shrink-0">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0A84FF] text-[var(--color-oncolor)] shrink-0">
                   <IconCheck size={11} />
                 </span>
               )}
@@ -3941,7 +3941,7 @@ function AccountMenu({
           >
             <AccountMark publicKey={activeAccount.publicKey} size={28} />
             <span
-              className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#18181b]"
+              className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[var(--color-panel)]"
               style={{ background: network === "mainnet" ? "#30d158" : "#ff9f0a" }}
             />
           </button>
@@ -4143,7 +4143,7 @@ function PriceCard() {
               }}
               className={`flex-1 rounded-full px-3 py-1 text-[11.5px] font-semibold transition-[color,background-color,box-shadow] ${
                 mode === opt.id
-                  ? "bg-[#0A84FF] text-white shadow-sm"
+                  ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                   : "text-neutral-400 hover:text-white"
               }`}
             >

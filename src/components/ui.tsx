@@ -15,11 +15,11 @@ import { IconCheck, IconChevronDown, IconClose, IconCopy } from "./icons";
 
 /** Shared panel chrome for modal surfaces (Modal, CommandPalette). */
 export const MODAL_PANEL_CLASS =
-  "rounded-[28px] border border-white/[0.12] bg-[#121214]/95 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl";
+  "rounded-[28px] border border-white/[0.12] bg-[var(--color-elevated)] shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl";
 
 /** Shared chrome for floating popover surfaces (Select, Dropdown). */
 const POPOVER_PANEL_CLASS =
-  "menu-pop fixed z-[70] overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.12] bg-[#1e1e22]/95 p-1.5 shadow-[0_24px_60px_-18px_rgba(0,0,0,0.9)] backdrop-blur-2xl";
+  "menu-pop fixed z-[70] overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.12] bg-[var(--color-elevated)] p-1.5 shadow-[0_24px_60px_-18px_rgba(0,0,0,0.9)] backdrop-blur-2xl";
 
 /** Offset fixed portals only when their owning dialog establishes a containing block. */
 function fixedContainingBlockBounds(container: HTMLElement): DOMRect | null {
@@ -197,7 +197,7 @@ export function Tooltip({
             top: position?.top ?? 0,
             visibility: position ? "visible" : "hidden",
           }}
-          className="z-[90] w-max max-w-52 rounded-lg border border-white/[0.12] bg-[#27272b]/95 px-2.5 py-1.5 text-center text-[11px] font-semibold leading-tight text-white shadow-xl backdrop-blur-xl"
+          className="z-[90] w-max max-w-52 rounded-lg border border-white/[0.12] bg-[var(--color-elevated)] px-2.5 py-1.5 text-center text-[11px] font-semibold leading-tight text-white shadow-xl backdrop-blur-xl"
         >
           {/* Cover the visual gap without a timer or a focusable target. */}
           <span aria-hidden="true" className="absolute" style={position?.bridgeEdge === "bottom" || position?.bridgeEdge === "top"
@@ -924,13 +924,13 @@ export function Modal({
         ? "modal-overlay fixed inset-0 z-50 flex items-stretch justify-center bg-black p-0"
         : `modal-overlay app-safe-overlay fixed inset-0 z-50 flex ${anchor === "top" ? "items-start pt-[15vh]" : "items-center"} justify-center bg-black/75 p-4 backdrop-blur-md`;
   const panelClass = isSheet
-    ? `modal-sheet relative max-h-[calc(100dvh-var(--app-safe-area-top)-1.5rem)] w-full min-w-0 overflow-y-auto scrollbar-none overscroll-contain rounded-t-[28px] border border-b-0 border-white/[0.12] bg-[#121214]/98 pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_50px_-20px_rgba(0,0,0,0.9)] ${
+    ? `modal-sheet relative max-h-[calc(100dvh-var(--app-safe-area-top)-1.5rem)] w-full min-w-0 overflow-y-auto scrollbar-none overscroll-contain rounded-t-[28px] border border-b-0 border-white/[0.12] bg-[var(--color-elevated)] pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_50px_-20px_rgba(0,0,0,0.9)] ${
         resolvedWide ? "max-w-2xl" : "max-w-xl"
       }`
     : isAlert
-      ? "modal-alert relative max-h-full w-full min-w-0 max-w-[270px] sm:max-w-[300px] overflow-y-auto scrollbar-none overscroll-contain rounded-[26px] border border-white/[0.12] bg-[#1c1c1e]/98 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl"
+      ? "modal-alert relative max-h-full w-full min-w-0 max-w-[270px] sm:max-w-[300px] overflow-y-auto scrollbar-none overscroll-contain rounded-[26px] border border-white/[0.12] bg-[var(--color-elevated)] shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl"
       : isFullscreen
-        ? "modal-fullscreen relative h-full w-full min-w-0 max-w-none overflow-y-auto scrollbar-none overscroll-contain bg-[#0A0A0B]"
+        ? "modal-fullscreen relative h-full w-full min-w-0 max-w-none overflow-y-auto scrollbar-none overscroll-contain bg-[var(--color-bg)]"
         : `modal-dialog relative max-h-[90dvh] w-full min-w-0 overflow-y-auto md:max-h-[calc(100dvh-10rem)] scrollbar-none overscroll-contain ${MODAL_PANEL_CLASS} ${
             resolvedWide ? "max-w-xl" : "max-w-md"
           }`;
@@ -1060,7 +1060,7 @@ export function ModalHeader({
   return (
     <div
       data-sheet-handle={modal?.presentation === "sheet" ? "true" : undefined}
-      className={`sticky top-0 z-10 flex items-center gap-3 border-b border-white/[0.08] bg-[#121214]/94 px-4 py-4 backdrop-blur-xl sm:px-6 ${className}`}
+      className={`sticky top-0 z-10 flex items-center gap-3 border-b border-white/[0.08] bg-[var(--color-elevated)] px-4 py-4 backdrop-blur-xl sm:px-6 ${className}`}
     >
       {onBack && (
         <IOSBackButton
