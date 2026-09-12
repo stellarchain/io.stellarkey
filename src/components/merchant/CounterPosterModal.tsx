@@ -371,7 +371,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
           {/* Preview: the same drawing the printer gets, scaled by its width. */}
           <div
             aria-label="Poster preview"
-            className="w-full max-w-[248px] shrink-0 overflow-hidden rounded-[10px] shadow-[0_18px_40px_-16px_rgba(0,0,0,0.9)] ring-1 ring-white/15"
+            className="w-full max-w-[248px] shrink-0 overflow-hidden rounded-[10px] shadow-[0_18px_40px_-16px_var(--shadow-strong)] ring-1 ring-white/15"
             style={{ aspectRatio: `${A6_WIDTH_MM} / ${A6_HEIGHT_MM}` }}
           >
             {canRenderPaymentArtifact ? (

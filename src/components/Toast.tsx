@@ -115,7 +115,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
         if (press.y - event.clientY > TOAST_SWIPE_DISMISS_PX || Math.abs(event.clientY - press.y) < 6) onDismiss();
       }}
       onPointerCancel={() => { pressRef.current = null; }}
-      className={`${toast.leaving ? "toast-leave" : "toast-enter"} pointer-events-auto flex min-w-0 max-w-full cursor-default touch-pan-x select-none items-center gap-2.5 rounded-2xl border border-white/15 bg-neutral-900/95 py-2.5 pl-3.5 pr-5 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.9)] backdrop-blur-2xl`}
+      className={`${toast.leaving ? "toast-leave" : "toast-enter"} pointer-events-auto flex min-w-0 max-w-full cursor-default touch-pan-x select-none items-center gap-2.5 rounded-2xl border border-white/15 bg-neutral-900/95 py-2.5 pl-3.5 pr-5 shadow-[0_20px_50px_-10px_var(--shadow-strong)] backdrop-blur-2xl`}
     >
       <span
         aria-hidden="true"
