@@ -932,7 +932,7 @@ function SendInner({
                   style={
                     knownSelected
                       ? { background: knownSelected.color, color: "#fff" }
-                      : { background: "rgba(255,255,255,0.08)", color: "#fff" }
+                      : { background: "var(--color-fill-strong)", color: "var(--color-ink)" }
                   }
                 >
                   {reviewedAsset?.code}
