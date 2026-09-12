@@ -2537,6 +2537,31 @@ export function SectionHeader({
   );
 }
 
+/**
+ * The canonical rounded icon tile: a coloured square with a centred glyph, used
+ * beside a label in list rows and section intros. Keeps the glyph on-colour
+ * (always light) so it stays legible on the tint in both appearances.
+ */
+export function IconTile({
+  icon,
+  tint,
+  className = "",
+}: {
+  icon: React.ReactNode;
+  tint: string;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--color-oncolor)] shadow-sm ${className}`}
+      style={{ background: tint }}
+    >
+      {icon}
+    </span>
+  );
+}
+
 export function EmptyState({
   icon,
   title,

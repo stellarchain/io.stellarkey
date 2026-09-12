@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { SectionHeader } from "@/components/ui";
+import { IconTile, SectionHeader } from "@/components/ui";
 import { fetchBalances } from "@/lib/api";
 import { POPULAR_ASSETS } from "@/lib/assets";
 import {
@@ -211,12 +211,7 @@ function Block({
   return (
     <section className="panel p-4">
       <div className="flex items-center gap-2.5 pb-3">
-        <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
-          style={{ background: tint }}
-        >
-          {icon}
-        </span>
+        <IconTile tint={tint} icon={icon} />
         <h3 className="text-[15px] font-semibold text-white">{title}</h3>
       </div>
       {children}
