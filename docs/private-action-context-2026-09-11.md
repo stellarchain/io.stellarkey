@@ -33,3 +33,9 @@
 - The synthetic browser fixture now supplies exact source-account/SAC deposit authorization, still checked by the production review validator; it injects real worker error events before building and during pending/uncertain submission. No real-wallet browser data, external submission, screenshots, traces or video are used.
 - Independent scoped review found no blockers. A separate pre-existing follow-up remains: `watchBroadcastOutcome`'s detached reconciliation should gain its own revocable publisher authority. This patch guards watcher startup, not its later detached publication.
 - No release verification, tag, commit, funded transaction, human assistive-technology or physical-device claim is made by these checks.
+
+## Detached watcher follow-up — 2026-09-12
+
+The detached-publication follow-up above is now addressed. Outcome watchers capture revocable wallet/runtime authority, check it across polling and reconciliation awaits, and serialize journal classification with canonical sync. A completed proof worker may still fail independently. Revocation stops publication and further polling, without undoing an already-authorized durable journal commit.
+
+Thirty new failing regressions established the missing behavior before the fix. The focused action-context, submission, mutex and proof-exposure run then passed all 89 cases, including lock/unlock and lease-loss/reacquisition races, scope/endpoint changes, unmount, queued recovery, and transport/reconciliation failures. These are synthetic, in-memory checks of the production callbacks and vault guards, not evidence of a funded transaction.

@@ -1846,41 +1846,58 @@ export function PrivateBalanceProvider({
     context: DeploymentContext,
     driver: IndexedDbEncryptedRecordDriver,
   ) => {
-    // Read-only trigger: the poll never holds the mutex; the canonical sync
-    // (and, for FAILED, the recovery classifier) stays the sole mutator.
+    // This detached publisher owns the opening wallet/runtime generation, not
+    // the lifetime of the completed proof worker. Never borrow a newer session.
+    const assertCurrent = capturePrivateActionContext();
+    assertCurrent();
+    // Polling and canonical sync stay outside the recovery lock. Only the
+    // current journal read/classification/publication is serialized with sync.
     void pollBroadcastPrivateBalanceTransaction({
       transactionHash,
       rpc,
+      assertCurrent,
       reconcile: async rpcStatus => {
+        assertCurrent();
         const performSync = performSyncRef.current;
-        if (!performSync) return true;
+        if (!performSync) return false;
         await performSync(false, { background: true });
-        return withPrivacySessionRoot(accountId, context, async (_sessionRoot, storageKey) => {
-          const current = await loadPrivateBalanceState(storageScope, storageKey, driver);
-          const pending = current?.pendingActions.find(action => action.id === actionId);
-          if (!current || !pending) return true;
-          if (rpcStatus !== 'FAILED' || !['broadcast', 'ambiguous'].includes(pending.status)) {
-            return false;
-          }
-          // FAILED still routes through the classifier against the freshly
-          // completed canonical sync; the RPC status alone never releases.
-          const recovered = await recoverPrivateBalanceAction({
-            context: storageScope,
-            storageKey,
-            actionId,
-            rpc,
-            scanCanonicalTranscript: async () => ({
-              actionFields: current.activities.map(activity => activity.id),
-              nullifiers: current.activities.flatMap(activity => activity.nullifiers),
-            }),
-            storageDriver: driver,
+        assertCurrent();
+        return mutexRef.current.runExclusive(() => {
+          assertCurrent();
+          return withPrivacySessionRoot(accountId, context, async (_sessionRoot, storageKey) => {
+            assertCurrent();
+            const current = await loadPrivateBalanceState(storageScope, storageKey, driver);
+            assertCurrent();
+            const pending = current?.pendingActions.find(action => action.id === actionId);
+            if (!current || !pending) return true;
+            if (rpcStatus !== 'FAILED' || !['broadcast', 'ambiguous'].includes(pending.status)) {
+              return false;
+            }
+            // FAILED still routes through the canonical classifier. An already
+            // authorized journal commit may finish after revocation, but its
+            // decrypted result must never repopulate the retired publisher.
+            const recovered = await recoverPrivateBalanceAction({
+              context: storageScope,
+              storageKey,
+              actionId,
+              rpc,
+              scanCanonicalTranscript: async () => {
+                assertCurrent();
+                return {
+                  actionFields: current.activities.map(activity => activity.id),
+                  nullifiers: current.activities.flatMap(activity => activity.nullifiers),
+                };
+              },
+              storageDriver: driver,
+            });
+            assertCurrent();
+            reflectDurableState(recovered.state);
+            return !recovered.state.pendingActions.some(action => action.id === actionId);
           });
-          reflectDurableState(recovered.state);
-          return !recovered.state.pendingActions.some(action => action.id === actionId);
         });
       },
     }).catch(() => undefined);
-  }, [accountId, reflectDurableState, storageScope]);
+  }, [accountId, capturePrivateActionContext, reflectDurableState, storageScope]);
 
   const submitActionInternal = useCallback(async (
     preparedReview: PreparedPrivateActionReview,

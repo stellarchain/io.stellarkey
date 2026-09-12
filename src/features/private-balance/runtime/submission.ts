@@ -42,9 +42,12 @@ export async function pollBroadcastPrivateBalanceTransaction(input: {
   transactionHash: string;
   rpc: PrivateBalanceRpcLookup;
   reconcile(rpcStatus: 'SUCCESS' | 'FAILED'): Promise<boolean>;
+  /** Revocable publisher ownership; cancellation never changes the journal. */
+  assertCurrent?(): void;
   delays?: readonly number[];
   sleep?: (milliseconds: number) => Promise<void>;
 }): Promise<'confirmed' | 'pending'> {
+  input.assertCurrent?.();
   if (!HEX_32.test(input.transactionHash)) {
     throw new Error('Private Balance broadcast transaction hash is invalid');
   }
@@ -52,24 +55,31 @@ export async function pollBroadcastPrivateBalanceTransaction(input: {
     setTimeout(resolve, milliseconds);
   }));
   for (const delay of input.delays ?? PRIVATE_BROADCAST_POLL_DELAYS_MS) {
+    input.assertCurrent?.();
     if (!Number.isSafeInteger(delay) || delay < 0) {
       throw new Error('Private Balance broadcast polling delay is invalid');
     }
     await sleep(delay);
+    input.assertCurrent?.();
     let status: 'SUCCESS' | 'FAILED' | 'NOT_FOUND';
     try {
       const response = await input.rpc.getTransaction(input.transactionHash);
+      input.assertCurrent?.();
       if (response.txHash && response.txHash.toLowerCase() !== input.transactionHash) {
         throw new Error('RPC returned a different private transaction hash');
       }
       status = response.status;
     } catch {
+      input.assertCurrent?.();
       continue;
     }
     if (status !== 'SUCCESS' && status !== 'FAILED') continue;
     try {
-      if (await input.reconcile(status)) return 'confirmed';
+      const reconciled = await input.reconcile(status);
+      input.assertCurrent?.();
+      if (reconciled) return 'confirmed';
     } catch {
+      input.assertCurrent?.();
       // The durable pending journal remains authoritative; keep polling and
       // otherwise leave the action for the next canonical sync.
     }
