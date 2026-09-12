@@ -97,7 +97,7 @@ test("Dashboard owns the only mobile page gutter and Settings restores desktop s
     /max-w-\[520px\][^"\n]*min-w-0[^"\n]*px-0[^"\n]*pb-0/,
   );
   assert.match(ui, /modal-dialog[^`]*min-w-0/);
-  assert.match(ui, /bg-\[#121214\]\/94 px-4 py-4[^"\n]*sm:px-6/);
+  assert.match(ui, /bg-\[var\(--color-elevated\)\] px-4 py-4[^"\n]*sm:px-6/);
 });
 
 test("swap amount cards give mobile numbers and asset selectors separate layout ownership", () => {

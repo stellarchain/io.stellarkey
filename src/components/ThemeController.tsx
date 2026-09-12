@@ -5,8 +5,7 @@ import {
   applyResolvedTheme,
   getStoredThemePreference,
   resolveTheme,
-  THEME_CHANGE_EVENT,
-  THEME_STORAGE_KEY,
+  subscribeThemePreference,
 } from '@/lib/theme';
 
 /** Keeps <html data-theme> correct after first paint: reapplies when the OS
@@ -30,14 +29,11 @@ export function ThemeController() {
     apply();
     const media = window.matchMedia('(prefers-color-scheme: light)');
     const onMedia = () => { if (getStoredThemePreference() === 'system') apply(); };
-    const onStorage = (event: StorageEvent) => { if (event.key === null || event.key === THEME_STORAGE_KEY) apply(); };
     media.addEventListener('change', onMedia);
-    window.addEventListener(THEME_CHANGE_EVENT, apply);
-    window.addEventListener('storage', onStorage);
+    const unsubscribe = subscribeThemePreference(apply);
     return () => {
       media.removeEventListener('change', onMedia);
-      window.removeEventListener(THEME_CHANGE_EVENT, apply);
-      window.removeEventListener('storage', onStorage);
+      unsubscribe();
     };
   }, []);
   return null;

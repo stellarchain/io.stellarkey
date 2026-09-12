@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Choose System, Light and Dark appearance across wallet and merchant screens.
 - Choose another software account to pay Private Payments network fees; the selected wallet account remains the default. Watch-only and hardware fee payers are not supported.
 - Recover held private funds with a self-transfer, keeping them reserved until the recovery or original payment is confirmed.
 - Recover sent-payment history, recipient check codes and memos from seed. An optional setting disables this for future payments; existing records and backups are unchanged.
@@ -33,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Appearance choices survive blocked browser storage and stay synchronized across open tabs; corrected text and control contrast in both themes.
 - Account rows and the combined portfolio include public and saved private balances, with labelled Testnet reference values. Switching accounts no longer changes which funds are counted.
 - Dialogs retain their shell and keyboard focus during tab changes, menu selection and asynchronous actions; closing restores focus to the opener.
 - Late QR, file-read, pagination and dialog results cannot replace newer requests. Loading, copy and error feedback stays beside the relevant action.
@@ -48,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Updated ESLint's YAML parser to js-yaml 4.3.2 and included development dependencies in the application high/critical security gate.
+- Enabled repository secret scanning, push protection, Dependabot security fixes and CodeQL analysis; protected main-branch review/CI requirements and immutable release tags.
 - Detached private-payment status watchers stop publishing after wallet lock, account or endpoint changes, lost tab ownership, or unmount, while preserving already-authorized canonical transaction tracking.
 - Payment signing uses the exact reviewed transaction and rechecks account, network, session and password policy. Multisig edits use canonical signer state; hardware approvals cannot survive a wallet lock.
 - Lock and session changes revoke pending unlocks, signing, discovery and queued edits. Inactivity locking covers recovery screens and device sleep; full reset clears wallet-owned browser storage.
@@ -203,5 +207,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Introduced password-wrapped vault master keys, scoped secret access, strong new-vault password policy, authenticated merchant records, failure-atomic restore, issuer-domain validation, bounded Stellar TOML responses, encrypted contacts and notes, and staged service-worker updates.
-- Updated ESLint's YAML parser to js-yaml 4.3.2 and included development dependencies in the application high/critical security gate.
-- Enabled repository secret scanning, push protection, Dependabot security fixes and CodeQL analysis; protected main-branch review/CI requirements and immutable release tags.

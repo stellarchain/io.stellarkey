@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-@theme inline {
+@theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
     "Helvetica Neue", Inter, system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
@@ -51,13 +51,13 @@
   --color-line: rgba(60, 60, 67, 0.29);
   --color-line-strong: rgba(60, 60, 67, 0.5);
   --color-ink: #000000;
-  --color-muted: rgba(60, 60, 67, 0.6);
-  --color-faint: rgba(60, 60, 67, 0.5);
-  --color-accent: #007aff;
-  --color-accent-2: #0a84ff;
-  --color-pos: #248a3d;
-  --color-neg: #d70015;
-  --color-warn: #c93400;
+  --color-muted: #515155;
+  --color-faint: #57575c;
+  --color-accent: #0055b8;
+  --color-accent-2: #0055b8;
+  --color-pos: #16652b;
+  --color-neg: #b42318;
+  --color-warn: #854d0e;
 
   /* App-surface tokens (used by the custom component classes below). */
   --color-elevated: rgba(255, 255, 255, 0.92);
@@ -67,8 +67,8 @@
   --color-hairline-strong: rgba(0, 0, 0, 0.16);
   --color-control-thumb: #ffffff;
   --color-switch-off: #e9e9ea;
-  --color-primary-fill: #007aff;
-  --color-primary-fill-hover: #0071eb;
+  --color-primary-fill: #006edb;
+  --color-primary-fill-hover: #005fbe;
   --color-scrim: 248, 248, 250;
   --shadow-strong: rgba(0, 0, 0, 0.16);
   --shadow-medium: rgba(0, 0, 0, 0.1);
@@ -88,8 +88,8 @@
   --color-neutral-100: #1c1c1e;
   --color-neutral-200: #2c2c2e;
   --color-neutral-300: #3a3a3c;
-  --color-neutral-400: #6c6c70;
-  --color-neutral-500: #8e8e93;
+  --color-neutral-400: #515155;
+  --color-neutral-500: #57575c;
   --color-neutral-600: #aeaeb2;
   --color-neutral-700: #c7c7cc;
   --color-neutral-800: #e5e5ea;
@@ -101,9 +101,55 @@
   --color-oncolor: #ffffff;
 }
 
-/* Dark tokens as runtime variables (the @theme inline block above inlines them
-   into utilities but does not always emit them), so the custom component classes
-   below can reference one set of names that light mode overrides. */
+/* Small action text needs the elevated accent on raised dark panels. */
+:root:not([data-theme="light"]) .text-\[\#0A84FF\],
+:root:not([data-theme="light"]) .text-accent {
+  color: #409cff;
+}
+
+/* Legacy foreground utilities share the semantic light-theme contrast values.
+   Filled accents keep their existing fill and explicit on-colour foreground. */
+:root[data-theme="light"] .text-\[\#0A84FF\],
+:root[data-theme="light"] .text-\[\#007AFF\],
+:root[data-theme="light"] .text-\[\#64AFFF\],
+:root[data-theme="light"] .text-\[\#64D2FF\],
+:root[data-theme="light"] .text-\[\#7FBEFF\],
+:root[data-theme="light"] .text-\[\#A7D4FF\],
+:root[data-theme="light"] .btn-ghost {
+  color: var(--color-accent);
+}
+
+:root[data-theme="light"] .text-\[\#FF9F0A\],
+:root[data-theme="light"] .text-\[\#FFB340\],
+:root[data-theme="light"] .text-\[\#FFD60A\] {
+  color: var(--color-warn);
+}
+
+:root[data-theme="light"] .text-\[\#FF453A\],
+:root[data-theme="light"] .text-\[\#FF6961\],
+:root[data-theme="light"] .text-\[\#FF8A80\],
+:root[data-theme="light"] .btn-danger {
+  color: var(--color-neg);
+}
+
+:root[data-theme="light"] .text-\[\#30D158\],
+:root[data-theme="light"] .text-emerald-300,
+:root[data-theme="light"] .text-emerald-400,
+:root[data-theme="light"] .text-emerald-500 {
+  color: var(--color-pos);
+}
+
+:root[data-theme="light"] .text-\[\#5E5CE6\],
+:root[data-theme="light"] .text-\[\#BF5AF2\] {
+  color: #6336a6;
+}
+
+:root[data-theme="light"] .text-neutral-500 {
+  color: var(--color-neutral-500);
+}
+
+/* Runtime tokens also serve custom component classes. Light overrides above
+   have higher specificity; utilities retain variable references to these values. */
 :root {
   --color-bg: #000000;
   --color-panel: #1c1c1e;
@@ -322,7 +368,7 @@ body::after {
 
 /* Tailwind's neutral-500 falls below AA on the wallet's raised dark panels. */
 .text-neutral-500 {
-  color: #8e8e93;
+  color: #9e9ea4;
 }
 
 /* Keep every scroll surface usable while removing browser scrollbar chrome. */

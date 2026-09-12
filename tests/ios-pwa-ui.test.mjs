@@ -80,8 +80,10 @@ test("standalone screens and overlays consume the iOS top safe area", () => {
   );
   assert.match(
     css,
-    /\.app-mobile-sticky-header\s*\{[\s\S]*?top:\s*0;[\s\S]*?padding-top:\s*var\(--app-safe-area-top\);[\s\S]*?background:\s*#000000;/,
+    /\.app-mobile-sticky-header\s*\{[^}]*top:\s*0;[^}]*padding-top:\s*var\(--app-safe-area-top\);[^}]*background:\s*var\(--color-bg\);/,
   );
+  assert.match(css, /:root\[data-theme="light"\]\s*\{[^}]*--color-bg:\s*#f2f2f7;/);
+  assert.match(css, /:root\s*\{[^}]*--color-bg:\s*#000000;/);
   assert.match(css, /\.nav-blur\s*\{[\s\S]*?top:\s*0;/);
   assert.match(dashboard, /app-safe-dashboard/);
   assert.doesNotMatch(dashboard, /className="app-safe-top relative/);

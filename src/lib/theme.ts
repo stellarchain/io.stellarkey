@@ -9,20 +9,57 @@ export const THEME_STORAGE_KEY = 'stellarkey.theme';
 export const THEME_CHANGE_EVENT = 'stellarkey:theme';
 export const THEME_PREFERENCES: readonly ThemePreference[] = ['system', 'light', 'dark'];
 
+// A failed persistence write must not undo this tab's explicit choice. The
+// preference also survives controller/settings remounts without becoming SSR
+// state shared between requests or leaking across isolated browser contexts.
+const sessionPreferences = new WeakMap<Window, ThemePreference>();
+
+function parsePreference(value: string | null): ThemePreference {
+  return value === 'light' || value === 'dark' ? value : 'system';
+}
+
 /** Runs before paint. Kept as a string so it can be inlined verbatim in <body>. */
 export const THEME_INIT_SCRIPT =
-  "(function(){try{var p=localStorage.getItem('" + THEME_STORAGE_KEY + "');" +
+  "(function(){var p;try{p=localStorage.getItem('" + THEME_STORAGE_KEY + "');}catch(e){}" +
   "var t=(p==='light'||p==='dark')?p:((window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark');" +
-  "document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='dark';}})();";
+  "document.documentElement.dataset.theme=t;})();";
 
 export function getStoredThemePreference(): ThemePreference {
   if (typeof window === 'undefined') return 'system';
+  const current = sessionPreferences.get(window);
+  if (current !== undefined) return current;
+  let preference: ThemePreference = 'system';
   try {
-    const value = window.localStorage.getItem(THEME_STORAGE_KEY);
-    return value === 'light' || value === 'dark' || value === 'system' ? value : 'system';
+    preference = parsePreference(window.localStorage.getItem(THEME_STORAGE_KEY));
   } catch {
-    return 'system';
+    // OS-following appearance remains available without persistent storage.
   }
+  sessionPreferences.set(window, preference);
+  return preference;
+}
+
+/** One snapshot for the controller and every mounted appearance control. */
+export function subscribeThemePreference(onChange: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const target = window;
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== null && event.key !== THEME_STORAGE_KEY) return;
+    let preference = parsePreference(event.newValue);
+    try {
+      if (event.storageArea && event.storageArea !== target.localStorage) return;
+      // A queued event may predate a newer local write. Read the current value
+      // when possible; the event still supplies a fallback if reads are blocked.
+      preference = parsePreference(target.localStorage.getItem(THEME_STORAGE_KEY));
+    } catch { /* Preserve the event's non-sensitive preference. */ }
+    sessionPreferences.set(target, preference);
+    onChange();
+  };
+  target.addEventListener(THEME_CHANGE_EVENT, onChange);
+  target.addEventListener('storage', onStorage);
+  return () => {
+    target.removeEventListener(THEME_CHANGE_EVENT, onChange);
+    target.removeEventListener('storage', onStorage);
+  };
 }
 
 export function systemTheme(): ResolvedTheme {
@@ -41,6 +78,8 @@ export function applyResolvedTheme(theme: ResolvedTheme): void {
 
 /** Persist the preference, apply it immediately, and notify listeners in this tab. */
 export function setThemePreference(preference: ThemePreference): void {
+  if (typeof window === 'undefined') return;
+  sessionPreferences.set(window, preference);
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, preference);
   } catch {

@@ -13,7 +13,20 @@ const expression = sidebar.slice(sidebar.indexOf('{!sidebarCollapsed') + 1, side
 const compiled = ts.transpileModule(`(${expression})`, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, module: ts.ModuleKind.None },
 }).outputText;
-const render = env => vm.runInNewContext(compiled, { React, ...env });
+const uiSource = ts.createSourceFile(
+  'ui.tsx',
+  readFileSync(new URL('../src/components/ui.tsx', import.meta.url), 'utf8'),
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.TSX,
+);
+const header = uiSource.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'SectionHeader');
+assert.ok(header, 'The production section header must be present');
+const headerCode = ts.transpileModule(`${header.getText(uiSource).replace(/^export /, '')}\nSectionHeader;`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, module: ts.ModuleKind.None },
+}).outputText;
+const SectionHeader = vm.runInNewContext(headerCode, { React });
+const render = env => vm.runInNewContext(compiled, { React, SectionHeader, ...env });
 const accounts = [{ id: 'a', publicKey: 'synthetic-a', label: 'Synthetic A' }, { id: 'b', publicKey: 'synthetic-b', label: 'Synthetic B' }];
 const totals = { 'synthetic-a': { xlm: '14.0000000', usd: 10.5 }, 'synthetic-b': { xlm: '26.0000000', usd: 13.5 } };
 function environment(activeId = 'a', privacyMode = false) {
