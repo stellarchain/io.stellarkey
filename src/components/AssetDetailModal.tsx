@@ -1,37 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  useWalletIdentity,
-  useWalletLedger,
-  useWalletMarket,
-  useWalletPreferences,
-  useWalletSubmission,
-  useWalletTransactions,
-} from "@/hooks/useWallet";
-import { NETWORKS } from "@/lib/stellar";
-import { getHorizonUrl } from "@/lib/stellar-endpoints";
-import { lookupKnownAsset } from "@/lib/assets";
-import { fmtAmount, fmtFiat } from "@/lib/format";
-import {
-  assetMetadataCacheKey,
-  fetchIssuerDetails,
-  getCachedAssetLogo,
-  normalizeIssuerHomeDomain,
-  selectCurrentAssetMetadata,
-  type BoundAssetMetadata,
-} from "@/lib/toml";
+import { useState } from "react";
+import dynamic from "next/dynamic";
 import type { AssetBalance } from "@/lib/types";
-import { triggerHaptic } from "@/lib/haptics";
-import {
-  assetDetailSubmissionView,
-  type SubmissionResult,
-} from "@/lib/submission";
-import { assetPriceKey } from "@/lib/prices";
-import { assetDetailBalanceSummary, deriveSacContractId } from "@/lib/transaction-intent";
-import { networkFeeXlm } from "@/lib/api";
-import { Button, CopyButton, ErrorText, HashValue, Modal, ModalHeader } from "./ui";
-import { IconExternal, IconTrash } from "./icons";
+import { LoadingRegion, Modal, ModalHeader } from "./ui";
+import type { AssetDetailHeader } from "./AssetDetailModalBody";
+
+// Metadata, pricing and the trustline flow live in a lazily loaded body so the
+// shell opens at once and shows a loading region until the chunk arrives.
+const AssetDetailModalBody = dynamic(
+  () => import("./AssetDetailModalBody").then((m) => m.AssetDetailModalBody),
+  {
+    ssr: false,
+    loading: () => <LoadingRegion label="Opening asset details" className="min-h-56" />,
+  },
+);
 
 export function AssetDetailModal({
   asset,
@@ -44,420 +27,32 @@ export function AssetDetailModal({
   onToggleFavorite: (key: string) => void;
   onClose: () => void;
 }) {
-  const { network } = useWalletIdentity();
-  const { minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
-  const { xlmPriceUsd, fiatRates } = useWalletMarket();
-  const { privacyMode, fiatCurrency } = useWalletPreferences();
-  const { submissionStatus } = useWalletSubmission();
-  const { trustAsset, refresh } = useWalletTransactions();
-  const horizonUrl = getHorizonUrl(network);
-  const known = asset ? lookupKnownAsset(asset.code, asset.issuer, network) : null;
-  const metadataIdentity = asset && !asset.isNative && asset.issuer
-    ? assetMetadataCacheKey(asset.code, asset.issuer, horizonUrl)
-    : null;
-  const [prices, setPrices] = useState<Record<string, number>>({});
-  const [metadata, setMetadata] = useState<BoundAssetMetadata | null>(() =>
-    metadataIdentity && asset?.issuer
-      ? {
-          identity: metadataIdentity,
-          logoUrl: getCachedAssetLogo(asset.code, asset.issuer, horizonUrl),
-          issuerInfo: null,
-        }
-      : null,
-  );
-  const currentMetadata = selectCurrentAssetMetadata(metadataIdentity, metadata);
-  const logoUrl = known?.iconUrl ?? currentMetadata?.logoUrl ?? null;
-  const issuerInfo = currentMetadata?.issuerInfo ?? null;
-
-  // Fetch USD price for this asset when the modal opens
-  useEffect(() => {
-    if (!asset || network !== "mainnet") return;
-    let alive = true;
-    void (async () => {
-      const { fetchAssetPrices } = await import("@/lib/prices");
-      const p = await fetchAssetPrices([{ code: asset.code, issuer: asset.issuer, network }]);
-      if (alive && Object.keys(p).length > 0) setPrices(p);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [asset, network]);
-
-  useEffect(() => {
-    if (!asset || asset.isNative || !asset.issuer || !metadataIdentity || known?.iconUrl) return;
-    const code = asset.code;
-    const issuer = asset.issuer;
-    const identity = metadataIdentity;
-    let alive = true;
-    const cachedLogo = getCachedAssetLogo(code, issuer, horizonUrl);
-    queueMicrotask(() => {
-      if (alive) {
-        setMetadata({ identity, logoUrl: cachedLogo, issuerInfo: null });
-      }
-    });
-    void (async () => {
-      const details = await fetchIssuerDetails(code, issuer, horizonUrl);
-      if (alive && details) {
-        setMetadata((previous) => ({
-          identity,
-          logoUrl:
-            details.logoUrl ??
-            (previous?.identity === identity ? previous.logoUrl : null),
-          issuerInfo: details,
-        }));
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [asset, horizonUrl, known?.iconUrl, metadataIdentity]);
-
-  const unitPrice =
-    asset && asset.isNative && network === "mainnet"
-      ? xlmPriceUsd
-      : asset
-        ? prices[assetPriceKey(network, asset.code, asset.issuer)] ?? null
-        : null;
-  const totalUsd =
-    asset && unitPrice !== null ? parseFloat(asset.balance) * unitPrice : null;
-  const balanceSummary = asset
-    ? assetDetailBalanceSummary(asset, minimumBalanceXlm)
-    : null;
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pendingSubmission, setPendingSubmission] = useState<SubmissionResult | null>(null);
-  const trackedSubmissionStatus = pendingSubmission ? submissionStatus(pendingSubmission) : null;
-  const submissionView = assetDetailSubmissionView(
-    error,
-    pendingSubmission,
-    trackedSubmissionStatus,
-  );
-
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      await Promise.resolve();
-      if (!alive) return;
-      if (trackedSubmissionStatus === "confirmed") {
-        triggerHaptic("success");
-        void refresh();
-        onClose();
-        return;
-      }
-      if (trackedSubmissionStatus === "failed") {
-        setPendingSubmission(null);
-        setError("Trustline removal failed on-chain. Check the balance and retry.");
-        triggerHaptic("error");
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [onClose, refresh, trackedSubmissionStatus]);
-
-  if (!asset) return null;
-
-  const knownIssuerDomain = normalizeIssuerHomeDomain(known?.anchorDomain);
-  const declaredIssuerDomain = normalizeIssuerHomeDomain(issuerInfo?.domain);
-  const issuerDomain = knownIssuerDomain ?? declaredIssuerDomain;
-  const issuerDomainSignal = knownIssuerDomain
-    ? "Known asset"
-    : issuerInfo?.assetDeclared && declaredIssuerDomain
-      ? "Issuer-declared"
-      : null;
-  const sacContractId = deriveSacContractId(asset, NETWORKS[network].networkPassphrase);
-  const balance = parseFloat(asset.balance);
-  const displayBalance = privacyMode ? "••••••" : fmtAmount(asset.balance);
-  const balanceDensity = displayBalance.length >= 18
-    ? "long"
-    : displayBalance.length >= 13
-      ? "medium"
-      : "compact";
-
-  async function handleRemove() {
-    if (!asset || !asset.issuer || pendingSubmission) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await trustAsset({ code: asset.code, issuer: asset.issuer, add: false });
-      setPendingSubmission(result);
-      triggerHaptic(result.status === "status_unknown" ? "warning" : "medium");
-    } catch (e) {
-      triggerHaptic("error");
-      setError(e instanceof Error ? e.message : "Failed to remove trustline.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
+  const [header, setHeader] = useState<AssetDetailHeader | null>(null);
   return (
-    <Modal open onClose={onClose} wide>
+    <Modal
+      open={asset !== null}
+      onClose={onClose}
+      wide
+      busy={busy}
+      busyReason="Wait for the trustline removal to finish before closing."
+    >
       <ModalHeader
-        title={asset.code}
-        subtitle={known?.name ?? (asset.isNative ? "Stellar Lumens" : "Custom Asset")}
+        title={asset ? header?.title ?? asset.code : "Asset details"}
+        subtitle={asset ? header ? header.subtitle : asset.isNative ? "Stellar Lumens" : undefined : undefined}
         onClose={onClose}
       />
-      <div className="p-4 sm:p-6">
-        <div className="flex flex-col items-center pb-2 pt-1">
-          {logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={logoUrl}
-              alt=""
-              width={56}
-              height={56}
-              className="h-14 w-14 rounded-full object-cover shadow-xl"
-            />
-          ) : (
-            <span
-              className="flex h-14 w-14 items-center justify-center rounded-full text-[18px] font-bold text-white shadow-xl"
-              style={
-                known
-                  ? { background: known.color }
-                  : asset.isNative
-                    ? { background: "linear-gradient(135deg, #0A84FF, #5E5CE6)" }
-                    : { background: `hsl(${assetHueOf(asset.key)}, 70%, 50%)` }
-              }
-            >
-              {asset.code.slice(0, 3)}
-            </span>
-          )}
-          <p
-            className="balance-display mt-4 text-white"
-            data-density={balanceDensity}
-          >
-            <span className="balance-display-value">{displayBalance}</span>
-            <span className="balance-display-unit">{asset.code}</span>
-          </p>
-          {known?.description && (
-            <p className="mt-1.5 text-center text-[12px] text-neutral-400 max-w-xs">
-              {known.description}
-            </p>
-          )}
-          {!privacyMode && unitPrice !== null && (
-            <div className="mt-3 flex items-baseline justify-center gap-2">
-              <span className="mono text-[14px] font-semibold text-[#30D158]">
-                {fmtFiat(unitPrice, fiatCurrency, fiatRates)}
-              </span>
-              <span className="text-[11px] text-neutral-500">per {asset.code}</span>
-              <span className="text-neutral-600">·</span>
-              <span className="mono text-[12px] font-medium text-neutral-300">
-                {fmtFiat(totalUsd ?? 0, fiatCurrency, fiatRates)} total
-              </span>
-            </div>
-          )}
-        </div>
-
-        <button
-          type="button"
-          aria-pressed={favorite}
-          aria-label={
-            favorite
-              ? `Remove ${asset.code} from favorites`
-              : `Mark ${asset.code} as favorite`
-          }
-          onClick={() => onToggleFavorite(asset.key)}
-          className="row-hover mt-4 flex min-h-11 w-full items-center gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.025] px-3.5 py-2 text-left transition-colors"
-        >
-          <span
-            aria-hidden="true"
-            className={`flex h-6 w-6 shrink-0 items-center justify-center text-[16px] ${
-              favorite ? "text-[#FFD60A]" : "text-neutral-500"
-            }`}
-          >
-            {favorite ? "★" : "☆"}
-          </span>
-          <span className="flex-1 text-[14px] font-medium text-neutral-300">Favorite</span>
-          {favorite && (
-            <span aria-hidden="true" className="text-[13px] font-semibold text-[#FFD60A]">
-              ✓
-            </span>
-          )}
-        </button>
-
-        {/* Liability-aware balance availability for every asset. */}
-        {balanceSummary && (
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 space-y-2.5 text-[12px]">
-            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              <span>Balance Availability</span>
-              <span className="mono text-neutral-300">{asset.code}</span>
-            </div>
-            <div className="space-y-1.5">
-              {asset.isNative && (
-                <div className="flex items-start justify-between gap-3 text-neutral-300">
-                  <span>Live Minimum Balance</span>
-                  <span className="mono min-w-0 max-w-[60%] break-words text-right">
-                    {balanceSummary.minimumBalance === null
-                      ? "Loading…"
-                      : `${fmtAmount(balanceSummary.minimumBalance)} XLM`}
-                  </span>
-                </div>
-              )}
-              <div className="flex items-start justify-between gap-3 text-neutral-300">
-                <span>Selling Liabilities</span>
-                <span className="mono min-w-0 max-w-[60%] break-words text-right">
-                  {fmtAmount(balanceSummary.sellingLiabilities)} {asset.code}
-                </span>
-              </div>
-              <div className="flex flex-col gap-1 border-t border-white/10 pt-1.5 font-semibold text-white sm:flex-row sm:justify-between sm:gap-3">
-                <span>Spendable Balance</span>
-                <span className="mono break-words text-right text-[#30D158]">
-                  {fmtAmount(balanceSummary.spendable)} {asset.code}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="panel-inset mt-5 divide-y divide-white/[0.08]">
-          <Row label="Type">
-            <span className="text-[13px] text-white">
-              {asset.isNative ? "Native Lumens" : "Credit Alphanum"}
-            </span>
-          </Row>
-          {issuerDomain && (
-            <Row label="Issuer Domain">
-              <a
-                href={`https://${issuerDomain}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-[13px] text-neutral-200 font-medium hover:underline"
-              >
-                <span>{issuerDomain}</span>
-                {issuerDomainSignal && (
-                  <span
-                    title={knownIssuerDomain
-                      ? "Matched StellarKey's bundled asset registry."
-                      : "Self-published by the issuer; this is not independent verification."}
-                    className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
-                      knownIssuerDomain
-                        ? "bg-[#30D158]/15 text-[#30D158]"
-                        : "bg-white/[0.08] text-neutral-400"
-                    }`}
-                  >
-                    {issuerDomainSignal}
-                  </span>
-                )}
-              </a>
-            </Row>
-          )}
-          {issuerInfo?.assetDeclared && issuerInfo.orgName && (
-            <Row label="Organization">
-              <span className="text-[13px] text-white font-medium">{issuerInfo.orgName}</span>
-            </Row>
-          )}
-          {!asset.isNative && asset.issuer && (
-            <Row label="Issuer">
-              <HashValue
-                value={asset.issuer}
-                className="justify-end text-[12px] text-neutral-300"
-              />
-            </Row>
-          )}
-          {asset.limit && (
-            <Row label="Trust Limit">
-              <span className="mono text-[13px] text-neutral-300">
-                {asset.limit === "922337203685.4775807" ? "Unlimited" : fmtAmount(asset.limit)}
-              </span>
-            </Row>
-          )}
-          <Row label="Network">
-            <span className="text-[13px] text-white capitalize">{NETWORKS[network].label}</span>
-          </Row>
-          <Row label="Soroban SAC ID">
-            <HashValue
-              value={sacContractId}
-              className="justify-end text-[11px] text-neutral-400"
-            />
-          </Row>
-        </div>
-
-        {(submissionView.notice || submissionView.error) && (
-          <div className="mt-4">
-            {submissionView.notice && pendingSubmission && (
-              <div className={`mb-3 rounded-xl border p-3 text-[12px] leading-relaxed ${
-                submissionView.notice.tone === "warn"
-                  ? "border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]"
-                  : submissionView.notice.tone === "success"
-                    ? "border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]"
-                    : "border-[#0A84FF]/30 bg-[#0A84FF]/10 text-[#64D2FF]"
-              }`}>
-                {submissionView.notice.message}
-                <span className="mt-1 block break-all font-mono text-[10px] text-neutral-400">
-                  {pendingSubmission.network} · {pendingSubmission.hash}
-                </span>
-              </div>
-            )}
-            {submissionView.error && <ErrorText message={submissionView.error} />}
-          </div>
-        )}
-
-        {/* Action Buttons */}
-        <div className="mt-5 flex flex-wrap gap-2">
-          <CopyButton
-            value={sacContractId}
-            label="Copy SAC ID"
-            className="chip flex-1 justify-center"
-          />
-          <a
-            className="chip flex-1 justify-center"
-            href={
-              NETWORKS[network].explorerAccountUrl(sacContractId)
-            }
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => triggerHaptic("light")}
-          >
-            Explorer <IconExternal size={11} />
-          </a>
-        </div>
-
-        {!asset.isNative && (
-          <div className="mt-4">
-            {balance > 0 ? (
-              <p className="text-center text-[11.5px] text-neutral-500">
-                Send or swap all {asset.code} balance before removing this trustline.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-center text-[11.5px] text-neutral-500">
-                  Network fee: {networkFeeXlm(recommendedBaseFeeStroops, 1)} XLM
-                </p>
-                <Button
-                  variant="danger"
-                  className="w-full flex items-center justify-center gap-2 !py-2.5 text-[13px]"
-                  loading={busy}
-                  disabled={busy || Boolean(pendingSubmission)}
-                  onClick={() => void handleRemove()}
-                >
-                  <IconTrash size={14} /> Remove Trustline & Reclaim Reserve
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-
-        <Button variant="ghost" className="mt-4 w-full" onClick={onClose}>
-          Close
-        </Button>
-      </div>
+      {asset ? (
+        <AssetDetailModalBody
+          key={asset.key}
+          asset={asset}
+          favorite={favorite}
+          onToggleFavorite={onToggleFavorite}
+          onClose={onClose}
+          onBusyChange={setBusy}
+          onHeaderChange={setHeader}
+        />
+      ) : null}
     </Modal>
   );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 px-4 py-3">
-      <span className="shrink-0 pt-0.5 text-[13px] font-medium text-neutral-400">
-        {label}
-      </span>
-      <span className="min-w-0 text-right">{children}</span>
-    </div>
-  );
-}
-
-function assetHueOf(key: string): number {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) hash = (hash * 33 + key.charCodeAt(i)) >>> 0;
-  return hash % 360;
 }

@@ -1,20 +1,22 @@
 import { StrKey } from '@stellar/stellar-sdk';
-import { getHorizonJson } from '../../../lib/horizon';
+import { getHorizonJson, HorizonRequestError } from '../../../lib/horizon';
 import { amountToStroops } from '../../../lib/stellar-domain';
 import { getAccountHistoryHorizonUrl } from '../../../lib/stellar-endpoints';
 import type { StealthNetwork } from '@stellarkey/private-balance';
 import type {
   StealthAnnouncement,
   StealthAnnouncementPage,
+  StealthAnnouncementPageInput,
   StealthAnnouncementReader,
 } from './stealth-sync';
+import { assertStealthDiscoveryActive, type StealthDiscoveryGuard } from './stealth-discovery-operation';
 
 const ANNOUNCEMENT_AMOUNT = '0.0000001';
 const OPERATION_LOOKUP_CONCURRENCY = 8;
 const HEX_32 = /^[0-9a-f]{64}$/;
 const POSITIVE_DECIMAL = /^[1-9][0-9]*$/;
 
-type HorizonRequest = (url: string) => Promise<unknown>;
+type HorizonRequest = (url: string, init?: { signal?: AbortSignal }) => Promise<unknown>;
 
 interface RawTransaction {
   successful?: unknown;
@@ -32,7 +34,6 @@ interface RawPayment {
   to?: unknown;
   asset_type?: unknown;
   amount?: unknown;
-  transaction?: RawTransaction;
 }
 
 interface RawOperation {
@@ -108,7 +109,7 @@ function decodeHashMemo(transaction: RawTransaction | undefined): Uint8Array | n
   }
 }
 
-function isAnnouncementPayment(record: RawPayment, announcer: string): boolean {
+function isAnnouncementPaymentCandidate(record: RawPayment, announcer: string): boolean {
   return record.type === 'payment' &&
     record.transaction_successful !== false &&
     record.to === announcer &&
@@ -120,16 +121,20 @@ function isAnnouncementPayment(record: RawPayment, announcer: string): boolean {
     HEX_32.test(record.transaction_hash) &&
     typeof record.paging_token === 'string' &&
     POSITIVE_DECIMAL.test(record.paging_token) &&
-    timestamp(record.created_at) !== null &&
-    decodeHashMemo(record.transaction) !== null;
+    timestamp(record.created_at) !== null;
 }
 
 function parseTransactionShape(
   record: RawPayment,
+  transaction: RawTransaction,
   operations: RawOperation[],
   announcer: string,
 ): StealthAnnouncement | null {
-  if (!isAnnouncementPayment(record, announcer) || operations.length !== 3) return null;
+  if (
+    !isAnnouncementPaymentCandidate(record, announcer) ||
+    decodeHashMemo(transaction) === null ||
+    operations.length !== 3
+  ) return null;
   const source = record.from as string;
   const createOperations = operations.filter(operation => operation.type === 'create_account');
   const paymentOperations = operations.filter(operation => operation.type === 'payment');
@@ -175,7 +180,7 @@ function parseTransactionShape(
   } catch {
     return null;
   }
-  const ephemeralPublicKey = decodeHashMemo(record.transaction);
+  const ephemeralPublicKey = decodeHashMemo(transaction);
   const createdAt = timestamp(record.created_at);
   const pagingToken = record.paging_token as string;
   const ledger = ledgerFromPagingToken(pagingToken);
@@ -192,9 +197,14 @@ function parseTransactionShape(
 }
 
 function records<T>(value: unknown): T[] {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Horizon returned an invalid stealth discovery page');
+  }
   const page = value as HorizonPage<T>;
-  return Array.isArray(page._embedded?.records) ? page._embedded.records : [];
+  if (!Array.isArray(page._embedded?.records)) {
+    throw new Error('Horizon returned an invalid stealth discovery page');
+  }
+  return page._embedded.records;
 }
 
 export class HorizonStealthAnnouncementReader implements StealthAnnouncementReader {
@@ -208,14 +218,27 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
     }
     this.#announcerPublicKey = options.announcerPublicKey;
     this.#baseUrl = getAccountHistoryHorizonUrl(options.network);
-    this.#request = options.request ?? (url => getHorizonJson<unknown>(url));
+    this.#request = options.request ?? ((url, init) => getHorizonJson<unknown>(url, init));
   }
 
-  async #latestLedger(): Promise<{ sequence: number; closedAt: number }> {
+  async #read(url: string, guard: StealthDiscoveryGuard): Promise<unknown> {
+    assertStealthDiscoveryActive(guard);
+    try {
+      const result = await this.#request(url, { signal: guard.signal });
+      assertStealthDiscoveryActive(guard);
+      return result;
+    } catch (error) {
+      // Prefer revocation to a late transport failure; never retry revoked work.
+      assertStealthDiscoveryActive(guard);
+      throw error;
+    }
+  }
+
+  async #latestLedger(guard: StealthDiscoveryGuard): Promise<{ sequence: number; closedAt: number }> {
     const url = new URL(`${this.#baseUrl}/ledgers`);
     url.searchParams.set('order', 'desc');
     url.searchParams.set('limit', '1');
-    const latest = records<RawLedger>(await this.#request(url.toString()))[0];
+    const latest = records<RawLedger>(await this.#read(url.toString(), guard))[0];
     const sequence = positiveInteger(latest?.sequence);
     const closedAt = timestamp(latest?.closed_at);
     if (sequence === null || closedAt === null) {
@@ -224,11 +247,11 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
     return { sequence, closedAt };
   }
 
-  async #earliestLedger(): Promise<{ sequence: number; closedAt: number }> {
+  async #earliestLedger(guard: StealthDiscoveryGuard): Promise<{ sequence: number; closedAt: number }> {
     const url = new URL(`${this.#baseUrl}/ledgers`);
     url.searchParams.set('order', 'asc');
     url.searchParams.set('limit', '1');
-    const earliest = records<RawLedger>(await this.#request(url.toString()))[0];
+    const earliest = records<RawLedger>(await this.#read(url.toString(), guard))[0];
     const sequence = positiveInteger(earliest?.sequence);
     const closedAt = timestamp(earliest?.closed_at);
     if (sequence === null || closedAt === null) {
@@ -237,65 +260,74 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
     return { sequence, closedAt };
   }
 
-  async #ledgerClosedAt(sequence: number): Promise<number> {
-    const ledger = await this.#request(`${this.#baseUrl}/ledgers/${sequence}`) as RawLedger;
-    if (positiveInteger(ledger.sequence) !== sequence) {
-      throw new Error('Horizon returned the wrong ledger during stealth discovery');
-    }
-    const closedAt = timestamp(ledger.closed_at);
-    if (closedAt === null) throw new Error('Horizon ledger close time is invalid');
-    return closedAt;
-  }
-
-  async #lowerBoundCursor(lowerBoundCreatedAt: number, latest: { sequence: number; closedAt: number }): Promise<string> {
-    if (!Number.isFinite(lowerBoundCreatedAt) || lowerBoundCreatedAt < 0) {
-      throw new Error('Stealth discovery lower bound is invalid');
-    }
-    if (latest.closedAt < lowerBoundCreatedAt) return highWaterCursor(latest.sequence);
-    const earliest = await this.#earliestLedger();
+  async #retainedHistoryCursor(latest: { sequence: number; closedAt: number }, guard: StealthDiscoveryGuard): Promise<string> {
+    const earliest = await this.#earliestLedger(guard);
+    assertStealthDiscoveryActive(guard);
     if (earliest.sequence > latest.sequence || earliest.closedAt > latest.closedAt) {
       throw new Error('Horizon returned an invalid retained ledger range for stealth discovery');
     }
-    if (earliest.closedAt >= lowerBoundCreatedAt) {
-      return highWaterCursor(Math.max(0, earliest.sequence - 1));
-    }
-    let low = earliest.sequence;
-    let high = latest.sequence;
-    while (low < high) {
-      const middle = Math.floor((low + high) / 2);
-      if (await this.#ledgerClosedAt(middle) < lowerBoundCreatedAt) low = middle + 1;
-      else high = middle;
-    }
-    return highWaterCursor(Math.max(0, low - 1));
+    // Wallet creation is not a key birthday. Every fresh scan uses the same
+    // retained-history boundary, including callers with legacy birthday data.
+    return highWaterCursor(Math.max(0, earliest.sequence - 1));
   }
 
-  async #operations(transactionHash: string): Promise<RawOperation[]> {
+  async #operations(transactionHash: string, guard: StealthDiscoveryGuard): Promise<RawOperation[]> {
     const url = new URL(`${this.#baseUrl}/transactions/${transactionHash}/operations`);
     url.searchParams.set('order', 'asc');
     url.searchParams.set('limit', '200');
-    return records<RawOperation>(await this.#request(url.toString()));
+    return records<RawOperation>(await this.#read(url.toString(), guard));
   }
 
-  public async readPage(input: {
-    cursor: string | null;
-    lowerBoundCreatedAt: number;
-    limit: number;
-  }): Promise<StealthAnnouncementPage> {
+  async #transaction(transactionHash: string, guard: StealthDiscoveryGuard): Promise<RawTransaction> {
+    const value = await this.#read(`${this.#baseUrl}/transactions/${transactionHash}`, guard);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('Horizon returned an invalid stealth announcement transaction');
+    }
+    return value as RawTransaction;
+  }
+
+  async #payments(
+    startCursor: string,
+    requestedLimit: number,
+    guard: StealthDiscoveryGuard,
+  ): Promise<{ records: RawPayment[]; limit: number }> {
+    let limit = requestedLimit;
+    while (true) {
+      assertStealthDiscoveryActive(guard);
+      const url = new URL(`${this.#baseUrl}/accounts/${this.#announcerPublicKey}/payments`);
+      url.searchParams.set('order', 'asc');
+      url.searchParams.set('limit', String(limit));
+      url.searchParams.set('cursor', startCursor);
+      try {
+        const page = records<RawPayment>(await this.#read(url.toString(), guard));
+        if (page.length > limit) throw new Error('Horizon returned too many stealth announcements');
+        return { records: page, limit };
+      } catch (error) {
+        assertStealthDiscoveryActive(guard);
+        if (
+          !(error instanceof HorizonRequestError) ||
+          error.kind !== 'response_too_large' ||
+          limit === 1
+        ) {
+          throw error;
+        }
+        limit = Math.max(1, Math.floor(limit / 2));
+      }
+    }
+  }
+
+  public async readPage(input: StealthAnnouncementPageInput): Promise<StealthAnnouncementPage> {
+    assertStealthDiscoveryActive(input);
     const limit = Math.min(Math.max(Math.floor(input.limit), 1), 200);
-    const latest = await this.#latestLedger();
-    const startCursor = input.cursor ?? await this.#lowerBoundCursor(
-      input.lowerBoundCreatedAt,
-      latest,
-    );
+    const latest = await this.#latestLedger(input);
+    assertStealthDiscoveryActive(input);
+    const startCursor = input.cursor ?? await this.#retainedHistoryCursor(latest, input);
+    assertStealthDiscoveryActive(input);
     if (!POSITIVE_DECIMAL.test(startCursor)) throw new Error('Stealth discovery cursor is invalid');
 
-    const url = new URL(`${this.#baseUrl}/accounts/${this.#announcerPublicKey}/payments`);
-    url.searchParams.set('order', 'asc');
-    url.searchParams.set('limit', String(limit));
-    url.searchParams.set('cursor', startCursor);
-    url.searchParams.set('join', 'transactions');
-    const rawPayments = records<RawPayment>(await this.#request(url.toString()));
-    if (rawPayments.length > limit) throw new Error('Horizon returned too many stealth announcements');
+    const paymentPage = await this.#payments(startCursor, limit, input);
+    assertStealthDiscoveryActive(input);
+    const rawPayments = paymentPage.records;
     for (let index = 1; index < rawPayments.length; index += 1) {
       const prior = rawPayments[index - 1].paging_token;
       const current = rawPayments[index].paging_token;
@@ -311,23 +343,49 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
     }
 
     const announcements: StealthAnnouncement[] = [];
+    const transactionDetails = new Map<
+      string,
+      Promise<{ transaction: RawTransaction; operations: RawOperation[] | null }>
+    >();
     for (let offset = 0; offset < rawPayments.length; offset += OPERATION_LOOKUP_CONCURRENCY) {
+      assertStealthDiscoveryActive(input);
       const batch = rawPayments.slice(offset, offset + OPERATION_LOOKUP_CONCURRENCY);
-      const resolved = await Promise.all(batch.map(async record => {
-        if (!isAnnouncementPayment(record, this.#announcerPublicKey)) return null;
-        const operations = await this.#operations(record.transaction_hash as string);
-        return parseTransactionShape(record, operations, this.#announcerPublicKey);
+      // Drain every started lookup before returning, even when one rejects.
+      const resolved = await Promise.allSettled(batch.map(async record => {
+        assertStealthDiscoveryActive(input);
+        if (!isAnnouncementPaymentCandidate(record, this.#announcerPublicKey)) return null;
+        const transactionHash = record.transaction_hash as string;
+        let details = transactionDetails.get(transactionHash);
+        if (!details) {
+          details = this.#transaction(transactionHash, input).then(async transaction => {
+            assertStealthDiscoveryActive(input);
+            const operations = decodeHashMemo(transaction)
+              ? await this.#operations(transactionHash, input)
+              : null;
+            assertStealthDiscoveryActive(input);
+            return { transaction, operations };
+          });
+          transactionDetails.set(transactionHash, details);
+        }
+        const { transaction, operations } = await details;
+        assertStealthDiscoveryActive(input);
+        if (!operations) return null;
+        return parseTransactionShape(record, transaction, operations, this.#announcerPublicKey);
       }));
-      announcements.push(...resolved.filter(item => item !== null));
+      assertStealthDiscoveryActive(input);
+      for (const result of resolved) {
+        if (result.status === 'rejected') throw result.reason;
+        if (result.value !== null) announcements.push(result.value);
+      }
     }
 
-    const hasMore = rawPayments.length === limit;
+    const hasMore = rawPayments.length === paymentPage.limit;
     const rawCursor = rawPayments.at(-1)?.paging_token;
-    const nextCursor = hasMore
-      ? typeof rawCursor === 'string' && POSITIVE_DECIMAL.test(rawCursor)
+    const nextCursor = rawPayments.length === 0
+      ? startCursor
+      : typeof rawCursor === 'string' && POSITIVE_DECIMAL.test(rawCursor)
         ? rawCursor
-        : (() => { throw new Error('Horizon stealth announcement cursor is invalid'); })()
-      : highWaterCursor(latest.sequence);
+        : (() => { throw new Error('Horizon stealth announcement cursor is invalid'); })();
     return {
       announcements,
       nextCursor,

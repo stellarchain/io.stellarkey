@@ -11,7 +11,8 @@ use std::collections::{HashMap, HashSet};
 pub struct RecoveredPublicActivity {
     pub action_index: u32,
     pub action_kind: ActionKind,
-    pub asset: (u8, [u8; 32]),
+    pub asset_index: Option<u32>,
+    pub asset: Option<(u8, [u8; 32])>,
     pub public_value: u64,
 }
 
@@ -111,20 +112,16 @@ fn replay_record(
         3 => ActionKind::Withdraw,
         _ => return Err(format!("Invalid action kind at action {action_index}")),
     };
-    let current_asset_balance = *accumulator
-        .asset_public_balances
-        .get(&record.asset)
-        .unwrap_or(&0);
+    let current_asset_balance = record
+        .asset
+        .and_then(|asset| accumulator.asset_public_balances.get(&asset).copied())
+        .unwrap_or(0);
     let next_asset_balance = match kind {
         ActionKind::Deposit => {
             if record.public_value == 0 {
                 return Err(format!("Zero deposit value at action {action_index}"));
             }
-            accumulator
-                .asset_public_balances
-                .get(&record.asset)
-                .copied()
-                .unwrap_or(0)
+            current_asset_balance
                 .checked_add(record.public_value)
                 .ok_or_else(|| format!("Public balance overflow at action {action_index}"))?
         }
@@ -134,33 +131,21 @@ fn replay_record(
                     "Non-zero transfer public value at action {action_index}"
                 ));
             }
-            accumulator
-                .asset_public_balances
-                .get(&record.asset)
-                .copied()
-                .unwrap_or(0)
-                .checked_sub(record.relayer_fee)
-                .ok_or_else(|| format!("Invalid relayer fee at action {action_index}"))?
+            current_asset_balance
         }
         ActionKind::Withdraw => {
             if record.public_value == 0 || record.public_value > current_asset_balance {
                 return Err(format!("Invalid withdrawal value at action {action_index}"));
             }
-            accumulator
-                .asset_public_balances
-                .get(&record.asset)
-                .copied()
-                .unwrap_or(0)
+            current_asset_balance
                 .checked_sub(record.public_value)
-                .and_then(|value| value.checked_sub(record.relayer_fee))
-                .ok_or_else(|| {
-                    format!("Invalid withdrawal or relayer fee at action {action_index}")
-                })?
+                .ok_or_else(|| format!("Invalid withdrawal at action {action_index}"))?
         }
     };
     let action = Action {
         protocol_version: PROTOCOL_VERSION,
         kind,
+        asset_index: record.asset_index,
         asset: record.asset,
         action_nonce: record.action_nonce,
         anchor_root: record.anchor_root,
@@ -169,36 +154,38 @@ fn replay_record(
         public_value: record.public_value,
         deposit_source: record.deposit_source,
         public_recipient: record.public_recipient,
-        relayer_fee: record.relayer_fee,
-        relayer: record.relayer,
     };
+    action
+        .validate_public_shape()
+        .map_err(|error| format!("Invalid action shape at action {action_index}: {error:?}"))?;
     let _action_field =
         action.compute_action_field(&context.network_id, &context.realm_id, &context.pool_id);
 
     for nullifier in record.nullifiers {
-        if nullifier != [0u8; 32] && !accumulator.nullifiers.insert(nullifier) {
+        if !accumulator.nullifiers.insert(nullifier) {
             return Err(format!("Duplicate nullifier at action {action_index}"));
         }
     }
 
     let root_after = match tree_hash_context {
-        Some(context) => context.append_two_commitments(
+        Some(context) => context.append_three_commitments(
             &mut accumulator.tree,
-            &record.outputs[0].cm,
-            &record.outputs[1].cm,
+            &record.outputs.clone().map(|output| output.cm),
         ),
         None => accumulator
             .tree
-            .append_two_commitments(&record.outputs[0].cm, &record.outputs[1].cm),
+            .append_three_commitments(&record.outputs.clone().map(|output| output.cm)),
     }
     .map_err(|error| format!("Tree replay failed at action {action_index}: {error:?}"))?;
     if record.tree_root_after != root_after {
         return Err(format!("Invalid tree root at action {action_index}"));
     }
 
-    accumulator
-        .asset_public_balances
-        .insert(record.asset, next_asset_balance);
+    if let Some(asset) = record.asset {
+        accumulator
+            .asset_public_balances
+            .insert(asset, next_asset_balance);
+    }
     accumulator.total_public_balance = accumulator
         .asset_public_balances
         .values()
@@ -207,6 +194,7 @@ fn replay_record(
     accumulator.activities.push(RecoveredPublicActivity {
         action_index,
         action_kind: kind,
+        asset_index: record.asset_index,
         asset: record.asset,
         public_value: record.public_value,
     });

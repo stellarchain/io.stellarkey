@@ -1,6 +1,7 @@
 import {
   Account,
   FeeBumpTransaction,
+  type Keypair,
   Transaction,
   TransactionBuilder,
 } from '@stellar/stellar-sdk';
@@ -36,6 +37,7 @@ export interface PrepareStealthPaymentInput {
   metaAddress: string;
   network: NetworkKey;
   announcerPublicKey: string;
+  deploymentBindingHash: string;
   amount: string;
   baseFeeStroops: number;
   loadSourceSequence(sourcePublicKey: string, network: NetworkKey): Promise<string>;
@@ -51,6 +53,7 @@ export interface PreparedStealthPayment {
   destinationPublicKey: string;
   metaAddress: string;
   network: NetworkKey;
+  deploymentBindingHash: string;
   amountStroops: string;
   reserveStroops: string;
   sweepFeeBufferStroops: string;
@@ -64,7 +67,10 @@ function transactionHash(transaction: Transaction): string {
   return Array.from(transaction.hash(), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export async function loadStealthPaymentAnnouncer(network: NetworkKey): Promise<string> {
+export async function loadStealthPaymentDeployment(network: NetworkKey): Promise<{
+  announcerPublicKey: string;
+  deploymentBindingHash: string;
+}> {
   assertPrivatePaymentsTestnet(network);
   const { catalogue } = await loadExpectedPrivateBalanceCatalogue();
   const deployments = await loadPrivateBalanceDeployments({ catalogue, network });
@@ -76,7 +82,10 @@ export async function loadStealthPaymentAnnouncer(network: NetworkKey): Promise<
   if (!availability.ready) {
     throw new Error(availability.reason ?? 'Private payments are unavailable on this network.');
   }
-  return native.manifest.stealthAnnouncerAddress;
+  return {
+    announcerPublicKey: native.manifest.stealthAnnouncerAddress,
+    deploymentBindingHash: native.manifest.deploymentBindingHash,
+  };
 }
 
 export async function prepareStealthPayment(
@@ -86,6 +95,13 @@ export async function prepareStealthPayment(
   if (!Number.isSafeInteger(input.baseFeeStroops) || input.baseFeeStroops <= 0) {
     throw new Error('Stealth payment base fee is invalid');
   }
+  if (!HASH_HEX.test(input.deploymentBindingHash)) {
+    throw new Error('Private Payments deployment binding is invalid');
+  }
+  const deploymentBindingHash = Uint8Array.from(
+    input.deploymentBindingHash.match(/../gu) ?? [],
+    byte => Number.parseInt(byte, 16),
+  );
   const [sequence, baseReserveStroops] = await Promise.all([
     input.loadSourceSequence(input.sourcePublicKey, input.network),
     input.loadBaseReserveStroops(input.network),
@@ -98,6 +114,7 @@ export async function prepareStealthPayment(
     sourceAccount: new Account(input.sourcePublicKey, sequence),
     metaAddress: input.metaAddress,
     network: input.network,
+    deploymentBindingHash,
     networkPassphrase: NETWORKS[input.network].networkPassphrase,
     announcerPublicKey: input.announcerPublicKey,
     amount: input.amount,
@@ -117,6 +134,7 @@ export async function prepareStealthPayment(
     destinationPublicKey: built.destinationPublicKey,
     metaAddress: input.metaAddress,
     network: input.network,
+    deploymentBindingHash: input.deploymentBindingHash,
     amountStroops: built.amountStroops,
     reserveStroops: built.reserveStroops,
     sweepFeeBufferStroops: built.sweepFeeBufferStroops,
@@ -174,6 +192,7 @@ export async function submitPreparedStealthPayment(input: {
   sourcePublicKey: string;
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   onPrepared?: SubmissionPreparedCallback;
 }): Promise<SubmissionResult> {
@@ -182,7 +201,11 @@ export async function submitPreparedStealthPayment(input: {
     input.sourcePublicKey,
     input.network,
   );
-  const { kp, publicKey } = resolveSource(input.secretKey, input.hardwareSigner);
+  const { kp, publicKey } = resolveSource(
+    input.secretKey,
+    input.hardwareSigner,
+    input.softwareSigner,
+  );
   if (publicKey !== input.sourcePublicKey) {
     throw new Error('Stealth payment signer changed. Review the payment again.');
   }

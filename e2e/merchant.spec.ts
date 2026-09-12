@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { MuxedAccount, Networks, TransactionBuilder } from "@stellar/stellar-sdk";
 import {
@@ -173,21 +174,21 @@ async function assertMobileSurface(page: Page, label: string) {
     measurements.scrollWidth <= measurements.clientWidth,
     `${label} overflows horizontally: ${measurements.scrollWidth} > ${measurements.clientWidth}`,
   );
-  assert.match(measurements.viewport, /maximum-scale=1/);
-  assert.match(measurements.viewport, /user-scalable=no/);
+  assert.doesNotMatch(measurements.viewport, /maximum-scale=1/);
+  assert.doesNotMatch(measurements.viewport, /user-scalable=no/);
 }
 
 async function enterKeypadAmount(page: Page, keys: string[]) {
   for (const key of keys) {
     await page.getByRole("button", { name: key, exact: true }).first().click();
   }
-  await page.getByRole("button", { name: "Add to ticket" }).click();
+  await page.getByRole("button", { name: "Add to Ticket" }).click();
 }
 
 async function openOtherTender(page: Page) {
   await page.getByRole("button", { name: "More ticket actions" }).click();
-  await page.getByRole("menuitem", { name: /Other tender/ }).click();
-  return page.getByRole("dialog", { name: /Other tender/ });
+  await page.getByRole("menuitem", { name: /Other Tender/ }).click();
+  return page.getByRole("dialog", { name: /Other Tender/ });
 }
 
 async function readVisibleChargeRequest(chargeDialog: Locator) {
@@ -232,7 +233,7 @@ function incomingPayment(
   return {
     id,
     type: "payment",
-    transaction_hash: id.padEnd(64, "a").slice(0, 64),
+    transaction_hash: createHash("sha256").update(id).digest("hex"),
     transaction_successful: true,
     created_at: new Date().toISOString(),
     paging_token: String((BigInt(ledger) << BigInt(32)) + BigInt(1)),
@@ -248,26 +249,44 @@ function incomingPayment(
 
 async function openStaffSettings(page: Page) {
   await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
-  await page.getByText("Staff & terminals", { exact: true }).click();
-  await page.getByRole("heading", { name: "Staff & this device" }).waitFor();
+  await page.getByText("Staff & Terminals", { exact: true }).click();
+  await page.getByRole("heading", { name: "Staff & This Device" }).waitFor();
 }
 
 async function openMerchantMode(page: Page) {
-  const merchantTab = page
-    .getByRole("navigation", { name: "Tabs" })
-    .getByRole("button", { name: "Merchant" });
+  const tabs = page.getByRole("navigation", { name: "Tabs" });
+  const merchantTab = tabs.getByRole("button", { name: "Merchant" });
   if (await merchantTab.isVisible().catch(() => false)) {
     await merchantTab.click();
     return;
   }
-  await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
-  const openTill = page.getByRole("button", { name: /^Open till/ });
-  await merchantTab.or(openTill).first().waitFor({ state: "visible" });
-  if (await merchantTab.isVisible().catch(() => false)) {
-    await merchantTab.click();
+
+  const settingsTab = tabs.getByRole("button", { name: "Settings" });
+  const openTill = page.getByRole("button", { name: /^Open Till/ });
+  const merchantDestination = merchantTab.or(openTill).first();
+
+  // After restoring a backup, the server-rendered tab shell can become visible
+  // just before React attaches its handlers. Retry the navigation itself so a
+  // click received by that non-interactive shell cannot make this helper flaky.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await settingsTab.click();
+    try {
+      await merchantDestination.waitFor({
+        state: "visible",
+        timeout: attempt === 2 ? 15_000 : 3_000,
+      });
+    } catch (cause) {
+      if (attempt === 2) throw cause;
+      continue;
+    }
+
+    if (await merchantTab.isVisible().catch(() => false)) {
+      await merchantTab.click();
+      return;
+    }
+    await openTill.click();
     return;
   }
-  await openTill.click();
 }
 
 async function returnToTill(page: Page) {
@@ -275,6 +294,14 @@ async function returnToTill(page: Page) {
   const till = page.getByRole("button", { name: "Till", exact: true });
   if (await till.count()) await till.click();
   await page.getByText(/Shift 1 · Front counter/).waitFor();
+}
+
+async function authorizeMerchantExitToHome(page: Page) {
+  await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Home" }).click();
+  const authorization = page.getByRole("dialog", { name: "Confirm security change" });
+  await authorization.getByLabel("Wallet Password").fill(password);
+  await authorization.getByRole("button", { name: "Authorize" }).click();
+  await authorization.waitFor({ state: "hidden" });
 }
 
 async function readIndexedMerchantArchive(page: Page): Promise<string | null> {
@@ -404,8 +431,8 @@ test(
 
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
       await page.getByRole("switch", { name: "Merchant Mode" }).click();
-      const setup = page.getByRole("dialog", { name: /Set up Merchant Mode/ });
-      await setup.getByLabel("Shop name").fill("North Star Coffee");
+      const setup = page.getByRole("dialog", { name: /Set Up Merchant Mode/ });
+      await setup.getByLabel("Shop Name").fill("North Star Coffee");
       await setup.getByRole("button", { name: "Continue" }).click();
       await setup.getByText("Trustline held", { exact: true }).waitFor();
       await setup.getByRole("button", { name: "Continue" }).click();
@@ -413,7 +440,7 @@ test(
       await setup.getByRole("button", { name: "Continue" }).click();
       await setup.getByRole("textbox", { name: "Staff PIN", exact: true }).fill("2468");
       await setup.getByRole("textbox", { name: "Confirm staff PIN", exact: true }).fill("2468");
-      await setup.getByRole("button", { name: "Open the till" }).click();
+      await setup.getByRole("button", { name: "Open the Till" }).click();
       await setup.waitFor({ state: "hidden" });
       await page.getByText("Till locked · no open shift", { exact: true }).waitFor();
       await assertMobileSurface(page, "first merchant till");
@@ -428,30 +455,30 @@ test(
       // Merchant Settings is a summary hierarchy. Scoped edits open one mobile-safe sheet,
       // and the destructive Merchant Mode action requires a separate confirmation.
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
-      await page.getByRole("button", { name: /Tax rates/ }).click();
-      const ratesSettings = page.getByRole("dialog", { name: /Tax rates/ });
+      await page.getByRole("button", { name: /Tax Rates/ }).click();
+      const ratesSettings = page.getByRole("dialog", { name: /Tax Rates/ });
       await ratesSettings.waitFor();
       await assertMobileSurface(page, "tax rate settings sheet");
       await ratesSettings.getByRole("button", { name: "Close" }).click();
       await ratesSettings.waitFor({ state: "hidden" });
 
-      await page.getByRole("button", { name: /Payment setup/ }).click();
-      const paymentSettings = page.getByRole("dialog", { name: /Payment setup/ });
+      await page.getByRole("button", { name: /Payment Setup/ }).click();
+      const paymentSettings = page.getByRole("dialog", { name: /Payment Setup/ });
       await paymentSettings.waitFor();
       await paymentSettings.getByRole("button", { name: "Close" }).click();
       await paymentSettings.waitFor({ state: "hidden" });
 
-      await page.getByRole("button", { name: "Turn off Merchant Mode", exact: true }).click();
-      const turnOff = page.getByRole("dialog", { name: /Turn off Merchant Mode/ });
+      await page.getByRole("button", { name: "Turn Off Merchant Mode", exact: true }).click();
+      const turnOff = page.getByRole("dialog", { name: /Turn Off Merchant Mode/ });
       await turnOff.waitFor();
       await turnOff.getByRole("button", { name: "Cancel", exact: true }).click();
       await turnOff.waitFor({ state: "hidden" });
       await openMerchantMode(page);
 
-      await page.getByRole("button", { name: "Open shift", exact: true }).first().click();
-      const opening = page.getByRole("dialog", { name: /Open shift/ });
+      await page.getByRole("button", { name: "Open Shift", exact: true }).first().click();
+      const opening = page.getByRole("dialog", { name: /Open Shift/ });
       await opening.getByLabel("Opening float").fill("100");
-      await opening.getByRole("button", { name: "Open shift", exact: true }).click();
+      await opening.getByRole("button", { name: "Open Shift", exact: true }).click();
       await page.getByText(/Shift 1 · Front counter/).waitFor();
       await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
 
@@ -460,12 +487,19 @@ test(
       const cashTender = await openOtherTender(page);
       await cashTender.getByRole("button", { name: /Exact/ }).click();
       await cashTender.getByRole("button", { name: "Take € 1.00 cash" }).click();
-      await page.getByText("Order 1001 settled", { exact: true }).waitFor();
+      await page.getByText("Cash saved as exact money.", { exact: true }).waitFor();
+      await page.getByText("Unlock an authorized staff member to continue.", { exact: true }).waitFor();
 
       // Reload locks the vault but does not lose the shift, till, or settled order.
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.getByPlaceholder("Enter password").fill(password);
       await page.getByRole("button", { name: "Unlock Vault" }).click();
+      await openMerchantMode(page);
+      await openStaffSettings(page);
+      await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+      const reloadedOwnerPin = page.getByRole("dialog", { name: "Imported Account" });
+      await reloadedOwnerPin.getByLabel("PIN for Imported Account").fill("2468");
+      await reloadedOwnerPin.getByRole("button", { name: "Select", exact: true }).click();
       await openMerchantMode(page);
       await page.getByText(/Shift 1 · Front counter/).waitFor();
       await page.getByRole("button", { name: "Orders", exact: true }).click();
@@ -474,7 +508,8 @@ test(
 
       // Staff is a local till role. Add a server and switch with its real PIN.
       await openStaffSettings(page);
-      const addStaffButton = page.getByRole("button", { name: "Add staff" });
+      await page.getByRole("button", { name: "Lock", exact: true }).click();
+      const addStaffButton = page.getByRole("button", { name: "Add Staff" });
       assert.equal(
         await addStaffButton.isDisabled(),
         true,
@@ -488,19 +523,24 @@ test(
       // Shared devices default to locking after every sale; this long journey
       // selects the equally supported inactivity policy so later tasks stay under
       // the explicitly selected operator until the test leaves the page.
-      await page.getByRole("button", { name: /Operator locking/ }).click();
-      const locking = page.getByRole("dialog", { name: "Operator locking" });
+      await page.getByRole("button", { name: /Operator Locking/ }).click();
+      const locking = page.getByRole("dialog", { name: "Operator Locking" });
       await locking.getByRole("button", { name: "Inactivity", exact: true }).click();
       await locking.getByRole("button", { name: "Done", exact: true }).click();
       await addStaffButton.click();
-      const addStaff = page.getByRole("dialog", { name: /Add staff/ });
+      const addStaff = page.getByRole("dialog", { name: /Add Staff/ });
       await addStaff.getByLabel("Staff name").fill("Counter Server");
       await addStaff.getByLabel("New staff PIN", { exact: true }).fill("1357");
       await addStaff.getByLabel("Confirm new staff PIN").fill("1357");
-      await addStaff.getByRole("button", { name: "Add staff", exact: true }).click();
+      await addStaff.getByRole("button", { name: "Add Staff", exact: true }).click();
       await addStaff.waitFor({ state: "hidden" });
-      await page.getByRole("button", { name: "Add operator" }).click();
-      const operatorPicker = page.getByRole("dialog", { name: "Add operator" });
+      await page.getByRole("button", { name: "Edit Counter Server" }).click();
+      const editServer = page.getByRole("dialog", { name: "Counter Server" });
+      await editServer.getByRole("switch", { name: "See reports" }).click();
+      await editServer.getByRole("button", { name: "Save", exact: true }).click();
+      await editServer.waitFor({ state: "hidden" });
+      await page.getByRole("button", { name: "Add Operator" }).click();
+      const operatorPicker = page.getByRole("dialog", { name: "Add Operator" });
       await operatorPicker.getByRole("button", { name: /Counter Server/ }).click();
       const serverPin = page.getByRole("dialog", { name: "Counter Server" });
       await serverPin.getByLabel("PIN for Counter Server").fill("1357");
@@ -519,11 +559,11 @@ test(
       await page.getByRole("button", { name: "Open the card for Unnamed customer" }).click();
       const customer = page.getByRole("dialog", { name: "Unnamed customer" });
       await customer.getByLabel("Contact name").fill("Ada Customer");
-      await customer.getByRole("button", { name: "Save contact" }).click();
+      await customer.getByRole("button", { name: "Save Contact" }).click();
       const namedCustomer = page.getByRole("dialog", { name: "Ada Customer" });
-      await namedCustomer.getByRole("button", { name: "Start a card" }).click();
+      await namedCustomer.getByRole("button", { name: "Start a Card" }).click();
       await namedCustomer.getByLabel("Note").fill("Prefers the quiet table.");
-      await namedCustomer.getByRole("button", { name: "Save note" }).click();
+      await namedCustomer.getByRole("button", { name: "Save Note" }).click();
       await namedCustomer.getByText("Loyalty card", { exact: true }).waitFor();
       await namedCustomer.getByRole("button", { name: "Close", exact: true }).click();
 
@@ -531,7 +571,7 @@ test(
       await page.getByRole("button", { name: "Orders", exact: true }).click();
       await page.getByRole("button", { name: "Open the receipt for order #1002" }).click();
       const order = page.getByRole("dialog", { name: /Order #1002/ });
-      await order.getByRole("button", { name: "Issue a refund" }).click();
+      await order.getByRole("button", { name: "Issue a Refund" }).click();
       await order.getByRole("button", { name: "Refund € 30.00" }).click();
       await page.getByText("Sent € 30.00 for approval", { exact: true }).waitFor();
       await order.getByRole("button", { name: "Close", exact: true }).click();
@@ -554,7 +594,7 @@ test(
       const split = await openOtherTender(page);
       await split.getByRole("button", { name: "Split", exact: true }).click();
       await split.getByLabel("First part amount").fill("2.00");
-      await split.getByRole("button", { name: "Record split" }).click();
+      await split.getByRole("button", { name: "Record Split" }).click();
       const splitCharge = page.getByRole("dialog", { name: /^Charge/ });
       await splitCharge.getByText("Watching for payment", { exact: true }).waitFor();
       const splitState = await readVisibleChargeRequest(splitCharge);
@@ -567,44 +607,44 @@ test(
 
       // Invoice: draft, issue, and external payment are all real persisted transitions.
       await page.getByRole("button", { name: "Invoices", exact: true }).click();
-      await page.getByRole("button", { name: "New invoice" }).first().click();
-      const composer = page.getByRole("dialog", { name: /New invoice/ });
+      await page.getByRole("button", { name: "New Invoice" }).first().click();
+      const composer = page.getByRole("dialog", { name: /New Invoice/ });
       await composer.getByLabel("Customer").fill("Praça Hotel");
-      await composer.getByRole("button", { name: /Free-text line/ }).click();
+      await composer.getByRole("button", { name: /Free-Text Line/ }).click();
       await composer.getByLabel("Line description").fill("Wholesale beans");
       await composer.getByLabel("Unit price").fill("42.00");
-      await composer.getByRole("button", { name: "Save draft" }).click();
+      await composer.getByRole("button", { name: "Save Draft" }).click();
       const invoiceRow = page.getByRole("button", { name: /INV-.*Praça Hotel/ });
       await invoiceRow.click();
       const invoice = page.getByRole("dialog", { name: /INV-/ });
       await invoice.getByRole("button", { name: "Issue invoice" }).click();
-      await invoice.getByRole("button", { name: "Record payment" }).click();
+      await invoice.getByRole("button", { name: "Record Payment" }).click();
       await invoice.getByLabel(/Amount · EUR/).fill("42.00");
-      await invoice.getByLabel("Evidence note").fill("Bank transfer checked");
-      await invoice.getByRole("button", { name: "Record payment", exact: true }).last().click();
+      await invoice.getByLabel("Evidence Note").fill("Bank transfer checked");
+      await invoice.getByRole("button", { name: "Record Payment", exact: true }).last().click();
       await invoice.getByText("Paid", { exact: true }).first().waitFor();
       await invoice.getByRole("button", { name: "Close", exact: true }).click();
 
       // Counter code publishes an immutable, exact reusable request.
       await page.getByRole("button", { name: "Counter codes", exact: true }).click();
-      await page.getByRole("button", { name: "New code" }).first().click();
-      const code = page.getByRole("dialog", { name: /New counter code/ });
+      await page.getByRole("button", { name: "New Code" }).first().click();
+      const code = page.getByRole("dialog", { name: /New Counter Code/ });
       await code.getByLabel("Title").fill("Retail shelf");
-      await code.getByLabel("Shop price").fill("5.00");
-      await code.getByRole("button", { name: "Publish code" }).click();
+      await code.getByLabel("Shop Price").fill("5.00");
+      await code.getByRole("button", { name: "Publish Code" }).click();
       await page.getByText("Retail shelf", { exact: true }).waitFor();
 
-      // Tax records is a summary-first mobile hub. Export configuration lives in one focused
+      // Tax Records is a summary-first mobile hub. Export configuration lives in one focused
       // sheet, the real browser download remains truthful, and closing restores the hub action.
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
-      await page.getByText("Tax records", { exact: true }).click();
-      await page.getByRole("heading", { name: "Tax records" }).waitFor();
-      await assertMobileSurface(page, "Tax records hub");
-      const exportReport = page.getByRole("button", { name: /Export report/ });
+      await page.getByText("Tax Records", { exact: true }).click();
+      await page.getByRole("heading", { name: "Tax Records" }).waitFor();
+      await assertMobileSurface(page, "Tax Records hub");
+      const exportReport = page.getByRole("button", { name: /Export Report/ });
       await exportReport.click();
-      const exportSheet = page.getByRole("dialog", { name: /Export report/ });
+      const exportSheet = page.getByRole("dialog", { name: /Export Report/ });
       await exportSheet.waitFor();
-      await assertMobileSurface(page, "Tax records export sheet");
+      await assertMobileSurface(page, "Tax Records export sheet");
       await exportSheet.getByLabel("Export format").waitFor();
       await exportSheet.getByLabel("From").waitFor();
       await exportSheet.getByLabel("To").waitFor();
@@ -623,7 +663,7 @@ test(
       assert.equal(
         await exportReport.evaluate((element) => document.activeElement === element),
         true,
-        "closing the export sheet must restore the Tax records action",
+        "closing the export sheet must restore the Tax Records action",
       );
 
       // The install handoff appears only after the browser says installation is available.
@@ -637,18 +677,57 @@ test(
         window.dispatchEvent(promptEvent);
       });
       await page.getByRole("button", { name: "Back to Merchant settings" }).click();
-      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Home" }).click();
+      await authorizeMerchantExitToHome(page);
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
       await page.getByText("Install App", { exact: true }).click();
       await page.getByRole("heading", { name: "Back up before installing" }).waitFor();
       await page.getByRole("button", { name: "Close" }).click();
-      await page.evaluate(() => {
+      await page.evaluate(async () => {
+        const rawVault = localStorage.getItem("stellarkey.vault.v1");
+        if (!rawVault) throw new Error("Expected a persisted vault before marking backup health.");
+        const vault = JSON.parse(rawVault) as {
+          wrappedMasterKey: unknown;
+          wrappedMerchantKey: unknown;
+          mnemonic?: unknown;
+          accounts: Array<Record<string, unknown>>;
+          archivedAccounts?: Array<Record<string, unknown>>;
+        };
+        const credentialState = {
+          wrappedMasterKey: vault.wrappedMasterKey,
+          wrappedMerchantKey: vault.wrappedMerchantKey,
+          mnemonic: vault.mnemonic ?? null,
+          accounts: [...vault.accounts, ...(vault.archivedAccounts ?? [])]
+            .map((account) => ({
+              id: account.id,
+              publicKey: account.publicKey,
+              index: account.index ?? null,
+              path: account.path ?? null,
+              secret: account.secret ?? null,
+              watchOnly: account.watchOnly === true,
+              hardware: account.hardware ?? null,
+            }))
+            .sort((left, right) => {
+              const leftId = String(left.id);
+              const rightId = String(right.id);
+              return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+            }),
+        };
+        const digest = await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(JSON.stringify(credentialState)),
+        );
+        const vaultId = [...new Uint8Array(digest)]
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("");
         localStorage.setItem(
           "wallet.backup-health.v1",
           JSON.stringify({
-            version: 1,
+            version: 3,
+            vaultId,
             lastExportedAt: new Date().toISOString(),
+            lastExportedBackupSha256: "00".repeat(32),
             lastVerifiedAt: null,
+            lastVerifiedBackupSha256: null,
           }),
         );
         window.dispatchEvent(new Event("wallet:backup-health-changed"));
@@ -674,7 +753,7 @@ test(
       await shift.getByRole("button", { name: "Count drawer & close" }).click();
       const blindCount = page.getByRole("dialog", { name: "Blind cash count" });
       await blindCount.getByLabel("What is in the drawer").fill("103.00");
-      await blindCount.getByRole("button", { name: "Commit count & issue Z" }).click();
+      await blindCount.getByRole("button", { name: "Commit Count & Issue Z" }).click();
       await page.getByRole("dialog", { name: "Z-report 1" }).getByText(/Z-1 issued · shift closed/).waitFor();
       await assertMobileSurface(page, "closed shift report");
 
@@ -684,7 +763,7 @@ test(
       const archiveBeforeBackup = await readIndexedMerchantArchive(page);
       assert.ok(archiveBeforeBackup, "merchant history must exist in IndexedDB before backup");
 
-      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Home" }).click();
+      await authorizeMerchantExitToHome(page);
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
       await page.getByRole("button", { name: /Backup & Recovery/ }).click();
       await page.getByRole("dialog", { name: /Backup & Recovery/ }).getByRole("button", { name: "Back Up Wallet" }).click();
@@ -699,8 +778,8 @@ test(
       await page.getByRole("button", { name: "Done" }).click();
 
       await page.getByRole("button", { name: "Reset Wallet" }).click();
-      const reset = page.getByRole("dialog", { name: "Erase & Reset Wallet?" });
-      await reset.getByRole("button", { name: "Erase Everything" }).click();
+      const reset = page.getByRole("dialog", { name: "Erase this wallet?" });
+      await reset.getByRole("button", { name: "Erase everything" }).click();
       await page.getByRole("heading", { name: "Own your keys. Own your money." }).waitFor();
       assert.equal(await readIndexedMerchantArchive(page), null);
 
@@ -718,6 +797,13 @@ test(
 
       const restoredArchive = await readIndexedMerchantArchive(page);
       assert.equal(restoredArchive, archiveBeforeBackup);
+      await openMerchantMode(page);
+      await page.getByRole("button", { name: "Choose staff" }).click();
+      await page.getByRole("heading", { name: "Staff & This Device" }).waitFor();
+      await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+      const restoredArchiveOwnerPin = page.getByRole("dialog", { name: "Imported Account" });
+      await restoredArchiveOwnerPin.getByLabel("PIN for Imported Account").fill("2468");
+      await restoredArchiveOwnerPin.getByRole("button", { name: "Select", exact: true }).click();
       await openMerchantMode(page);
       await page.getByRole("button", { name: "Orders", exact: true }).click();
       await page.getByRole("button", { name: "Open the receipt for order #1001" }).waitFor();

@@ -1,4 +1,5 @@
 import type { NetworkKey } from "../stellar";
+import { csvField } from "../csv";
 import { assetKey } from "./charge";
 import { distribute, linePayableMinor } from "./money";
 import { indexMerchantRecords, type MerchantRecordIndex } from "./selectors";
@@ -363,10 +364,7 @@ export function deriveTaxPeriods(
   return periods;
 }
 
-function csvField(value: string | number | null): string {
-  const text = value === null ? "" : String(value);
-  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-}
+export { neutralizeSpreadsheetFormula } from "../csv";
 
 function assetText(asset: AcceptedAsset | null): string {
   return asset ? (asset.issuer ? `${asset.code}:${asset.issuer}` : asset.code) : "";
@@ -457,8 +455,12 @@ export function createReportExport(
   },
 ): { store: MerchantStore; file: ReportFile; record: ExportRecord } {
   const currentActor = store.staff.find((member) => member.id === input.actor.id);
-  if (!currentActor?.active || !currentActor.permissions.exportRecords) {
-    throw new Error("This staff member cannot export merchant records.");
+  if (
+    !currentActor?.active ||
+    store.activeStaffId !== currentActor.id ||
+    !currentActor.permissions.exportRecords
+  ) {
+    throw new Error("The active staff member cannot export merchant records.");
   }
   if (store.exportRecords.some((record) => record.id === input.id)) {
     throw new Error("This export has already been recorded.");

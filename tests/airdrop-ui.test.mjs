@@ -10,7 +10,7 @@ const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8
 test("pending balances open a selective review instead of claiming everything", () => {
   const dashboard = read("src/components/Dashboard.tsx");
   assert.equal(existsSync(path.join(root, "src/components/ClaimableBalancesModal.tsx")), true);
-  const modal = read("src/components/ClaimableBalancesModal.tsx");
+  const modal = read("src/components/ClaimableBalancesModalBody.tsx");
 
   assert.doesNotMatch(dashboard, />\s*Claim All\s*</);
   assert.match(dashboard, />\s*Review\s*</);
@@ -24,7 +24,7 @@ test("pending balances open a selective review instead of claiming everything", 
 
 test("claim review explains decline semantics and blocks missing trustlines", () => {
   assert.equal(existsSync(path.join(root, "src/components/ClaimableBalancesModal.tsx")), true);
-  const modal = read("src/components/ClaimableBalancesModal.tsx");
+  const modal = read("src/components/ClaimableBalancesModalBody.tsx");
 
   assert.match(modal, /Stellar has no recipient-side decline operation/);
   assert.match(modal, /Unselected balances remain unclaimed\s+on the public ledger/);
@@ -34,7 +34,7 @@ test("claim review explains decline semantics and blocks missing trustlines", ()
 });
 
 test("an immediately confirmed claim is finalized without entering tracked pending state", () => {
-  const modal = read("src/components/ClaimableBalancesModal.tsx");
+  const modal = read("src/components/ClaimableBalancesModalBody.tsx");
 
   assert.match(
     modal,
@@ -48,7 +48,7 @@ test("an immediately confirmed claim is finalized without entering tracked pendi
 
 test("claimable balances can be dismissed locally and restored later", () => {
   const dashboard = read("src/components/Dashboard.tsx");
-  const modal = read("src/components/ClaimableBalancesModal.tsx");
+  const modal = read("src/components/ClaimableBalancesModalBody.tsx");
 
   assert.match(dashboard, /loadDismissedClaimableBalanceIds/);
   assert.match(dashboard, /visibleClaimableBalances/);

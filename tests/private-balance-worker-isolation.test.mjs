@@ -5,6 +5,7 @@ import { Keypair, StrKey } from '@stellar/stellar-sdk';
 import {
   computeContextField,
   computeContextHash,
+  derivePrivateAddressDeploymentTag,
   encodePrivateAddress,
 } from '@stellarkey/private-balance';
 import { PrivateBalanceWorkerClient } from '../src/features/private-balance/worker/client.ts';
@@ -20,7 +21,21 @@ const manifest = {
     realmId: '0202020202020202020202020202020202020202020202020202020202020202',
     poolContractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4',
     guardianAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+    assetAdminAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+    assets: [{
+      index: 0,
+      kind: 'native',
+      code: 'XLM',
+      issuer: null,
+      name: 'Stellar Lumens',
+      decimals: 7,
+      displayDecimals: 7,
+      contractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
+    }],
     stealthAnnouncerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+    witnessRpcUrl: 'https://witness.example.test',
+    deploymentCheckpoint: { ledger: 0, hash: '00'.repeat(32) },
+    registryCheckpoint: { ledger: 0, hash: '00'.repeat(32), assetCount: 1 },
     deploymentBindingHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
     artifacts: {
       r1csSha256: 'a1'.repeat(32),
@@ -33,16 +48,19 @@ const manifest = {
       vkBinSha256: 'a5'.repeat(32),
     },
     constants: {
-      treeDepth: 32,
-      pageCapacity: 32,
-      publicInputs: 13,
+      treeDepth: 17,
+      treeArity: 3,
+      rootWindowLedgers: 1440,
+      publicInputs: 11,
       notePlaintextBytes: 128,
       recipientEnvelopeBytes: 181,
-      outputPackageBytes: 213,
-      addressPayloadBytes: 68,
-      addressAsciiBytes: 119,
-      addressContextTagBytes: 0,
-      addressChecksumBytes: 6,
+      outgoingEnvelopeBytes: 157,
+      outputPackageBytes: 370,
+      outputsPerAction: 3,
+      addressPayloadBytes: 84,
+      addressAsciiBytes: 128,
+      addressContextTagBytes: 16,
+      addressChecksumBytes: 4,
     },
     hpke: {
       kemId: '0x0020',
@@ -56,10 +74,11 @@ const hex = (value) => Uint8Array.from(
   (byte) => Number.parseInt(byte, 16),
 );
 const TEST_PRIVATE_ADDRESS = encodePrivateAddress({
-  diversifier: new Uint8Array(4),
+  deploymentTag: derivePrivateAddressDeploymentTag(hex(manifest.deploymentBindingHash)),
+  diversifier: Uint8Array.of(0, 0, 0, 1),
   ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
   hpkePublicKey: new Uint8Array(32).fill(2),
-}, 'tks');
+}, 'tskpay_');
 
 test('worker client: rejects operations when worker is uninitialized', async () => {
   const client = new PrivateBalanceWorkerClient();
@@ -98,7 +117,7 @@ test('worker client: transfers the exact standalone root with public derivation 
           activities: [],
           tree: {
             nextIndex: 0,
-            frontier: Array.from({ length: 32 }, () => new Uint8Array(32)),
+            frontier: Array.from({ length: 34 }, () => new Uint8Array(32)),
             currentRoot: new Uint8Array(32),
           },
           lastRecordHash: new Uint8Array(32),
@@ -125,6 +144,10 @@ test('worker client: transfers the exact standalone root with public derivation 
   assert.deepEqual(message.keyContext.realmId, hex(manifest.realmId));
   assert.deepEqual(message.keyContext.poolId, StrKey.decodeContract(manifest.poolContractId));
   assert.equal('assetId' in message.keyContext, false);
+  assert.deepEqual(message.keyContext.assets, [{
+    index: 0,
+    contractId: manifest.assets[0].contractId,
+  }]);
   assert.deepEqual(
     message.keyContext.accountPublicKey,
     StrKey.decodeEd25519PublicKey(account.publicKey()),
@@ -136,7 +159,7 @@ test('worker client: transfers the exact standalone root with public derivation 
     message.keyContext.poolId,
   );
   assert.deepEqual(message.keyContext.contextField, computeContextField(contextHash));
-  assert.equal(message.keyContext.addressPrefix, 'tks');
+  assert.equal(message.keyContext.addressPrefix, 'tskpay_');
 
   const scan = await client.scanPage({
     records: [],
@@ -157,15 +180,17 @@ test('worker client restores and rotates diversified receive addresses without e
   const account = Keypair.random();
   const diversifier = Uint8Array.of(1, 2, 3, 4);
   const restoredAddress = encodePrivateAddress({
+    deploymentTag: derivePrivateAddressDeploymentTag(hex(manifest.deploymentBindingHash)),
     diversifier,
     ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
     hpkePublicKey: new Uint8Array(32).fill(2),
-  }, 'tks');
+  }, 'tskpay_');
   const freshAddress = encodePrivateAddress({
+    deploymentTag: derivePrivateAddressDeploymentTag(hex(manifest.deploymentBindingHash)),
     diversifier: Uint8Array.of(5, 6, 7, 8),
     ownerCommitment: Uint8Array.from([3, ...new Uint8Array(31)]),
     hpkePublicKey: new Uint8Array(32).fill(4),
-  }, 'tks');
+  }, 'tskpay_');
   const posted = [];
   const fakeWorker = {
     onmessage: null,
@@ -207,7 +232,7 @@ test('worker client restores and rotates diversified receive addresses without e
   assert.equal(fresh.address, freshAddress);
   assert.notEqual(fresh.address, restored.address);
 
-  const wrongNetwork = `sks1${restoredAddress.slice(4)}`;
+  const wrongNetwork = `skpay_${restoredAddress.slice('tskpay_'.length)}`;
   await assert.rejects(
     () => client.initSession(
       manifest,
@@ -315,7 +340,6 @@ test('worker client proves an opaque prepared action without exposing witness in
             depositSource: { kind: 0, payload: message.intent.depositSource.payload },
           },
           actionFieldHex: '02'.repeat(32),
-          actionBindingHex: '03'.repeat(32),
           reservedNoteIds: [],
           inputValue: '0',
           changeValue: '0',
@@ -376,4 +400,41 @@ test('worker client proves an opaque prepared action without exposing witness in
   assert.equal(proveMessage.type, 'GENERATE_PROOF');
   assert.equal(proveMessage.preparedActionId, preparedActionId);
   assert.equal('circuitInputs' in proveMessage, false);
+});
+
+test('cancelling proof generation terminates the worker so witness buffers cannot linger', async () => {
+  const account = Keypair.random();
+  let terminated = 0;
+  const fakeWorker = {
+    onmessage: null,
+    postMessage(message) {
+      if (message.type !== 'INIT_SESSION') return;
+      queueMicrotask(() => this.onmessage({
+        data: {
+          messageVersion: message.messageVersion,
+          id: message.id,
+          sessionId: message.sessionId,
+          type: 'INIT_OK',
+          ownerCommitmentHex: '01'.repeat(32),
+          address: TEST_PRIVATE_ADDRESS,
+        },
+      }));
+    },
+    terminate() { terminated += 1; },
+  };
+  const client = new PrivateBalanceWorkerClient(fakeWorker);
+  await client.initSession(manifest, account.publicKey(), new Uint8Array(64).fill(9));
+  const controller = new AbortController();
+  const proving = client.generateProof(
+    'prepared-action-id',
+    new ArrayBuffer(8),
+    new ArrayBuffer(8),
+    {},
+    { signal: controller.signal },
+  );
+  controller.abort();
+
+  await assert.rejects(proving, /cancel|abort/i);
+  assert.equal(terminated, 1);
+  assert.equal(client.failed, true);
 });

@@ -8,6 +8,7 @@ export interface MerchantShellContextValue {
   unmatched: UnmatchedPayment[];
   charges: Charge[];
   activeShift: Shift | null;
+  authorizeWalletExit: () => Promise<void>;
 }
 
 export interface MerchantSettingsContextValue {

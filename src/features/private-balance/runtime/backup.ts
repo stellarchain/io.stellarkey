@@ -9,6 +9,7 @@ import {
   type PrivateStorageContext,
 } from './storage';
 import type { PrivateBalanceDurableState } from './types';
+import { hasExposedPrivateSpend } from './proof-exposure';
 
 const SENSITIVE_PREFIX = 'private:sensitive:v1:';
 const MAX_RECORDS = 4_096;
@@ -26,6 +27,11 @@ export interface PrivateBalanceBackupArchive {
   records: PrivateBalanceBackupRecord[];
 }
 
+export interface PreparedPrivateBalanceBackupArchive {
+  archive: PrivateBalanceBackupArchive;
+  omittedRecords: number;
+}
+
 interface BackupRecordDriver extends PrivateRecordDriver {
   readPrefix(prefix: string): Promise<Map<string, string>>;
   replacePrefixVerified(prefix: string, entries: ReadonlyMap<string, string>): Promise<void>;
@@ -33,6 +39,10 @@ interface BackupRecordDriver extends PrivateRecordDriver {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function parseContextKey(key: string): PrivateStorageContext {
@@ -74,7 +84,7 @@ function validateEncryptedRecord(value: string): void {
   }
   if (
     parsed.kind !== 'stellarkey-private-balance-state' ||
-    parsed.version !== 1 ||
+    parsed.version !== 2 ||
     !Number.isSafeInteger(parsed.revision) ||
     (parsed.revision as number) < 0 ||
     typeof parsed.crypto.iv !== 'string' ||
@@ -131,7 +141,7 @@ export async function exportPrivateBalanceBackupArchive(
   driver: Pick<EncryptedRecordDriver, 'readPrefix'> = new IndexedDbEncryptedRecordDriver(),
 ): Promise<PrivateBalanceBackupArchive> {
   const records = [...await driver.readPrefix(SENSITIVE_PREFIX)]
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => compareCodeUnits(left, right))
     .map(([key, value]) => ({ key, value }));
   return decodePrivateBalanceBackupArchive({ schemaVersion: 1, records });
 }
@@ -186,30 +196,36 @@ class StagingDriver implements BackupRecordDriver {
 
 export async function preparePrivateBalanceBackupArchive(input: {
   archive: string | unknown;
-  resolveStorageKey: (context: PrivateStorageContext) => Promise<Uint8Array>;
+  resolveStorageKey: (context: PrivateStorageContext) => Promise<Uint8Array | null>;
   validateContext: (
     context: PrivateStorageContext,
     state: PrivateBalanceDurableState,
   ) => Promise<void>;
   now?: () => number;
-}): Promise<PrivateBalanceBackupArchive> {
+}): Promise<PreparedPrivateBalanceBackupArchive> {
   const archive = decodePrivateBalanceBackupArchive(input.archive);
   const staged = new StagingDriver(new Map(archive.records.map(record => [record.key, record.value])));
   const now = input.now?.() ?? Date.now();
   if (!Number.isFinite(now) || now < 0) throw new Error('Private Balance restore timestamp is invalid.');
+  let omittedRecords = 0;
 
   for (const record of archive.records) {
     const context = parseContextKey(record.key);
     const storageKey = await input.resolveStorageKey(context);
+    if (storageKey === null) {
+      staged.records.delete(record.key);
+      omittedRecords += 1;
+      continue;
+    }
+    if (!(storageKey instanceof Uint8Array) || storageKey.length !== 32) {
+      throw new Error('Private Balance restore storage key is invalid.');
+    }
     try {
-      if (!(storageKey instanceof Uint8Array) || storageKey.length !== 32) {
-        throw new Error('Private Balance restore storage key is invalid.');
-      }
       const state = await loadPrivateBalanceState(context, storageKey, staged);
       if (!state) throw new Error('Private Balance backup record is missing from staging.');
       await input.validateContext(context, state);
       const preProofNoteIds = new Set(
-        state.buildReservations.flatMap(reservation => reservation.reservedNoteIds),
+        state.buildReservations.filter(reservation => !hasExposedPrivateSpend(reservation)).flatMap(reservation => reservation.reservedNoteIds),
       );
       const requiresReconciliation: PrivateBalanceDurableState = {
         ...state,
@@ -222,7 +238,9 @@ export async function preparePrivateBalanceBackupArchive(input: {
         notes: state.notes.map(note => preProofNoteIds.has(note.id)
           ? { ...note, status: 'unspent' as const, reservedAt: undefined }
           : { ...note }),
-        buildReservations: [],
+        // Old spend reservations can predate durable exposure metadata. Their
+        // proof may already be shared; restoring a backup cannot revoke it.
+        buildReservations: state.buildReservations.filter(hasExposedPrivateSpend),
       };
       await commitPrivateBalanceState(
         context,
@@ -236,12 +254,30 @@ export async function preparePrivateBalanceBackupArchive(input: {
     }
   }
 
-  return decodePrivateBalanceBackupArchive({
-    schemaVersion: 1,
-    records: [...await staged.readPrefix(SENSITIVE_PREFIX)]
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, value]) => ({ key, value })),
-  });
+  return {
+    archive: decodePrivateBalanceBackupArchive({
+      schemaVersion: 1,
+      records: [...await staged.readPrefix(SENSITIVE_PREFIX)]
+        .sort(([left], [right]) => compareCodeUnits(left, right))
+        .map(([key, value]) => ({ key, value })),
+    }),
+    omittedRecords,
+  };
+}
+
+export async function removePrivateBalanceRecordsForAccount(
+  accountId: string,
+  driver: Pick<EncryptedRecordDriver, 'readPrefix' | 'remove'> =
+    new IndexedDbEncryptedRecordDriver(),
+): Promise<number> {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(accountId)) {
+    throw new Error('Private Balance account identifier is invalid.');
+  }
+  const matchingKeys = [...await driver.readPrefix(SENSITIVE_PREFIX)]
+    .filter(([key]) => parseContextKey(key).accountId === accountId)
+    .map(([key]) => key);
+  for (const key of matchingKeys) await driver.remove(key);
+  return matchingKeys.length;
 }
 
 export async function replacePrivateBalanceBackupArchive(
@@ -258,17 +294,20 @@ export async function replacePrivateBalanceBackupArchive(
 export async function restorePrivateBalanceBackupArchive(input: {
   archive: string | unknown;
   driver?: BackupRecordDriver;
-  resolveStorageKey: (context: PrivateStorageContext) => Promise<Uint8Array>;
+  resolveStorageKey: (context: PrivateStorageContext) => Promise<Uint8Array | null>;
   validateContext: (
     context: PrivateStorageContext,
     state: PrivateBalanceDurableState,
   ) => Promise<void>;
   now?: () => number;
-}): Promise<{ restoredContexts: number }> {
+}): Promise<{ restoredContexts: number; omittedRecords: number }> {
   const prepared = await preparePrivateBalanceBackupArchive(input);
   await replacePrivateBalanceBackupArchive(
-    prepared,
+    prepared.archive,
     input.driver ?? new IndexedDbEncryptedRecordDriver(),
   );
-  return { restoredContexts: prepared.records.length };
+  return {
+    restoredContexts: prepared.archive.records.length,
+    omittedRecords: prepared.omittedRecords,
+  };
 }

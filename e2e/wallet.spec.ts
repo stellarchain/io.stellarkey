@@ -45,6 +45,14 @@ test("corrupt vault data enters explicit recovery without overwriting the payloa
 test("network settings verify, persist, and reset direct endpoints", async ({ page }) => {
   await importTestWallet(page);
 
+  async function authorizeEndpointChange() {
+    const approval = page.getByRole("dialog", { name: "Confirm security change" });
+    await expect(approval).toBeVisible();
+    await approval.getByLabel("Wallet Password").fill(testPassword);
+    await approval.getByRole("button", { name: "Authorize" }).click();
+    await expect(approval).toBeHidden();
+  }
+
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button").filter({
     has: page.getByText("Network", { exact: true }),
@@ -52,16 +60,19 @@ test("network settings verify, persist, and reset direct endpoints", async ({ pa
   await expect(page.getByRole("heading", { name: "Network" })).toBeVisible();
 
   await page.getByRole("button", { name: "Test & Save Horizon" }).click();
+  await authorizeEndpointChange();
   await expect.poll(() => page.evaluate(() =>
     localStorage.getItem("wallet.endpoint.horizon.testnet.v1"),
   )).toBe("https://horizon-testnet.stellar.org");
 
   await page.getByRole("button", { name: "Test & Save RPC" }).click();
+  await authorizeEndpointChange();
   await expect.poll(() => page.evaluate(() =>
     localStorage.getItem("wallet.endpoint.rpc.testnet.v1"),
   )).toBe("https://soroban-testnet.stellar.org");
 
   await page.getByRole("button", { name: "Reset to Defaults" }).click();
+  await authorizeEndpointChange();
   await expect.poll(() => page.evaluate(() => ({
     horizon: localStorage.getItem("wallet.endpoint.horizon.testnet.v1"),
     rpc: localStorage.getItem("wallet.endpoint.rpc.testnet.v1"),
@@ -133,7 +144,9 @@ test("signing security requires the password to weaken policy and can rotate the
   await approval.getByLabel("Wallet Password").fill(replacement);
   await approval.getByRole("button", { name: "Authorize" }).click();
   await expect(approval).toBeHidden();
-  await expect(send.getByText("Payment Confirmed", { exact: true }).first()).toBeVisible();
+  // The one Send dialog reports a stage-aware title once the payment lands.
+  const sent = page.getByRole("dialog", { name: "Payment Sent", exact: true });
+  await expect(sent.getByText("Payment Confirmed", { exact: true }).first()).toBeVisible();
 });
 
 test("unlock, send review, swap review, and watch-only safety stay operable", async ({ page }) => {
@@ -165,6 +178,10 @@ test("unlock, send review, swap review, and watch-only safety stay operable", as
   await expect(send.getByRole("button", { name: "Confirm Send", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await page.getByRole("dialog", { name: "Send Payment" }).getByRole("button", { name: "Close" }).click();
+  // A typed recipient and amount are unsaved input: closing asks first.
+  const discard = page.getByRole("dialog", { name: "Discard changes?", exact: true });
+  await discard.getByRole("button", { name: "Discard", exact: true }).click();
+  await expect(send).toBeHidden();
 
   await page.getByRole("button", { name: "DEX Swap", exact: true }).click();
   const payAmount = page.getByLabel("You pay amount");
@@ -188,9 +205,9 @@ test("unlock, send review, swap review, and watch-only safety stay operable", as
   await expect(page.getByText("Transaction hash", { exact: true })).toBeVisible();
   await expect(page.getByText("Receive asset issuer", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Done", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "View activity", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Swap again", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Swap again", exact: true }).click();
+  await expect(page.getByRole("button", { name: "View Activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Swap Again", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Swap Again", exact: true }).click();
   await expect(page.getByLabel("You pay amount")).toHaveValue("");
   await expect(page.getByLabel("You receive amount")).toHaveValue("");
 
@@ -210,4 +227,139 @@ test("unlock, send review, swap review, and watch-only safety stay operable", as
   expect(width.scroll).toBeLessThanOrEqual(width.client);
   expect(failures.pageErrors).toEqual([]);
   expect(failures.consoleErrors).toEqual([]);
+});
+
+test("market range changes retain chart geometry and never relabel stale points", async ({ page }) => {
+  const requestCount = new Map<string, number>();
+  let releaseMonth: (() => void) | null = null;
+  const monthPending = new Promise<void>((resolve) => {
+    releaseMonth = resolve;
+  });
+  await page.route("https://api.coingecko.com/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (!url.pathname.endsWith("/market_chart")) {
+      await route.fallback();
+      return;
+    }
+    const days = url.searchParams.get("days");
+    requestCount.set(days ?? "missing", (requestCount.get(days ?? "missing") ?? 0) + 1);
+    if (days === "30") await monthPending;
+    const start = ({ "1": 0.21, "7": 0.24, "30": 0.31, "365": 0.41 } as const)[
+      days as "1" | "7" | "30" | "365"
+    ] ?? 0.24;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        prices: [
+          [1_700_000_000_000, start],
+          [1_700_086_400_000, start + 0.02],
+        ],
+      }),
+    });
+  });
+  await importTestWallet(page);
+
+  const sevenDaySummary = page.getByLabel("7D market price summary");
+  await expect(sevenDaySummary).toBeVisible();
+  await expect(page.getByText(/^Rate updated ·/)).toHaveCount(0);
+  const chart = page.locator("section").filter({ has: page.getByText("XLM Market", { exact: true }) });
+  await expect(chart.getByRole("button", { name: /refresh|retry/i })).toHaveCount(0);
+  const startMetric = sevenDaySummary.getByText("Start", { exact: true });
+  const before = await startMetric.boundingBox();
+  expect(before).not.toBeNull();
+
+  await page.getByRole("button", { name: "1M", exact: true }).click();
+  await expect(page.getByRole("button", { name: "1M", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByText("Updating", { exact: true })).toBeVisible();
+  await expect(sevenDaySummary).toBeVisible();
+  await expect(page.getByLabel("1M market price summary")).toBeHidden();
+  const during = await startMetric.boundingBox();
+  expect(during?.y).toBe(before?.y);
+
+  releaseMonth?.();
+  await expect(page.getByLabel("1M market price summary")).toBeVisible();
+  await expect(page.getByText("Stellar Lumens · 1-month range", { exact: true })).toBeVisible();
+
+  for (const [range, label] of [
+    ["1D", "Stellar Lumens · 24-hour range"],
+    ["1Y", "Stellar Lumens · 1-year range"],
+    ["7D", "Stellar Lumens · 7-day range"],
+  ] as const) {
+    await page.getByRole("button", { name: range, exact: true }).click();
+    await expect(page.getByLabel(`${range} market price summary`)).toBeVisible();
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
+  }
+  expect(Object.fromEntries(requestCount)).toEqual({ "1": 1, "7": 1, "30": 1, "365": 1 });
+});
+
+test("network fees include the selected local-currency equivalent", async ({ page }) => {
+  await importTestWallet(page);
+  const currency = page.getByTitle(/Click to cycle currency/);
+  await currency.click();
+  await currency.click();
+  await expect(currency).toContainText("GBP");
+
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const send = page.getByRole("dialog", { name: "Send Payment" });
+  await send.getByPlaceholder("0.00").fill("1");
+  await send.getByRole("textbox", { name: "Recipient Address or Federation" }).fill(testPayer);
+  await send.getByRole("button", { name: "Review Transfer" }).click();
+
+  const equivalents = send.locator("[data-xlm-fee-fiat]");
+  await expect(equivalents.first()).toHaveText(/^≈ £0\.00000195 Rate updated · /);
+  await expect(equivalents.first()).toHaveAttribute("title", /^Rate updated · /);
+  await expect(equivalents).toHaveCount(2);
+});
+
+test("expired chart ranges retain labelled data through failure, explicit retry, and late completion", async ({ page }) => {
+  const startedAt = 1_800_000_000_000;
+  await page.clock.setFixedTime(startedAt);
+  let sevenRequests = 0;
+  let failSeven = false;
+  let holdMonth = false;
+  let releaseMonth: (() => void) | undefined;
+  const monthPending = new Promise<void>((resolve) => { releaseMonth = resolve; });
+  await page.route("https://api.coingecko.com/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (!url.pathname.endsWith("/market_chart")) return route.fallback();
+    const days = url.searchParams.get("days");
+    if (days === "7") sevenRequests++;
+    if (days === "30" && holdMonth) await monthPending;
+    await route.fulfill({
+      status: days === "7" && failSeven ? 503 : 200,
+      contentType: "application/json",
+      body: JSON.stringify({ prices: [[startedAt - 60_000, 0.24], [startedAt, 0.25]] }),
+    });
+  });
+  await importTestWallet(page);
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+  await page.getByRole("button", { name: "1D", exact: true }).click();
+  await expect(page.getByLabel("1D market price summary")).toBeVisible();
+  const fetched = sevenRequests;
+  await page.clock.setFixedTime(startedAt + 3600_000);
+  failSeven = true;
+  await page.getByRole("button", { name: "7D", exact: true }).click();
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+  await expect(page.getByText("Chart refresh unavailable · Showing previous data", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry chart" })).toHaveCount(0);
+  expect(sevenRequests).toBeGreaterThan(fetched);
+  failSeven = false;
+  await page.getByRole("button", { name: "7D", exact: true }).click();
+  await expect(page.getByText("Chart refresh unavailable · Showing previous data", { exact: true })).toBeHidden();
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+
+  holdMonth = true;
+  await page.getByRole("button", { name: "1M", exact: true }).click();
+  await expect(page.getByText("Updating", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+  await page.getByRole("button", { name: "1Y", exact: true }).click();
+  await expect(page.getByLabel("1Y market price summary")).toBeVisible();
+  releaseMonth?.();
+  await expect(page.getByLabel("1M market price summary")).toBeHidden();
+  await expect(page.getByRole("button", { name: "1Y", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Updating", { exact: true })).toBeHidden();
 });

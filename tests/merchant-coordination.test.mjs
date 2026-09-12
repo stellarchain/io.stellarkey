@@ -56,6 +56,26 @@ test("merchant commits increment their revision and reject a stale tab", async (
   );
 });
 
+test("merchant commits reject an invalid candidate before persistence", async () => {
+  const { prepareMerchantCommit } = await coordinationDomain();
+  const current = emptyStore();
+  const invalid = {
+    ...current,
+    settings: { ...current.settings, operatorLockTimeoutMinutes: 3 },
+  };
+
+  assert.throws(
+    () => prepareMerchantCommit({
+      current,
+      candidate: invalid,
+      persisted: current,
+      writerId: "tab-a",
+      now: 500,
+    }),
+    /invalid merchant/i,
+  );
+});
+
 test("only strictly newer external merchant revisions replace local state", async () => {
   const { newerMerchantStore } = await coordinationDomain();
   const current = { ...emptyStore(), revision: 3, writerId: "tab-a", updatedAt: 300 };
@@ -100,4 +120,11 @@ test("the merchant provider reloads revisions and leases Horizon polling", () =>
   assert.match(hook, /navigator\.locks\.request/);
   assert.match(hook, /merchantWriterLockRef/);
   assert.match(hook, /stellarkey\.merchant\.writer\.v1/);
+  const poll = hook.split("const pollNow = useCallback")[1]?.split("const hasLiveCharge")[0] ?? "";
+  assert.match(poll, /merchantWriterLockRef\.current === "pending"/);
+  assert.ok(
+    poll.indexOf('merchantWriterLockRef.current === "pending"') <
+      poll.indexOf("claimWatcherLease("),
+    "a non-writer tab must not acquire the settlement watcher lease",
+  );
 });

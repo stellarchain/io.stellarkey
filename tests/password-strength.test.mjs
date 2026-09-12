@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   estimatePasswordStrength,
   validateNewVaultPassword,
+  validateNewVaultPasswordWithGuessability,
 } from "../src/lib/password-strength.ts";
 
 test("empty passwords are not rated", () => {
@@ -29,6 +30,27 @@ test("repeated and sequential passwords stay weak despite their length", () => {
   assert.match(estimatePasswordStrength("abcd1234abcd1234").feedback, /predictable/i);
 });
 
+test("wallet-themed phrases remain too guessable for a new vault", () => {
+  for (const candidate of [
+    "stellarkey wallet recovery phrase",
+    "stellar wallet lumens recovery",
+    "my crypto wallet password 2026",
+  ]) {
+    assert.equal(validateNewVaultPassword(candidate).valid, false, candidate);
+    assert.ok(estimatePasswordStrength(candidate).score <= 1, candidate);
+  }
+});
+
+test("the offline guessability estimator catches long common patterns", async () => {
+  for (const candidate of ["iloveyouforever", "footballpassword", "monkeymonkey123"]) {
+    assert.equal(
+      (await validateNewVaultPasswordWithGuessability(candidate)).valid,
+      false,
+      candidate,
+    );
+  }
+});
+
 test("the scorer distinguishes fair, good, and strong vault passwords", () => {
   assert.equal(estimatePasswordStrength("aurorariver2").score, 2);
   assert.equal(estimatePasswordStrength("Aurora!River27").score, 3);
@@ -46,6 +68,7 @@ test("new vault password policy rejects guessable passwords and accepts strong s
     "password123",
     "aaaaaaaaaaaaaaaa",
     "abcd1234abcd1234",
+    "aurorariver2",
   ]) {
     assert.equal(validateNewVaultPassword(candidate).valid, false, candidate);
   }
@@ -59,8 +82,32 @@ test("new vault password policy rejects guessable passwords and accepts strong s
   }
 });
 
+test("new passwords must use a stable NFC Unicode representation", () => {
+  const decomposed = "Caf\u0065\u0301!River27";
+  assert.equal(decomposed.normalize("NFC") === decomposed, false);
+  const result = validateNewVaultPassword(decomposed);
+  assert.equal(result.valid, false);
+  assert.match(result.message, /unicode|normal/i);
+});
+
 test("onboarding uses the shared new-vault password policy", () => {
   const source = readFileSync(new URL("../src/components/Onboarding.tsx", import.meta.url), "utf8");
   assert.match(source, /validateNewVaultPassword\(password\)/);
   assert.doesNotMatch(source, /password\.length\s*>=\s*8/);
+});
+
+test("the mature estimator stays off startup and is enforced at every vault write boundary", () => {
+  const policy = readFileSync(
+    new URL("../src/lib/password-strength.ts", import.meta.url),
+    "utf8",
+  );
+  const vault = readFileSync(new URL("../src/lib/vault.ts", import.meta.url), "utf8");
+
+  assert.doesNotMatch(policy, /^import .*@zxcvbn-ts/m);
+  assert.match(policy, /import\("@zxcvbn-ts\/core"\)/);
+  assert.match(policy, /import\("@zxcvbn-ts\/language-common"\)/);
+  assert.equal(
+    vault.match(/await validateNewVaultPasswordWithGuessability\(/g)?.length,
+    3,
+  );
 });

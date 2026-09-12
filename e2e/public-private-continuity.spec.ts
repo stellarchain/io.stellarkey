@@ -5,7 +5,12 @@ import {
   installQuietEventSource,
 } from "./fixtures";
 
-test.beforeEach(async ({ context }) => {
+// Service Worker-owned requests bypass page.route; transport-delay tests must
+// own chunk delivery. Offline/PWA behavior is covered separately in pwa.spec.
+test.use({ contextOptions: { reducedMotion: "no-preference" }, serviceWorkers: "block" });
+
+test.beforeEach(async ({ context, contextOptions, page }) => {
+  expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(contextOptions.reducedMotion === "reduce");
   await installQuietEventSource(context);
   await installNetworkFixtures(context);
 });
@@ -38,13 +43,23 @@ async function installContinuityObserver(page: Page, shellId: string) {
     if (!shell || !backdrop) throw new Error("Modal shell is unavailable.");
     shell.dataset.continuityId = id;
     backdrop.dataset.continuityId = id;
-    const state = { removed: 0, backdropAnimations: 0, scrollUnlocks: 0 };
+    const scrollOwner = document.querySelector<HTMLElement>("[data-app-scroll-owner]");
+    const app = document.querySelector<HTMLElement>("[data-app-surface]");
+    const state = { removed: 0, backdropAnimations: 0, scrollUnlocks: 0, inertInterruptions: 0, unintendedCloses: 0 };
     (window as typeof window & { __continuity?: typeof state }).__continuity = state;
-    backdrop.addEventListener("animationstart", () => {
-      state.backdropAnimations += 1;
+    backdrop.addEventListener("animationstart", (event) => {
+      if (event.target === backdrop || event.target === shell) state.backdropAnimations += 1;
     });
     new MutationObserver((records) => {
       for (const record of records) {
+        // Old attribute values also expose unlock/relock within one task,
+        // which checking only the final DOM state would miss.
+        if (record.type === "attributes" && record.attributeName === "style" &&
+            (record.target === document.body || record.target === scrollOwner) &&
+            !/overflow:\s*hidden/.test(record.oldValue ?? "")) state.scrollUnlocks += 1;
+        if (record.target === app && record.attributeName === "inert" && record.oldValue === null) state.inertInterruptions += 1;
+        if (record.target === backdrop && record.attributeName === "data-overlay-state" &&
+            (record.oldValue !== "open" || backdrop.dataset.overlayState !== "open")) state.unintendedCloses += 1;
         for (const node of record.removedNodes) {
           if (node === backdrop || node === shell || (node instanceof Element && node.contains(shell))) {
             state.removed += 1;
@@ -52,7 +67,9 @@ async function installContinuityObserver(page: Page, shellId: string) {
         }
       }
       if (document.body.style.overflow !== "hidden") state.scrollUnlocks += 1;
-    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["style"] });
+      if (scrollOwner && scrollOwner.style.overflow !== "hidden") state.scrollUnlocks += 1;
+      if (app && !app.inert) state.inertInterruptions += 1;
+    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ["style", "inert", "data-overlay-state"] });
   }, shellId);
 }
 
@@ -61,7 +78,7 @@ async function expectStableContinuity(page: Page, shellId: string) {
     const shell = document.querySelector<HTMLElement>("[data-modal-shell]");
     const backdrop = document.querySelector<HTMLElement>("[data-modal-backdrop]");
     const state = (window as typeof window & {
-      __continuity?: { removed: number; backdropAnimations: number; scrollUnlocks: number };
+      __continuity?: { removed: number; backdropAnimations: number; scrollUnlocks: number; inertInterruptions: number; unintendedCloses: number };
     }).__continuity;
     return {
       shell: shell?.dataset.continuityId === id,
@@ -69,6 +86,8 @@ async function expectStableContinuity(page: Page, shellId: string) {
       removed: state?.removed ?? -1,
       backdropAnimations: state?.backdropAnimations ?? -1,
       scrollUnlocks: state?.scrollUnlocks ?? -1,
+      inertInterruptions: state?.inertInterruptions ?? -1,
+      unintendedCloses: state?.unintendedCloses ?? -1,
       locked: document.body.style.overflow === "hidden",
       focusInside: Boolean(backdrop?.contains(document.activeElement)),
     };
@@ -78,6 +97,8 @@ async function expectStableContinuity(page: Page, shellId: string) {
     removed: 0,
     backdropAnimations: 0,
     scrollUnlocks: 0,
+    inertInterruptions: 0,
+    unintendedCloses: 0,
     locked: true,
     focusInside: true,
   });
@@ -96,59 +117,89 @@ async function expectDialogInsideViewport(page: Page) {
 }
 
 test("Public and Private remain one continuous Send dialog", async ({ page }) => {
-  await importTestWallet(page);
-  const trigger = page.getByRole("main").getByRole("button", { name: "Send", exact: true }).first();
-  await trigger.click();
-
-  const dialog = page.getByRole("dialog", { name: "Send Payment", exact: true });
-  const shellId = "send-public-private-shell";
-  await expect(dialog).toBeVisible();
-  await expectDialogInsideViewport(page);
-  await installContinuityObserver(page, shellId);
-
-  const tablist = dialog.getByRole("tablist", { name: "Send type" });
-  const publicTab = tablist.getByRole("tab", { name: "Public", exact: true });
-  const privateTab = await requirePrivateTab(dialog, "Send type");
-  await expect(publicTab).toHaveAttribute("aria-selected", "true");
-
   let releasePrivateChunk!: () => void;
-  const privateChunkGate = new Promise<void>((resolve) => {
-    releasePrivateChunk = resolve;
-  });
+  const privateChunkGate = new Promise<void>(resolve => { releasePrivateChunk = resolve; });
   let heldChunk = false;
+  let heldChunkUrl = "";
+  // Install before navigation: the first arriving chunk is not reliably the
+  // access-gate chunk. Match its fixed public UI copy in static code, never
+  // wallet data, and hold delivery of that exact lazy dependency.
   await page.route("**/_next/static/chunks/**", async (route: Route) => {
-    if (!heldChunk && route.request().resourceType() === "script") {
+    if (route.request().resourceType() !== "script") return route.continue();
+    const response = await route.fetch();
+    const body = await response.body();
+    if (!heldChunk && body.includes(Buffer.from("Turn On Private Payments"))) {
       heldChunk = true;
+      heldChunkUrl = route.request().url();
       await privateChunkGate;
     }
-    await route.continue();
+    await route.fulfill({ response, body });
   });
+  try {
+    await importTestWallet(page);
+    const trigger = page.getByRole("main").getByRole("button", { name: "Send", exact: true }).first();
+    await trigger.click();
 
-  await privateTab.click();
-  await expect(privateTab).toHaveAttribute("aria-selected", "true");
-  await expect(privateTab).toBeFocused();
-  await expect(dialog.getByRole("status", { name: "Opening private payment" })).toBeVisible();
-  await expectStableContinuity(page, shellId);
+    const dialog = page.getByRole("dialog", { name: "Send Payment", exact: true });
+    const shellId = "send-public-private-shell";
+    await expect(dialog).toBeVisible();
+    await expectDialogInsideViewport(page);
+    await installContinuityObserver(page, shellId);
 
-  releasePrivateChunk();
-  await expect(dialog.getByText(/Set up private|Review Private Send|Recipient Address/i).first()).toBeVisible();
-
-  for (let index = 0; index < 3; index += 1) {
-    await publicTab.click();
+    const tablist = dialog.getByRole("tablist", { name: "Send type" });
+    const publicTab = tablist.getByRole("tab", { name: "Public", exact: true });
+    const privateTab = await requirePrivateTab(dialog, "Send type");
     await expect(publicTab).toHaveAttribute("aria-selected", "true");
-    await expect(dialog.getByLabel("Asset")).toBeVisible();
-    await expect(dialog.getByText(/Set up private|Review Private Send/i)).toHaveCount(0);
+
     await privateTab.click();
     await expect(privateTab).toHaveAttribute("aria-selected", "true");
-  }
-  await expectStableContinuity(page, shellId);
+    await expect(privateTab).toBeFocused();
+    await expect(dialog.getByRole("status", { name: "Opening private payment" })).toBeVisible();
+    await expect.poll(() => heldChunk && heldChunkUrl.length > 0).toBe(true);
+    await expectStableContinuity(page, shellId);
 
-  await publicTab.click();
-  await expect(dialog.getByText(/Set up private|Review Private Send/i)).toHaveCount(0);
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(dialog).toBeHidden();
-  await expect(trigger).toBeFocused();
-  await expect(page.getByText(/Set up private|Review Private Send/i)).toHaveCount(0);
+    // Leave and re-enter while the first chunk is genuinely held, not after its
+    // panel has already settled. An obsolete completion must not select Private.
+    for (let index = 0; index < 3; index += 1) {
+      await publicTab.click();
+      await expect(publicTab).toHaveAttribute("aria-selected", "true");
+      await expect(dialog.getByLabel("Asset")).toBeVisible();
+      await privateTab.click();
+      await expect(privateTab).toHaveAttribute("aria-selected", "true");
+      await expect(dialog.getByRole("status", { name: "Opening private payment" })).toBeVisible();
+      await expectStableContinuity(page, shellId);
+    }
+    await publicTab.click();
+    const deliveredChunk = page.waitForResponse(response => response.url() === heldChunkUrl);
+    releasePrivateChunk();
+    await (await deliveredChunk).finished();
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(publicTab).toHaveAttribute("aria-selected", "true");
+    await expect(dialog.getByLabel("Asset")).toBeVisible();
+    await expect(dialog.getByText(/Turn on Private Payments|Review Private Send/i)).toHaveCount(0);
+    await expectStableContinuity(page, shellId);
+    await privateTab.click();
+    await expect(dialog.getByText(/Turn on Private Payments|Review Private Send|Recipient Address/i).first()).toBeVisible();
+
+    for (let index = 0; index < 3; index += 1) {
+      await publicTab.click();
+      await expect(publicTab).toHaveAttribute("aria-selected", "true");
+      await expect(dialog.getByLabel("Asset")).toBeVisible();
+      await expect(dialog.getByText(/Turn on Private Payments|Review Private Send/i)).toHaveCount(0);
+      await privateTab.click();
+      await expect(privateTab).toHaveAttribute("aria-selected", "true");
+    }
+    await expectStableContinuity(page, shellId);
+
+    await publicTab.click();
+    await expect(dialog.getByText(/Turn on Private Payments|Review Private Send/i)).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await expect(page.getByText(/Turn on Private Payments|Review Private Send/i)).toHaveCount(0);
+  } finally {
+    releasePrivateChunk();
+  }
 });
 
 test("Public and Private remain one continuous Receive dialog", async ({ page }) => {
@@ -170,21 +221,21 @@ test("Public and Private remain one continuous Receive dialog", async ({ page })
   await privateTab.click();
   await expect(privateTab).toHaveAttribute("aria-selected", "true");
   await expect(privateTab).toBeFocused();
-  await expect(dialog.getByText(/Set up private/i).first()).toBeVisible();
+  await expect(dialog.getByText(/Turn on Private Payments/i).first()).toBeVisible();
   await expectStableContinuity(page, shellId);
 
   for (let index = 0; index < 3; index += 1) {
     await publicTab.click();
     await expect(publicTab).toHaveAttribute("aria-selected", "true");
     await expect(dialog.getByAltText("Address QR code")).toBeVisible();
-    await expect(dialog.getByText(/Set up private/i)).toHaveCount(0);
+    await expect(dialog.getByText(/Turn on Private Payments/i)).toHaveCount(0);
     await privateTab.click();
     await expect(privateTab).toHaveAttribute("aria-selected", "true");
   }
   await expectStableContinuity(page, shellId);
 
   await publicTab.click();
-  await expect(dialog.getByText(/Set up private/i)).toHaveCount(0);
+  await expect(dialog.getByText(/Turn on Private Payments/i)).toHaveCount(0);
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
@@ -228,14 +279,14 @@ test("Public and Private remain one continuous Add dialog", async ({ page }) => 
   await privateTab.click();
   await expect(privateTab).toHaveAttribute("aria-selected", "true");
   await expect(privateTab).toBeFocused();
-  await expect(dialog.getByText(/Set up private/i).first()).toBeVisible();
+  await expect(dialog.getByText(/Turn on Private Payments/i).first()).toBeVisible();
   await expectStableContinuity(page, shellId);
 
   for (let index = 0; index < 3; index += 1) {
     await publicTab.click();
     await expect(publicTab).toHaveAttribute("aria-selected", "true");
     await expect(dialog.getByPlaceholder(/Search popular tokens/)).toBeVisible();
-    await expect(dialog.getByText(/Set up private/i)).toHaveCount(0);
+    await expect(dialog.getByText(/Turn on Private Payments/i)).toHaveCount(0);
     await privateTab.click();
     await expect(privateTab).toHaveAttribute("aria-selected", "true");
   }
@@ -265,20 +316,39 @@ test("critical public payment fields keep programmatic labels", async ({ page })
 });
 
 test.describe("reduced motion", () => {
-  test.use({ reducedMotion: "reduce" });
+  test.use({ contextOptions: { reducedMotion: "reduce" } });
 
   test("keyboard tab activation keeps the same Send dialog", async ({ page }) => {
     await importTestWallet(page);
-    await page.getByRole("main").getByRole("button", { name: "Send", exact: true }).first().click();
+    const trigger = page.getByRole("main").getByRole("button", { name: "Send", exact: true }).first();
+    await trigger.click();
     const dialog = page.getByRole("dialog", { name: "Send Payment", exact: true });
+    await installContinuityObserver(page, "keyboard-send");
     const tablist = dialog.getByRole("tablist", { name: "Send type" });
     const publicTab = tablist.getByRole("tab", { name: "Public", exact: true });
     const privateTab = await requirePrivateTab(dialog, "Send type");
     await publicTab.focus();
     await publicTab.press("ArrowRight");
     await expect(privateTab).toBeFocused();
+    await expect(privateTab).toHaveAttribute("aria-selected", "false");
+    await expect(publicTab).toHaveAttribute("aria-selected", "true");
+    await expect(dialog.getByText(/Turn on Private Payments/i)).toHaveCount(0);
+    await privateTab.press("Enter");
     await expect(privateTab).toHaveAttribute("aria-selected", "true");
-    await expect(dialog).toBeVisible();
-    await expect.poll(() => dialog.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+    for (let index = 0; index < 3; index += 1) {
+      await privateTab.press("Home");
+      await expect(publicTab).toBeFocused();
+      await expect(privateTab).toHaveAttribute("aria-selected", "true");
+      await publicTab.press("Space");
+      await expect(publicTab).toHaveAttribute("aria-selected", "true");
+      await expect(dialog.getByText(/Turn on Private Payments/i)).toHaveCount(0);
+      await publicTab.press("End");
+      await privateTab.press("Enter");
+    }
+    await expectStableContinuity(page, "keyboard-send");
+    await privateTab.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await expect(page.getByText(/Turn on Private Payments/i)).toHaveCount(0);
   });
 });

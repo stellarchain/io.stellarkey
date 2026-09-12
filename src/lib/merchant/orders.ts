@@ -68,6 +68,18 @@ function canAdjust(actor: StaffMember, kind: AdjustmentKind): boolean {
   return actor.permissions.void;
 }
 
+function compTicket(ticket: EditableTicket, line: OrderLine | null): EditableTicket {
+  return {
+    ...ticket,
+    lines: ticket.lines.map((entry) =>
+      !line || entry.id === line.id
+        ? { ...entry, adjustmentMinor: lineGrossMinor(entry) }
+        : entry,
+    ),
+    ...(!line ? { discountMinor: 0, tipMinor: 0 } : {}),
+  };
+}
+
 /** Apply one authorised ticket edit and return its immutable audit draft. */
 export function applyTicketAdjustment(
   store: MerchantStore,
@@ -91,21 +103,14 @@ export function applyTicketAdjustment(
     taxMode: store.settings.taxMode,
   });
   let next: EditableTicket;
+  let effectiveKind = input.kind;
 
   if (input.kind === "void") {
     next = line
       ? { ...ticket, lines: ticket.lines.filter((entry) => entry.id !== line.id) }
       : { lines: [], discountMinor: 0, tipMinor: 0 };
   } else if (input.kind === "comp") {
-    next = {
-      ...ticket,
-      lines: ticket.lines.map((entry) =>
-        !line || entry.id === line.id
-          ? { ...entry, adjustmentMinor: lineGrossMinor(entry) }
-          : entry,
-      ),
-      ...(!line ? { discountMinor: 0, tipMinor: 0 } : {}),
-    };
+    next = compTicket(ticket, line);
   } else {
     const requested = safeMinor(input.amountMinor, "Discount");
     if (requested <= 0) throw new Error("A discount must be greater than zero.");
@@ -127,11 +132,23 @@ export function applyTicketAdjustment(
       : { ...ticket, discountMinor: ticket.discountMinor + requested };
   }
 
-  const totals = orderTotals({
+  let totals = orderTotals({
     ...next,
     taxRates: store.settings.taxRates,
     taxMode: store.settings.taxMode,
   });
+  if (input.kind === "discount" && totals.totalMinor === 0) {
+    if (!canAdjust(input.actor, "comp")) {
+      throw new Error(`${input.actor.name} is not allowed to comp this ticket.`);
+    }
+    effectiveKind = "comp";
+    next = compTicket(ticket, line);
+    totals = orderTotals({
+      ...next,
+      taxRates: store.settings.taxRates,
+      taxMode: store.settings.taxMode,
+    });
+  }
   const amountMinor = before.totalMinor - totals.totalMinor;
   if (amountMinor <= 0) throw new Error("That adjustment does not change the ticket total.");
 
@@ -140,7 +157,7 @@ export function applyTicketAdjustment(
     totals,
     adjustment: {
       id: input.id,
-      kind: input.kind,
+      kind: effectiveKind,
       lineId: line?.id ?? null,
       lineName: line?.name ?? null,
       amountMinor,
@@ -157,8 +174,12 @@ export function buildOrder(store: MerchantStore, input: BuildOrderInput): Order 
   const number = store.nextOrderNumber;
   const reference = orderReference(store.settings.profile.name || "Till", number);
   assertPaymentReferenceAvailable(store, reference);
+  const shiftId = store.shifts.find(
+    (shift) => shift.closedAt === null && shift.network === input.network,
+  )?.id ?? null;
   return {
     id: input.id,
+    shiftId,
     number,
     reference,
     network: input.network,

@@ -10,30 +10,27 @@ export interface ContractProof {
 export interface ContractOutputPackage {
   commitment: Uint8Array;
   recipientEnvelope: Uint8Array;
+  outgoingEnvelope: Uint8Array;
 }
 
 interface CommonContractAction {
-  assetContractId: string;
   actionNonce: Uint8Array;
   anchorRoot: Uint8Array;
   nullifiers: [Uint8Array, Uint8Array];
-  outputs: [ContractOutputPackage, ContractOutputPackage];
+  outputs: [ContractOutputPackage, ContractOutputPackage, ContractOutputPackage];
   publicValue: bigint;
 }
 
 export interface DepositContractAction extends CommonContractAction {
+  assetIndex: number;
   depositSource: string;
 }
 
-export interface TransferContractAction extends CommonContractAction {
-  relayerFee: bigint;
-  relayer: string;
-}
+export type TransferContractAction = CommonContractAction;
 
 export interface WithdrawContractAction extends CommonContractAction {
+  assetIndex: number;
   publicRecipient: string;
-  relayerFee: bigint;
-  relayer: string;
 }
 
 function requireLength(name: string, bytes: Uint8Array, expected: number): void {
@@ -62,22 +59,12 @@ function encodeProof(proof: ContractProof): xdr.ScVal {
 function encodeOutput(output: ContractOutputPackage, index: number): xdr.ScVal {
   requireLength(`Output ${index} commitment`, output.commitment, 32);
   requireLength(`Output ${index} recipient envelope`, output.recipientEnvelope, 181);
+  requireLength(`Output ${index} outgoing envelope`, output.outgoingEnvelope, 157);
   return scMap([
     ['commitment', xdr.ScVal.scvBytes(output.commitment)],
+    ['outgoing_envelope', xdr.ScVal.scvBytes(output.outgoingEnvelope)],
     ['recipient_envelope', xdr.ScVal.scvBytes(output.recipientEnvelope)],
   ]);
-}
-
-function relayerEntries(
-  action: Pick<TransferContractAction, 'relayerFee' | 'relayer'>,
-): Array<readonly [string, xdr.ScVal]> {
-  if (action.relayerFee < 0n || action.relayerFee > (1n << 63n) - 1n) {
-    throw new Error('Relayer fee must fit the protocol amount range');
-  }
-  return [
-    ['relayer_fee', nativeToScVal(action.relayerFee)],
-    ['relayer', Address.fromString(action.relayer).toScVal()],
-  ];
 }
 
 function commonActionEntries(action: CommonContractAction): Array<readonly [string, xdr.ScVal]> {
@@ -90,12 +77,12 @@ function commonActionEntries(action: CommonContractAction): Array<readonly [stri
   }
   return [
     ['action_nonce', xdr.ScVal.scvBytes(action.actionNonce)],
-    ['asset', Address.fromString(action.assetContractId).toScVal()],
     ['anchor_root', xdr.ScVal.scvBytes(action.anchorRoot)],
     ['nullifier_0', xdr.ScVal.scvBytes(action.nullifiers[0])],
     ['nullifier_1', xdr.ScVal.scvBytes(action.nullifiers[1])],
     ['output_0', encodeOutput(action.outputs[0], 0)],
     ['output_1', encodeOutput(action.outputs[1], 1)],
+    ['output_2', encodeOutput(action.outputs[2], 2)],
     ['public_value', nativeToScVal(action.publicValue)],
   ];
 }
@@ -107,12 +94,17 @@ export class PrivateBalanceTransactionBuilder {
     this.contract = new Contract(manifest.poolContractId);
   }
 
+  public buildTouchRootOperation(): xdr.Operation {
+    return this.contract.call('touch_root');
+  }
+
   public buildDepositOperation(params: {
     action: DepositContractAction;
     proof: ContractProof;
   }): xdr.Operation {
     const action = scMap([
       ...commonActionEntries(params.action),
+      ['asset_index', nativeToScVal(params.action.assetIndex, { type: 'u32' })],
       ['deposit_source', Address.fromString(params.action.depositSource).toScVal()],
     ]);
     return this.contract.call('deposit', action, encodeProof(params.proof));
@@ -124,7 +116,7 @@ export class PrivateBalanceTransactionBuilder {
   }): xdr.Operation {
     return this.contract.call(
       'transfer',
-      scMap([...commonActionEntries(params.action), ...relayerEntries(params.action)]),
+      scMap(commonActionEntries(params.action)),
       encodeProof(params.proof),
     );
   }
@@ -135,8 +127,8 @@ export class PrivateBalanceTransactionBuilder {
   }): xdr.Operation {
     const action = scMap([
       ...commonActionEntries(params.action),
+      ['asset_index', nativeToScVal(params.action.assetIndex, { type: 'u32' })],
       ['public_recipient', Address.fromString(params.action.publicRecipient).toScVal()],
-      ...relayerEntries(params.action),
     ]);
     return this.contract.call('withdraw', action, encodeProof(params.proof));
   }

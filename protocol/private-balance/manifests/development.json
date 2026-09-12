@@ -1,46 +1,79 @@
 {
   "schemaVersion": 1,
   "protocolVersion": 1,
-  "artifactVersion": "1.0.2-dev-fixture",
+  "artifactVersion": "1.0.2-dev",
   "status": "development",
   "minimumStellarProtocol": 25,
   "networkPassphrase": "Test SDF Network ; September 2015",
   "networkId": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
-  "realmId": "38d5fa2d9a4a0a5285baecb752189ebdc4243e90e70d177550768611ed20c856",
-  "poolContractId": "CBDEXYYS76Y2RNDN3II644BW6TSF3ZQG6FYY75ZFYSS4SEV6H5PXRPS6",
-  "guardianAddress": "GCWWPZ2K3YJQTVEE5VRCBS4YBQCZATUA5FQJ6NT7WSZDK5G73S5WNKAF",
-  "stealthAnnouncerAddress": "GCWWPZ2K3YJQTVEE5VRCBS4YBQCZATUA5FQJ6NT7WSZDK5G73S5WNKAF",
-  "deploymentBindingHash": "455d28488577cfe8d8de7ca1d5a68d8b06735019c5ed2f82f977817ea3ce0669",
+  "realmId": "0202020202020202020202020202020202020202020202020202020202020202",
+  "poolContractId": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
+  "guardianAddress": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+  "assetAdminAddress": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+  "assets": [
+    {
+      "index": 0,
+      "kind": "native",
+      "code": "XLM",
+      "issuer": null,
+      "name": "Stellar Lumens",
+      "decimals": 7,
+      "displayDecimals": 7,
+      "contractId": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF"
+    },
+    {
+      "index": 1,
+      "kind": "stellar",
+      "code": "USDC",
+      "issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+      "name": "USD Coin",
+      "decimals": 7,
+      "displayDecimals": 2,
+      "contractId": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
+    }
+  ],
+  "stealthAnnouncerAddress": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+  "witnessRpcUrl": "https://rpc.ankr.com/stellar_testnet_soroban",
+  "deploymentCheckpoint": {
+    "ledger": 0,
+    "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "registryCheckpoint": {
+    "ledger": 0,
+    "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "assetCount": 2
+  },
+  "deploymentBindingHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "artifacts": {
-    "r1csSha256": "c5c598c09e09f7e546ef6cf8d924f44eea50c80d7ba9119e2215278de2babc07",
-    "r1csConstraints": 22408,
-    "wasmSha256": "0570325a20bfb11546e80330797cb5be2f7060795de2de644967b342d9201cd7",
-    "wasmByteLength": 183221,
-    "zkeySha256": "8e216c27f1ee692739c60ff40b34751573148d401a19fa5ab1e7e73791b35fbb",
-    "zkeyByteLength": 14169632,
+    "r1csSha256": "e8e9566deeaabd745b9c4306f9b222e5f8dc3b224c5e1fd4741da729785fc2d3",
+    "r1csConstraints": 15114,
+    "wasmSha256": "d574799b6191e8564cc2f364e7ac0a927e2452bb6ceed8ffe37d5e9fdcff8d7e",
+    "wasmByteLength": 154930,
+    "zkeySha256": "fd04e9225485bbdfcca999b5f46be3735c6435ca6a3c98a1346b5952e9672273",
+    "zkeyByteLength": 9264916,
     "zkeyTransport": {
       "encoding": "points-compressed",
-      "sha256": "9a928627284fd1bb1497f716f24e23f4affff0766488fa6f9710fe3169c99791",
-      "byteLength": 9554914,
-      "wireByteLength": 3934162
+      "sha256": "c684799ed86b8a40b22b1d818c3c866d3aa6d2c7f4fe7d5728bf8c5328d39520",
+      "byteLength": 6327606,
+      "wireByteLength": 2498167
     },
-    "vkJsonSha256": "ff6d7e3bde0d7d7ba8ae8f60e29be3f1db7a617189319bf2600de98bf99898ba",
-    "vkBinSha256": "00d95310888a96bd632c0136711885eb62a018cecf6b027750f5dab79b2699a3"
+    "vkJsonSha256": "8a1fdbb8e21a688c5279edd43e4deafbed788604f518209c5cee27499ea996e7",
+    "vkBinSha256": "6af84a98f2e9bddc7fbcfdf08160c10b2d627e2aab19fa612290b1feaf09e0f7"
   },
   "constants": {
-    "treeDepth": 32,
-    "treeArity": 2,
+    "treeDepth": 17,
+    "treeArity": 3,
     "rootWindowLedgers": 1440,
-    "pageCapacity": 32,
-    "maxPagesPerTouch": 4,
-    "publicInputs": 13,
+    "publicInputs": 11,
     "notePlaintextBytes": 128,
     "recipientEnvelopeBytes": 181,
-    "outputPackageBytes": 213,
-    "addressPayloadBytes": 68,
-    "addressAsciiBytes": 119,
-    "addressContextTagBytes": 0,
-    "addressChecksumBytes": 6
+    "outgoingEnvelopeBytes": 157,
+    "outputPackageBytes": 370,
+    "outputsPerAction": 3,
+    "addressPayloadBytes": 84,
+    "addressAsciiBytes": 128,
+    "addressContextTagBytes": 16,
+    "addressChecksumBytes": 4
   },
   "hpke": {
     "kemId": "0x0020",
@@ -48,13 +81,15 @@
     "aeadId": "0x0001"
   },
   "release": {
-    "contractWasmSha256": "0399170aab630a3bfb5e1109b8017047e0bfb3d6267dc956156a1f811b241778",
-    "contractSourceCommit": "ba09bf5d182f7c200e32d1f7d8917a27ac2bff6f",
-    "circuitSourceSha256": "1f3ea4ed0411e313a5201048449d5536b542e4a8d7cec9560a773922922df55e",
+    "contractWasmSha256": "9868d322fb170fe95cbcbcd48eb03e9c2cf48e0be7e2a72431a69f8a03801ecd",
+    "contractSourceCommit": "2035d27b2de370197f3cde060e42dce1e5d019c3",
+    "circuitSourceSha256": "50ecb2c842c217a29d03a66c22b1dc9cc578c6011b1e3fac0c7b40e3fba5e682",
     "poseidonParametersSha256": "6ecf310eeece863dcb24370c6668cfe42808ac1cdb25c30f4b85461ab37789a8",
     "hpkePackageVersion": "@hpke/core@1.9.0+@hpke/dhkem-x25519@1.8.0",
     "hpkeDependencyIntegritySha256": "312a82fc6626f2bb66b1a24f351f8e13f95bde25fa4de350a8b10d2f4fe7a6b7",
-    "toolchainLockSha256": "dd79028943fbb66df4c9217c18aa064452303d7c88bc8ef1753d413dca52c50d",
+    "toolchainLockSha256": "3bbe3f725d6578e620dd1291ef9ce2d0fdfc5138aa51569856124c288344b413",
+    "powersOfTauSha256": "3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db",
+    "zkeyVerified": true,
     "ceremonyTranscriptRoot": "0000000000000000000000000000000000000000000000000000000000000000",
     "auditReports": [],
     "deploymentTransactions": [],

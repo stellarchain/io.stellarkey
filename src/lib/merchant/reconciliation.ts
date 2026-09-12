@@ -10,9 +10,19 @@ import type {
   PaymentReconciliationOutcome,
   PaymentResolution,
   StaffMember,
-  UnmatchedPayment,
 } from "./types";
 import type { NetworkKey } from "../stellar";
+import { canonicalPayerAddress } from "./payer";
+import { merchantPaymentIdentitySet, paymentTransactionIdentity } from "./payment-identity";
+import { isCurrentReceivingDestination } from "./destination";
+import {
+  pendingReconciliationTray,
+  reconciliationNeedsAction,
+} from "./reconciliation-tray";
+export {
+  MAX_RECONCILIATION_TRAY_ROWS,
+  pendingReconciliationTray,
+} from "./reconciliation-tray";
 
 export interface ReconcileIncomingInput {
   network: NetworkKey;
@@ -29,6 +39,14 @@ export interface ResolveReconciliationInput {
 export interface AttachReconciliationInput extends ResolveReconciliationInput {
   chargeId: string;
 }
+
+export interface BulkResolveReconciliationsInput {
+  actor: StaffMember;
+  now: number;
+  limit?: number;
+}
+
+export const MAX_BULK_RECONCILIATION_RESOLUTIONS = 100;
 
 function outcomeForUnmatched(reason: UnmatchedReason): PaymentReconciliationOutcome {
   if (reason === "ambiguous") return "ambiguous";
@@ -49,19 +67,8 @@ function valueFor(payment: ObservedPayment, charge: Charge | null): Minor | null
   return Number.isSafeInteger(minor) && minor >= 0 ? minor : null;
 }
 
-function asUnmatched(
-  payment: ObservedPayment,
-  outcome: PaymentReconciliationOutcome,
-  candidateChargeId: string | null,
-  now: number,
-): UnmatchedPayment {
-  return {
-    ...payment,
-    seenAt: now,
-    reconciliationOutcome: outcome,
-    candidateChargeId,
-    candidateInvoiceId: null,
-  };
+function withReconciliationTray(store: MerchantStore): MerchantStore {
+  return { ...store, unmatched: pendingReconciliationTray(store) };
 }
 
 function recordFor(
@@ -79,6 +86,7 @@ function recordFor(
     chargeId: charge?.id ?? null,
     orderId: charge?.orderId ?? null,
     invoiceId: null,
+    counterCodeId: null,
     amountMinor: valueFor(payment, charge),
     reversalAmount: null,
     observedAt: now,
@@ -111,8 +119,23 @@ function reconcileOne(
   if (store.paymentReconciliations.some((entry) => entry.id === payment.id)) return store;
 
   const scoped = store.charges.filter(
-    (charge) => charge.network === network && charge.destination === payment.destination,
+    (charge) =>
+      charge.network === network &&
+      isCurrentReceivingDestination(store.settings, charge.destination) &&
+      charge.destination === payment.destination,
   );
+  if (merchantPaymentIdentitySet(store).has(paymentTransactionIdentity(network, payment))) {
+    const named = payment.routingId
+      ? scoped.find((entry) => entry.routingId === payment.routingId) ?? null
+      : null;
+    return {
+      ...store,
+      paymentReconciliations: [
+        recordFor(payment, network, "duplicate", named, now),
+        ...store.paymentReconciliations,
+      ],
+    };
+  }
   const outcome = matchPayment(payment, scoped, store.settings);
   let next = store;
   let charge: Charge | null = "charge" in outcome ? outcome.charge : null;
@@ -120,7 +143,6 @@ function reconcileOne(
     charge = scoped.find((entry) => entry.routingId === payment.routingId) ?? null;
   }
   let recordedOutcome: PaymentReconciliationOutcome;
-  let needsTray = true;
 
   if (outcome.lane === "routing") {
     if (outcome.late) {
@@ -128,13 +150,12 @@ function reconcileOne(
       next = updateChargeWithPayment(next, outcome.charge, payment, "expired");
     } else if (outcome.verdict === "exact") {
       recordedOutcome = "settled";
-      needsTray = false;
       next = updateChargeWithPayment(next, outcome.charge, payment, "paid");
       next = completeCryptoTender(next, {
         orderId: outcome.charge.orderId,
         chargeId: outcome.charge.id,
         amountMinor: outcome.charge.amountMinor,
-        payerAddress: payment.from,
+        payerAddress: canonicalPayerAddress(payment.from),
         now,
       }).store;
     } else {
@@ -158,9 +179,6 @@ function reconcileOne(
   return {
     ...next,
     paymentReconciliations: [reconciliation, ...next.paymentReconciliations],
-    unmatched: needsTray
-      ? [asUnmatched(payment, recordedOutcome, charge?.id ?? null, now), ...next.unmatched].slice(0, 200)
-      : next.unmatched,
   };
 }
 
@@ -171,7 +189,7 @@ export function reconcileIncomingPayments(
 ): MerchantStore {
   let next = store;
   for (const payment of payments) next = reconcileOne(next, network, payment, now);
-  return next;
+  return next === store ? store : withReconciliationTray(next);
 }
 
 function activePaymentActor(actor: StaffMember): void {
@@ -180,21 +198,25 @@ function activePaymentActor(actor: StaffMember): void {
   }
 }
 
+function validResolutionTime(now: number): void {
+  if (!Number.isSafeInteger(now) || now <= 0) {
+    throw new Error("Payment resolution time is invalid.");
+  }
+}
+
 function unresolved(
   store: MerchantStore,
   input: ResolveReconciliationInput,
 ): PaymentReconciliation {
   activePaymentActor(input.actor);
-  if (!Number.isSafeInteger(input.now) || input.now <= 0) {
-    throw new Error("Payment resolution time is invalid.");
-  }
+  validResolutionTime(input.now);
   const reconciliation = store.paymentReconciliations.find(
     (entry) => entry.id === input.paymentId,
   );
   if (!reconciliation) throw new Error("That incoming payment is no longer in the review log.");
   if (reconciliation.resolution) throw new Error("That incoming payment has already been resolved.");
-  if (!store.unmatched.some((payment) => payment.id === input.paymentId)) {
-    throw new Error("That incoming payment is no longer waiting for action.");
+  if (reconciliation.outcome === "settled") {
+    throw new Error("That incoming payment already settled automatically.");
   }
   return reconciliation;
 }
@@ -221,15 +243,61 @@ export function dismissReconciledPayment(
   input: ResolveReconciliationInput,
 ): MerchantStore {
   const reconciliation = unresolved(store, input);
-  return {
+  return withReconciliationTray({
     ...store,
-    unmatched: store.unmatched.filter((payment) => payment.id !== input.paymentId),
     paymentReconciliations: store.paymentReconciliations.map((entry) =>
       entry.id === reconciliation.id
         ? { ...entry, resolution: resolution("dismissed", input.actor, input.now) }
         : entry,
     ),
-  };
+  });
+}
+
+/** Owner-only bounded cleanup, oldest first, with one immutable disposition per row. */
+export function bulkDismissPendingReconciliations(
+  store: MerchantStore,
+  input: BulkResolveReconciliationsInput,
+): { store: MerchantStore; resolvedIds: string[] } {
+  const owner = store.staff.find((member) => member.id === input.actor.id);
+  if (
+    !owner?.active ||
+    owner.role !== "owner" ||
+    store.activeStaffId !== owner.id ||
+    !owner.permissions.takePayment
+  ) {
+    throw new Error("Only an active owner can dismiss pending payments in bulk.");
+  }
+  validResolutionTime(input.now);
+  const limit = input.limit ?? MAX_BULK_RECONCILIATION_RESOLUTIONS;
+  if (
+    !Number.isSafeInteger(limit) ||
+    limit <= 0 ||
+    limit > MAX_BULK_RECONCILIATION_RESOLUTIONS
+  ) {
+    throw new Error(
+      `Bulk payment cleanup must resolve between 1 and ${MAX_BULK_RECONCILIATION_RESOLUTIONS} rows.`,
+    );
+  }
+  const resolvedIds: string[] = [];
+  for (
+    let index = store.paymentReconciliations.length - 1;
+    index >= 0 && resolvedIds.length < limit;
+    index -= 1
+  ) {
+    const record = store.paymentReconciliations[index];
+    if (reconciliationNeedsAction(record)) resolvedIds.push(record.id);
+  }
+  if (resolvedIds.length === 0) return { store, resolvedIds };
+  const resolved = new Set(resolvedIds);
+  const next = withReconciliationTray({
+    ...store,
+    paymentReconciliations: store.paymentReconciliations.map((entry) =>
+      resolved.has(entry.id)
+        ? { ...entry, resolution: resolution("dismissed", owner, input.now) }
+        : entry,
+    ),
+  });
+  return { store: next, resolvedIds };
 }
 
 export function attachReconciledPayment(
@@ -237,9 +305,9 @@ export function attachReconciledPayment(
   input: AttachReconciliationInput,
 ): MerchantStore {
   const reconciliation = unresolved(store, input);
-  const payment = store.unmatched.find((entry) => entry.id === input.paymentId);
+  const payment = reconciliation.payment;
   const charge = store.charges.find((entry) => entry.id === input.chargeId);
-  if (!payment || !charge) throw new Error("The payment or target charge no longer exists.");
+  if (!charge) throw new Error("The target charge no longer exists.");
   if (charge.network !== reconciliation.network) {
     throw new Error("A payment cannot be attached across Stellar networks.");
   }
@@ -258,9 +326,8 @@ export function attachReconciledPayment(
     throw new Error("Only an awaiting order can accept this payment.");
   }
 
-  const withPayment: MerchantStore = {
+  const withPayment = withReconciliationTray({
     ...store,
-    unmatched: store.unmatched.filter((entry) => entry.id !== payment.id),
     charges: store.charges.map((entry) =>
       entry.id === charge.id
         ? { ...entry, status: "paid", payment: { ...payment, lane: "manual" } }
@@ -274,12 +341,12 @@ export function attachReconciledPayment(
           }
         : entry,
     ),
-  };
+  });
   return completeCryptoTender(withPayment, {
     orderId: charge.orderId,
     chargeId: charge.id,
     amountMinor: charge.amountMinor,
-    payerAddress: payment.from,
+    payerAddress: canonicalPayerAddress(payment.from),
     now: input.now,
   }).store;
 }
@@ -301,9 +368,11 @@ export function markReconciledRefund(
   if (refund.submissionStatus === "failed") {
     throw new Error("The refund submission failed and did not move funds, so this payment remains open.");
   }
-  return {
+  if (refund.submissionStatus !== "confirmed") {
+    throw new Error("The refund must be canonically confirmed before this payment can be resolved.");
+  }
+  return withReconciliationTray({
     ...store,
-    unmatched: store.unmatched.filter((entry) => entry.id !== input.paymentId),
     paymentReconciliations: store.paymentReconciliations.map((entry) =>
       entry.id === reconciliation.id
         ? {
@@ -318,5 +387,5 @@ export function markReconciledRefund(
           }
         : entry,
     ),
-  };
+  });
 }

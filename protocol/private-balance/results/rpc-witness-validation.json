@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-09-04",
+  "implementationSourceCommit": "e38e3689d29b9e83cbf8bc893751ccc4d2e1c623",
+  "selectedConfigurationCommit": "866681d7b48baefc2a8843a69daf9cf89ea7a42c",
+  "browserCorsScreening": {
+    "origin": "http://127.0.0.1:3190",
+    "requestsPerBrowserAndEndpoint": 5,
+    "methods": [
+      "getNetwork",
+      "getLatestLedger"
+    ],
+    "requestHeaders": [
+      "content-type: application/json",
+      "x-client-name: js-stellar-sdk",
+      "x-client-version: 17.0.1"
+    ],
+    "browsers": {
+      "chromium": "151.0.7922.34",
+      "firefox": "153.0",
+      "webkit": "26.5"
+    },
+    "successfulRequests": {
+      "https://rpc.ankr.com/stellar_testnet_soroban": {
+        "chromium": 5,
+        "firefox": 5,
+        "webkit": 5
+      },
+      "https://soroban-rpc.testnet.stellar.gateway.fm": {
+        "chromium": 0,
+        "firefox": 0,
+        "webkit": 0
+      },
+      "https://rpc.testnet.stellar.gateway.fm": {
+        "chromium": 0,
+        "firefox": 0,
+        "webkit": 0
+      },
+      "https://stellar.liquify.com/api=41EEWAH79Y5OCGI7/testnet": {
+        "chromium": 5,
+        "firefox": 5,
+        "webkit": 5
+      },
+      "https://stellar-soroban-testnet-public.nodies.app": {
+        "chromium": 0,
+        "firefox": 0,
+        "webkit": 0
+      }
+    }
+  },
+  "ankrCorroboration": {
+    "primaryRpc": "https://soroban-testnet.stellar.org",
+    "witnessRpc": "https://rpc.ankr.com/stellar_testnet_soroban",
+    "attempts": [
+      {
+        "milliseconds": 3537.8,
+        "ledger": 4492612,
+        "hash": "01e1e938b6421eaffa61d05ea91a12494f5414d472aefe4ca06d6d1488154e70",
+        "actionCount": 19,
+        "assetCount": 2
+      },
+      {
+        "milliseconds": 2413.4,
+        "ledger": 4492613,
+        "hash": "e973b8c41e3713f507764e68379b526a84cbc9476fd071ac21fbd4beeda16311",
+        "actionCount": 19,
+        "assetCount": 2
+      },
+      {
+        "milliseconds": 2254.81,
+        "ledger": 4492613,
+        "hash": "e973b8c41e3713f507764e68379b526a84cbc9476fd071ac21fbd4beeda16311",
+        "actionCount": 19,
+        "assetCount": 2
+      },
+      {
+        "milliseconds": 3015.1,
+        "ledger": 4492614,
+        "hash": "4e1170ab187caefe64d45a888033ed8dac1a70a92f3f11dad866ad07d32bdafa",
+        "actionCount": 19,
+        "assetCount": 2
+      },
+      {
+        "milliseconds": 2869.33,
+        "ledger": 4492615,
+        "hash": "f6ca3d4fb18dd3cfd4d85862f27e737d01c6af03e0cecd74aaf8b3439003e04c",
+        "actionCount": 19,
+        "assetCount": 2
+      }
+    ],
+    "allAttemptsMatchedNetworkLedgerPoolHeadAndRegistry": true,
+    "rateLimitFailures": 0
+  },
+  "rejectedCandidates": {
+    "gateway": "Real browser requests failed CORS in Chromium, Firefox, and WebKit; the official matrix exposed a missing Access-Control-Allow-Origin response in Firefox.",
+    "liquify": "Browser CORS passed, but the endpoint reported latest ledger 2070824 while the current Testnet was above 4492612 and contract-head queries failed through its captive core.",
+    "nodies": "The documented public endpoint returned HTTP 403 without credentials."
+  },
+  "decision": "Use Ankr as the independent Testnet witness and reuse one loaded contract specification per contract and network to bound the RPC burst.",
+  "limitations": [
+    "This is point-in-time development evidence, not an uptime guarantee or provider audit.",
+    "Browser engines were Playwright desktop engines; iPhone and iPad checks are WebKit emulation, not physical devices.",
+    "Provider availability, rate limits, CORS policy, and retained ledger windows can change."
+  ]
+}

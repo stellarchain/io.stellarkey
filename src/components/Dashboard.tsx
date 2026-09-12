@@ -1,9 +1,12 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { SectionHeader } from "@/components/ui";
+import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { useWallet } from "@/hooks/useWallet";
 import { useMerchantRuntime, useMerchantShell } from "@/hooks/useMerchantRuntime";
+import { useToast } from "./Toast";
 import {
   usePrivateBalanceRuntime,
   usePrivateBalanceRuntimeData,
@@ -20,7 +23,7 @@ import {
 import {
   ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE,
 } from "@/lib/private-balance-expected-manifest";
-import { privateBalancePoolConfigured } from "@/lib/private-balance-bootstrap";
+import { privatePaymentsEnabled } from "@/lib/private-balance-bootstrap";
 import { NETWORKS } from "@/lib/stellar";
 import {
   getHorizonUrl,
@@ -47,13 +50,15 @@ import {
   PUBLIC_SEND_REQUEST_EVENT,
 } from "@/lib/private-address";
 import {
-  fetchAssetPrices,
+  fetchAssetPriceSamples,
+  marketValues,
   getRepresentativeUnitPrice,
   getUnitPrice,
-  type AssetPrices,
+  type MarketSamples,
 } from "@/lib/prices";
-import { aggregatePortfolio, portfolioSnapshotKey } from "@/lib/portfolio";
-import { playTapSound } from "@/lib/sounds";
+import { MOTION_FAST_DURATION_MS } from "@/lib/motion";
+import type { PrivateFlowHeader } from "@/features/private-balance/components/useReportToOwner";
+import { aggregatePortfolio, portfolioSnapshotKey, representativePortfolioUsd } from "@/lib/portfolio";
 import { activityAssetPresentation } from "@/lib/transaction-intent";
 import { pendingTransactionPresentation } from "@/lib/submission";
 import {
@@ -77,9 +82,40 @@ import { Sparkline } from "./Sparkline";
 import type { NetworkKey } from "@/lib/stellar";
 import type { SettingsSub } from "./SettingsPage";
 import type { Contact } from "@/lib/contacts";
-import { FiatValue } from "./FiatValue";
-import { Button, CopyButton, Dropdown, Modal, ModalHeader, NetworkBadge, Select, Spinner, Tooltip } from "./ui";
+import {
+  Button,
+  CopyButton,
+  Dropdown,
+  EmptyState,
+  ErrorText,
+  LoadingRegion,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  NetworkBadge,
+  Notice,
+  Select,
+  Spinner,
+  Tooltip,
+  useMountedThroughExit,
+  useRetainedForExit,
+} from "./ui";
+import { AddAccountModal } from "./AddAccountModal";
+import { BackupWizardModal } from "./BackupWizardModal";
+import { MultiSigStudioModal } from "./MultiSigStudioModal";
+import { ClaimableBalancesModal } from "./ClaimableBalancesModal";
+import { AssetDetailModal } from "./AssetDetailModal";
+import { BatchSendModal } from "./BatchSendModal";
+import { CommandPalette } from "./CommandPalette";
+import { TxDetailModal } from "./TxDetailModal";
+import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
+import { CurrencyConverterModal } from "./CurrencyConverterModal";
+import { NetworkStatsModal } from "./NetworkStatsModal";
+import { RenameAccountModal } from "./RenameAccountModal";
+import { SetupWizard } from "./merchant/SetupWizard";
 import { AccountMark } from "./AccountMark";
+import { AssetAvatar } from "./AssetAvatar";
 import { PrivateShieldNotch } from "./PrivateShieldNotch";
 import { WelcomeHome } from "./WelcomeHome";
 import {
@@ -128,6 +164,7 @@ import type {
   SettlementSwapIntent,
   SettlementSweepIntent,
 } from "@/lib/merchant/settlement";
+import { merchantExitRequired } from "@/lib/merchant/navigation";
 import { SendModal, type SendPrefill } from "./SendModal";
 import { ReceiveModal } from "./ReceiveModal";
 import { AddAssetModal } from "./AddAssetModalShell";
@@ -138,23 +175,13 @@ import {
   decodeContactAddress,
 } from "@/lib/brand";
 
+/** Must match `--motion-duration-fast` in `globals.css`: the privacy shield's fade-out. */
+const PRIVACY_SHIELD_FADE_MS = MOTION_FAST_DURATION_MS;
+
 const SettingsPage = dynamic(() => import("./SettingsPage").then((m) => m.SettingsPage), { ssr: false });
-const AddAccountModal = dynamic(() => import("./AddAccountModal").then((m) => m.AddAccountModal), { ssr: false });
 const AddressBookPage = dynamic(() => import("./AddressBookPage").then((m) => m.AddressBookPage), { ssr: false });
-const BackupWizardModal = dynamic(() => import("./BackupWizardModal").then((m) => m.BackupWizardModal), { ssr: false });
-const MultiSigStudioModal = dynamic(() => import("./MultiSigStudioModal").then((m) => m.MultiSigStudioModal), { ssr: false });
-const ClaimableBalancesModal = dynamic(() => import("./ClaimableBalancesModal").then((m) => m.ClaimableBalancesModal), { ssr: false });
-const AssetDetailModal = dynamic(() => import("./AssetDetailModal").then((m) => m.AssetDetailModal), { ssr: false });
-const BatchSendModal = dynamic(() => import("./BatchSendModal").then((m) => m.BatchSendModal), { ssr: false });
-const CommandPalette = dynamic(() => import("./CommandPalette").then((m) => m.CommandPalette), { ssr: false });
 const SwapPage = dynamic(() => import("./SwapPage").then((m) => m.SwapPage), { ssr: false });
-const TxDetailModal = dynamic(() => import("./TxDetailModal").then((m) => m.TxDetailModal), { ssr: false });
-const KeyboardShortcutsModal = dynamic(() => import("./KeyboardShortcutsModal").then((m) => m.KeyboardShortcutsModal), { ssr: false });
-const CurrencyConverterModal = dynamic(() => import("./CurrencyConverterModal").then((m) => m.CurrencyConverterModal), { ssr: false });
-const NetworkStatsModal = dynamic(() => import("./NetworkStatsModal").then((m) => m.NetworkStatsModal), { ssr: false });
-const RenameAccountModal = dynamic(() => import("./RenameAccountModal").then((m) => m.RenameAccountModal), { ssr: false });
 const MerchantPage = dynamic(() => import("./merchant/MerchantPage").then((m) => m.MerchantPage), { ssr: false });
-const SetupWizard = dynamic(() => import("./merchant/SetupWizard").then((m) => m.SetupWizard), { ssr: false });
 const PrivateBalanceAssetRow = dynamic(
   () =>
     import("@/features/private-balance/components/PrivateBalanceAssetRow").then(
@@ -168,11 +195,11 @@ const PrivateAssetDetailModal = dynamic(
   ),
   { ssr: false },
 );
-const WithdrawPrivate = dynamic(
+const WithdrawPrivateFlow = dynamic(
   () => import("@/features/private-balance/components/WithdrawPrivate").then(
-    (module) => module.WithdrawPrivate,
+    (module) => module.WithdrawPrivateFlow,
   ),
-  { ssr: false },
+  { ssr: false, loading: () => <LoadingRegion label="Loading private withdrawal" /> },
 );
 const PrivateBalanceSetup = dynamic(
   () => import("@/features/private-balance/components/PrivateBalanceSetup").then(
@@ -295,6 +322,8 @@ function privateWithdrawOpeningLabel(
       return "Unlock StellarKey to continue";
     case "safe-error":
       return "Private balance needs attention";
+    case "status-unknown":
+      return "Waiting for independent network checks";
     case "disabled":
     default:
       return "Starting the private wallet";
@@ -320,6 +349,7 @@ export function Dashboard() {
     dataLoading,
     dataError,
     loadingMore,
+    loadMoreError,
     xlmPriceUsd,
     priceData,
     unfunded,
@@ -329,7 +359,7 @@ export function Dashboard() {
     fiatCurrency,
     fiatRates,
     cycleFiatCurrency,
-    refresh,
+    refresh: refreshWallet,
     loadMoreActivity,
     lock,
     fundFromFriendbot,
@@ -340,7 +370,9 @@ export function Dashboard() {
     unmatched: merchantUnmatched,
     charges: merchantCharges,
     activeShift: merchantActiveShift,
+    authorizeWalletExit: merchantAuthorizeWalletExit,
   } = useMerchantShell();
+  const { toast } = useToast();
   const {
     mounted: merchantRuntimeMounted,
     intent: merchantRuntimeIntent,
@@ -356,9 +388,12 @@ export function Dashboard() {
     selectedDeploymentId: selectedPrivateDeploymentId,
     selectAsset: selectPrivateAsset,
   } = usePrivateBalanceRuntime();
-  const { entries: privatePortfolioEntries } = usePrivateBalancePortfolio();
-  const privatePoolConfigured =
-    privateBalancePoolConfigured(privateAvailableAssets) || privatePortfolioEntries.length > 0;
+  const { entries: privatePortfolioEntries, accountBalances: privateAccountBalances, refreshAccountBalances } = usePrivateBalancePortfolio();
+  const refresh = useCallback(async () => {
+    await Promise.all([refreshWallet(), refreshAccountBalances()]);
+  }, [refreshAccountBalances, refreshWallet]);
+  const privatePaymentsAreEnabled =
+    privatePaymentsEnabled(privateAvailableAssets) || privatePortfolioEntries.length > 0;
   const privateBalanceRuntime = usePrivateBalanceRuntimeData();
   const privateWithdrawEntry =
     privatePortfolioEntries.find((entry) => entry.asset.kind === "native") ??
@@ -380,6 +415,7 @@ export function Dashboard() {
       "restoration-required",
       "restoring",
       "current",
+      "status-unknown",
       "safe-error",
     ].includes(privateBalanceRuntime.phase);
 
@@ -417,12 +453,22 @@ export function Dashboard() {
   const [privateWithdrawDeploymentId, setPrivateWithdrawDeploymentId] = useState<string | null>(null);
   const [privateWithdrawAttempt, setPrivateWithdrawAttempt] = useState(0);
   const [privateWithdrawTimedOut, setPrivateWithdrawTimedOut] = useState(false);
+  // One dialog hosts the private withdrawal from preparation through submission.
+  const [privateWithdrawWorking, setPrivateWithdrawWorking] = useState(false);
+  const [privateWithdrawDirty, setPrivateWithdrawDirty] = useState(false);
+  const [privateWithdrawHeader, setPrivateWithdrawHeader] = useState<PrivateFlowHeader | null>(null);
+  const [privateWithdrawCloseHandler, setPrivateWithdrawCloseHandler] = useState<(() => void) | null>(null);
+  const reportPrivateWithdrawCloseHandler = useCallback((handler: (() => void) | null) => {
+    setPrivateWithdrawCloseHandler(() => handler);
+  }, []);
+  const closePrivateWithdraw = useCallback(() => setPrivateWithdrawDeploymentId(null), []);
   const [privateSetupOpen, setPrivateSetupOpen] = useState(false);
   const [batchSendOpen, setBatchSendOpen] = useState(false);
   const [sendPrefill, setSendPrefill] = useState<SendPrefill | null>(null);
   const [swapPrefill, setSwapPrefill] = useState<SettlementSwapIntent | null>(null);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [addAssetOpen, setAddAssetOpen] = useState(false);
+  const [addAssetInitialMode, setAddAssetInitialMode] = useState<"public" | "private">("public");
   const [settingsSub, setSettingsSub] = useState<SettingsSub>("root");
   const [settingsKey, setSettingsKey] = useState(0);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -430,22 +476,8 @@ export function Dashboard() {
   const [networkStatsOpen, setNetworkStatsOpen] = useState(false);
   const [renamingAccount, setRenamingAccount] = useState<AccountMeta | null>(null);
   const [activityAssetFilter, setActivityAssetFilter] = useState<string>("all");
-  const privateAssetOption = privateAssetDeploymentId
-    ? privateAvailableAssets.find((option) => option.deploymentId === privateAssetDeploymentId) ?? null
-    : null;
   const privateAssetEntry = privateAssetDeploymentId
-    ? privatePortfolioEntries.find((entry) => entry.deploymentId === privateAssetDeploymentId) ??
-      (privatePoolConfigured && privateAssetOption
-        ? {
-            deploymentId: privateAssetDeploymentId,
-            asset: privateAssetOption.asset,
-            verifiedBalanceAtomicUnits: "0",
-            lastVerifiedLedger: null,
-            lastVerifiedActionIndex: null,
-            activities: [],
-            pendingActions: [],
-          }
-        : null)
+    ? privatePortfolioEntries.find((entry) => entry.deploymentId === privateAssetDeploymentId) ?? null
     : null;
   const privateWithdrawActiveDeploymentId = privateWithdrawDeploymentId
     ? selectedPrivateDeploymentId ?? privateWithdrawDeploymentId
@@ -528,18 +560,80 @@ export function Dashboard() {
   const [refreshingPull, setRefreshingPull] = useState(false);
   const touchStartY = useRef<number | null>(null);
   const pullYRef = useRef(0);
+  const merchantExitAuthorizationRef = useRef<Promise<boolean> | null>(null);
+  const navigationRequestRef = useRef(0);
+  const switchTab = useCallback(async (v: View): Promise<void> => {
+    const requestId = ++navigationRequestRef.current;
+    if (merchantExitRequired({
+      mode,
+      targetIsMerchantView: isMerchantView(v),
+      targetIsSettings: v === "settings",
+    })) {
+      if (!merchantExitAuthorizationRef.current) {
+        merchantExitAuthorizationRef.current = merchantAuthorizeWalletExit()
+          .then(() => true)
+          .catch((error: unknown) => {
+            toast(
+              error instanceof Error ? error.message : "Owner authorization is required.",
+              "error",
+            );
+            return false;
+          })
+          .finally(() => {
+            merchantExitAuthorizationRef.current = null;
+          });
+      }
+      const authorized = await merchantExitAuthorizationRef.current;
+      if (!authorized || requestId !== navigationRequestRef.current) return;
+    }
+    triggerHaptic("selection");
+    if (v === "swap") setSwapPrefill(null);
+    setView(v);
+    if (isMerchantView(v)) {
+      writeShellMode("merchant");
+    } else if (v !== "settings") {
+      writeShellMode("wallet");
+    }
+    window.scrollTo({ top: 0 });
+  }, [merchantAuthorizeWalletExit, mode, toast]);
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [portfolioView, setPortfolioView] = useState<"active" | "all">("active");
-  const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
+  const [assetPriceSamples, setAssetPriceSamples] = useState<MarketSamples>({});
+  const assetPrices = useMemo(() => marketValues(assetPriceSamples), [assetPriceSamples]);
   const [assetLogos, setAssetLogos] = useState<Record<string, string>>({});
   const [backupWizardOpen, setBackupWizardOpen] = useState(false);
   const [multisigOpen, setMultisigOpen] = useState(false);
   const [appHidden, setAppHidden] = useState(false);
+  // The shield appears instantly and leaves with a short fade.
+  const [shieldFading, setShieldFading] = useState(false);
+  const [prevAppHidden, setPrevAppHidden] = useState(appHidden);
+  if (appHidden !== prevAppHidden) {
+    setPrevAppHidden(appHidden);
+    setShieldFading(!appHidden);
+  }
+  useEffect(() => {
+    if (!shieldFading) return;
+    const timer = window.setTimeout(() => setShieldFading(false), PRIVACY_SHIELD_FADE_MS);
+    return () => window.clearTimeout(timer);
+  }, [shieldFading]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // Mounted on the shell, not inside Settings: turning Merchant Mode on
   // re-renders the toggle's own row, and a wizard owned by that row would be
   // torn down in the same pass that asked for it.
   const [setupWizardOpen, setSetupWizardOpen] = useState(false);
+  // Lazily loaded feature dialogs mount on first open and stay through their exit.
+  const setupWizardMounted = useMountedThroughExit(setupWizardOpen);
+  // The wizard's hooks need the merchant provider, so an abandoned setup
+  // releases the runtime only once the wizard has finished leaving.
+  const releaseRuntimeAfterWizardExitRef = useRef(false);
+  useEffect(() => {
+    if (setupWizardMounted || !releaseRuntimeAfterWizardExitRef.current) return;
+    releaseRuntimeAfterWizardExitRef.current = false;
+    releaseRuntime();
+  }, [releaseRuntime, setupWizardMounted]);
+  const privateSetupMounted = useMountedThroughExit(privateSetupOpen);
+  const privateAssetMounted = useMountedThroughExit(privateAssetOpen);
+  const installDialogShown = useRetainedForExit(installDialog);
   // The shift sheet lives in MerchantPage; the shell holds the flag so the
   // desktop sidebar and the command palette can open that same sheet.
   const [shiftOpen, setShiftOpen] = useState(false);
@@ -678,8 +772,8 @@ export function Dashboard() {
       const pricedAssets = valuationBalances
         .filter((b) => !b.isNative && b.issuer !== null && parseFloat(b.balance) > 0)
         .map((b) => ({ code: b.code, issuer: b.issuer, network }));
-      const prices = await fetchAssetPrices(pricedAssets);
-      if (alive && Object.keys(prices).length > 0) setAssetPrices(prices);
+      const prices = await fetchAssetPriceSamples(pricedAssets);
+      if (alive) setAssetPriceSamples(prices);
 
       // Resolve custom-asset logos concurrently, then publish one React state
       // update so a page of trustlines does not render once per TOML response.
@@ -859,6 +953,8 @@ export function Dashboard() {
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        // A dialog holds focus: app-level launchers stay quiet until it closes.
+        if (document.querySelector('[data-modal-backdrop][data-overlay-state="open"]:not([aria-label="Command palette"])')) return;
         setPaletteOpen((o) => !o);
       } else if ((e.metaKey || e.ctrlKey) && e.key === "1") {
         e.preventDefault();
@@ -904,7 +1000,7 @@ export function Dashboard() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [accounts, selectAccount, togglePrivacy, lock, merchantEnabled]);
+  }, [accounts, selectAccount, togglePrivacy, lock, merchantEnabled, switchTab]);
 
   // Infinite scroll for Activity — iOS-style forever scroll: an IntersectionObserver
   // sentinel near the list end pulls the next page automatically.
@@ -914,7 +1010,7 @@ export function Dashboard() {
   }, [loadMoreActivity]);
   const activitySentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (view !== "activity" || !activityCursor) return;
+    if (view !== "activity" || !activityCursor || loadingMore || loadMoreError) return;
     const el = activitySentinelRef.current;
     if (!el) return;
     const obs = new IntersectionObserver(
@@ -926,7 +1022,7 @@ export function Dashboard() {
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [view, activityCursor, loadingMore]);
+  }, [view, activityCursor, loadingMore, loadMoreError]);
 
   const xlm = useMemo(() => balances?.find((b) => b.isNative) ?? null, [balances]);
   const activePortfolio = useMemo(() => {
@@ -1007,6 +1103,30 @@ export function Dashboard() {
     [accountPortfolioSnapshots, accounts, assetPrices, network, xlmPriceUsd],
   );
   const allPortfolioReady = allPortfolio.completeness === "complete";
+  // Every row counts public plus saved private balances, regardless of selection.
+  // Unknown private state must not temporarily appear as a smaller public-only total.
+  const accountTotals = useMemo(() => Object.fromEntries(
+    accounts.map(account => {
+      const portfolio = aggregatePortfolio({
+        accounts: [account.publicKey], snapshots: accountPortfolioSnapshots,
+        network, xlmPriceUsd, assetPrices,
+      });
+      const privateBalances = privateAccountBalances[account.id];
+      return [account.publicKey, {
+        xlm: privateBalances == null ? null : portfolioXlmWithPrivateAssets(portfolio.nativeBalance, privateBalances),
+        usd: privateBalances == null ? null : portfolioUsdWithPrivateAssets(
+          representativePortfolioUsd({ portfolio, network, xlmPriceUsd, assetPrices }),
+          privatePortfolioRepresentativeUsd(privateBalances, xlmPriceUsd),
+        ),
+      }];
+    }),
+  ), [accountPortfolioSnapshots, accounts, assetPrices, network, privateAccountBalances, xlmPriceUsd]);
+  const allPrivateBalances = useMemo(() => accounts.some(account => privateAccountBalances[account.id] == null)
+    ? null
+    : accounts.flatMap(account => privateAccountBalances[account.id] ?? []),
+  [accounts, privateAccountBalances]);
+  const allPrivateLoading = accounts.some(account => privateAccountBalances[account.id] === undefined);
+  const allPrivateUnavailable = accounts.some(account => privateAccountBalances[account.id] === null);
   const allRepresentativePublicUsd = useMemo(() => {
     if (!allPortfolioReady) return null;
     if (network === "mainnet") return allPortfolio.totalUsd;
@@ -1035,25 +1155,25 @@ export function Dashboard() {
   );
   const allAccountsTotalUsd = portfolioUsdWithPrivateAssets(
     allRepresentativePublicUsd,
-    privateRepresentativeUsd,
+    allPrivateBalances === null ? null : privatePortfolioRepresentativeUsd(allPrivateBalances, xlmPriceUsd),
   );
   const activeAccountXlm = portfolioXlmWithPrivateAssets(
     xlm?.balance ?? accountBalances[activeAccount?.publicKey ?? ""] ?? 0,
     privatePortfolioEntries,
   );
-  const allAccountsXlm = portfolioXlmWithPrivateAssets(
+  const allAccountsXlm = allPrivateBalances === null ? null : portfolioXlmWithPrivateAssets(
     allPortfolio.nativeBalance,
-    privatePortfolioEntries,
+    allPrivateBalances,
   );
   const heroXlm = portfolioView === "all" ? allAccountsXlm : activeAccountXlm;
   const heroUsd = portfolioView === "all" ? allAccountsTotalUsd : activeAccountTotalUsd;
   const heroLoading = portfolioView === "all"
-    ? allPortfolio.completeness === "loading"
+    ? allPortfolio.completeness === "loading" || allPrivateLoading
     : balances === null && !dataError;
   const heroUnavailable = portfolioView === "all"
-    ? allPortfolio.completeness === "partial"
+    ? allPortfolio.completeness === "partial" || allPrivateUnavailable
     : balances === null && Boolean(dataError);
-  const heroReady = portfolioView === "all" ? allPortfolioReady : balances !== null;
+  const heroReady = portfolioView === "all" ? allPortfolioReady && allPrivateBalances !== null : balances !== null;
   const heroDisplayAmount = privacyMode ? "••••••" : fmtAmount(heroXlm ?? "0.0000000");
   const heroBalanceDensity = heroDisplayAmount.length >= 18
     ? "long"
@@ -1066,8 +1186,8 @@ export function Dashboard() {
     if (item.amount === null) return null;
     const amount = parseFloat(item.amount);
     if (!Number.isFinite(amount)) return null;
+    if (!item.assetCode) return null;
     const code = item.assetCode;
-    if (!code) return null;
     const unit = getUnitPrice(
       code,
       item.assetIssuer,
@@ -1266,18 +1386,6 @@ export function Dashboard() {
     openSettings(mode === "merchant" ? "merchant" : "root");
   }
 
-  function switchTab(v: View) {
-    triggerHaptic("selection");
-    if (v === "swap") setSwapPrefill(null);
-    setView(v);
-    if (isMerchantView(v)) {
-      writeShellMode("merchant");
-    } else if (v !== "settings") {
-      writeShellMode("wallet");
-    }
-    window.scrollTo({ top: 0 });
-  }
-
   const openPrivatePayments = useCallback((deploymentId?: string) => {
     const targetDeploymentId = deploymentId ??
       privateWithdrawEntry?.deploymentId ??
@@ -1287,7 +1395,7 @@ export function Dashboard() {
 
     selectPrivateAsset(targetDeploymentId);
     requestPrivateRuntime();
-    if (!privatePoolConfigured) {
+    if (!privatePaymentsAreEnabled) {
       setPrivateSetupOpen(true);
       return;
     }
@@ -1296,7 +1404,7 @@ export function Dashboard() {
     setPrivateAssetOpen(true);
   }, [
     privateAvailableAssets,
-    privatePoolConfigured,
+    privatePaymentsAreEnabled,
     privateWithdrawEntry,
     requestPrivateRuntime,
     selectPrivateAsset,
@@ -1317,8 +1425,8 @@ export function Dashboard() {
   }
 
   /** Merchant selects the till, Wallet returns Home. */
-  function switchMode(next: ShellMode) {
-    switchTab(next === "merchant" ? "merchant" : "home");
+  async function switchMode(next: ShellMode) {
+    await switchTab(next === "merchant" ? "merchant" : "home");
   }
 
   function handleSendToContact(c: Contact) {
@@ -1339,7 +1447,7 @@ export function Dashboard() {
     () => [
       {
         id: "send",
-        label: "Send payment",
+        label: "Send Payment",
         run: () => {
           setSendPrefill(null);
           setSendOpen(true);
@@ -1347,10 +1455,10 @@ export function Dashboard() {
       },
       {
         id: "batch-send",
-        label: "Batch payment disperse (Multi-Send)",
+        label: "Batch Payment Disperse (Multi-Send)",
         run: () => setBatchSendOpen(true),
       },
-      { id: "receive", label: "Receive funds", run: () => setReceiveOpen(true) },
+      { id: "receive", label: "Receive Funds", run: () => setReceiveOpen(true) },
       // Private actions appear only when the runtime is available or configured.
       ...(privateBalanceAvailable || showPrivatePayments
         ? [
@@ -1373,19 +1481,19 @@ export function Dashboard() {
                 setReceiveOpen(true);
               },
             },
-            { id: "private-open", label: "Open private asset", run: openPrivatePayments },
+            { id: "private-open", label: "Open Private Asset", run: openPrivatePayments },
           ]
         : []),
-      { id: "swap", label: "Swap assets", run: () => switchTab("swap") },
-      { id: "converter", label: "Live Currency Converter / Calculator", run: () => setConverterOpen(true) },
+      { id: "swap", label: "Swap Assets", run: () => switchTab("swap") },
+      { id: "converter", label: "Currency Converter / Calculator", run: () => setConverterOpen(true) },
       { id: "stats", label: "Live Network Status", run: () => setNetworkStatsOpen(true) },
-      { id: "add-account", label: "Add account", run: () => setAddAccountOpen(true) },
+      { id: "add-account", label: "Add Account", run: () => setAddAccountOpen(true) },
       { id: "shortcuts", label: "Keyboard Shortcuts", run: () => setShortcutsOpen(true) },
       { id: "rename-account", label: "Rename Active Account", hint: activeAccount?.label, run: () => setRenamingAccount(activeAccount) },
-      { id: "add-asset", label: "Add asset trustline", run: () => setAddAssetOpen(true) },
+      { id: "add-asset", label: "Add Asset Trustline", run: () => setAddAssetOpen(true) },
       {
         id: "copy",
-        label: "Copy your address",
+        label: "Copy Your Address",
         hint: formatTrezorAddress(activeAccount?.publicKey ?? ""),
         run: () => {
           if (activeAccount) void navigator.clipboard.writeText(activeAccount.publicKey);
@@ -1426,28 +1534,28 @@ export function Dashboard() {
         label: "Backup & recovery wizard",
         run: () => setBackupWizardOpen(true),
       },
-      { id: "phrase", label: "Reveal recovery phrase or secret key", run: () => setBackupWizardOpen(true) },
-      { id: "settings", label: "Wallet settings", run: () => openSettings("root") },
-      { id: "accounts", label: "Manage accounts", run: () => openSettings("accounts") },
+      { id: "phrase", label: "Reveal Recovery Phrase or Secret Key", run: () => setBackupWizardOpen(true) },
+      { id: "settings", label: "Wallet Settings", run: () => openSettings("root") },
+      { id: "accounts", label: "Manage Accounts", run: () => openSettings("accounts") },
       { id: "multisig", label: "Multi-Sig Studio (signers & co-signing)", run: () => setMultisigOpen(true) },
       { id: "contacts", label: "Open Contacts", run: () => switchTab("contacts") },
       ...(merchantEnabled
         ? [
             {
               id: "merchant-charge",
-              label: "New charge",
+              label: "New Charge",
               hint: "Point of Sale",
               run: () => switchTab("merchant"),
             },
-            { id: "merchant-orders", label: "Merchant orders", run: () => switchTab("orders") },
+            { id: "merchant-orders", label: "Merchant Orders", run: () => switchTab("orders") },
             { id: "merchant-catalogue", label: "Catalogue", run: () => switchTab("catalogue") },
             {
               id: "merchant-invoice",
-              label: "New invoice",
+              label: "New Invoice",
               hint: "Invoices",
               run: () => switchTab("invoices"),
             },
-            { id: "merchant-links", label: "Counter codes", run: () => switchTab("links") },
+            { id: "merchant-links", label: "Counter Codes", run: () => switchTab("links") },
             { id: "merchant-customers", label: "Customers", run: () => switchTab("customers") },
             {
               id: "merchant-shift",
@@ -1457,10 +1565,10 @@ export function Dashboard() {
                 : "Required before taking tender",
               run: openShift,
             },
-            { id: "merchant-insights", label: "Merchant insights", run: () => switchTab("insights") },
+            { id: "merchant-insights", label: "Merchant Insights", run: () => switchTab("insights") },
           ]
         : []),
-      { id: "lock", label: "Lock wallet", run: lock },
+      { id: "lock", label: "Lock Wallet", run: lock },
     ],
     [
       accounts,
@@ -1479,6 +1587,7 @@ export function Dashboard() {
       switchNetwork,
       selectAccount,
       lock,
+      switchTab,
     ],
   );
 
@@ -1488,16 +1597,23 @@ export function Dashboard() {
       className="app-safe-dashboard relative z-10 min-h-screen w-full min-w-0 md:flex md:h-screen md:overflow-hidden"
     >
       {/* Privacy Shield */}
-      {appHidden && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-2xl transition-opacity">
+      {(appHidden || shieldFading) && typeof document !== "undefined" && createPortal(
+        <div
+          data-privacy-shield
+          data-state={appHidden ? "on" : "leaving"}
+          className={`fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/95 backdrop-blur-2xl ${
+            appHidden ? "" : "pointer-events-none animate-[fadeOut_var(--motion-duration-fast)_linear_both]"
+          }`}
+        >
           <div className="flex flex-col items-center gap-3 text-center">
-            <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white/10 text-white shadow-2xl">
+            <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white/10 text-[var(--color-oncolor)] shadow-2xl">
               <IconShield size={32} />
             </span>
             <p className="text-[17px] font-bold text-white tracking-tight">Wallet Privacy Shield</p>
             <p className="text-[13px] text-neutral-400">Balances hidden while multitasking</p>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Pull-to-refresh indicator */}
@@ -1517,7 +1633,7 @@ export function Dashboard() {
 
                                     {/* Apple Native iPadOS / macOS Desktop Sidebar (Hidden on Mobile) */}
       <aside
-        className={`app-safe-sticky-top hidden md:flex flex-col shrink-0 border-r border-white/10 bg-white/[0.02] backdrop-blur-3xl sticky h-screen transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        className={`app-safe-sticky-top hidden md:flex flex-col shrink-0 border-r border-white/10 bg-white/[0.02] backdrop-blur-3xl sticky h-screen transition-[width] duration-[var(--motion-duration-emphasized)] ease-[cubic-bezier(0.32,0.72,0,1)] ${
           sidebarCollapsed ? "w-[72px]" : "w-[260px] lg:w-[280px]"
         }`}
       >
@@ -1535,7 +1651,7 @@ export function Dashboard() {
                   triggerHaptic("selection");
                   setSidebarCollapsed(false);
                 }}
-                className="flex h-11 w-11 items-center justify-center rounded-xl text-white transition-colors hover:bg-white/[0.08]"
+                className="flex h-11 w-11 items-center justify-center rounded-xl text-[var(--color-oncolor)] transition-colors hover:bg-white/[0.08]"
                 aria-label="Expand Sidebar"
               >
                 <LogoMark size={30} className="text-white" />
@@ -1600,7 +1716,7 @@ export function Dashboard() {
                   <button
                     type="button"
                     onClick={() => switchMode(mode === "merchant" ? "wallet" : "merchant")}
-                    className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-neutral-300 transition-all hover:bg-white/[0.08] hover:text-white"
+                    className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-neutral-300 transition-colors hover:bg-white/[0.08] hover:text-[var(--color-oncolor)]"
                     aria-label={mode === "merchant" ? "Switch to Wallet" : "Switch to Merchant"}
                   >
                     {mode === "merchant" ? (
@@ -1623,7 +1739,7 @@ export function Dashboard() {
                   triggerHaptic("selection");
                   setPaletteOpen(true);
                 }}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] font-medium text-neutral-400 bg-white/[0.04] hover:bg-white/[0.08] hover:text-white transition-all mb-2 border border-white/5"
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] font-medium text-neutral-400 bg-white/[0.04] hover:bg-white/[0.08] hover:text-white transition-colors mb-2 border border-white/5"
               >
                 <div className="flex items-center gap-2">
                   <IconSearch size={15} />
@@ -1642,11 +1758,11 @@ export function Dashboard() {
                     type="button"
                     aria-label={sidebarCollapsed ? "Point of Sale (⌘6)" : undefined}
                     onClick={() => switchTab("merchant")}
-                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    className={`group relative flex w-full items-center rounded-xl transition-colors ${
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "merchant"
-                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                         : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
@@ -1671,11 +1787,11 @@ export function Dashboard() {
                         : "Orders"
                       : undefined}
                     onClick={() => switchTab("orders")}
-                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    className={`group relative flex w-full items-center rounded-xl transition-colors ${
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "orders"
-                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                         : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
@@ -1708,11 +1824,11 @@ export function Dashboard() {
                     type="button"
                     aria-label={sidebarCollapsed ? "Catalogue" : undefined}
                     onClick={() => switchTab("catalogue")}
-                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    className={`group relative flex w-full items-center rounded-xl transition-colors ${
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "catalogue"
-                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                         : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
@@ -1727,11 +1843,11 @@ export function Dashboard() {
                     type="button"
                     aria-label={sidebarCollapsed ? "Invoices" : undefined}
                     onClick={() => switchTab("invoices")}
-                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    className={`group relative flex w-full items-center rounded-xl transition-colors ${
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "invoices" || view === "links"
-                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                         : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
@@ -1745,11 +1861,11 @@ export function Dashboard() {
                     type="button"
                     aria-label={sidebarCollapsed ? "Customers" : undefined}
                     onClick={() => switchTab("customers")}
-                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    className={`group relative flex w-full items-center rounded-xl transition-colors ${
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "customers"
-                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                         : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
@@ -1763,11 +1879,11 @@ export function Dashboard() {
                     type="button"
                     aria-label={sidebarCollapsed ? "Insights" : undefined}
                     onClick={() => switchTab("insights")}
-                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    className={`group relative flex w-full items-center rounded-xl transition-colors ${
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "insights"
-                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                         : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
@@ -1784,11 +1900,11 @@ export function Dashboard() {
                 type="button"
                 aria-label={sidebarCollapsed ? "Home (⌘1)" : undefined}
                 onClick={() => switchTab("home")}
-                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                className={`group relative flex w-full items-center rounded-xl transition-colors ${
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "home"
-                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                     : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                 }`}
               >
@@ -1804,11 +1920,11 @@ export function Dashboard() {
                 type="button"
                 aria-label={sidebarCollapsed ? "Activity (⌘2)" : undefined}
                 onClick={() => switchTab("activity")}
-                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                className={`group relative flex w-full items-center rounded-xl transition-colors ${
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "activity"
-                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                     : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                 }`}
               >
@@ -1827,11 +1943,11 @@ export function Dashboard() {
                 type="button"
                 aria-label={sidebarCollapsed ? "DEX Swap (⌘3)" : undefined}
                 onClick={() => switchTab("swap")}
-                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                className={`group relative flex w-full items-center rounded-xl transition-colors ${
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "swap"
-                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                     : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                 }`}
               >
@@ -1845,11 +1961,11 @@ export function Dashboard() {
                 type="button"
                 aria-label={sidebarCollapsed ? "Contacts (⌘4)" : undefined}
                 onClick={() => switchTab("contacts")}
-                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                className={`group relative flex w-full items-center rounded-xl transition-colors ${
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "contacts"
-                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                     : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                 }`}
               >
@@ -1881,11 +1997,11 @@ export function Dashboard() {
                     : "Settings (⌘5)"
                   : undefined}
                 onClick={openSettingsForMode}
-                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                className={`group relative flex w-full items-center rounded-xl transition-colors ${
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "settings"
-                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                     : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
                 }`}
               >
@@ -1898,9 +2014,7 @@ export function Dashboard() {
             {!sidebarCollapsed ? (
               <div className="pt-3 space-y-1">
                 <div className="flex items-center justify-between px-2 pb-0.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                    Accounts ({accounts.length})
-                  </span>
+                  <SectionHeader as="span">Accounts ({accounts.length})</SectionHeader>
                   <div className="flex items-center">
                     <button
                       type="button"
@@ -1915,9 +2029,8 @@ export function Dashboard() {
                 <div className="space-y-0.5">
                   {accounts.map((acct) => {
                     const isActive = acct.id === activeAccount?.id;
-                    const accountXlm = isActive
-                      ? activeAccountXlm ?? accountBalances[acct.publicKey] ?? 0
-                      : accountBalances[acct.publicKey] ?? 0;
+                    const accountXlm = accountTotals[acct.publicKey]?.xlm ?? null;
+                    const accountUsd = accountTotals[acct.publicKey]?.usd ?? null;
                     return (
                       <button
                         key={acct.id}
@@ -1947,23 +2060,18 @@ export function Dashboard() {
                             <p className="mono truncate text-[10.5px] text-neutral-400 pt-0.5">
                               {privacyMode
                                 ? "••••••"
-                                : `${fmtAmount(accountXlm)} XLM`}
+                                : `${accountXlm === null ? "—" : fmtAmount(accountXlm)} XLM`}
                             </p>
                           </div>
                         </div>
-                        {/* Active account uses its complete public + private portfolio value. */}
-                        {isActive && activeAccountTotalUsd !== null && !privacyMode ? (
-                          <span className="mono shrink-0 pl-2 text-[11.5px] font-semibold text-neutral-300">
-                            {fmtFiat(activeAccountTotalUsd, fiatCurrency, fiatRates)}
-                          </span>
-                        ) : (
-                          <FiatValue
-                            amount={accountXlm}
-                            code="XLM"
-                            prefix=""
+                        {!privacyMode ? (
+                          <span
                             className="mono shrink-0 pl-2 text-[11.5px] font-semibold text-neutral-300"
-                          />
-                        )}
+                            title={accountUsd === null ? "Account value unavailable" : network === "testnet" ? "Testnet reference value — not real money; public + saved private balances" : "Public + saved private balances"}
+                          >
+                            {accountUsd === null ? "—" : fmtFiat(accountUsd, fiatCurrency, fiatRates)}
+                          </span>
+                        ) : null}
                       </button>
                     );
                   })}
@@ -1986,7 +2094,7 @@ export function Dashboard() {
                           triggerHaptic("selection");
                           selectAccount(acct.id);
                         }}
-                        className={`relative flex h-10 w-10 items-center justify-center rounded-2xl transition-all ${
+                        className={`relative flex h-10 w-10 items-center justify-center rounded-2xl transition-colors ${
                           isActive
                             ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-sm shadow-blue-500/25"
                             : "opacity-60 hover:opacity-100 hover:bg-white/[0.06]"
@@ -2002,7 +2110,7 @@ export function Dashboard() {
                     type="button"
                     aria-label="Add Account"
                     onClick={() => setAddAccountOpen(true)}
-                    className="flex h-9 w-9 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors mt-1"
+                    className="flex h-9 w-9 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-[var(--color-oncolor)] hover:bg-white/[0.06] transition-colors mt-1"
                   >
                     <IconPlus size={14} />
                   </button>
@@ -2016,7 +2124,7 @@ export function Dashboard() {
         <div className={`border-t border-white/[0.08] shrink-0 w-full ${sidebarCollapsed ? "p-2.5" : "p-4 space-y-2"}`}>
           {!sidebarCollapsed ? (
             <>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-y-2">
                 <div className="flex items-center gap-1">
                   <Tooltip label={privacyMode ? "Show balances" : "Hide balances"}>
                     <button
@@ -2101,7 +2209,7 @@ export function Dashboard() {
               </button>
               <div
                 aria-label="Build information"
-                className="pt-1 text-center text-[9px] text-neutral-400"
+                className="pt-1 text-center text-[10px] text-neutral-400"
               >
                 <p className="whitespace-nowrap">
                   © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}
@@ -2211,7 +2319,7 @@ export function Dashboard() {
           </div>
         </header>
         {/* Mobile Sticky Nav bar (Hidden on Desktop) */}
-        <div className={`app-mobile-sticky-header md:hidden sticky z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
+        <div className={`app-mobile-sticky-header md:hidden sticky z-30 transition-colors ${scrolled ? "nav-blur" : ""}`}>
           <div className="mx-auto w-full max-w-[560px] px-4">
             <div className="flex h-[44px] min-w-0 items-center justify-between gap-1">
               <AccountMenu
@@ -2259,7 +2367,7 @@ export function Dashboard() {
                   {mobileViewTitle(view)}
                 </span>
               </div>
-            ) : (
+            ) : view === "settings" && settingsSub !== "root" ? null : (
               <div className="flex items-end justify-between pb-2">
                 <h1 className="display-h text-[34px] leading-tight text-white font-bold">
                   {mobileViewTitle(view)}
@@ -2313,6 +2421,7 @@ export function Dashboard() {
             <SettingsPage
               key={settingsKey}
               initialSub={settingsSub}
+              onSubChange={setSettingsSub}
               merchantOnly={mode === "merchant"}
               installAvailable={installHandoff.available}
               installDescription={
@@ -2475,9 +2584,9 @@ export function Dashboard() {
                         triggerHaptic("selection");
                         setPortfolioView(opt.id);
                       }}
-                      className={`max-w-[160px] truncate rounded-full px-3 py-1 text-[11.5px] font-semibold transition-all ${
+                      className={`max-w-[160px] truncate rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors ${
                         portfolioView === opt.id
-                          ? "bg-[#0A84FF] text-white shadow-sm"
+                          ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                           : "text-neutral-400 hover:text-white"
                       }`}
                     >
@@ -2513,6 +2622,10 @@ export function Dashboard() {
                       </p>
                     ) : portfolioView === "all" && allPortfolio.completeness === "loading" ? (
                       <p className="text-[13px] text-neutral-500">Checking every account…</p>
+                    ) : portfolioView === "all" && allPrivateUnavailable ? (
+                      <p className="text-[13px] text-amber-300">Private balance unavailable · refresh to retry</p>
+                    ) : portfolioView === "all" && allPrivateLoading ? (
+                      <p className="text-[13px] text-neutral-500">Checking saved private balances…</p>
                     ) : portfolioView === "all" && allPortfolio.unpricedAssets.length > 0 ? (
                       <p className="text-[13px] text-amber-300">
                         Total unavailable · {allPortfolio.unpricedAssets.length} asset{allPortfolio.unpricedAssets.length === 1 ? " has" : "s have"} no verified price
@@ -2555,7 +2668,7 @@ export function Dashboard() {
                           <div
                             key={s.code}
                             style={{ width: `${s.pct}%`, background: s.color }}
-                            className="h-full transition-all"
+                            className="h-full"
                             title={`${s.code}: ${s.pct.toFixed(1)}%`}
                           />
                         ))}
@@ -2647,10 +2760,10 @@ export function Dashboard() {
                     data-mobile-asset-toolbar
                     className="flex flex-wrap items-center gap-x-3 gap-y-2 px-1 pb-2.5"
                   >
-                    <h2 className="order-1 mr-auto text-[16px] font-bold tracking-tight text-white sm:order-none">
+                    <h2 className="mr-auto text-[16px] font-bold tracking-tight text-white">
                       Your Assets
                     </h2>
-                    <div className="order-3 flex w-full items-center justify-end gap-3 sm:order-none sm:w-auto">
+                    <div className="flex items-center justify-end gap-3">
                       {hiddenClaimableBalanceCount > 0 && (
                         <button
                           type="button"
@@ -2673,7 +2786,7 @@ export function Dashboard() {
                           setHideDust((d) => !d);
                         }}
                         className={`text-[12px] font-medium transition-colors ${
-                          hideDust ? "text-[#0A84FF] font-semibold" : "text-neutral-400 hover:text-white"
+                          hideDust ? "font-semibold text-white" : "text-[#0A84FF] hover:text-accent-2"
                         }`}
                       >
                         {hideDust ? "Dust Hidden" : "Hide Dust"}
@@ -2684,7 +2797,7 @@ export function Dashboard() {
                           triggerHaptic("selection");
                           setBatchSendOpen(true);
                         }}
-                        className="text-[12px] font-medium text-neutral-400 hover:text-white"
+                        className="text-[12px] font-medium text-[#0A84FF] transition-colors hover:text-accent-2"
                       >
                         Multi-Send
                       </button>
@@ -2754,25 +2867,13 @@ export function Dashboard() {
                                   : {
                                       background: `linear-gradient(135deg, hsl(${hue}, 70%, 45%), hsl(${(hue + 60) % 360}, 70%, 35%))`,
                                     };
-                              if (logoUrl) {
-                                return (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={logoUrl}
-                                    alt=""
-                                    width={36}
-                                    height={36}
-                                    className="h-9 w-9 shrink-0 rounded-full object-cover shadow-inner"
-                                  />
-                                );
-                              }
                               return (
-                                <span
-                                  className="mono flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-inner"
-                                  style={bgStyle}
-                                >
-                                  {asset.code.slice(0, 3)}
-                                </span>
+                                <AssetAvatar
+                                  code={asset.code}
+                                  isNative={asset.isNative}
+                                  logoUrl={logoUrl}
+                                  background={bgStyle.background}
+                                />
                               );
                             })()}
 
@@ -2801,7 +2902,7 @@ export function Dashboard() {
                                 <span
                                   className="mono text-[10.5px] font-semibold rounded px-1.5 py-0.5"
                                   style={{
-                                    color: (priceData.changePct ?? 0) >= 0 ? "#30D158" : "#FF453A",
+                                    color: (priceData.changePct ?? 0) >= 0 ? "var(--color-pos)" : "var(--color-neg)",
                                     background: (priceData.changePct ?? 0) >= 0 ? "rgba(48,209,88,0.14)" : "rgba(255,69,58,0.14)",
                                   }}
                                 >
@@ -2843,7 +2944,7 @@ export function Dashboard() {
                           aria-label="About testnet private asset values"
                           aria-haspopup="dialog"
                           onClick={() => setPrivateValueInfoOpen(true)}
-                          className="-m-1 flex h-7 w-7 items-center justify-center rounded-full text-[14px] text-neutral-500 transition-colors hover:bg-white/[0.08] hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-[#0A84FF]"
+                          className="-my-2 -mr-1 flex items-center justify-center rounded-full text-[14px] text-neutral-500 transition-colors hover:bg-white/[0.08] hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-[#0A84FF]"
                         >
                           ⓘ
                         </button>
@@ -2871,17 +2972,25 @@ export function Dashboard() {
                             key={option.deploymentId}
                             option={option}
                             entry={entry ?? null}
-                            configured={privatePoolConfigured}
+                            paymentsEnabled={privatePaymentsAreEnabled}
+                            prepared={option.encryptedStateExists && entry !== undefined}
                             separated={index > 0}
                             privacyMode={privacyMode}
+                            network={network}
                             xlmPriceUsd={xlmPriceUsd}
                             fiatCurrency={fiatCurrency}
                             fiatRates={fiatRates}
                             onOpen={() => {
                               selectPrivateAsset(option.deploymentId);
-                              if (!privatePoolConfigured) {
+                              if (!privatePaymentsAreEnabled) {
                                 requestPrivateRuntime();
                                 setPrivateSetupOpen(true);
+                                return;
+                              }
+                              if (!option.encryptedStateExists || entry === undefined) {
+                                requestPrivateRuntime();
+                                setAddAssetInitialMode("private");
+                                setAddAssetOpen(true);
                                 return;
                               }
                               openPrivatePayments(option.deploymentId);
@@ -2908,16 +3017,18 @@ export function Dashboard() {
                     <button
                       type="button"
                       onClick={() => switchTab("activity")}
-                      className="text-[12px] font-medium text-neutral-400 hover:text-white"
+                      className="text-[12px] font-medium text-[#0A84FF] transition-colors hover:text-accent-2"
                     >
                       View All
                     </button>
                   </div>
                   <div className="list-group">
                     {mergedActivity.length === 0 ? (
-                      <p className="px-4 py-10 text-center text-[13px] text-neutral-500">
-                        No recent activity
-                      </p>
+                      <EmptyState
+                        icon={<IconList size={20} />}
+                        title="No activity yet"
+                        description="Payments, swaps and trustline changes for this account will appear here."
+                      />
                     ) : (
                       mergedActivity.slice(0, 5).map((item, index) => (
                         <ActivityLedgerRow
@@ -2946,8 +3057,8 @@ export function Dashboard() {
           ) : view === "activity" ? (
             <section className="fade-up pt-2 max-w-[1000px] mx-auto">
               {/* Filter Pills & Export CSV */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pb-2.5 pt-1">
-                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none sm:bg-white/[0.04] sm:p-1 sm:rounded-2xl sm:border sm:border-white/10">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-2 pb-2.5 pt-1">
+                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none sm:shrink-0 sm:bg-white/[0.04] sm:p-1 sm:rounded-2xl sm:border sm:border-white/10">
                   {(
                     [
                       { id: "all", label: "All" },
@@ -2964,9 +3075,9 @@ export function Dashboard() {
                         triggerHaptic("selection");
                         setActivityFilter(f.id);
                       }}
-                      className={`rounded-full sm:rounded-xl px-3.5 py-1 text-[12px] font-medium transition-all shrink-0 ${
+                      className={`rounded-full sm:rounded-xl px-3.5 py-1 text-[12px] font-medium transition-colors shrink-0 ${
                         activityFilter === f.id
-                          ? "bg-white text-black font-semibold shadow-sm"
+                          ? "bg-[var(--color-oncolor)] text-black font-semibold shadow-sm"
                           : "bg-white/[0.08] sm:bg-transparent text-neutral-400 hover:text-white sm:hover:bg-white/[0.06]"
                       }`}
                     >
@@ -2985,8 +3096,8 @@ export function Dashboard() {
                     title="Hide payments below 0.1 (spam dust)"
                     className={`shrink-0 text-[12px] font-medium transition-colors ${
                       hideActivityDust
-                        ? "text-[#0A84FF] font-semibold"
-                        : "text-neutral-400 hover:text-white"
+                        ? "font-semibold text-white"
+                        : "text-[#0A84FF] hover:text-accent-2"
                     }`}
                   >
                     {hideActivityDust ? "Dust Hidden" : "Hide Dust"}
@@ -2998,7 +3109,7 @@ export function Dashboard() {
                     value={activityAssetFilter}
                     onChange={setActivityAssetFilter}
                     ariaLabel="Filter by asset"
-                    className="mono !h-7 !py-0 !px-2 text-[11.5px] !bg-white/[0.04] !text-neutral-300"
+                    className="!h-7 !py-0 !px-2 text-[11.5px] !bg-white/[0.04] !text-neutral-300"
                     preserveOptionLabels
                     panelMinWidth={240}
                     options={[
@@ -3042,18 +3153,18 @@ export function Dashboard() {
 
               {filteredActivity.length === 0 ? (
                 <div className="list-group mt-2">
-                  <p className="px-4 py-12 text-center text-[14px] text-neutral-500">
-                    No activity found
-                  </p>
+                  <EmptyState
+                    icon={<IconList size={22} />}
+                    title="No activity found"
+                    description="Payments, swaps and trustline changes for this account will appear here."
+                  />
                 </div>
               ) : (
                 <div className="space-y-4 mt-2">
                   {groupedActivity.map((group) => (
                     <div key={group.title}>
                       <div className="flex items-center justify-between px-2 pb-1.5">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                          {group.title}
-                        </p>
+                        <SectionHeader>{group.title}</SectionHeader>
                         <span className="text-[11px] text-neutral-500 hidden sm:inline">
                           {group.items.length} transaction{group.items.length > 1 ? "s" : ""}
                         </span>
@@ -3083,17 +3194,35 @@ export function Dashboard() {
                 </div>
               )}
 
-              {/* Infinite-scroll sentinel — forever scroll, no button */}
-              {activityCursor && (
-                <div ref={activitySentinelRef} className="flex justify-center py-5">
-                  {loadingMore && <Spinner size={18} />}
+              {/* Keep keyboard pagination and its focus owner mounted through
+                  pending/error/completion; automatic work pauses after errors. */}
+              {activityCursor || activity.length > 0 || loadMoreError ? (
+                <div ref={activitySentinelRef} data-activity-pagination className="space-y-3 py-5 text-center">
+                  <div data-activity-pagination-action aria-busy={loadingMore || undefined}>
+                    <Button
+                      variant="secondary"
+                      className="w-52 max-w-full aria-disabled:cursor-default aria-disabled:opacity-60"
+                      aria-disabled={loadingMore || !activityCursor || undefined}
+                      onClick={() => {
+                        if (!loadingMore && activityCursor) void loadMoreActivity({ retry: true });
+                      }}
+                    >
+                      {loadMoreError ? "Retry older activity" : "Load older activity"}
+                    </Button>
+                  </div>
+                  <div className="min-h-12">
+                    {loadingMore ? (
+                      <span role="status" aria-label="Loading older activity" className="inline-flex items-center gap-2 text-[12px] text-neutral-400">
+                        <Spinner size={18} /> Loading older activity
+                      </span>
+                    ) : loadMoreError ? (
+                      <p role="alert" className="text-[12px] text-red-300">{loadMoreError}</p>
+                    ) : !activityCursor ? (
+                      <p role="status" className="text-[11.5px] text-neutral-500">You&rsquo;re all caught up</p>
+                    ) : null}
+                  </div>
                 </div>
-              )}
-              {!activityCursor && filteredActivity.length > 0 && (
-                <p className="py-5 text-center text-[11.5px] text-neutral-500">
-                  You&rsquo;re all caught up
-                </p>
-              )}
+              ) : null}
             </section>
           ) : null}
         </div>
@@ -3155,20 +3284,19 @@ export function Dashboard() {
         </button>
       </nav>
 
-      {sendOpen && (
-        <SendModal
-          open
-          initialMode={sendInitialMode}
-          onClose={() => {
-            setSendOpen(false);
-            setSendInitialMode("public");
-            setSendPrefill(null);
-          }}
-          prefill={sendPrefill}
-        />
-      )}
-      {privateAssetOpen && (
+      <SendModal
+        open={sendOpen}
+        initialMode={sendInitialMode}
+        onClose={() => {
+          setSendOpen(false);
+          setSendInitialMode("public");
+          setSendPrefill(null);
+        }}
+        prefill={sendPrefill}
+      />
+      {privateAssetMounted && (
         <PrivateAssetDetailModal
+          open={privateAssetOpen}
           entry={privateAssetEntry}
           network={network}
           privacyMode={privacyMode}
@@ -3183,11 +3311,11 @@ export function Dashboard() {
       )}
       <Modal open={privateValueInfoOpen} onClose={() => setPrivateValueInfoOpen(false)}>
         <ModalHeader
-          title="Testnet values"
+          title="Testnet Values"
           subtitle="Representative pricing only"
           onClose={() => setPrivateValueInfoOpen(false)}
         />
-        <div className="space-y-3 p-4 sm:p-6">
+        <ModalBody gap={3}>
           <p className="text-[13px] leading-relaxed text-neutral-300">
             Testnet assets have no real monetary value. StellarKey applies current mainnet XLM
             pricing and the USDC dollar reference so this test wallet behaves like the real app.
@@ -3196,132 +3324,159 @@ export function Dashboard() {
             These figures are for interface testing only and cannot be redeemed or traded for the
             displayed amount.
           </p>
-          <Button variant="ghost" className="w-full" onClick={() => setPrivateValueInfoOpen(false)}>
-            Close
-          </Button>
-        </div>
+          <ModalFooter
+            primary={
+              <Button type="button" variant="ghost" onClick={() => setPrivateValueInfoOpen(false)}>
+                Close
+              </Button>
+            }
+          />
+        </ModalBody>
       </Modal>
-      {privateWithdrawDeploymentId && (
-        privateWithdrawReady && privateWithdrawTarget ? (
-          <WithdrawPrivate
+      <Modal
+        open={privateWithdrawDeploymentId !== null}
+        onClose={privateWithdrawCloseHandler ?? closePrivateWithdraw}
+        busy={privateWithdrawWorking}
+        busyReason="Wait for the withdrawal to finish before closing."
+        dirty={privateWithdrawDirty}
+      >
+        <ModalHeader
+          title={privateWithdrawHeader?.title ?? "Withdraw Funds"}
+          subtitle={privateWithdrawHeader?.subtitle ?? (
+            privateWithdrawReady && privateWithdrawTarget
+              ? `Move ${privateWithdrawTarget.asset.code} to your public balance`
+              : privateWithdrawTarget
+                ? `Preparing private ${privateWithdrawTarget.asset.code}`
+                : "Preparing private balance"
+          )}
+          onBack={privateWithdrawHeader?.onBack}
+          onClose={privateWithdrawCloseHandler ?? closePrivateWithdraw}
+        />
+        {privateWithdrawDeploymentId === null ? null : privateWithdrawReady && privateWithdrawTarget ? (
+          <WithdrawPrivateFlow
             key={privateWithdrawTarget.deploymentId}
-            onClose={() => setPrivateWithdrawDeploymentId(null)}
+            onClose={closePrivateWithdraw}
+            onCloseHandlerChange={reportPrivateWithdrawCloseHandler}
+            onWorkingChange={setPrivateWithdrawWorking}
+            onHeaderChange={setPrivateWithdrawHeader}
+            onDirtyChange={setPrivateWithdrawDirty}
           />
         ) : (
-          <Modal open onClose={() => setPrivateWithdrawDeploymentId(null)}>
-            <ModalHeader
-              title="Withdraw Funds"
-              subtitle={privateWithdrawTarget
-                ? `Preparing private ${privateWithdrawTarget.asset.code}`
-                : "Preparing private balance"}
-              onClose={() => setPrivateWithdrawDeploymentId(null)}
-            />
-            <div className="flex min-h-40 flex-col items-center justify-center gap-3 p-6 text-center">
-              {privateBalanceRuntime.error ? (
-                <>
-                  <p className="text-[13px] leading-relaxed text-[#FF6961]">
-                    {privateBalanceRuntime.error}
-                  </p>
-                  <Button variant="ghost" onClick={() => setPrivateWithdrawDeploymentId(null)}>
-                    Close
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <div className="w-full max-w-72 space-y-3" aria-live="polite">
+          <ModalBody className="flex min-h-40 flex-col justify-center text-center">
+            {privateBalanceRuntime.error ? (
+              <>
+                <ErrorText message={privateBalanceRuntime.error} />
+                <ModalFooter
+                  primary={
+                    <Button type="button" variant="ghost" onClick={() => setPrivateWithdrawDeploymentId(null)}>
+                      Close
+                    </Button>
+                  }
+                />
+              </>
+            ) : (
+              <>
+                <div className="mx-auto w-full max-w-72 space-y-3" aria-live="polite">
+                  <div
+                    role="progressbar"
+                    aria-label={privateWithdrawOpeningLabelText}
+                    aria-valuemin={privateWithdrawScanPercent === null ? undefined : 0}
+                    aria-valuemax={privateWithdrawScanPercent === null ? undefined : 100}
+                    aria-valuenow={privateWithdrawScanPercent ?? undefined}
+                    aria-valuetext={privateWithdrawOpeningLabelText}
+                    className="h-1.5 overflow-hidden rounded-full bg-white/10"
+                  >
                     <div
-                      role="progressbar"
-                      aria-label={privateWithdrawOpeningLabelText}
-                      aria-valuemin={privateWithdrawScanPercent === null ? undefined : 0}
-                      aria-valuemax={privateWithdrawScanPercent === null ? undefined : 100}
-                      aria-valuenow={privateWithdrawScanPercent ?? undefined}
-                      aria-valuetext={privateWithdrawOpeningLabelText}
-                      className="h-1.5 overflow-hidden rounded-full bg-white/10"
-                    >
-                      <div
-                        className={`h-full rounded-full bg-[#0A84FF] transition-[width] duration-[180ms] ease-out ${
-                          privateWithdrawScanPercent === null ? "w-2/5 motion-safe:animate-pulse" : ""
-                        }`}
-                        style={privateWithdrawScanPercent === null
-                          ? undefined
-                          : { width: `${privateWithdrawScanPercent}%` }}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[13px] font-medium text-neutral-200">
-                        {privateWithdrawTimedOut ? "Still opening" : privateWithdrawOpeningLabelText}
-                      </p>
-                      <p className="text-[12px] leading-relaxed text-neutral-500">
-                        {privateWithdrawTimedOut
-                          ? "This is taking longer than expected. Nothing has been sent."
-                          : "You can close this window safely while StellarKey checks the latest private state."}
-                      </p>
-                    </div>
-                    {privateWithdrawTimedOut && (
-                      <div className="flex justify-center gap-2 pt-1">
-                        <Button variant="ghost" onClick={() => setPrivateWithdrawDeploymentId(null)}>
-                          Cancel
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            if (!privateWithdrawActiveDeploymentId) return;
-                            setPrivateWithdrawTimedOut(false);
-                            setPrivateWithdrawAttempt(current => current + 1);
-                            selectPrivateAsset(privateWithdrawActiveDeploymentId);
-                            retryPrivateRuntime();
-                          }}
-                        >
-                          Try again
-                        </Button>
-                      </div>
-                    )}
+                      className={`h-full w-full origin-left rounded-full bg-[#0A84FF] transition-transform duration-[var(--motion-duration-progress)] ease-out ${
+                        privateWithdrawScanPercent === null ? "motion-safe:animate-pulse" : ""
+                      }`}
+                      style={{
+                        transform: `scaleX(${privateWithdrawScanPercent === null ? 0.4 : privateWithdrawScanPercent / 100})`,
+                      }}
+                    />
                   </div>
-                </>
-              )}
-            </div>
-          </Modal>
-        )
-      )}
-      {privateSetupOpen && (
+                  <div className="space-y-1">
+                    <p className="text-[13px] font-medium text-neutral-200">
+                      {privateWithdrawTimedOut ? "Still opening" : privateWithdrawOpeningLabelText}
+                    </p>
+                    <p className="text-[12px] leading-relaxed text-neutral-500">
+                      {privateWithdrawTimedOut
+                        ? "This is taking longer than expected. Nothing has been sent."
+                        : "You can close this window safely while StellarKey checks the latest private state."}
+                    </p>
+                  </div>
+                </div>
+                {privateWithdrawTimedOut && (
+                  <ModalFooter
+                    secondary={
+                      <Button type="button" variant="ghost" onClick={() => setPrivateWithdrawDeploymentId(null)}>
+                        Cancel
+                      </Button>
+                    }
+                    primary={
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          if (!privateWithdrawActiveDeploymentId) return;
+                          setPrivateWithdrawTimedOut(false);
+                          setPrivateWithdrawAttempt(current => current + 1);
+                          selectPrivateAsset(privateWithdrawActiveDeploymentId);
+                          retryPrivateRuntime();
+                        }}
+                      >
+                        Try again
+                      </Button>
+                    }
+                  />
+                )}
+              </>
+            )}
+          </ModalBody>
+        )}
+      </Modal>
+      {privateSetupMounted && (
         <PrivateBalanceSetup
-          open
+          open={privateSetupOpen}
           onClose={() => setPrivateSetupOpen(false)}
         />
       )}
       <BatchSendModal open={batchSendOpen} onClose={() => setBatchSendOpen(false)} />
-      {receiveOpen && (
-        <ReceiveModal
-          open
-          initialMode={receiveInitialMode}
-          onClose={() => {
-            setReceiveOpen(false);
-            setReceiveInitialMode("public");
-          }}
-        />
-      )}
-      <AddAssetModal open={addAssetOpen} onClose={() => setAddAssetOpen(false)} />
-      {claimableBalancesOpen && (
-        <ClaimableBalancesModal
-          open
-          dismissedBalanceIds={dismissedClaimableBalanceIds}
-          initialShowDismissed={showDismissedClaimableBalances}
-          onClose={() => setClaimableBalancesOpen(false)}
-          onDismiss={dismissClaimableBalanceLocally}
-          onRestore={restoreClaimableBalanceLocally}
-          onAddAsset={() => {
-            setClaimableBalancesOpen(false);
-            setAddAssetOpen(true);
-          }}
-        />
-      )}
+      <ReceiveModal
+        open={receiveOpen}
+        initialMode={receiveInitialMode}
+        onClose={() => {
+          setReceiveOpen(false);
+          setReceiveInitialMode("public");
+        }}
+      />
+      <AddAssetModal
+        open={addAssetOpen}
+        initialMode={addAssetInitialMode}
+        onClose={() => {
+          setAddAssetOpen(false);
+          setAddAssetInitialMode("public");
+        }}
+      />
+      <ClaimableBalancesModal
+        open={claimableBalancesOpen}
+        dismissedBalanceIds={dismissedClaimableBalanceIds}
+        initialShowDismissed={showDismissedClaimableBalances}
+        onClose={() => setClaimableBalancesOpen(false)}
+        onDismiss={dismissClaimableBalanceLocally}
+        onRestore={restoreClaimableBalanceLocally}
+        onAddAsset={() => {
+          setClaimableBalancesOpen(false);
+          setAddAssetOpen(true);
+        }}
+      />
       <AssetDetailModal
-        key={`${network}:${detailAsset?.key ?? "closed"}`}
+        key={network}
         asset={detailAsset}
         favorite={detailAsset ? pinnedAssets.includes(detailAsset.key) : false}
         onToggleFavorite={togglePinAsset}
         onClose={() => setDetailAsset(null)}
       />
-      <TxDetailModal key={txDetail?.hash ?? "closed"} item={txDetail} onClose={() => setTxDetail(null)} />
+      <TxDetailModal item={txDetail} onClose={() => setTxDetail(null)} />
       <KeyboardShortcutsModal
         open={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
@@ -3352,53 +3507,61 @@ export function Dashboard() {
       <BackupWizardModal open={backupWizardOpen} onClose={() => setBackupWizardOpen(false)} />
       <Modal open={installDialog !== null} onClose={() => setInstallDialog(null)}>
         <ModalHeader
-          title={installDialog === "backup-first" ? "Back up before installing" : "Add to Home Screen"}
+          title={installDialogShown === "backup-first" ? "Back up before installing" : "Add to Home Screen"}
           subtitle="Keep your self-custodial wallet recoverable"
           onClose={() => setInstallDialog(null)}
         />
-        {installDialog === "backup-first" ? (
-          <div className="space-y-4 p-4 sm:p-6">
-            <div className="rounded-2xl border border-[#FF9F0A]/25 bg-[#FF9F0A]/[0.08] p-4">
+        {installDialogShown === "backup-first" ? (
+          <ModalBody>
+            <Notice tone="warn">
               <p className="text-[13px] font-semibold text-white">Export an encrypted backup first</p>
               <p className="mt-1.5 text-[12.5px] leading-relaxed text-neutral-300">
                 iOS can give a Home Screen app its own local storage. Your browser wallet may
                 therefore look empty after installation. A current encrypted backup is the safe
                 handoff between them.
               </p>
-            </div>
-            <Button
-              className="w-full"
-              onClick={() => {
-                setInstallDialog(null);
-                setBackupWizardOpen(true);
-              }}
-            >
-              Open Backup
-            </Button>
-          </div>
+            </Notice>
+            <ModalFooter
+              primary={
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setInstallDialog(null);
+                    setBackupWizardOpen(true);
+                  }}
+                >
+                  Open backup
+                </Button>
+              }
+            />
+          </ModalBody>
         ) : (
-          <div className="space-y-4 p-4 sm:p-6">
+          <ModalBody>
             <ol className="space-y-3 text-[13px] leading-relaxed text-neutral-200">
               <li><span className="mr-2 font-semibold text-[#0A84FF]">1.</span>Tap the Share button in Safari.</li>
               <li><span className="mr-2 font-semibold text-[#0A84FF]">2.</span>Choose <strong className="text-white">Add to Home Screen</strong>.</li>
               <li><span className="mr-2 font-semibold text-[#0A84FF]">3.</span>Open StellarKey from its new icon. If it starts empty, restore the encrypted backup you just exported.</li>
             </ol>
-            <div className="rounded-2xl border border-[#30D158]/20 bg-[#30D158]/[0.07] p-3 text-[12px] leading-relaxed text-neutral-300">
+            <Notice tone="pos" compact>
               Backup ready. It remains encrypted by your wallet password and never leaves this device unless you move it.
-            </div>
-            <Button variant="ghost" className="w-full" onClick={() => setInstallDialog(null)}>
-              Done
-            </Button>
-          </div>
+            </Notice>
+            <ModalFooter
+              primary={
+                <Button type="button" variant="ghost" onClick={() => setInstallDialog(null)}>
+                  Done
+                </Button>
+              }
+            />
+          </ModalBody>
         )}
       </Modal>
       <MultiSigStudioModal open={multisigOpen} onClose={() => setMultisigOpen(false)} />
-      {setupWizardOpen && (
+      {setupWizardMounted && (
         <SetupWizard
-          open
+          open={setupWizardOpen}
           onClose={() => {
             setSetupWizardOpen(false);
-            releaseRuntime();
+            releaseRuntimeAfterWizardExitRef.current = true;
           }}
           onComplete={() => switchTab("merchant")}
         />
@@ -3477,7 +3640,7 @@ function ActivityLedgerRow({
         <span
           className="flex h-9 w-9 items-center justify-center rounded-full"
           style={{
-            color: neutral ? "#64D2FF" : incoming ? "#30D158" : "#FF453A",
+            color: neutral ? "var(--color-accent-2)" : incoming ? "var(--color-pos)" : "var(--color-neg)",
             background: neutral
               ? "rgba(100,210,255,0.12)"
               : incoming
@@ -3638,17 +3801,15 @@ function ActionButton({
       title={disabled ? "Watch-only accounts cannot sign transactions" : undefined}
       onClick={() => {
         if (disabled) return;
-        triggerHaptic("selection");
-        playTapSound();
         onClick();
       }}
       className="group flex w-full min-w-0 flex-col items-center gap-2 outline-none disabled:cursor-not-allowed"
     >
       <span
-        className={`flex h-[clamp(48px,16vw,60px)] w-[clamp(48px,16vw,60px)] items-center justify-center rounded-full transition-all duration-250 ease-[cubic-bezier(0.34,1.4,0.64,1)] group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.84] group-active:duration-[90ms] ${
+        className={`flex h-12 w-12 items-center justify-center rounded-full pointer-coarse:h-[clamp(48px,16vw,60px)] pointer-coarse:w-[clamp(48px,16vw,60px)] transition-[background-color,border-color,transform,filter] duration-[var(--motion-duration-emphasized)] ease-[cubic-bezier(0.34,1.4,0.64,1)] group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.84] group-active:duration-[var(--motion-duration-fast)] ${
           primary
-            ? "bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-1px_1px_rgba(0,0,0,0.15),0_10px_26px_-8px_rgba(10,132,255,0.6)] group-hover:brightness-110"
-            : "border border-white/[0.1] bg-white/[0.07] text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_22px_-12px_rgba(0,0,0,0.7)] backdrop-blur-xl group-hover:border-white/[0.16] group-hover:bg-white/[0.12]"
+            ? "bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-[var(--color-oncolor)] shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-1px_1px_rgba(0,0,0,0.15),0_10px_26px_-8px_rgba(10,132,255,0.6)] group-hover:brightness-110"
+            : "border border-white/[0.1] bg-white/[0.07] text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_22px_-12px_var(--shadow-medium)] backdrop-blur-xl group-hover:border-white/[0.16] group-hover:bg-white/[0.12]"
         } ${disabled ? "opacity-30" : ""}`}
       >
         {icon}
@@ -3675,15 +3836,14 @@ function NetworkModal({
   network: NetworkKey;
   onSwitch: (n: NetworkKey) => void;
 }) {
-  if (!open) return null;
   return (
-    <Modal open onClose={onClose}>
+    <Modal open={open} onClose={onClose}>
       <ModalHeader
         title="Switch Network"
         subtitle="Select active Stellar blockchain environment"
         onClose={onClose}
       />
-      <div className="space-y-4 p-4 sm:p-6">
+      <ModalBody>
         {(
           [
             {
@@ -3705,12 +3865,15 @@ function NetworkModal({
             <button
               key={n.id}
               type="button"
+              aria-pressed={isActive}
               onClick={() => {
-                triggerHaptic("selection");
-                onSwitch(n.id);
+                if (!isActive) {
+                  triggerHaptic("selection");
+                  onSwitch(n.id);
+                }
                 onClose();
               }}
-              className={`flex w-full items-start justify-between rounded-2xl border p-4 text-left transition-all ${
+              className={`flex w-full items-start justify-between rounded-2xl border p-4 text-left transition-colors ${
                 isActive
                   ? "border-[#0A84FF] bg-[#0A84FF]/10 text-white shadow-sm"
                   : "border-white/10 bg-white/[0.03] text-neutral-300 hover:bg-white/[0.06] hover:text-white"
@@ -3731,17 +3894,21 @@ function NetworkModal({
                 </div>
               </div>
               {isActive && (
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0A84FF] text-white shrink-0">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0A84FF] text-[var(--color-oncolor)] shrink-0">
                   <IconCheck size={11} />
                 </span>
               )}
             </button>
           );
         })}
-        <Button variant="ghost" className="w-full" onClick={onClose}>
-          Done
-        </Button>
-      </div>
+        <ModalFooter
+          primary={
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Done
+            </Button>
+          }
+        />
+      </ModalBody>
     </Modal>
   );
 }
@@ -3766,12 +3933,12 @@ function AccountMenu({
           <button
             {...triggerProps}
             aria-label={`Open account menu for ${activeAccount.label}`}
-            className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition-all hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-sm"
+            className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition-[background-color,border-color,transform] hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-sm"
             title={`${activeAccount.label} (${formatTrezorAddress(activeAccount.publicKey)})`}
           >
             <AccountMark publicKey={activeAccount.publicKey} size={28} />
             <span
-              className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#18181b]"
+              className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[var(--color-panel)]"
               style={{ background: network === "mainnet" ? "#30d158" : "#ff9f0a" }}
             />
           </button>
@@ -3779,7 +3946,7 @@ function AccountMenu({
           <button
             {...triggerProps}
             aria-label={`Open account menu for ${activeAccount.label}`}
-            className="flex min-h-11 min-w-0 flex-1 w-full max-w-[180px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-all cursor-pointer"
+            className="flex min-h-11 min-w-0 flex-1 w-full max-w-[240px] sm:max-w-[260px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-[background-color,transform] cursor-pointer"
           >
             <AccountMark publicKey={activeAccount.publicKey} size={28} />
             <span className="text-left min-w-0 max-w-[110px]">
@@ -3797,9 +3964,7 @@ function AccountMenu({
     >
       {(close) => (
         <div className="p-1 space-y-1">
-          <p className="px-3 pb-1 pt-2 text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
-            Switch Account
-          </p>
+          <SectionHeader className="px-3 pb-1 pt-2 text-[10.5px] font-bold">Switch Account</SectionHeader>
           {accounts.map((acct) => {
             const isActive = acct.id === activeAccount.id;
             return (
@@ -3891,6 +4056,7 @@ function PriceCard() {
     priceRange,
     changePriceRange,
     priceLoading,
+    priceError,
     accountBalances,
     accounts,
     activeAccount,
@@ -3901,12 +4067,13 @@ function PriceCard() {
   const ranges: PriceRangeT[] = ["1D", "7D", "1M", "1Y"];
   const [chartMode, setChartMode] = useState<"market" | "portfolio">("market");
   const [chartInspection, setChartInspection] = useState<PriceChartInspection | null>(null);
+  const displayedRange = priceData?.range ?? priceRange;
   const periodLabel = ({
     "1D": "24-hour",
     "7D": "7-day",
     "1M": "1-month",
     "1Y": "1-year",
-  } satisfies Record<PriceRangeT, string>)[priceRange];
+  } satisfies Record<PriceRangeT, string>)[displayedRange];
 
   const totalAllXlm = useMemo(
     () => Object.values(accountBalances).reduce((sum, n) => sum + n, 0),
@@ -3969,9 +4136,9 @@ function PriceCard() {
                 setChartInspection(null);
                 setChartMode(opt.id);
               }}
-              className={`flex-1 rounded-full px-3 py-1 text-[11.5px] font-semibold transition-all ${
+              className={`flex-1 rounded-full px-3 py-1 text-[11.5px] font-semibold transition-[color,background-color,box-shadow] ${
                 mode === opt.id
-                  ? "bg-[#0A84FF] text-white shadow-sm"
+                  ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                   : "text-neutral-400 hover:text-white"
               }`}
             >
@@ -3990,7 +4157,7 @@ function PriceCard() {
               : `${periodLabel} estimate · current balance`}
           </p>
         </div>
-        <div className="min-w-0 justify-self-end text-right">
+        <div className="relative min-w-0 justify-self-end text-right">
           <div className="flex flex-nowrap items-center justify-end gap-2.5 text-right">
             <span className="whitespace-nowrap text-[24px] font-bold tracking-tight text-white">
               {displayedValue !== null
@@ -4003,7 +4170,7 @@ function PriceCard() {
               <span
                 className="shrink-0 whitespace-nowrap rounded-lg px-2 py-0.5 text-[12px] font-semibold"
                 style={{
-                  color: up ? "#30D158" : "#FF453A",
+                  color: up ? "var(--color-pos)" : "var(--color-neg)",
                   background: up ? "rgba(48,209,88,0.15)" : "rgba(255,69,58,0.15)",
                 }}
               >
@@ -4015,7 +4182,7 @@ function PriceCard() {
           {priceLoading && (
             <p
               aria-live="polite"
-              className="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] text-neutral-500"
+              className="absolute right-0 top-full mt-0.5 flex items-center justify-end gap-1.5 text-[10px] text-neutral-500"
             >
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#0A84FF]" aria-hidden="true" />
               Updating
@@ -4023,11 +4190,16 @@ function PriceCard() {
           )}
         </div>
       </div>
-      <div className="mt-3">
+      {priceError && (
+        <p className="mt-1 text-[10px] text-neutral-500" role="status">
+          Chart refresh unavailable{priceData ? " · Showing previous data" : ""}
+        </p>
+      )}
+      <div className="mt-3" aria-busy={priceLoading}>
         {mode === "portfolio" && portfolioPoints.length > 1 ? (
           <PriceChart
             points={portfolioPoints}
-            range={priceRange}
+            range={displayedRange}
             currency={fiatCurrency}
             rates={fiatRates}
             onInspect={setChartInspection}
@@ -4035,12 +4207,14 @@ function PriceCard() {
         ) : priceData && priceData.points.length > 1 ? (
           <PriceChart
             points={priceData.points}
-            range={priceRange}
+            range={displayedRange}
             currency={fiatCurrency}
             rates={fiatRates}
             marketPrecision
             onInspect={setChartInspection}
           />
+        ) : priceError ? (
+          <p className="flex h-[140px] items-center justify-center text-sm text-neutral-400">Chart unavailable</p>
         ) : (
           <div className="skeleton h-[140px] w-full rounded-2xl" />
         )}

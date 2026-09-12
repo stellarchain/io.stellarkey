@@ -5,11 +5,12 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import type { Asset } from "@stellar/stellar-sdk";
+import type { Asset, Keypair } from "@stellar/stellar-sdk";
 import type { ClaimableBalanceItem, PriceRange, PriceSeries } from "@/lib/api";
 import type {
   CosignOutcome,
@@ -22,11 +23,16 @@ import {
   addWatchOnlyAccount,
   changeVaultPassword as changeVaultPasswordRecord,
   getArchivedAccounts,
+  getSessionSnapshot,
   hasMnemonic,
+  invalidateWalletLifecycle,
   revealMnemonic as revealMnemonicVault,
-  withSecretKey,
+  withSigningKeypair,
+  createSessionRevocationGuard,
   initializeVault,
   initializeHardwareVault,
+  isSigningPasswordRequired,
+  isUnlocked,
   loadAutoLockPref,
   loadNetworkPref,
   loadVault,
@@ -45,23 +51,29 @@ import {
   updateAccountLabel,
   verifyVaultPassword,
   wipeVault,
+  withWalletLifecycleLock,
   clearSessionSecrets,
   type InitializeOptions,
   type VaultRestoreResult,
 } from "@/lib/vault";
 import {
   createSigningAuthorizationGate,
+  captureSigningContextAuthorization,
   type SigningAuthorizationRequest,
 } from "@/lib/signing-authorization";
-import { getMerchantRepository } from "@/lib/merchant/repository";
+import { IndexedDbEncryptedRecordDriver } from "@/lib/indexed-db";
 import { deleteContact, loadContacts, saveContact, toggleFavoriteContact, type Contact } from "@/lib/contacts";
 import { useToast } from "@/components/Toast";
 import { triggerHaptic } from "@/lib/haptics";
+import { closePaperWalletPrints } from "@/lib/paperwallet";
+import { idleElapsedMs, type IdleClockSample } from "@/lib/idle-time";
 import type { FiatCurrency } from "@/lib/format";
-import { fetchFiatRates, type FiatRates } from "@/lib/prices";
+import { fetchFiatRateSamples, isMarketObservationFresh, marketValues, USD_REFERENCE, UNAVAILABLE_MARKET_SAMPLE, type FiatRates, type MarketSample, type MarketSamples } from "@/lib/prices";
 import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/lib/types";
 import type { HardwareSigner } from "@/lib/hardware";
 import type { PreparedStealthPayment } from "@/features/private-balance/runtime/stealth-payment";
+import { resolvePrivateFeePayer, assertSamePrivateFeePayer, type PrivateFeePayer } from "@/features/private-balance/runtime/fee-policy";
+import type { PrivateFeeBumpLimits } from "@/lib/private-balance-fee-bump";
 import type { NetworkKey } from "@/lib/stellar";
 import { NETWORKS } from "@/lib/stellar";
 import {
@@ -89,6 +101,8 @@ import {
 import {
   applyTransactionPoll,
   clearDurablePendingTransactions,
+  acknowledgeDurableSubmissionJournal,
+  completeDurablePendingTransaction,
   clearDurableMergeReconciliations,
   createMergeReconciliation,
   isTrackingTaskCurrent,
@@ -98,12 +112,14 @@ import {
   pendingTransactionFromSubmission,
   pendingTransactionFromPrepared,
   pendingTransactionPresentation,
+  pendingTransactionNeedsManualCheck,
   pendingTransactionStoragePrefix,
   persistDurablePendingTransaction,
   persistMergeReconciliation,
   persistMergeReconciliationQueue,
   reconcileMergeRecovery,
   removeDurablePendingTransaction,
+  releaseDurableSubmissionJournal,
   removeTrackedTransaction,
   resolutionForExpiredLookup,
   runPreparedBroadcast,
@@ -118,12 +134,14 @@ import {
   type PendingTransactionAction,
   type PreparedSubmissionIdentity,
   type SubmissionPreparedCallback,
+  type SubmissionRejectedCallback,
   type SubmissionLifecycleStatus,
   type SubmissionResult,
   type TransactionTrackingState,
 } from "@/lib/submission";
 
 type Phase = "loading" | "empty" | "recovery" | "locked" | "unlocked";
+type ActivityPageState = "idle" | "pending" | "recoverable-error";
 
 type WalletApi = typeof import("@/lib/api");
 type SwapApi = typeof import("@/lib/swap");
@@ -200,17 +218,18 @@ function hardwareSignerFor(acc: AccountMeta | null): HardwareSigner | undefined 
     device: "trezor",
     publicKey: acc.publicKey,
     path: acc.path ?? "m/44'/148'/0'",
+    assertSessionActive: createSessionRevocationGuard(),
   };
 }
 
 function withSigningSecret<T>(
   account: AccountMeta,
   hardwareSigner: HardwareSigner | undefined,
-  operation: (secretKey: string | undefined) => T | Promise<T>,
+  operation: (softwareSigner: Keypair | undefined) => T | Promise<T>,
 ): Promise<T> {
   return hardwareSigner
     ? Promise.resolve(operation(undefined))
-    : withSecretKey(account.id, operation);
+    : withSigningKeypair(account.id, operation);
 }
 
 const PENDING_TX_STORAGE_KEY = "wallet.pending-transactions.v2";
@@ -253,13 +272,22 @@ interface WalletContextValue {
   mergeReconciliations: MergeReconciliation[];
   retryMergeReconciliation: (record: MergeReconciliation) => void;
   submissionStatus: (submission: SubmissionResult) => SubmissionLifecycleStatus;
+  /** Acknowledge only a terminal outcome in an authenticated, durably committed journal. */
+  acknowledgeSubmissionJournal: (identity: PreparedSubmissionIdentity) => void;
+  /** Erasing the domain journal releases retention, never unresolved canonical tracking. */
+  releaseSubmissionJournals: () => void;
   envelopeSubmissionStatus: (
     xdr: string,
     network: NetworkKey,
   ) => SubmissionLifecycleStatus | null;
   dataLoading: boolean;
   loadingMore: boolean;
+  loadMoreError: string | null;
   xlmPriceUsd: number | null;
+  xlmPriceSample: MarketSample;
+  fiatRateSamples: MarketSamples;
+  priceError: boolean;
+  refreshMarketData: () => Promise<void>;
   priceData: PriceSeries | null;
   priceRange: PriceRange;
   changePriceRange: (r: PriceRange) => Promise<void>;
@@ -319,13 +347,15 @@ interface WalletContextValue {
     label?: string;
     index?: number;
   }) => Promise<AccountMeta>;
-  removeAccount: (id: string) => void;
+  removeAccount: (id: string) => Promise<void>;
   renameAccount: (id: string, newLabel: string) => void;
   restoreArchivedAccount: (id: string) => Promise<AccountMeta>;
   restoreAccountByIndex: (index: number) => Promise<AccountMeta>;
   switchNetwork: (network: NetworkKey) => void;
   refresh: () => Promise<void>;
-  loadMoreActivity: () => Promise<void>;
+  loadMoreActivity: (options?: { retry?: boolean }) => Promise<void>;
+  /** Bind an explicit public-payment review to this visible wallet context. */
+  captureSigningContext: () => () => void;
 
   send: (params: {
     destination: string;
@@ -334,12 +364,16 @@ interface WalletContextValue {
     issuer?: string | null;
     memo?: StellarMemoInput;
     feeStroops?: number;
-    /** Durable domain journal hooks; both run inside the pre-POST boundary. */
+    /** Durable intent precedes POST; rejection cleanup may defer canonical-handle removal. */
     submissionJournal?: {
       onPrepared: SubmissionPreparedCallback;
-      onRejected?: SubmissionPreparedCallback;
+      onRejected?: SubmissionRejectedCallback;
     };
+    /** Revalidate an external authorization immediately before signing. */
+    authorizeBeforeSigning?: () => void;
   }) => Promise<SubmissionResult>;
+  /** Apply the persisted transaction-signing policy to a non-standard signer. */
+  authorizeTransactionSigning: (label: string) => Promise<void>;
   prepareStealthPayment: (params: {
     metaAddress: string;
     amount: string;
@@ -382,7 +416,7 @@ interface WalletContextValue {
   /** Apply a multi-sig signer/threshold configuration to the active account */
   applyMultisigConfig: (config: MultisigConfig) => Promise<MultisigConfigOutcome>;
   /** Remove all cosigners and reset thresholds to single-sig defaults */
-  disableMultisig: () => Promise<MultisigConfigOutcome>;
+  disableMultisig: (expectedAuthorityFingerprint: string) => Promise<MultisigConfigOutcome>;
   /** Sign a payment with our key only and return the envelope XDR for co-signing */
   prepareCosignPayment: (params: {
     destination: string;
@@ -391,6 +425,7 @@ interface WalletContextValue {
     issuer?: string | null;
     memo?: StellarMemoInput;
     feeStroops?: number;
+    authorizeBeforeSigning?: () => void;
   }) => Promise<{ xdr: string }>;
   /** Co-sign a shared envelope XDR; submits automatically once weight suffices */
   cosignTransaction: (xdr: string, confirmedNetwork: NetworkKey | null) => Promise<CosignOutcome>;
@@ -398,7 +433,8 @@ interface WalletContextValue {
     envelopeXdr: string;
     expectedTransactionHash: string;
     networkPassphrase: string;
-  }) => Promise<string>;
+  } & PrivateFeeBumpLimits, assertActionCurrent?: () => void) => Promise<string>;
+  resolvePrivateBalanceFeePayer: (accountId?: string) => PrivateFeePayer | undefined;
   fundFromFriendbot: () => Promise<void>;
 }
 
@@ -438,7 +474,7 @@ type WalletLedgerContextValue = Pick<
 
 type WalletActivityContextValue = Pick<
   WalletContextValue,
-  "activity" | "activityCursor" | "loadingMore" | "loadMoreActivity"
+  "activity" | "activityCursor" | "loadingMore" | "loadMoreError" | "loadMoreActivity"
 >;
 
 type WalletSubmissionContextValue = Pick<
@@ -448,12 +484,14 @@ type WalletSubmissionContextValue = Pick<
   | "mergeReconciliations"
   | "retryMergeReconciliation"
   | "submissionStatus"
+  | "acknowledgeSubmissionJournal"
+  | "releaseSubmissionJournals"
   | "envelopeSubmissionStatus"
 >;
 
 type WalletMarketContextValue = Pick<
   WalletContextValue,
-  "xlmPriceUsd" | "priceData" | "priceRange" | "changePriceRange" | "priceLoading" | "fiatRates"
+  "xlmPriceUsd" | "xlmPriceSample" | "fiatRateSamples" | "priceError" | "refreshMarketData" | "priceData" | "priceRange" | "changePriceRange" | "priceLoading" | "fiatRates"
 >;
 
 type WalletPreferencesContextValue = Pick<
@@ -476,6 +514,8 @@ type WalletTransactionsContextValue = Pick<
   WalletContextValue,
   | "refresh"
   | "send"
+  | "captureSigningContext"
+  | "authorizeTransactionSigning"
   | "prepareStealthPayment"
   | "submitStealthPayment"
   | "sendBatch"
@@ -490,6 +530,7 @@ type WalletTransactionsContextValue = Pick<
   | "prepareCosignPayment"
   | "cosignTransaction"
   | "signPrivateBalanceEnvelope"
+  | "resolvePrivateBalanceFeePayer"
   | "fundFromFriendbot"
 >;
 
@@ -527,6 +568,8 @@ interface WalletSecurityContextValue {
   approveSigningAuthorization: (password: string) => Promise<"approved" | "continue">;
   continueSigningAuthorization: () => void;
   cancelSigningAuthorization: (message?: string) => void;
+  /** Require one fresh local wallet-password check for a security-sensitive setting. */
+  authorizeSensitiveAction: (label: string) => Promise<void>;
   changeWalletPassword: (currentPassword: string, newPassword: string) => Promise<void>;
   changeSigningPasswordRequired: (
     required: boolean,
@@ -542,8 +585,28 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [vaultStorageIssue, setVaultStorageIssue] = useState<StorageIssue | null>(null);
   const [network, setNetworkState] = useState<NetworkKey>("testnet");
   const [accounts, setAccounts] = useState<AccountMeta[]>([]);
+  const accountsRef = useRef(accounts);
+  useLayoutEffect(() => { accountsRef.current = accounts; }, [accounts]);
   const [archivedAccounts, setArchivedAccounts] = useState<AccountMeta[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [signingContextRevision, setSigningContextRevision] = useState(0);
+  const signingSession = getSessionSnapshot();
+  // Identity, not stored preferences: returning to the same account/network
+  // creates a new token. Reading the session here grants no signing authority.
+  const signingContext = useMemo(() => ({ accountId: activeId, network, phase, session: signingSession, revision: signingContextRevision }),
+    [activeId, network, phase, signingSession, signingContextRevision]);
+  const signingContextRef = useRef<typeof signingContext | null>(signingContext);
+  useLayoutEffect(() => {
+    signingContextRef.current = signingContext;
+    return () => { signingContextRef.current = null; };
+  }, [signingContext]);
+  const captureSigningContext = useCallback(() => {
+    const assertSessionCurrent = createSessionRevocationGuard();
+    return captureSigningContextAuthorization(() => {
+      assertSessionCurrent();
+      return signingContextRef.current === signingContext && signingContext.session === getSessionSnapshot();
+    });
+  }, [signingContext]);
   const [balances, setBalances] = useState<AssetBalance[] | null>(null);
   const [minimumBalanceXlm, setMinimumBalanceXlm] = useState<string | null>(null);
   const [recommendedFeeSelection, setRecommendedFeeSelection] = useState<{
@@ -595,15 +658,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const trackingTaskGeneration = useRef(0);
   const [trackingRestartNonce, setTrackingRestartNonce] = useState(0);
   const [dataLoading, setDataLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [xlmPriceUsd, setXlmPriceUsd] = useState<number | null>(null);
+  const [activityPageState, setActivityPageState] = useState<ActivityPageState>("idle");
+  const activityPageStateRef = useRef<ActivityPageState>("idle");
+  const loadingMore = activityPageState === "pending";
+  const loadMoreError = activityPageState === "recoverable-error"
+    ? "Could not load older activity. Your existing history is still available. Retry when ready."
+    : null;
+  const [xlmPriceSample, setXlmPriceSample] = useState<MarketSample>(UNAVAILABLE_MARKET_SAMPLE);
+  const xlmPriceUsd = xlmPriceSample.value;
   const [priceData, setPriceData] = useState<PriceSeries | null>(null);
   const [priceRange, setPriceRangeState] = useState<PriceRange>("7D");
-  const [priceLoading, setPriceLoading] = useState(false);
+  const [priceRequestStatus, setPriceRequestStatus] = useState<"idle" | "pending" | "error">("idle");
+  const priceLoading = priceRequestStatus === "pending";
+  const priceError = priceRequestStatus === "error";
   const priceCache = useRef<Partial<Record<PriceRange, PriceSeries>>>({});
   const [privacyMode, setPrivacyMode] = useState(false);
   const [fiatCurrency, setFiatCurrencyState] = useState<FiatCurrency>("USD");
-  const [fiatRates, setFiatRates] = useState<FiatRates>({ USD: 1 });
+  const [fiatRateSamples, setFiatRateSamples] = useState<MarketSamples>({ USD: USD_REFERENCE });
+  const fiatRates = useMemo<FiatRates>(() => ({ ...marketValues(fiatRateSamples), USD: 1 }), [fiatRateSamples]);
   const [autoLockMs, setAutoLockMsState] = useState(15 * 60 * 1000);
   const [signingPasswordRequired, setSigningPasswordRequiredState] = useState(false);
   const signingPasswordRequiredRef = useRef(false);
@@ -618,7 +690,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [tabSenderId] = useState(createTabSenderId);
   const [accountRefreshLane] = useState(createLatestRequestLane);
   const [marketRefreshLane] = useState(createLatestRequestLane);
+  const [activityPaginationLane] = useState(createLatestRequestLane);
   const walletCoordinationRef = useRef<WalletCoordination | null>(null);
+
+  const commitActivityPageState = useCallback((next: ActivityPageState) => {
+    // Synchronous ownership prevents duplicate observer callbacks before React
+    // paints the matching pending state.
+    activityPageStateRef.current = next;
+    setActivityPageState(next);
+  }, []);
+  const cancelActivityPagination = useCallback(() => {
+    activityPaginationLane.cancel();
+    commitActivityPageState("idle");
+  }, [activityPaginationLane, commitActivityPageState]);
+
+  useEffect(() => () => activityPaginationLane.cancel(), [activityPaginationLane]);
 
   const activeAccount = useMemo(
     () => accounts.find((a) => a.id === activeId) ?? null,
@@ -635,9 +721,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     label: string,
     requiresUserGestureContinuation = false,
   ) => {
-    if (!signingPasswordRequiredRef.current) return;
+    const required = isSigningPasswordRequired();
+    if (required !== signingPasswordRequiredRef.current) {
+      commitSigningPasswordRequired(required);
+    }
+    if (!required) return;
     verifiedSigningAuthorizationRef.current = null;
     await signingAuthorizationGate.request(label, { requiresUserGestureContinuation });
+  }, [commitSigningPasswordRequired, signingAuthorizationGate]);
+
+  const authorizeTransactionSigning = useCallback(
+    (label: string) => requestSigningAuthorization(label),
+    [requestSigningAuthorization],
+  );
+
+  const authorizeSensitiveAction = useCallback(async (label: string) => {
+    verifiedSigningAuthorizationRef.current = null;
+    await signingAuthorizationGate.request(label, { purpose: "sensitive-setting" });
   }, [signingAuthorizationGate]);
 
   const approveSigningAuthorization = useCallback(async (password: string) => {
@@ -684,14 +784,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     label: string,
     account: AccountMeta,
     hardwareSigner: HardwareSigner | undefined,
-    operation: (secretKey: string | undefined) => T | Promise<T>,
+    operation: (softwareSigner: Keypair | undefined) => T | Promise<T>,
+    authorizeBeforeSigning?: () => void,
   ): Promise<T> => {
+    authorizeBeforeSigning?.();
     await requestSigningAuthorization(label, Boolean(hardwareSigner));
+    authorizeBeforeSigning?.();
     return withSigningSecret(account, hardwareSigner, operation);
   }, [requestSigningAuthorization]);
 
   useEffect(() => {
     const refreshEndpoints = () => {
+      cancelActivityPagination();
       endpointRevisionRef.current += 1;
       setEndpointRevision(endpointRevisionRef.current);
     };
@@ -706,7 +810,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener(STELLAR_ENDPOINTS_CHANGED_EVENT, refreshEndpoints);
       window.removeEventListener("storage", refreshStoredEndpoint);
     };
-  }, []);
+  }, [cancelActivityPagination]);
 
   useEffect(() => {
     if (phase !== "unlocked") return;
@@ -1015,30 +1119,35 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!activeAccount) return;
     const request = marketRefreshLane.begin();
     const cachedSeries = priceCache.current[priceRange];
-    setPriceLoading(true);
+    setPriceRequestStatus("pending");
+    let outcome: "idle" | "error" = "idle";
     try {
       const api = await loadWalletApi();
       const resources = await settleResourceMap({
         // The market chart remains useful on testnet, but portfolio valuation
         // explicitly ignores all testnet balances.
         xlmPrice: api.fetchXlmPrice(request.signal),
-        priceSeries: cachedSeries
+        priceSeries: cachedSeries && isMarketObservationFresh(cachedSeries.observedAt)
           ? Promise.resolve(cachedSeries)
           : api.fetchXlmSeries(priceRange, request.signal),
-        fiatRates: fetchFiatRates(request.signal),
+        fiatRates: fetchFiatRateSamples(request.signal),
       });
       if (!request.isCurrent()) return;
-      if (resources.xlmPrice.ok && resources.xlmPrice.value !== null) {
-        setXlmPriceUsd(resources.xlmPrice.value);
+      if (resources.xlmPrice.ok) {
+        setXlmPriceSample(resources.xlmPrice.value);
       }
-      if (resources.fiatRates.ok) setFiatRates(resources.fiatRates.value);
+      if (resources.fiatRates.ok) setFiatRateSamples(resources.fiatRates.value);
       if (resources.priceSeries.ok && resources.priceSeries.value !== null) {
         const series = resources.priceSeries.value;
         priceCache.current[series.range] = series;
         setPriceData(series);
+      } else {
+        outcome = "error";
       }
+    } catch {
+      outcome = "error";
     } finally {
-      if (request.isCurrent()) setPriceLoading(false);
+      if (request.isCurrent()) setPriceRequestStatus(outcome);
     }
   }, [activeAccount, marketRefreshLane, priceRange]);
 
@@ -1262,7 +1371,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [phase, activePublicKey, endpointRevision, network]);
 
   const lockVaultAndReset = useCallback((notifyPeers = true) => {
+    cancelActivityPagination();
     cancelSigningAuthorization("Wallet locked before signing.");
+    closePaperWalletPrints();
     lockVault();
     refreshGeneration.current += 1;
     accountBalanceGeneration.current += 1;
@@ -1271,44 +1382,53 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setPhase("locked");
     setDataLoading(false);
     if (notifyPeers) walletCoordinationRef.current?.post("wallet-lock");
-  }, [cancelSigningAuthorization]);
+  }, [cancelActivityPagination, cancelSigningAuthorization]);
 
   useEffect(() => {
-    if (phase !== "unlocked" || autoLockMs <= 0) return;
-    let lastActivity = Date.now();
+    const sensitiveSessionOpen =
+      phase === "unlocked" || (phase === "empty" && isUnlocked());
+    if (!sensitiveSessionOpen || autoLockMs <= 0) return;
+    const clockSample = (): IdleClockSample => ({
+      monotonicMs: performance.now(),
+      wallMs: Date.now(),
+    });
+    let lastActivity = clockSample();
     let timer: number;
     const schedule = () => {
       window.clearTimeout(timer);
-      const remaining = Math.max(0, autoLockMs - (Date.now() - lastActivity));
+      const remaining = Math.max(0, autoLockMs - idleElapsedMs(lastActivity, clockSample()));
       timer = window.setTimeout(checkExpired, remaining);
     };
     const checkExpired = () => {
-      if (Date.now() - lastActivity >= autoLockMs) {
+      if (idleElapsedMs(lastActivity, clockSample()) >= autoLockMs) {
         lockVaultAndReset();
         return;
       }
       schedule();
     };
     const bump = () => {
-      lastActivity = Date.now();
+      lastActivity = clockSample();
       schedule();
     };
     const onVisibilityOrFocus = () => {
       if (document.visibilityState === "visible") checkExpired();
     };
+    const onResume = () => checkExpired();
     schedule();
     window.addEventListener("pointerdown", bump);
     window.addEventListener("keydown", bump);
     window.addEventListener("focus", onVisibilityOrFocus);
+    window.addEventListener("pageshow", onResume);
     document.addEventListener("visibilitychange", onVisibilityOrFocus);
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener("pointerdown", bump);
       window.removeEventListener("keydown", bump);
       window.removeEventListener("focus", onVisibilityOrFocus);
+      window.removeEventListener("pageshow", onResume);
       document.removeEventListener("visibilitychange", onVisibilityOrFocus);
     };
-  }, [phase, autoLockMs, lockVaultAndReset]);
+  }, [phase, accounts.length, autoLockMs, lockVaultAndReset]);
 
   const pollPendingRef = useRef<(transaction: PendingTransaction) => Promise<void>>(async () => {});
   const pollPending = useCallback(async (transaction: PendingTransaction) => {
@@ -1322,11 +1442,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       pendingPollTimers.current.delete(identity);
     }
 
+    const now = Date.now();
     const expired = transaction.expiresAt !== undefined &&
-      transaction.expiresAt * 1000 <= Date.now();
+      transaction.expiresAt * 1000 <= now;
+    const manualCheck = pendingTransactionNeedsManualCheck(transaction, now);
     const api = await loadWalletApi();
-    const expiredLookup = expired
-      ? await api.lookupCanonicalTransaction(transaction.network, transaction.hash)
+    const expiredLookup = expired && transaction.expiresAt !== undefined
+      ? await api.resolveCanonicalTransaction(
+          transaction.network,
+          transaction.hash,
+          transaction.expiresAt,
+        )
       : null;
     const outcome = expiredLookup
       ? resolutionForExpiredLookup(expiredLookup)
@@ -1366,7 +1492,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         mergeReconciliationTimers.current.delete(identity);
         commitMergeReconciliations(() => nextMerges);
       }
-      removeDurablePendingTransaction(
+      completeDurablePendingTransaction(
         window.localStorage,
         PENDING_TX_STORAGE_KEY,
         transaction,
@@ -1384,7 +1510,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     // An expired envelope with an unavailable lookup stays conservatively
     // locked, but automatic polling stops. The dashboard exposes a bounded
     // manual status check so outages cannot create an infinite request loop.
-    if (expired) return;
+    if (manualCheck) return;
 
     const timer = window.setTimeout(() => {
       pendingPollTimers.current.delete(identity);
@@ -1417,7 +1543,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const restored = loadDurablePendingTransactions(
         window.localStorage,
         PENDING_TX_STORAGE_KEY,
-      );
+      ).filter((transaction) => !transactionTrackingRef.current.resolutions[transactionIdentity(transaction)]);
       const previousIdentities = new Set(
         transactionTrackingRef.current.pending.map(transactionIdentity),
       );
@@ -1447,6 +1573,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     prepared: PreparedSubmissionIdentity,
     label: string,
     action?: PendingTransactionAction,
+    journalPending = false,
   ) => {
     const identity = transactionIdentity(prepared);
     const current = transactionTrackingRef.current;
@@ -1458,6 +1585,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
 
     const provisional = pendingTransactionFromPrepared(prepared, label, action);
+    if (journalPending) provisional.journalPending = true;
     const nextTracking = trackPendingTransaction(current, provisional);
     const previousMerges = action?.kind === "reconcile_account_merge"
       ? window.localStorage.getItem(MERGE_RECONCILIATION_STORAGE_KEY)
@@ -1580,11 +1708,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       void accountRefreshRef.current();
       return;
     }
-    persistDurablePendingTransaction(window.localStorage, PENDING_TX_STORAGE_KEY, pending);
-    commitTransactionTracking((current) => trackPendingTransaction(current, pending));
-    const presentation = pendingTransactionPresentation(pending);
+    const tracked = persistDurablePendingTransaction(
+      window.localStorage,
+      PENDING_TX_STORAGE_KEY,
+      pending,
+    );
+    commitTransactionTracking((current) => trackPendingTransaction(current, tracked));
+    const presentation = pendingTransactionPresentation(tracked);
     toast(presentation.detail, "info");
-    void pollPendingRef.current(pending);
+    void pollPendingRef.current(tracked);
   }, [commitTransactionTracking, toast]);
 
   const runTrackedBroadcast = useCallback(async <T,>(
@@ -1594,18 +1726,39 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     submissionFromResult: (result: T) => SubmissionResult | null,
     journal?: {
       onPrepared: SubmissionPreparedCallback;
-      onRejected?: SubmissionPreparedCallback;
+      onRejected?: SubmissionRejectedCallback;
     },
+    beforeSubmit?: () => void,
   ): Promise<T> => {
+    const sessionRevocationGuard = createSessionRevocationGuard();
+    const trackingGeneration = trackingTaskGeneration.current;
     return runPreparedBroadcast({
       broadcast,
       prepare: async (identity) => {
-        prepareSubmissionTracking(identity, label, action);
+        prepareSubmissionTracking(identity, label, action, Boolean(journal));
         await journal?.onPrepared(identity);
+        const assertSessionCurrent = sessionRevocationGuard;
+        assertSessionCurrent();
+        beforeSubmit?.();
       },
       discard: async (identity) => {
-        discardPreparedSubmission(identity, action);
-        await journal?.onRejected?.(identity);
+        let rejectionRecorded = false;
+        try {
+          rejectionRecorded = (await journal?.onRejected?.(identity)) !== false;
+        } catch {
+          // Preserve the original transaction error and its durable handle
+          // when the domain journal cannot finish recording the rejection.
+        }
+        if (trackingTaskGeneration.current !== trackingGeneration) return;
+        if (rejectionRecorded) {
+          discardPreparedSubmission(identity, action);
+          return;
+        }
+        const pending = transactionTrackingRef.current.pending.find((entry) =>
+          transactionIdentity(entry) === transactionIdentity(identity));
+        // Resume only an existing handle. A wallet reset must never be undone
+        // by late cleanup, and an unmounted runtime leaves recovery to startup.
+        if (pending) void pollPendingRef.current(pending);
       },
       finalize: (result) => {
         const submission = submissionFromResult(result);
@@ -1613,6 +1766,40 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       },
     });
   }, [discardPreparedSubmission, prepareSubmissionTracking, trackSubmission]);
+
+  const acknowledgeSubmissionJournal = useCallback((identity: PreparedSubmissionIdentity) => {
+    if (!acknowledgeDurableSubmissionJournal(window.localStorage, PENDING_TX_STORAGE_KEY, identity)) return;
+    const key = transactionIdentity(identity);
+    if (!transactionTrackingRef.current.pending.some((entry) => transactionIdentity(entry) === key)) return;
+    commitTransactionTracking((current) => ({
+      ...current,
+      pending: current.pending.filter((entry) => transactionIdentity(entry) !== key),
+    }));
+  }, [commitTransactionTracking]);
+
+  const releaseSubmissionJournals = useCallback(() => {
+    const released = new Set<string>();
+    for (const pending of loadDurablePendingTransactions(window.localStorage, PENDING_TX_STORAGE_KEY)) {
+      if (!pending.journalPending) continue;
+      const identity = transactionIdentity(pending);
+      if (transactionTrackingRef.current.resolutions[identity]) {
+        acknowledgeDurableSubmissionJournal(window.localStorage, PENDING_TX_STORAGE_KEY, pending);
+      } else {
+        releaseDurableSubmissionJournal(window.localStorage, PENDING_TX_STORAGE_KEY, pending);
+      }
+      released.add(identity);
+    }
+    if (!transactionTrackingRef.current.pending.some((entry) => entry.journalPending && released.has(transactionIdentity(entry)))) return;
+    commitTransactionTracking((current) => ({
+      ...current,
+      pending: current.pending.map((entry) => {
+        if (!entry.journalPending || !released.has(transactionIdentity(entry))) return entry;
+        const updated = { ...entry };
+        delete updated.journalPending;
+        return updated;
+      }),
+    }));
+  }, [commitTransactionTracking]);
 
   const retryPendingTransaction = useCallback((transaction: PendingTransaction) => {
     void pollPendingRef.current(transaction);
@@ -1702,7 +1889,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const installUnlockedVault = useCallback(async (
     vault: Awaited<ReturnType<typeof unlockVault>>,
   ) => {
-    const privateContacts = await loadContacts();
+    const assertSessionCurrent = createSessionRevocationGuard();
+    let privateContacts: Contact[] = [];
+    try {
+      privateContacts = await loadContacts();
+    } catch {
+      assertSessionCurrent();
+      toast(
+        "Wallet opened, but encrypted contacts are unavailable. The original record was kept for recovery.",
+        "error",
+      );
+    }
+    assertSessionCurrent();
+    cancelActivityPagination();
     setAccounts(vault.accounts.map(stripSecret));
     setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
     setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
@@ -1711,10 +1910,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setDataError(null);
     setClaimableBalances([]);
     setActivity([]);
+    setActivityCursor(null);
     setContacts(privateContacts);
     commitSigningPasswordRequired(vault.requirePasswordForSigning === true);
     setPhase("unlocked");
-  }, [commitSigningPasswordRequired]);
+  }, [cancelActivityPagination, commitSigningPasswordRequired, toast]);
 
   const unlock = useCallback(async (password: string) => {
     await installUnlockedVault(await unlockVault(password));
@@ -1729,18 +1929,56 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [lockVaultAndReset]);
 
   const resetWallet = useCallback(async (notifyPeers = true): Promise<void> => {
-    cancelSigningAuthorization("Wallet reset before signing.");
     invalidateTrackingTasks();
-    if (typeof indexedDB !== "undefined") await getMerchantRepository().clear();
-    wipeVault();
-    clearDurableMergeReconciliations(
-      window.localStorage,
-      MERGE_RECONCILIATION_STORAGE_KEY,
-    );
-    clearDurablePendingTransactions(
-      window.localStorage,
-      PENDING_TX_STORAGE_KEY,
-    );
+    // Revoke every signer and erase the durable vault before any cleanup that
+    // can fail. A broken IndexedDB/service-worker implementation must never
+    // leave an unlocked wallet or recoverable credentials behind.
+    lockVaultAndReset(false);
+    invalidateWalletLifecycle();
+    if (notifyPeers) walletCoordinationRef.current?.post("wallet-reset");
+    await withWalletLifecycleLock(async () => {
+      wipeVault();
+      clearDurableMergeReconciliations(
+        window.localStorage,
+        MERGE_RECONCILIATION_STORAGE_KEY,
+      );
+      clearDurablePendingTransactions(
+        window.localStorage,
+        PENDING_TX_STORAGE_KEY,
+      );
+      try {
+        window.sessionStorage.clear();
+      } catch {
+        // Vault erasure above remains authoritative.
+      }
+      const cleanupTasks: Array<() => Promise<unknown>> = [];
+      if (typeof indexedDB !== "undefined") {
+        cleanupTasks.push(
+          async () => {
+            const { getMerchantRepository } = await import("@/lib/merchant/repository");
+            return getMerchantRepository().clear();
+          },
+          () => new IndexedDbEncryptedRecordDriver().removePrefix("private:"),
+        );
+      }
+      if ("serviceWorker" in navigator) {
+        cleanupTasks.push(async () => {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.allSettled(registrations.map((registration) => registration.unregister()));
+        });
+      }
+      if ("caches" in globalThis) {
+        cleanupTasks.push(async () => {
+          const names = await globalThis.caches.keys();
+          await Promise.allSettled(
+            names
+              .filter((name) => name.startsWith("stellarkey-"))
+              .map((name) => globalThis.caches.delete(name)),
+          );
+        });
+      }
+      await Promise.allSettled(cleanupTasks.map((task) => Promise.resolve().then(task)));
+    });
     setAccounts([]);
     setArchivedAccounts([]);
     setActiveId(null);
@@ -1758,13 +1996,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setVaultStorageIssue(null);
     commitSigningPasswordRequired(false);
     setPhase("empty");
-    if (notifyPeers) walletCoordinationRef.current?.post("wallet-reset");
+    window.location.reload();
   }, [
-    cancelSigningAuthorization,
     commitMergeReconciliations,
     commitSigningPasswordRequired,
     commitTransactionTracking,
     invalidateTrackingTasks,
+    lockVaultAndReset,
   ]);
 
   useEffect(() => {
@@ -1785,6 +2023,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [lockVaultAndReset, phase, resetWallet, tabSenderId]);
 
   const restoreWalletFromBackup = useCallback(async (json: string, password?: string): Promise<VaultRestoreResult> => {
+    cancelActivityPagination();
     invalidateTrackingTasks();
     let result: VaultRestoreResult;
     try {
@@ -1793,6 +2032,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setTrackingRestartNonce((current) => current + 1);
       throw error;
     }
+    cancelActivityPagination();
     const vault = loadVault();
     if (vault) {
       setAccounts(vault.accounts.map(stripSecret));
@@ -1820,6 +2060,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setPhase("locked");
     return result;
   }, [
+    cancelActivityPagination,
     commitMergeReconciliations,
     commitSigningPasswordRequired,
     commitTransactionTracking,
@@ -1829,6 +2070,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const selectAccount = useCallback((id: string) => {
     const vault = setActiveStoredAccount(id);
     if (!vault) return;
+    if (id !== activeId) {
+      signingContextRef.current = null;
+      setSigningContextRevision(value => value + 1);
+    }
+    cancelActivityPagination();
     const target = vault.accounts.find((a) => a.id === id);
     refreshGeneration.current += 1;
     const cached = target
@@ -1849,10 +2095,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setClaimableBalances([]);
     setDataError(null);
     setActiveId(id);
-  }, [endpointRevision, network]);
+  }, [activeId, cancelActivityPagination, endpointRevision, network]);
 
   const addAccount = useCallback(async (opts: { secret?: string; label?: string }) => {
     const account = await addStoredAccount(opts);
+    cancelActivityPagination();
     setAccounts((prev) => [...prev, stripSecret(account)]);
     setActiveId(account.id);
     setBalances(null);
@@ -1862,7 +2109,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActivity([]);
     setActivityCursor(null);
     return account;
-  }, []);
+  }, [cancelActivityPagination]);
 
   const addHardwareAccount = useCallback(
     async (params: {
@@ -1873,6 +2120,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       index?: number;
     }) => {
       const account = await addHardwareAccountVault(params);
+      cancelActivityPagination();
       setAccounts((prev) => [...prev, stripSecret(account)]);
       setActiveId(account.id);
       setBalances(null);
@@ -1883,11 +2131,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       void refresh();
       return account;
     },
-    [refresh],
+    [cancelActivityPagination, refresh],
   );
 
   const addWatchOnly = useCallback(async (publicKey: string, label?: string) => {
     const account = await addWatchOnlyAccount(publicKey.trim(), label);
+    cancelActivityPagination();
     setAccounts((prev) => [...prev, stripSecret(account)]);
     setActiveId(account.id);
     setBalances(null);
@@ -1897,10 +2146,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActivity([]);
     setActivityCursor(null);
     return account;
-  }, []);
+  }, [cancelActivityPagination]);
 
-  const removeAccount = useCallback((id: string) => {
+  const removeAccount = useCallback(async (id: string) => {
     const remaining = removeStoredAccount(id);
+    cancelActivityPagination();
     if (!remaining) {
       setAccounts([]);
       setArchivedAccounts([]);
@@ -1916,7 +2166,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setBalances(null);
     setActivity([]);
     setActivityCursor(null);
-  }, []);
+    try {
+      const { removePrivateBalanceRecordsForAccount } = await import(
+        "@/features/private-balance/runtime/backup"
+      );
+      await removePrivateBalanceRecordsForAccount(id);
+    } catch {
+      throw new Error(
+        "Account archived, but its local Private Payments data could not be removed.",
+      );
+    }
+  }, [cancelActivityPagination]);
 
   const reconcileMergeRecordRef = useRef<(record: MergeReconciliation) => Promise<void>>(
     async () => {},
@@ -1947,7 +2207,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         record,
         accounts,
         Date.now(),
-        api.lookupCanonicalTransaction,
+        (networkKey, hash) => record.expiresAt === undefined
+          ? api.lookupCanonicalTransaction(networkKey, hash)
+          : api.resolveCanonicalTransaction(networkKey, hash, record.expiresAt),
         api.inspectConfirmedAccountMerge,
         (accountId) => {
           if (!isTrackingTaskCurrent(
@@ -1958,7 +2220,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           )) {
             throw new Error("Stale merge reconciliation was cancelled.");
           }
-          removeAccount(accountId);
+          return removeAccount(accountId);
         },
       );
 
@@ -2062,14 +2324,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [accounts, mergeReconciliations, pendingTxsHydrated, phase]);
 
   const renameAccount = useCallback((id: string, newLabel: string) => {
-    updateAccountLabel(id, newLabel);
+    const updated = updateAccountLabel(id, newLabel);
+    if (!updated) throw new Error("That account is no longer available to rename.");
+    const persistedLabel = updated.accounts.find((account) => account.id === id)?.label;
+    if (!persistedLabel) throw new Error("The renamed account could not be read back.");
     setAccounts((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, label: newLabel.trim() || a.label } : a)),
+      prev.map((a) => (a.id === id ? { ...a, label: persistedLabel } : a)),
     );
   }, []);
 
   const restoreArchivedAccount = useCallback(async (id: string) => {
     const restored = await restoreArchivedAccountVault(id);
+    cancelActivityPagination();
     setAccounts((prev) => [...prev, restored]);
     setArchivedAccounts(getArchivedAccounts());
     setActiveId(restored.id);
@@ -2080,10 +2346,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActivity([]);
     setActivityCursor(null);
     return restored;
-  }, []);
+  }, [cancelActivityPagination]);
 
   const restoreAccountByIndex = useCallback(async (index: number) => {
     const restored = await restoreAccountByIndexVault(index);
+    cancelActivityPagination();
     setAccounts((prev) => {
       if (prev.some((a) => a.id === restored.id)) return prev;
       return [...prev, restored];
@@ -2096,9 +2363,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActivity([]);
     setActivityCursor(null);
     return restored;
-  }, []);
+  }, [cancelActivityPagination]);
 
   const switchNetwork = useCallback((net: NetworkKey) => {
+    if (net !== network) {
+      signingContextRef.current = null;
+      setSigningContextRevision(value => value + 1);
+    }
+    cancelActivityPagination();
     refreshGeneration.current += 1;
     accountBalanceGeneration.current += 1;
     saveNetworkPref(net);
@@ -2111,41 +2383,63 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
-    setXlmPriceUsd(null);
+    marketRefreshLane.cancel();
+    setXlmPriceSample(UNAVAILABLE_MARKET_SAMPLE);
     setPriceData(null);
-  }, []);
+    setPriceRequestStatus("idle");
+  }, [cancelActivityPagination, marketRefreshLane, network]);
 
-  const loadMoreActivity = useCallback(async () => {
-    if (!activeAccount || !activityCursor || loadingMore) return;
-    setLoadingMore(true);
+  const loadMoreActivity = useCallback(async (options?: { retry?: boolean }) => {
+    if (phase !== "unlocked" || !activeAccount || !activityCursor
+      || activityPageStateRef.current === "pending"
+      || (activityPageStateRef.current === "recoverable-error" && !options?.retry)) return;
+    const request = activityPaginationLane.begin();
+    commitActivityPageState("pending");
     try {
+      const assertSessionCurrent = createSessionRevocationGuard();
       const api = await loadWalletApi();
+      if (!request.isCurrent()) return;
+      assertSessionCurrent();
       const more = await api.fetchActivity(
         activeAccount.publicKey,
         network,
         30,
         activityCursor,
+        request.signal,
       );
+      if (!request.isCurrent()) return;
+      assertSessionCurrent();
       setActivity((prev) => {
         const seen = new Set(prev.map((i) => i.id));
         return [...prev, ...more.items.filter((i) => !seen.has(i.id))];
       });
       setActivityCursor(more.nextCursor);
-    } catch (error) {
-      setDataError(error instanceof Error ? error.message : "Unable to load more activity.");
+    } catch {
+      if (request.isCurrent()) commitActivityPageState("recoverable-error");
     } finally {
-      setLoadingMore(false);
+      if (request.isCurrent() && activityPageStateRef.current !== "recoverable-error") {
+        commitActivityPageState("idle");
+      }
     }
-  }, [activeAccount, activityCursor, loadingMore, network]);
+  }, [activeAccount, activityCursor, activityPaginationLane, commitActivityPageState, network, phase]);
 
   const addContact = useCallback(async (contact: Contact, previousAddress?: string) => {
-    setContacts(await saveContact(contact, previousAddress));
+    const assertCurrent = createSessionRevocationGuard();
+    const next = await saveContact(contact, previousAddress);
+    assertCurrent();
+    setContacts(next);
   }, []);
   const removeContact = useCallback(async (address: string) => {
-    setContacts(await deleteContact(address));
+    const assertCurrent = createSessionRevocationGuard();
+    const next = await deleteContact(address);
+    assertCurrent();
+    setContacts(next);
   }, []);
   const toggleContactFavorite = useCallback(async (address: string) => {
-    setContacts(await toggleFavoriteContact(address));
+    const assertCurrent = createSessionRevocationGuard();
+    const next = await toggleFavoriteContact(address);
+    assertCurrent();
+    setContacts(next);
   }, []);
 
   const send = useCallback(
@@ -2158,31 +2452,37 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       feeStroops?: number;
       submissionJournal?: {
         onPrepared: SubmissionPreparedCallback;
-        onRejected?: SubmissionPreparedCallback;
+        onRejected?: SubmissionRejectedCallback;
       };
+      authorizeBeforeSigning?: () => void;
     }) => {
       if (!activeAccount) throw new Error("No active account");
       if (activeAccount.watchOnly) {
         throw new Error("This is a watch-only account — switch to a signing account to send.");
       }
+      const assertContextCurrent = captureSigningContext();
+      const beforeSign = () => { assertContextCurrent(); params.authorizeBeforeSigning?.(); };
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Send payment", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      if (hw) hw.assertSessionActive = beforeSign;
+      return withAuthorizedSigningSecret("Send payment", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Payment",
         undefined,
         (onPrepared) => api.sendPayment({
           network,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           ...params,
           feeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
           onPrepared,
+          beforeSign,
         }),
         (result) => result,
         params.submissionJournal,
-      ));
+        beforeSign,
+      ), beforeSign);
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
+    [activeAccount, captureSigningContext, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const prepareStealthPayment = useCallback(async (params: {
@@ -2195,12 +2495,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       loadStealthPaymentApi(),
       loadWalletApi(),
     ]);
-    const announcerPublicKey = await stealth.loadStealthPaymentAnnouncer(network);
+    const deployment = await stealth.loadStealthPaymentDeployment(network);
     return stealth.prepareStealthPayment({
       sourcePublicKey: activeAccount.publicKey,
       metaAddress: params.metaAddress,
       network,
-      announcerPublicKey,
+      announcerPublicKey: deployment.announcerPublicKey,
+      deploymentBindingHash: deployment.deploymentBindingHash,
       amount: params.amount,
       baseFeeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
       loadSourceSequence: async (sourcePublicKey, selectedNetwork) => {
@@ -2225,14 +2526,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
     const stealth = await loadStealthPaymentApi();
     const hw = hardwareSignerFor(activeAccount);
-    return withAuthorizedSigningSecret("Send private payment", activeAccount, hw, secretKey => runTrackedBroadcast(
+    return withAuthorizedSigningSecret("Send private payment", activeAccount, hw, softwareSigner => runTrackedBroadcast(
       "Reusable private payment",
       undefined,
       onPrepared => stealth.submitPreparedStealthPayment({
         review,
         sourcePublicKey: activeAccount.publicKey,
         network,
-        secretKey,
+        softwareSigner,
         hardwareSigner: hw,
         onPrepared,
       }),
@@ -2256,12 +2557,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Send multiple payments", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Send multiple payments", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Batch Payment",
         undefined,
         (onPrepared) => api.sendBatchPayments({
           network,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           ...params,
           feeStroops: recommendedBaseFeeStroops,
@@ -2278,12 +2579,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Claim pending asset", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Claim pending asset", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Airdrop claim",
         undefined,
         (onPrepared) => api.claimClaimableBalances({
           network,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           balanceIds,
           feeStroops: recommendedBaseFeeStroops,
@@ -2305,12 +2606,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Merge account", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Merge account", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Account merge",
         { kind: "reconcile_account_merge" },
         (onPrepared) => api.mergeAccount({
           network,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           destination,
           feeStroops: recommendedBaseFeeStroops,
@@ -2327,12 +2628,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret(params.add ? "Add asset trustline" : "Remove asset trustline", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret(params.add ? "Add asset trustline" : "Remove asset trustline", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         params.add ? "Trustline" : "Trustline removal",
         undefined,
         (onPrepared) => api.changeTrust({
           network,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           ...params,
           feeStroops: recommendedBaseFeeStroops,
@@ -2349,12 +2650,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      const result = await withAuthorizedSigningSecret("Add asset trustlines", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      const result = await withAuthorizedSigningSecret("Add asset trustlines", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         `${assets.length} trustlines`,
         undefined,
         (onPrepared) => api.changeTrustBatch({
           network,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           assets,
           feeStroops: recommendedBaseFeeStroops,
@@ -2389,13 +2690,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const swapLib = await loadSwapApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Swap assets", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Swap assets", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Swap",
         undefined,
         (onPrepared) => params.mode === "strict-receive"
           ? swapLib.swapStrictReceive({
               network,
-              secretKey,
+              softwareSigner,
               hardwareSigner: hw,
               sendCode: params.sendCode,
               sendIssuer: params.sendIssuer,
@@ -2409,7 +2710,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             })
           : swapLib.swapStrictSend({
               network,
-              secretKey,
+              softwareSigner,
               hardwareSigner: hw,
               sendCode: params.sendCode,
               sendIssuer: params.sendIssuer,
@@ -2442,14 +2743,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
-      const result = await withAuthorizedSigningSecret("Update multi-signature settings", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      const result = await withAuthorizedSigningSecret("Update multi-signature settings", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Multi-sig update",
         undefined,
         (onPrepared) => msig.applyMultisigConfig({
           network,
           accountPublicKey: activeAccount.publicKey,
           config,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           feeStroops: recommendedBaseFeeStroops,
           onPrepared,
@@ -2464,21 +2765,22 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, toast, withAuthorizedSigningSecret],
   );
 
-  const disableMultisig = useCallback(async () => {
+  const disableMultisig = useCallback(async (expectedAuthorityFingerprint: string) => {
     if (!activeAccount) throw new Error("No active account");
     if (activeAccount.watchOnly) {
       throw new Error("Watch-only accounts cannot sign transactions.");
     }
     const msig = await loadMultisigApi();
     const hw = hardwareSignerFor(activeAccount);
-    const result = await withAuthorizedSigningSecret("Disable multi-signature settings", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+    const result = await withAuthorizedSigningSecret("Disable multi-signature settings", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
       "Multi-sig disabled",
       undefined,
       (onPrepared) => msig.disableMultisig({
         network,
         accountPublicKey: activeAccount.publicKey,
-        secretKey,
+        softwareSigner,
         hardwareSigner: hw,
+        expectedAuthorityFingerprint,
         feeStroops: recommendedBaseFeeStroops,
         onPrepared,
       }),
@@ -2498,20 +2800,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       issuer?: string | null;
       memo?: StellarMemoInput;
       feeStroops?: number;
+      authorizeBeforeSigning?: () => void;
     }) => {
       if (!activeAccount) throw new Error("No active account");
+      const assertContextCurrent = captureSigningContext();
+      const beforeSign = () => { assertContextCurrent(); params.authorizeBeforeSigning?.(); };
       const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Prepare co-signed payment", activeAccount, hw, (secretKey) => msig.prepareCosignPayment({
+      if (hw) hw.assertSessionActive = beforeSign;
+      return withAuthorizedSigningSecret("Prepare co-signed payment", activeAccount, hw, (softwareSigner) => msig.prepareCosignPayment({
         network,
         sourcePublicKey: activeAccount.publicKey,
-        secretKey,
+        softwareSigner,
         hardwareSigner: hw,
         ...params,
         feeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
-      }));
+        beforeSign,
+      }), beforeSign);
     },
-    [activeAccount, network, recommendedBaseFeeStroops, withAuthorizedSigningSecret],
+    [activeAccount, captureSigningContext, network, recommendedBaseFeeStroops, withAuthorizedSigningSecret],
   );
 
   const cosignTransaction = useCallback(
@@ -2519,7 +2826,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Co-sign transaction", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Co-sign transaction", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Co-signed transaction",
         undefined,
         (onPrepared) => msig.cosignTransaction({
@@ -2527,7 +2834,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           confirmedNetwork,
           xdr,
           signerPublicKey: activeAccount.publicKey,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           onPrepared,
         }),
@@ -2537,11 +2844,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [activeAccount, network, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
+  const resolvePrivateBalanceFeePayer = useCallback((accountId?: string) => {
+    captureSigningContext()();
+    if (!activeAccount) throw new Error("No active account");
+    return resolvePrivateFeePayer(accountsRef.current, activeAccount.id, accountId);
+  }, [activeAccount, captureSigningContext]);
+
   const signPrivateBalanceEnvelope = useCallback(async (request: {
     envelopeXdr: string;
     expectedTransactionHash: string;
     networkPassphrase: string;
-  }) => {
+  } & PrivateFeeBumpLimits, assertActionCurrent?: () => void) => {
+    const assertWalletCurrent = captureSigningContext();
+    const feePayer = request.feePayer ? Object.freeze({ ...request.feePayer }) : undefined;
+    const assertContextCurrent = () => {
+      assertWalletCurrent(); assertActionCurrent?.();
+      assertSamePrivateFeePayer(feePayer, resolvePrivateBalanceFeePayer(feePayer?.accountId));
+    };
+    assertContextCurrent();
     if (!activeAccount) throw new Error("No active account");
     if (activeAccount.watchOnly || activeAccount.hardware) {
       throw new Error("Private Balance requires an active software account.");
@@ -2550,35 +2870,52 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Private Balance signing network changed. Review the transaction again.");
     }
     await requestSigningAuthorization("Sign private balance transaction");
+    assertContextCurrent();
     const signing = await loadPrivateBalanceSigningApi();
-    return withSecretKey(activeAccount.id, secretKey => signing.signExactPrivateBalanceEnvelope({
-      ...request,
-      expectedSource: activeAccount.publicKey,
-      secretKey,
-    }));
-  }, [activeAccount, network, requestSigningAuthorization]);
+    assertContextCurrent();
+    return withSigningKeypair(activeAccount.id, async softwareSigner => {
+      assertContextCurrent();
+      if (feePayer) return withSigningKeypair(feePayer.accountId, feePayerSigner => {
+        assertContextCurrent();
+        return signing.signExactPrivateBalanceEnvelope({ ...request, feePayer, expectedSource: activeAccount.publicKey, softwareSigner, feePayerSigner });
+      });
+      return signing.signExactPrivateBalanceEnvelope({ ...request, expectedSource: activeAccount.publicKey, softwareSigner });
+    });
+  }, [activeAccount, captureSigningContext, network, requestSigningAuthorization, resolvePrivateBalanceFeePayer]);
 
   const changePriceRange = useCallback(
     async (r: PriceRange) => {
+      const request = marketRefreshLane.begin();
       setPriceRangeState(r);
       const cached = priceCache.current[r];
       if (cached) {
         setPriceData(cached);
-        return;
+        if (isMarketObservationFresh(cached.observedAt)) {
+          if (request.isCurrent()) setPriceRequestStatus("idle");
+          return;
+        }
       }
-      setPriceLoading(true);
+      setPriceRequestStatus("pending");
+      let outcome: "idle" | "error" = "idle";
       try {
         const api = await loadWalletApi();
-        const series = await api.fetchXlmSeries(r);
-        if (series) {
+        const series = await api.fetchXlmSeries(r, request.signal);
+        if (!request.isCurrent()) return;
+        if (series?.range === r) {
           priceCache.current[r] = series;
           setPriceData(series);
+        } else {
+          outcome = "error";
         }
+      } catch {
+        // Keep the requested selection for retry and label retained points by
+        // their own range, whether the transport throws or returns no series.
+        outcome = "error";
       } finally {
-        setPriceLoading(false);
+        if (request.isCurrent()) setPriceRequestStatus(outcome);
       }
     },
-    [],
+    [marketRefreshLane],
   );
 
   const togglePrivacy = useCallback(() => {
@@ -2634,10 +2971,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       mergeReconciliations,
       retryMergeReconciliation,
       submissionStatus,
+      acknowledgeSubmissionJournal,
+      releaseSubmissionJournals,
       envelopeSubmissionStatus,
       dataLoading,
       loadingMore,
+      loadMoreError,
       xlmPriceUsd,
+      xlmPriceSample,
+      fiatRateSamples,
+      priceError,
+      refreshMarketData,
       priceData,
       priceRange,
       changePriceRange,
@@ -2673,10 +3017,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       restoreArchivedAccount,
       restoreAccountByIndex,
       switchNetwork,
-      refresh,
-      loadMoreActivity,
-      send,
-      prepareStealthPayment,
+    refresh,
+    loadMoreActivity,
+    send,
+    captureSigningContext,
+    authorizeTransactionSigning,
+    prepareStealthPayment,
       submitStealthPayment,
       sendBatch,
       claimAirdrop,
@@ -2690,6 +3036,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       prepareCosignPayment,
       cosignTransaction,
       signPrivateBalanceEnvelope,
+      resolvePrivateBalanceFeePayer,
       fundFromFriendbot,
     }),
     [
@@ -2713,10 +3060,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       mergeReconciliations,
       retryMergeReconciliation,
       submissionStatus,
+      acknowledgeSubmissionJournal,
+      releaseSubmissionJournals,
       envelopeSubmissionStatus,
       dataLoading,
       loadingMore,
+      loadMoreError,
       xlmPriceUsd,
+      xlmPriceSample,
+      fiatRateSamples,
+      priceError,
+      refreshMarketData,
       priceData,
       priceRange,
       changePriceRange,
@@ -2755,6 +3109,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       refresh,
       loadMoreActivity,
       send,
+      captureSigningContext,
+      authorizeTransactionSigning,
       prepareStealthPayment,
       submitStealthPayment,
       sendBatch,
@@ -2769,6 +3125,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       prepareCosignPayment,
       cosignTransaction,
       signPrivateBalanceEnvelope,
+      resolvePrivateBalanceFeePayer,
       fundFromFriendbot,
     ],
   );
@@ -2783,10 +3140,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     approveSigningAuthorization,
     continueSigningAuthorization,
     cancelSigningAuthorization,
+    authorizeSensitiveAction,
     changeWalletPassword,
     changeSigningPasswordRequired,
   }), [
     approveSigningAuthorization,
+    authorizeSensitiveAction,
     cancelSigningAuthorization,
     changeSigningPasswordRequired,
     changeWalletPassword,
@@ -2873,14 +3232,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     activity,
     activityCursor,
     loadingMore,
+    loadMoreError,
     loadMoreActivity,
-  }), [activity, activityCursor, loadingMore, loadMoreActivity]);
+  }), [activity, activityCursor, loadingMore, loadMoreError, loadMoreActivity]);
   const submissionValue = useMemo<WalletSubmissionContextValue>(() => ({
     pendingTxs,
     retryPendingTransaction,
     mergeReconciliations,
     retryMergeReconciliation,
     submissionStatus,
+    acknowledgeSubmissionJournal,
+    releaseSubmissionJournals,
     envelopeSubmissionStatus,
   }), [
     envelopeSubmissionStatus,
@@ -2889,15 +3251,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     retryMergeReconciliation,
     retryPendingTransaction,
     submissionStatus,
+    acknowledgeSubmissionJournal,
+    releaseSubmissionJournals,
   ]);
   const marketValue = useMemo<WalletMarketContextValue>(() => ({
     xlmPriceUsd,
+    xlmPriceSample,
+    fiatRateSamples,
+    priceError,
+    refreshMarketData,
     priceData,
     priceRange,
     changePriceRange,
     priceLoading,
     fiatRates,
-  }), [changePriceRange, fiatRates, priceData, priceLoading, priceRange, xlmPriceUsd]);
+  }), [changePriceRange, fiatRates, fiatRateSamples, priceData, priceError, priceLoading, priceRange, refreshMarketData, xlmPriceSample, xlmPriceUsd]);
   const preferencesValue = useMemo<WalletPreferencesContextValue>(() => ({
     privacyMode,
     togglePrivacy,
@@ -2924,6 +3292,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const transactionsValue = useMemo<WalletTransactionsContextValue>(() => ({
     refresh,
     send,
+    captureSigningContext,
+    authorizeTransactionSigning,
     prepareStealthPayment,
     submitStealthPayment,
     sendBatch,
@@ -2938,9 +3308,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     prepareCosignPayment,
     cosignTransaction,
     signPrivateBalanceEnvelope,
+    resolvePrivateBalanceFeePayer,
     fundFromFriendbot,
   }), [
     applyMultisigConfig,
+    captureSigningContext,
+    authorizeTransactionSigning,
     claimAirdrop,
     claimAirdrops,
     cosignTransaction,
@@ -2954,6 +3327,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     sendBatch,
     submitStealthPayment,
     signPrivateBalanceEnvelope,
+    resolvePrivateBalanceFeePayer,
     swap,
     trustAsset,
     trustAssets,

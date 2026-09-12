@@ -9,6 +9,7 @@ import {
   lockOperator,
   shouldLockOperatorAfterSale,
 } from "../src/lib/merchant/operators.ts";
+import { nextPinAttempt } from "../src/lib/merchant/permissions.ts";
 
 function member(id, name = id) {
   return {
@@ -165,6 +166,19 @@ test("a verified switch is rejected if the PIN changed while verification was pe
   );
 });
 
+test("a PIN verified before a concurrent lockout cannot authorize after the block commits", () => {
+  const blockedUntil = 50_000;
+  const completed = nextPinAttempt({
+    failures: 5,
+    blockedUntil,
+    lockoutLevel: 1,
+  }, true, 20_000);
+
+  assert.equal(completed.blocked, true);
+  assert.equal(completed.authorized, false);
+  assert.equal(completed.state.blockedUntil, blockedUntil);
+});
+
 test("automatic reconciliation locks only when the current operator's sale becomes paid", () => {
   assert.equal(typeof operatorRules.applyCompletedSalePolicy, "function");
   const before = {
@@ -218,7 +232,8 @@ test("merchant context exposes roster controls and enforces local operator locki
   assert.match(hook, /onShiftStaff: StaffMember\[\]/);
   assert.match(hook, /lockStaffSession: \(\) => Promise<void>/);
   assert.match(hook, /endStaffSession: \(memberId: string\) => Promise<void>/);
-  assert.match(hook, /activateVerifiedOperator\(latest, member\.id, expectedPinDigest\)/);
+  assert.match(hook, /activateVerifiedOperator\(throttled, memberId, expectedPinDigest\)/);
+  assert.ok((hook.match(/recordedAttempt\.authorized/g) ?? []).length >= 3);
   assert.match(hook, /operatorTimeoutMs\(settings\)/);
   assert.match(hook, /addEventListener\("pointerdown", resetTimer/);
   assert.match(hook, /addEventListener\("keydown", resetTimer/);
@@ -241,8 +256,12 @@ test("operator lock choices expose selection state and mobile-size targets", () 
   assert.match(ui, /role="group"/);
   assert.match(ui, /aria-pressed=\{active\}/);
   assert.match(ui, /min-h-11/);
-  assert.match(ui, /!panelRef\.current\.contains\(document\.activeElement\)/);
+  assert.match(ui, /if \(!panel\?\.isConnected \|\| !isTopModal\(backdrop\) \|\| panel\.contains\(document\.activeElement\)\) return;/);
   assert.match(staffPage, /ariaLabel="Operator lock timing"/);
   assert.match(staffPage, /ariaLabel="Operator inactivity timeout"/);
-  assert.match(staffPage, /autoFocus=\{index === 0\}/);
+  // The PIN field is the one entry point in the operator sheets: it takes focus on
+  // open through the shell, and again when the picker hands over to it.
+  assert.match(staffPage, /initialFocus=\{pinRef\}/);
+  assert.match(staffPage, /pinRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.doesNotMatch(staffPage, /autoFocus/);
 });

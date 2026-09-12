@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import { triggerHaptic } from "@/lib/haptics";
 import {
   useMerchantConfiguration,
@@ -21,7 +22,17 @@ import type {
 } from "@/lib/merchant/types";
 import type { FiatCurrency } from "@/lib/format";
 import { useToast } from "../Toast";
-import { Dropdown, Modal, ModalHeader, SegmentedControl } from "../ui";
+import {
+  AlertContent,
+  Button,
+  Dropdown,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  SegmentedControl,
+  useRetainedForExit,
+} from "../ui";
 import {
   IconCheck,
   IconChevronDown,
@@ -99,8 +110,8 @@ function tileStyle(colour: string): React.CSSProperties {
   const usable = /^#[0-9a-fA-F]{6}$/.test(colour);
   if (!usable) {
     return {
-      backgroundColor: "rgba(255,255,255,0.06)",
-      boxShadow: "inset 0 0 0 0.5px rgba(255,255,255,0.1)",
+      backgroundColor: "var(--color-fill)",
+      boxShadow: "inset 0 0 0 0.5px var(--color-hairline)",
     };
   }
   return {
@@ -149,9 +160,7 @@ function Keypad({
   return (
     <div>
       <div className="flex flex-col items-center py-4">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-          {label}
-        </span>
+        <SectionHeader as="span">{label}</SectionHeader>
         <span className="mono mt-1.5 text-[34px] font-semibold leading-none text-white">
           {fmtMinor(minor, currency)}
         </span>
@@ -163,7 +172,7 @@ function Keypad({
             type="button"
             onClick={() => press(key)}
             aria-label={key === "backspace" ? "Backspace" : key}
-            className="flex min-h-[64px] items-center justify-center rounded-2xl bg-white/[0.08] text-[28px] font-medium leading-none text-white transition-[transform,background-color] duration-150 hover:bg-white/[0.13] active:scale-95"
+            className="flex min-h-[64px] items-center justify-center rounded-2xl bg-white/[0.08] text-[28px] font-medium leading-none text-ink transition-[transform,background-color] hover:bg-white/[0.13] active:scale-95"
           >
             {key === "backspace" ? <BackspaceGlyph /> : key}
           </button>
@@ -184,6 +193,38 @@ function groupHint(group: ModifierGroup): string {
 }
 
 function ModifierSheet({
+  open,
+  item,
+  groups,
+  currency,
+  onConfirm,
+  onClose,
+}: {
+  open: boolean;
+  /** The owner retains the last item through the exit; null only before any pick. */
+  item: CatalogueItem | null;
+  groups: ModifierGroup[];
+  currency: FiatCurrency;
+  onConfirm: (item: CatalogueItem, modifiers: OrderLineModifier[]) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal open={open && item !== null} onClose={onClose}>
+      {item && (
+        <ModifierSheetBody
+          key={item.id}
+          item={item}
+          groups={groups}
+          currency={currency}
+          onConfirm={(modifiers) => onConfirm(item, modifiers)}
+          onClose={onClose}
+        />
+      )}
+    </Modal>
+  );
+}
+
+function ModifierSheetBody({
   item,
   groups,
   currency,
@@ -218,30 +259,27 @@ function ModifierSheet({
     setPicked((prev) => {
       const current = prev[group.id] ?? [];
       if (current.includes(modifierId)) {
-        triggerHaptic("selection");
         return { ...prev, [group.id]: current.filter((id) => id !== modifierId) };
       }
       if (group.max <= 1) {
-        triggerHaptic("selection");
         return { ...prev, [group.id]: [modifierId] };
       }
       if (current.length >= group.max) {
         triggerHaptic("warning");
         return prev;
       }
-      triggerHaptic("selection");
       return { ...prev, [group.id]: [...current, modifierId] };
     });
   }
 
   return (
-    <Modal open onClose={onClose}>
+    <>
       <ModalHeader
         title={item.name}
         subtitle={fmtMinor(item.priceMinor, currency)}
         onClose={onClose}
       />
-      <div className="space-y-4 p-4 sm:p-6">
+      <ModalBody>
         {groups.map((group) => {
           const current = picked[group.id] ?? [];
           return (
@@ -265,7 +303,7 @@ function ModifierSheet({
                     >
                       <span
                         className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
-                          on ? "bg-[#0A84FF] text-white" : "bg-white/[0.1] text-transparent"
+                          on ? "bg-[#0A84FF] text-[var(--color-oncolor)]" : "bg-white/[0.1] text-transparent"
                         }`}
                       >
                         <IconCheck size={12} />
@@ -292,19 +330,15 @@ function ModifierSheet({
           </p>
         )}
 
-        <button
-          type="button"
-          disabled={Boolean(unmet)}
-          className="btn btn-primary w-full"
-          onClick={() => {
-            triggerHaptic("light");
-            onConfirm(chosen);
-          }}
-        >
-          Add {fmtMinor(totalMinor, currency)}
-        </button>
-      </div>
-    </Modal>
+        <ModalFooter
+          primary={
+            <Button disabled={Boolean(unmet)} onClick={() => onConfirm(chosen)}>
+              Add {fmtMinor(totalMinor, currency)}
+            </Button>
+          }
+        />
+      </ModalBody>
+    </>
   );
 }
 
@@ -338,7 +372,7 @@ function ItemTile({
       disabled={soldOut}
       onClick={onPick}
       style={tileStyle(item.colour)}
-      className={`flex min-h-[96px] flex-col justify-between rounded-2xl p-3 text-left transition-transform duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 ${
+      className={`flex min-h-[96px] flex-col justify-between rounded-2xl p-3 text-left transition-transform active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 ${
         soldOut ? "" : "hover:brightness-125"
       }`}
     >
@@ -410,7 +444,7 @@ function TicketMenu({
               onTender();
             }}
           >
-            <IconWallet size={15} /> <span>Other tender</span>
+            <IconWallet size={15} /> <span>Other Tender</span>
           </button>
           <button
             type="button"
@@ -421,7 +455,7 @@ function TicketMenu({
               onCustomerView();
             }}
           >
-            <IconEye size={15} /> <span>Customer view</span>
+            <IconEye size={15} /> <span>Customer View</span>
           </button>
           <button
             type="button"
@@ -432,7 +466,7 @@ function TicketMenu({
               onAdjust();
             }}
           >
-            <IconPercent size={15} /> <span>Discount, comp or void</span>
+            <IconPercent size={15} /> <span>Discount, Comp or Void</span>
           </button>
         </div>
       )}
@@ -476,7 +510,7 @@ function TicketRow({
               triggerHaptic("selection");
               onQuantity(line.quantity - 1);
             }}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-white transition-transform duration-150 hover:bg-white/[0.14] active:scale-90"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-[var(--color-oncolor)] transition-transform hover:bg-white/[0.14] active:scale-90"
           >
             <MinusGlyph />
           </button>
@@ -490,7 +524,7 @@ function TicketRow({
               triggerHaptic("selection");
               onQuantity(line.quantity + 1);
             }}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-white transition-transform duration-150 hover:bg-white/[0.14] active:scale-90"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-[var(--color-oncolor)] transition-transform hover:bg-white/[0.14] active:scale-90"
           >
             <IconPlus size={15} />
           </button>
@@ -505,10 +539,7 @@ function TicketRow({
           <button
             type="button"
             aria-label={`Discount, comp or void ${line.name}`}
-            onClick={() => {
-              triggerHaptic("selection");
-              onAdjust();
-            }}
+            onClick={onAdjust}
             className="relative flex h-9 w-9 items-center justify-center rounded-full text-neutral-500 transition-colors before:absolute before:-inset-1 before:content-[''] hover:bg-white/[0.06] hover:text-[#0A84FF]"
           >
             <IconPercent size={15} />
@@ -516,10 +547,7 @@ function TicketRow({
           <button
             type="button"
             aria-label={`Remove ${line.name}`}
-            onClick={() => {
-              triggerHaptic("light");
-              onRemove();
-            }}
+            onClick={onRemove}
             className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-white/[0.06] hover:text-[#FF453A]"
           >
             <IconTrash size={15} />
@@ -565,10 +593,13 @@ export function PosTerminal({
   const [tipPromptOpen, setTipPromptOpen] = useState(false);
   const [category, setCategory] = useState<string>("");
   const [optionsFor, setOptionsFor] = useState<CatalogueItem | null>(null);
+  // Both sheets keep their content through the exit animation.
+  const shownOptionsFor = useRetainedForExit(optionsFor);
   const [tenderOpen, setTenderOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjustLineId, setAdjustLineId] = useState<string | null>(null);
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
+  const shownReceiptOrder = useRetainedForExit(receiptOrder);
   const [customerViewOpen, setCustomerViewOpen] = useState(false);
   const [lastSettledOrderId, setLastSettledOrderId] = useState<string | null>(null);
   const scannerBuffer = useRef("");
@@ -629,14 +660,13 @@ export function PosTerminal({
         : null,
     [lastSettledOrderId, orders],
   );
-  const receiptHash = receiptOrder
-    ? charges.find((charge) => charge.orderId === receiptOrder.id)?.payment?.transactionHash ?? null
+  const receiptHash = shownReceiptOrder
+    ? charges.find((charge) => charge.orderId === shownReceiptOrder.id)?.payment?.transactionHash ?? null
     : null;
 
   const pickItem = useCallback((item: CatalogueItem): "added" | "options" => {
     const groups = groupsFor(item);
     if (groups.length > 0) {
-      triggerHaptic("selection");
       setOptionsFor(item);
       return "options";
     }
@@ -667,7 +697,6 @@ export function PosTerminal({
         event.preventDefault();
         const item = findScannedCatalogueItem(active, code);
         if (!item) {
-          triggerHaptic("warning");
           toast(`No active catalogue item has SKU ${code}.`, "error");
           return;
         }
@@ -701,23 +730,19 @@ export function PosTerminal({
   }, [active, pickItem, toast]);
 
   function openReceipt(order: Order) {
-    triggerHaptic("selection");
     setReceiptOrder(order);
   }
 
   function openAdjust(lineId: string | null) {
-    triggerHaptic("selection");
     setAdjustLineId(lineId);
     setAdjustOpen(true);
   }
 
   function openTender() {
     if (paymentBlockedReason) {
-      triggerHaptic("warning");
       toast(paymentBlockedReason, "error");
       return;
     }
-    triggerHaptic("selection");
     setTenderOpen(true);
   }
 
@@ -729,7 +754,6 @@ export function PosTerminal({
    */
   function charge() {
     if (chargeBlockedReason || ticket.lines.length === 0) return;
-    triggerHaptic("light");
     if (tipOptions.length === 0) {
       raiseCharge(0);
       return;
@@ -737,12 +761,11 @@ export function PosTerminal({
     setTipPromptOpen(true);
   }
 
-  function raiseCharge(tipMinor: Minor) {
+  async function raiseCharge(tipMinor: Minor) {
     try {
       setTipPromptOpen(false);
-      createChargeFromTicket(tipMinor);
+      await createChargeFromTicket(tipMinor);
     } catch (error) {
-      triggerHaptic("error");
       toast(error instanceof Error ? error.message : "The charge could not be raised.", "error");
     }
   }
@@ -784,17 +807,14 @@ export function PosTerminal({
         {!activeShift && (
           <button
             type="button"
-            onClick={() => {
-              triggerHaptic("selection");
-              onOpenShift();
-            }}
-            className="btn btn-secondary btn-sm min-h-11 shrink-0"
+            onClick={onOpenShift}
+            className="btn btn-secondary shrink-0"
           >
-            Open shift
+            Open Shift
           </button>
         )}
       </div>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] md:items-start md:gap-5">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-5">
         {/* ---------- catalogue and keypad ---------- */}
         <div className="min-w-0 space-y-3">
           <div className="w-full">
@@ -830,7 +850,7 @@ export function PosTerminal({
                 }}
                 className="btn btn-secondary mt-3 w-full"
               >
-                Add to ticket
+                Add to Ticket
               </button>
             </div>
           ) : (
@@ -840,10 +860,7 @@ export function PosTerminal({
                   <button
                     type="button"
                     aria-pressed={category === ""}
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setCategory("");
-                    }}
+                    onClick={() => setCategory("")}
                     className={`chip ${category === "" ? "!bg-[#0A84FF]/20 !text-[#0A84FF]" : ""}`}
                   >
                     All
@@ -853,10 +870,7 @@ export function PosTerminal({
                       key={name}
                       type="button"
                       aria-pressed={category === name}
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        setCategory(name);
-                      }}
+                      onClick={() => setCategory(name)}
                       className={`chip ${category === name ? "!bg-[#0A84FF]/20 !text-[#0A84FF]" : ""}`}
                     >
                       {name}
@@ -915,11 +929,8 @@ export function PosTerminal({
                 <button
                   type="button"
                   aria-label="Dismiss the settled order"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setLastSettledOrderId(null);
-                  }}
-                  className="-mr-1.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-white/[0.06] hover:text-white"
+                  onClick={() => setLastSettledOrderId(null)}
+                  className="-mr-1.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-white/[0.06] hover:text-[var(--color-oncolor)]"
                 >
                   <IconClose size={15} />
                 </button>
@@ -951,11 +962,8 @@ export function PosTerminal({
               {!empty && (
                 <button
                   type="button"
-                  onClick={() => {
-                    triggerHaptic("warning");
-                    clearTicket();
-                  }}
-                  className="-mr-2 rounded-lg px-2 py-1 text-[13px] font-semibold text-[#FF453A] transition-colors hover:bg-[#FF453A]/10"
+                  onClick={clearTicket}
+                  className="-mr-2 flex items-center rounded-lg px-2 text-[13px] font-semibold text-[#FF453A] transition-colors hover:bg-[#FF453A]/10"
                 >
                   Clear
                 </button>
@@ -998,11 +1006,8 @@ export function PosTerminal({
 
                   <button
                     type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      openAdjust(null);
-                    }}
-                    className="row-hover mt-1 flex w-full items-center justify-between rounded-xl px-4 py-2 text-left text-[13.5px]"
+                    onClick={() => openAdjust(null)}
+                    className="row-hover mt-1 flex min-h-11 w-full items-center justify-between rounded-xl px-4 py-2 text-left text-[13.5px]"
                   >
                     <span className="text-neutral-400">Discount</span>
                     <span className="flex items-center gap-1.5">
@@ -1066,10 +1071,7 @@ export function PosTerminal({
                 {!empty && (
                   <TicketMenu
                     onTender={openTender}
-                    onCustomerView={() => {
-                      triggerHaptic("light");
-                      setCustomerViewOpen(true);
-                    }}
+                    onCustomerView={() => setCustomerViewOpen(true)}
                     onAdjust={() => openAdjust(null)}
                   />
                 )}
@@ -1086,7 +1088,7 @@ export function PosTerminal({
           above the floating tab bar rather than behind it. */}
       {!empty && (
         <div className="sticky bottom-[calc(90px+env(safe-area-inset-bottom))] z-30 mt-3 md:hidden">
-          <div className="panel shadow-[0_18px_50px_-12px_rgba(0,0,0,0.95)]">
+          <div className="panel shadow-[0_18px_50px_-12px_var(--shadow-strong)]">
             {chargeBlockedReason && (
               <p className="border-b border-white/[0.08] px-4 py-2 text-center text-[11.5px] leading-relaxed text-[#FF9F0A]">
                 {chargeBlockedReason}
@@ -1094,9 +1096,7 @@ export function PosTerminal({
             )}
             <div className="flex items-center gap-3 py-2.5 pl-4 pr-2.5">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[10.5px] font-semibold uppercase tracking-[0.04em] text-neutral-500">
-                  Total · {itemCount} {itemCount === 1 ? "item" : "items"}
-                </p>
+                <SectionHeader className="truncate">Total · {itemCount} {itemCount === 1 ? "item" : "items"}</SectionHeader>
                 <p className="till-total mono truncate text-[17px] font-semibold leading-tight text-white">
                   {fmtMinor(ticketTotals.totalMinor, currency)}
                 </p>
@@ -1112,10 +1112,7 @@ export function PosTerminal({
                 </button>
                 <TicketMenu
                   onTender={openTender}
-                  onCustomerView={() => {
-                    triggerHaptic("light");
-                    setCustomerViewOpen(true);
-                  }}
+                  onCustomerView={() => setCustomerViewOpen(true)}
                   onAdjust={() => openAdjust(null)}
                 />
               </div>
@@ -1124,40 +1121,47 @@ export function PosTerminal({
         </div>
       )}
 
-      {optionsFor && (
-        <ModifierSheet
-          item={optionsFor}
-          groups={groupsFor(optionsFor)}
-          currency={currency}
-          onClose={() => setOptionsFor(null)}
-          onConfirm={(modifiers) => {
-            addItemToTicket(optionsFor, modifiers);
-            setOptionsFor(null);
-          }}
-        />
-      )}
+      <ModifierSheet
+        open={optionsFor !== null}
+        item={shownOptionsFor}
+        groups={shownOptionsFor ? groupsFor(shownOptionsFor) : []}
+        currency={currency}
+        onClose={() => setOptionsFor(null)}
+        onConfirm={(item, modifiers) => {
+          addItemToTicket(item, modifiers);
+          setOptionsFor(null);
+        }}
+      />
 
       {/* The screen is turned to the customer here, so it carries one question,
-          large, with no wallet chrome and no way to wander off. */}
-      <Modal open={tipPromptOpen} onClose={() => setTipPromptOpen(false)} dismissable={false}>
-        <ModalHeader
+          large, with no wallet chrome and no way to wander off: the prompt is
+          answered, never dismissed. */}
+      <Modal
+        open={tipPromptOpen}
+        onClose={() => setTipPromptOpen(false)}
+        presentation="alert"
+        dismissable={false}
+      >
+        <AlertContent
           title="Add a tip?"
-          subtitle={`${fmtMinor(ticketTotals.totalMinor, currency)} before any tip`}
-          onClose={() => setTipPromptOpen(false)}
-        />
-        <div className="p-5">
-          <p className="text-center text-[13px] text-neutral-400">
-            Turn the screen to your customer.
-          </p>
-          <div className="mt-4 grid grid-cols-3 gap-2">
+          message={`${fmtMinor(ticketTotals.totalMinor, currency)} before any tip. Turn the screen to your customer.`}
+          actions={
+            <ModalFooter
+              primary={
+                /* Equal weight: a customer must never feel steered into tipping. */
+                <Button variant="ghost" onClick={() => void raiseCharge(0)}>
+                  No tip
+                </Button>
+              }
+            />
+          }
+        >
+          <div className="grid grid-cols-3 gap-2">
             {tipOptions.map((option) => (
               <button
                 key={option.label}
                 type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  raiseCharge(option.amountMinor);
-                }}
+                onClick={() => void raiseCharge(option.amountMinor)}
                 className="flex min-h-[76px] flex-col items-center justify-center gap-1 rounded-2xl bg-white/[0.08] text-white transition-colors hover:bg-white/[0.13]"
               >
                 <span className="text-[19px] font-semibold">{option.label}</span>
@@ -1167,18 +1171,7 @@ export function PosTerminal({
               </button>
             ))}
           </div>
-          {/* Equal weight: a customer must never feel steered into tipping. */}
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("selection");
-              raiseCharge(0);
-            }}
-            className="btn btn-secondary mt-2 w-full"
-          >
-            No tip
-          </button>
-        </div>
+        </AlertContent>
       </Modal>
 
       <CashTenderSheet
@@ -1198,14 +1191,12 @@ export function PosTerminal({
         onOrderFinalized={(order) => setLastSettledOrderId(order.id)}
       />
 
-      {receiptOrder && (
-        <ReceiptSheet
-          open
-          onClose={() => setReceiptOrder(null)}
-          order={receiptOrder}
-          transactionHash={receiptHash}
-        />
-      )}
+      <ReceiptSheet
+        open={receiptOrder !== null}
+        onClose={() => setReceiptOrder(null)}
+        order={shownReceiptOrder}
+        transactionHash={receiptHash}
+      />
 
       <CustomerDisplay
         open={customerViewOpen}

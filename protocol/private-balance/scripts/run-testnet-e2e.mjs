@@ -12,6 +12,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
+import { assertLiveWalletTestingSafe } from '../../../scripts/testing/wallet-test-policy.mjs';
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const FIXTURE_ROOT = path.join(PROJECT_ROOT, 'protocol/private-balance/results/fixtures');
@@ -75,7 +76,7 @@ function fixtureEvidencePath(argv) {
     .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name))
     .sort();
   if (candidates.length !== 1) {
-    throw new Error(`Expected exactly one committed testnet fixture, found ${candidates.length}.`);
+    throw new Error(`Expected exactly one committed unified-pool testnet fixture, found ${candidates.length}.`);
   }
   return path.join(FIXTURE_ROOT, candidates[0]);
 }
@@ -114,7 +115,20 @@ function gitHead() {
   return result.stdout.trim();
 }
 
+function assertCleanGitTree() {
+  const result = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], {
+    cwd: PROJECT_ROOT,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) throw new Error('Unable to inspect the E2E source worktree.');
+  if (result.stdout.trim().length !== 0) {
+    throw new Error('Refusing to record Testnet E2E evidence from a dirty worktree.');
+  }
+}
+
 export async function runTestnetE2e(argv = process.argv.slice(2)) {
+  assertLiveWalletTestingSafe();
+  assertCleanGitTree();
   const fixturePath = fixtureEvidencePath(argv);
   const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
   const { bytes: manifestBytes, hash: manifestHash } = buildFixtureManifestBytes(fixture);
@@ -174,8 +188,8 @@ export async function runTestnetE2e(argv = process.argv.slice(2)) {
       'playwright',
       'test',
       'e2e/private-balance',
+      'e2e/private-manifest-security.spec.ts',
       '--project=desktop-chromium',
-      '--reporter=line',
     ],
     e2eEnvironment,
   );
@@ -189,7 +203,6 @@ export async function runTestnetE2e(argv = process.argv.slice(2)) {
       '--project=desktop-webkit-private',
       '--project=iphone-webkit',
       '--project=ipad-webkit',
-      '--reporter=line',
     ],
     e2eEnvironment,
   );
@@ -223,7 +236,7 @@ export async function runTestnetE2e(argv = process.argv.slice(2)) {
       'ambiguous RPC timeout with reserved inputs persisted across lock and unlock',
       'withdrawal to the public Stellar balance',
       'wallet lock, unlock, and encrypted-state persistence',
-      'encrypted V2 wallet-backup restore with exact private balance',
+      'encrypted wallet-backup restore with exact private balance',
       'local Private Balance data removal',
       'seed-only recovery with exact recovered balance',
       'selected RPC endpoint switch and canonical resync',

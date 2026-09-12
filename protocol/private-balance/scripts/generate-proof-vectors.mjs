@@ -15,25 +15,30 @@ const helperWasmPath = join(buildDir, 'gadgets_helper_js/gadgets_helper.wasm');
 const browserPackagePath = join(protocolDir, 'packages/browser/dist/index.js');
 const {
   ActionKind,
-  computeActionBinding,
   computeActionField,
   computeAssetField,
   computeContextField,
   computeContextHash,
-  computeRelayerField,
+  computeDummyNullifier,
 } = await import(browserPackagePath);
 const fromHex = (value) => Uint8Array.from(value.match(/../g), (byte) => Number.parseInt(byte, 16));
 const fieldDecimal = (value) => BigInt(`0x${Buffer.from(value).toString('hex')}`).toString();
-const directionBitsFor = (leafIndex) => {
-  const value = BigInt(leafIndex);
-  return Array.from({ length: 32 }, (_, index) => ((value >> BigInt(index)) & 1n).toString());
+const fieldBytes = (value) => fromHex(BigInt(value).toString(16).padStart(64, '0'));
+const positionsFor = (leafIndex) => {
+  let value = BigInt(leafIndex);
+  return Array.from({ length: 17 }, () => {
+    const position = value % 3n;
+    value /= 3n;
+    return position.toString();
+  });
 };
+const emptySiblings = () => Array.from({ length: 17 }, () => ['0', '0']);
 
 const helperWasm = readFileSync(helperWasmPath);
 const wcModule = await import(join(circuitsDir, 'node_modules/circom_runtime/js/witness_calculator.js'));
 const helper = await wcModule.default(helperWasm);
 
-async function evalGadgets({ contextField, assetField, ask = '0', nk = '0', diversifier = '0', rho = '0', value = '0', leafIndex = '0', siblings = new Array(32).fill('0'), actionField = '0' }) {
+async function evalGadgets({ contextField, assetField, ask = '0', nk = '0', diversifier = '0', rho = '0', value = '0', leafIndex = '0', siblings = emptySiblings() }) {
   const wtns = await helper.calculateWitness({
     contextField: contextField.toString(),
     assetField: assetField.toString(),
@@ -43,16 +48,14 @@ async function evalGadgets({ contextField, assetField, ask = '0', nk = '0', dive
     rho: rho.toString(),
     value: value.toString(),
     leafIndex: leafIndex.toString(),
-    siblings: siblings.map(s => s.toString()),
-    directionBits: directionBitsFor(leafIndex),
-    actionField: actionField.toString(),
+    siblings: siblings.map(level => level.map(String)),
+    positions: positionsFor(leafIndex),
   });
   return {
     ownerCommitment: wtns[1].toString(),
     noteCommitment: wtns[2].toString(),
     nullifier: wtns[3].toString(),
-    actionBinding: wtns[4].toString(),
-    merkleRoot: wtns[5].toString(),
+    merkleRoot: wtns[4].toString(),
   };
 }
 
@@ -66,12 +69,13 @@ async function generateVectors() {
   const asset = { kind: 1, payload: assetId };
   const assetField = fieldDecimal(computeAssetField(asset));
   const zero32 = new Uint8Array(32);
-  const dummyOutput = { cm: zero32, recipientEnvelope: new Uint8Array(181) };
+  const outputPackage = (cm, recipientFill, outgoingFill) => ({
+    cm: fieldBytes(cm),
+    recipientEnvelope: new Uint8Array(181).fill(recipientFill),
+    outgoingEnvelope: new Uint8Array(157).fill(outgoingFill),
+  });
   const actionFieldDecimal = (action) => fieldDecimal(
     computeActionField(action, networkId, realmId, poolId),
-  );
-  const actionBindingDecimal = async (actionField) => fieldDecimal(
-    await computeActionBinding(fromHex(BigInt(contextField).toString(16).padStart(64, '0')), fromHex(BigInt(actionField).toString(16).padStart(64, '0'))),
   );
 
   // 1. Deposit Vector
@@ -85,6 +89,10 @@ async function generateVectors() {
       ),
     ),
   );
+  const dummyNullifier = secret => fieldDecimal(computeDummyNullifier(
+    fieldBytes(contextField),
+    fieldBytes(secret),
+  ));
   const depActionKindField = '1';
   const depAnchorRoot = '0';
   const depPublicValueField = '5000000';
@@ -97,55 +105,75 @@ async function generateVectors() {
     rho: '77777',
     value: '5000000',
   });
+  const depDummyOutput = await evalGadgets({
+    contextField,
+    assetField,
+    ask: '333',
+    nk: '444',
+    rho: '88888',
+    value: '0',
+  });
+  const depSecondDummyOutput = await evalGadgets({
+    contextField,
+    assetField,
+    ask: '335',
+    nk: '446',
+    rho: '88889',
+    value: '0',
+  });
+  const depDummyNullifiers = [dummyNullifier('901'), dummyNullifier('902')];
   const depAction = {
     protocolVersion: 1,
     kind: ActionKind.Deposit,
+    assetIndex: 0,
     asset,
     actionNonce: new Uint8Array(32).fill(0x11),
     anchorRoot: zero32,
-    nullifiers: [zero32, zero32],
+    nullifiers: depDummyNullifiers.map(fieldBytes),
     outputs: [
-      {
-        cm: fromHex(BigInt(depGadgets.noteCommitment).toString(16).padStart(64, '0')),
-        recipientEnvelope: new Uint8Array(181).fill(0xaa),
-      },
-      dummyOutput,
+      outputPackage(depGadgets.noteCommitment, 0xaa, 0xab),
+      outputPackage(depDummyOutput.noteCommitment, 0xac, 0xad),
+      outputPackage(depSecondDummyOutput.noteCommitment, 0xae, 0xaf),
     ],
     publicValue: 5_000_000n,
-    relayerFee: 0n,
     depositSource: { kind: 0, payload: new Uint8Array(32).fill(4) },
   };
   const depActionField = actionFieldDecimal(depAction);
-  const depActionBinding = await actionBindingDecimal(depActionField);
 
   const depInputs = {
     contextField,
     assetField,
+    actionAssetField: assetField,
     actionKindField: depActionKindField,
     anchorRoot: depAnchorRoot,
     publicValueField: depPublicValueField,
-    relayerFeeField: '0',
-    relayerField: '0',
     actionField: depActionField,
-    actionBinding: depActionBinding,
-    nullifier: ['0', '0'],
-    outputCommitment: [depGadgets.noteCommitment, '0'],
+    nullifier: depDummyNullifiers,
+    outputCommitment: [
+      depGadgets.noteCommitment,
+      depDummyOutput.noteCommitment,
+      depSecondDummyOutput.noteCommitment,
+    ],
 
     ask: '0',
     nk: '0',
-    inputEnabled: ['0', '0'],
+    inputReal: ['0', '0'],
+    inputDummySecret: ['901', '902'],
     inputOwnerCommitment: ['0', '0'],
     inputDiversifier: ['0', '0'],
     inputValue: ['0', '0'],
     inputRho: ['0', '0'],
     inputLeafIndex: ['0', '0'],
-    inputSiblings: [new Array(32).fill('0'), new Array(32).fill('0')],
-    inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
+    inputSiblings: [emptySiblings(), emptySiblings()],
+    inputPositions: [positionsFor(0), positionsFor(0)],
 
-    outputEnabled: ['1', '0'],
-    outputOwnerCommitment: [depGadgets.ownerCommitment, '0'],
-    outputValue: ['5000000', '0'],
-    outputRho: ['77777', '0'],
+    outputOwnerCommitment: [
+      depGadgets.ownerCommitment,
+      depDummyOutput.ownerCommitment,
+      depSecondDummyOutput.ownerCommitment,
+    ],
+    outputValue: ['5000000', '0', '0'],
+    outputRho: ['77777', '88888', '88889'],
   };
 
   const depositRes = await snarkjs.groth16.fullProve(depInputs, wasmPath, zkeyPath);
@@ -162,7 +190,7 @@ async function generateVectors() {
     rho: '33333',
     value: '10000000',
     leafIndex: '0',
-    siblings: new Array(32).fill('0'),
+    siblings: emptySiblings(),
   });
 
   const out0Res = await evalGadgets({
@@ -182,61 +210,59 @@ async function generateVectors() {
     rho: '55555',
     value: '3999000',
   });
+  const trFeeOutput = await evalGadgets({
+    contextField,
+    assetField,
+    ask: '12121',
+    nk: '23232',
+    rho: '56565',
+    value: '1000',
+  });
+  const trDummyNullifier = dummyNullifier('903');
   const trAction = {
     protocolVersion: 1,
     kind: ActionKind.PrivateTransfer,
-    asset,
     actionNonce: new Uint8Array(32).fill(0x22),
     anchorRoot: fromHex(BigInt(in0Res.merkleRoot).toString(16).padStart(64, '0')),
     nullifiers: [
-      fromHex(BigInt(in0Res.nullifier).toString(16).padStart(64, '0')),
-      zero32,
+      fieldBytes(in0Res.nullifier),
+      fieldBytes(trDummyNullifier),
     ],
     outputs: [
-      {
-        cm: fromHex(BigInt(out0Res.noteCommitment).toString(16).padStart(64, '0')),
-        recipientEnvelope: new Uint8Array(181).fill(0xbb),
-      },
-      {
-        cm: fromHex(BigInt(out1Res.noteCommitment).toString(16).padStart(64, '0')),
-        recipientEnvelope: new Uint8Array(181).fill(0xcc),
-      },
+      outputPackage(out0Res.noteCommitment, 0xbb, 0xbc),
+      outputPackage(out1Res.noteCommitment, 0xcc, 0xcd),
+      outputPackage(trFeeOutput.noteCommitment, 0xce, 0xcf),
     ],
     publicValue: 0n,
-    relayerFee: 1_000n,
-    relayer: { kind: 0, payload: new Uint8Array(32).fill(6) },
   };
   const trActionField = actionFieldDecimal(trAction);
-  const trActionBinding = await actionBindingDecimal(trActionField);
 
   const trInputs = {
     contextField,
-    assetField,
+    assetField: '0',
+    actionAssetField: assetField,
     actionKindField: trActionKindField,
     anchorRoot: in0Res.merkleRoot,
     publicValueField: trPublicValueField,
-    relayerFeeField: '1000',
-    relayerField: fieldDecimal(computeRelayerField(trAction)),
     actionField: trActionField,
-    actionBinding: trActionBinding,
-    nullifier: [in0Res.nullifier, '0'],
-    outputCommitment: [out0Res.noteCommitment, out1Res.noteCommitment],
+    nullifier: [in0Res.nullifier, trDummyNullifier],
+    outputCommitment: [out0Res.noteCommitment, out1Res.noteCommitment, trFeeOutput.noteCommitment],
 
     ask: '11111',
     nk: '22222',
-    inputEnabled: ['1', '0'],
+    inputReal: ['1', '0'],
+    inputDummySecret: ['0', '903'],
     inputOwnerCommitment: [in0Res.ownerCommitment, '0'],
     inputDiversifier: ['7', '0'],
     inputValue: ['10000000', '0'],
     inputRho: ['33333', '0'],
     inputLeafIndex: ['0', '0'],
-    inputSiblings: [new Array(32).fill('0'), new Array(32).fill('0')],
-    inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
+    inputSiblings: [emptySiblings(), emptySiblings()],
+    inputPositions: [positionsFor(0), positionsFor(0)],
 
-    outputEnabled: ['1', '1'],
-    outputOwnerCommitment: [out0Res.ownerCommitment, out1Res.ownerCommitment],
-    outputValue: ['6000000', '3999000'],
-    outputRho: ['44444', '55555'],
+    outputOwnerCommitment: [out0Res.ownerCommitment, out1Res.ownerCommitment, trFeeOutput.ownerCommitment],
+    outputValue: ['6000000', '3999000', '1000'],
+    outputRho: ['44444', '55555', '56565'],
   };
 
   const transferRes = await snarkjs.groth16.fullProve(trInputs, wasmPath, zkeyPath);
@@ -253,7 +279,7 @@ async function generateVectors() {
     rho: '33333',
     value: '10000000',
     leafIndex: '0',
-    siblings: new Array(32).fill('0'),
+    siblings: emptySiblings(),
   });
 
   const wdOut0Res = await evalGadgets({
@@ -264,59 +290,70 @@ async function generateVectors() {
     rho: '66666',
     value: '2998000',
   });
+  const wdDummyOutput = await evalGadgets({
+    contextField,
+    assetField,
+    ask: '777',
+    nk: '888',
+    rho: '99999',
+    value: '0',
+  });
+  const wdFeeOutput = await evalGadgets({
+    contextField,
+    assetField,
+    ask: '889',
+    nk: '990',
+    rho: '99998',
+    value: '2000',
+  });
+  const wdDummyNullifier = dummyNullifier('904');
   const wdAction = {
     protocolVersion: 1,
     kind: ActionKind.Withdraw,
+    assetIndex: 0,
     asset,
     actionNonce: new Uint8Array(32).fill(0x33),
     anchorRoot: fromHex(BigInt(wdIn0Res.merkleRoot).toString(16).padStart(64, '0')),
     nullifiers: [
-      fromHex(BigInt(wdIn0Res.nullifier).toString(16).padStart(64, '0')),
-      zero32,
+      fieldBytes(wdIn0Res.nullifier),
+      fieldBytes(wdDummyNullifier),
     ],
     outputs: [
-      {
-        cm: fromHex(BigInt(wdOut0Res.noteCommitment).toString(16).padStart(64, '0')),
-        recipientEnvelope: new Uint8Array(181).fill(0xdd),
-      },
-      dummyOutput,
+      outputPackage(wdOut0Res.noteCommitment, 0xdd, 0xde),
+      outputPackage(wdDummyOutput.noteCommitment, 0xdf, 0xe0),
+      outputPackage(wdFeeOutput.noteCommitment, 0xe1, 0xe2),
     ],
     publicValue: 7_000_000n,
     publicRecipient: { kind: 0, payload: new Uint8Array(32).fill(5) },
-    relayerFee: 2_000n,
-    relayer: { kind: 0, payload: new Uint8Array(32).fill(6) },
   };
   const wdActionField = actionFieldDecimal(wdAction);
-  const wdActionBinding = await actionBindingDecimal(wdActionField);
 
   const wdInputs = {
     contextField,
     assetField,
+    actionAssetField: assetField,
     actionKindField: wdActionKindField,
     anchorRoot: wdIn0Res.merkleRoot,
     publicValueField: wdPublicValueField,
-    relayerFeeField: '2000',
-    relayerField: fieldDecimal(computeRelayerField(wdAction)),
     actionField: wdActionField,
-    actionBinding: wdActionBinding,
-    nullifier: [wdIn0Res.nullifier, '0'],
-    outputCommitment: [wdOut0Res.noteCommitment, '0'],
+    nullifier: [wdIn0Res.nullifier, wdDummyNullifier],
+    outputCommitment: [wdOut0Res.noteCommitment, wdDummyOutput.noteCommitment, wdFeeOutput.noteCommitment],
 
     ask: '11111',
     nk: '22222',
-    inputEnabled: ['1', '0'],
+    inputReal: ['1', '0'],
+    inputDummySecret: ['0', '904'],
     inputOwnerCommitment: [wdIn0Res.ownerCommitment, '0'],
     inputDiversifier: ['11', '0'],
     inputValue: ['10000000', '0'],
     inputRho: ['33333', '0'],
     inputLeafIndex: ['0', '0'],
-    inputSiblings: [new Array(32).fill('0'), new Array(32).fill('0')],
-    inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
+    inputSiblings: [emptySiblings(), emptySiblings()],
+    inputPositions: [positionsFor(0), positionsFor(0)],
 
-    outputEnabled: ['1', '0'],
-    outputOwnerCommitment: [wdOut0Res.ownerCommitment, '0'],
-    outputValue: ['2998000', '0'],
-    outputRho: ['66666', '0'],
+    outputOwnerCommitment: [wdOut0Res.ownerCommitment, wdDummyOutput.ownerCommitment, wdFeeOutput.ownerCommitment],
+    outputValue: ['2998000', '0', '2000'],
+    outputRho: ['66666', '99999', '99998'],
   };
 
   const withdrawRes = await snarkjs.groth16.fullProve(wdInputs, wasmPath, zkeyPath);

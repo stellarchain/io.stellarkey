@@ -1,6 +1,62 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
+
+test("remote issuer logos do not receive a wallet-page referrer", () => {
+  const path = "src/components/AssetAvatar.tsx";
+  const url = new URL(`../${path}`, import.meta.url);
+  const source = existsSync(url) ? readFileSync(url, "utf8") : "";
+  const image = source.match(/<img[\s\S]{0,500}?>/g) ?? [];
+  assert.ok(image.length > 0, `${path} should render an issuer logo`);
+  for (const tag of image) assert.match(tag, /referrerPolicy="no-referrer"/);
+});
+
+test("public and private asset surfaces share one canonical asset avatar", () => {
+  const icons = readFileSync(
+    new URL("../src/components/icons.tsx", import.meta.url),
+    "utf8",
+  );
+  const avatarUrl = new URL("../src/components/AssetAvatar.tsx", import.meta.url);
+  const avatar = existsSync(avatarUrl) ? readFileSync(avatarUrl, "utf8") : "";
+  const privateShield = readFileSync(
+    new URL("../src/components/PrivateShieldNotch.tsx", import.meta.url),
+    "utf8",
+  );
+  const dashboard = readFileSync(
+    new URL("../src/components/Dashboard.tsx", import.meta.url),
+    "utf8",
+  );
+  const details = readFileSync(
+    new URL("../src/components/AssetDetailModalBody.tsx", import.meta.url),
+    "utf8",
+  );
+  const privateRow = readFileSync(
+    new URL("../src/features/private-balance/components/PrivateBalanceAssetRow.tsx", import.meta.url),
+    "utf8",
+  );
+  const privateDetails = readFileSync(
+    new URL("../src/features/private-balance/components/PrivateAssetDetailModalBody.tsx", import.meta.url),
+    "utf8",
+  );
+
+  const stellarIcon = icons.slice(
+    icons.indexOf("export function IconStellar"),
+    icons.indexOf("export function LogoMark"),
+  );
+  assert.match(stellarIcon, /d=\{STELLAR_MARK_PATH\}/);
+  assert.match(stellarIcon, /aria-hidden="true"/);
+  assert.match(stellarIcon, /focusable="false"/);
+  assert.match(avatar, /<IconStellar/);
+  assert.match(avatar, /background:\s*["']#000000["']/);
+  assert.match(avatar, /privatePayment[\s\S]*?<PrivateShieldNotch/);
+  assert.match(avatar, /<PrivateShieldNotch[\s\S]{0,200}?label="Private asset"/);
+  assert.match(privateShield, /className="group\/private-notch absolute bottom-0 right-0/);
+  assert.doesNotMatch(privateShield, /-bottom-1|-right-1/);
+  assert.match(dashboard, /<AssetAvatar[\s\S]{0,400}?isNative=\{asset\.isNative\}/);
+  assert.match(details, /<AssetAvatar[\s\S]{0,400}?isNative=\{asset\.isNative\}/);
+  assert.match(privateRow, /<AssetAvatar[\s\S]{0,500}?privatePayment/);
+  assert.match(privateDetails, /<AssetAvatar[\s\S]{0,500}?privatePayment/);
+});
 
 class MemoryStorage {
   #items = new Map();
@@ -181,11 +237,14 @@ test("stellar.toml responses larger than the SEP-1 limit are cancelled", async (
 
 test("asset details distinguish curated assets from issuer self-declarations", () => {
   const source = readFileSync(
-    new URL("../src/components/AssetDetailModal.tsx", import.meta.url),
+    new URL("../src/components/AssetDetailModalBody.tsx", import.meta.url),
     "utf8",
   );
   assert.match(source, /Known asset/);
   assert.match(source, /Issuer-declared/);
   assert.match(source, /not independent verification/);
   assert.doesNotMatch(source, />\s*Asset declared\s*</);
+  assert.match(source, /Frozen by issuer/);
+  assert.match(source, /Maintain liabilities only/);
+  assert.match(source, /Clawback enabled/);
 });

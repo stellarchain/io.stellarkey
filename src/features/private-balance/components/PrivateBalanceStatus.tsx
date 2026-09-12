@@ -10,7 +10,6 @@ import {
 } from '@/components/icons';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { formatTrezorAddress } from '@/lib/address-display';
-import { triggerHaptic } from '@/lib/haptics';
 import { humanizePrivateError, STATUS_LINE } from '../copy';
 
 const PHASE_LABELS = {
@@ -20,6 +19,7 @@ const PHASE_LABELS = {
   'reading-meta': 'Updating…',
   'scanning-live': 'Updating…',
   current: 'Up to date',
+  'status-unknown': 'Status unknown',
   'safe-error': 'Stopped safely',
 } as const;
 
@@ -61,11 +61,8 @@ export function HumanizedErrorNotice({
       <button
         type="button"
         aria-expanded={expanded}
-        onClick={() => {
-          triggerHaptic('selection');
-          setExpanded(value => !value);
-        }}
-        className="mt-1.5 flex min-h-8 items-center gap-1 text-[11px] font-semibold text-neutral-500"
+        onClick={() => setExpanded(value => !value)}
+        className="mt-1 flex items-center gap-1 text-[12px] font-semibold text-neutral-500"
       >
         Technical details
         <IconChevronDown
@@ -84,7 +81,8 @@ export function HumanizedErrorNotice({
 
 export function PrivateBalanceStatus({ detailed = false }: { detailed?: boolean }) {
   const { phase, error, deployment } = usePrivateBalanceRuntimeData();
-  const caution = phase === 'safe-error' || deployment.depositsPaused === true;
+  const caution = phase === 'safe-error' || phase === 'status-unknown' ||
+    deployment.depositsPaused === true;
   const Icon = caution ? IconAlert : phase === 'current' ? IconCheck :
     phase === 'disabled' ? IconShieldStellar : IconRefresh;
   const label = deployment.depositsPaused === true
@@ -110,7 +108,7 @@ export function PrivateBalanceStatus({ detailed = false }: { detailed?: boolean 
           <p className="text-[12.5px] font-semibold text-white">{label}</p>
           {deployment.latestLedger !== null ? (
             <p className="mt-0.5 text-[11px] text-neutral-500">
-              Verified through ledger {deployment.latestLedger.toLocaleString()}
+              Checked through ledger {deployment.latestLedger.toLocaleString()}
             </p>
           ) : null}
         </div>

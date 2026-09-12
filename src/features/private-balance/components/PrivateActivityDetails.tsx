@@ -3,17 +3,18 @@
 import { useState, type ReactNode } from 'react';
 import { AccountMark } from '@/components/AccountMark';
 import { IconExternal } from '@/components/icons';
-import { Button, Notice } from '@/components/ui';
-import { NETWORKS } from '@/lib/stellar';
+import { SectionHeader, Button, ModalBody, Notice } from '@/components/ui';
+import { NETWORKS, privateBalanceExplorerTxHash } from '@/lib/stellar';
 import type { NetworkKey } from '@/lib/types';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { fmtAmount } from '@/lib/format';
-import { triggerHaptic } from '@/lib/haptics';
 import { activityKindLabel } from '../copy';
 import { formatPrivateBalanceAmount } from '../runtime/selectors';
 import type { PrivatePendingAction, ShieldedActivityRecord } from '../runtime/types';
+import { hasExposedPrivateSpend } from '../runtime/proof-exposure';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { isInternalPendingAction } from './PrivateBalanceStatusLine';
+import { useReportToOwner } from './useReportToOwner';
 
 export type PrivateActivitySelection =
   | { type: 'verified'; activity: ShieldedActivityRecord }
@@ -43,30 +44,33 @@ export function PrivateActivityDetails({
   network,
   poolContractId,
   privacyMode = false,
-  onBack,
+  onBusyChange,
 }: {
   selection: PrivateActivitySelection;
   network: NetworkKey;
   poolContractId: string | null;
   privacyMode?: boolean;
-  onBack(): void;
+  /** A status check in flight keeps the owning dialog from closing. */
+  onBusyChange?(busy: boolean): void;
 }) {
   const { asset, refreshSync } = usePrivateBalanceRuntimeData();
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<unknown>(null);
+  useReportToOwner(onBusyChange, checking, false);
   const pending = selection.type === 'pending';
+  const unsignedExposure = pending && hasExposedPrivateSpend(selection.action) && !selection.action.signedEnvelopeXdr;
   const activity = selection.type === 'verified' ? selection.activity : null;
-  // A chained send's internal consolidation step or a verified self-transfer:
-  // the protocol-true balance delta is zero, and there is no counterparty.
+  // A chained send's consolidation step or a verified self-transfer. An
+  // optional helper fee can still leave the balance during consolidation.
   const internal = pending
     ? isInternalPendingAction(selection.action)
     : activity !== null && activity.direction === 'internal';
   const kind = activity ? activity.actionKind : pending ? selection.action.kind : 'transfer';
   const inflow = activity !== null && activity.direction === 'inflow';
-  // An outgoing private transfer — the one case whose recipient/memo live
-  // only in this device's local journal.
+  // An outgoing transfer can recover recipient/memo details from its encrypted
+  // outgoing envelopes as well as the local journal. Absence is not proof of erasure.
   const sentTransfer = kind === 'transfer' && !internal && !inflow;
-  const title = internal
+  const title = unsignedExposure ? 'Status unknown' : internal
     ? pending
       ? 'Preparing balance…'
       : activityKindLabel('transfer', 'internal')
@@ -89,11 +93,14 @@ export function PrivateActivityDetails({
   const localRecipient = activity?.recipientFingerprint ??
     (pending ? selection.action.recipientFingerprint : undefined);
   const localMemo = memoText(activity?.memoHex ?? (pending ? selection.action.memoHex : undefined));
+  const explorerTransactionHash = privateBalanceExplorerTxHash(
+    kind,
+    activity?.transactionHash ?? (pending ? selection.action.transactionHash : undefined),
+  );
 
-  // "Check Status" runs a normal sync; the sync path also resolves an expired
-  // payment safely, so this is the one honest answer to "is it done yet?".
+  // "Check Status" uses common canonical history. An exposed proof can outlive
+  // its original envelope; absence must not be presented as cancellation.
   const checkStatus = async () => {
-    triggerHaptic('light');
     setChecking(true);
     setCheckError(null);
     try {
@@ -106,19 +113,21 @@ export function PrivateActivityDetails({
   };
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
+    <ModalBody>
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">Private activity</p>
+        <SectionHeader>Private activity</SectionHeader>
         <h3 className="mt-1 text-[20px] font-bold text-white">{title}</h3>
       </div>
-      <dl className="ios-group overflow-hidden">
-        {/* Internal steps move nothing in or out — no amount to show. */}
-        {internal && pending ? null : <DetailRow name="Amount" value={amount} />}
-        <DetailRow name="Verification" value={pending ? 'Confirming…' : 'Verified locally'} />
+      <dl className="list-group">
+        {/* Canonical outflows include any helper fee, not just the recipient's payment. */}
+        {internal && pending ? null : (
+          <DetailRow name={activity?.direction === 'outflow' ? 'Net private balance change' : 'Amount'} value={amount} />
+        )}
+        <DetailRow name="Verification" value={unsignedExposure ? 'Status unknown' : pending ? 'Confirming…' : 'Verified locally'} />
         {activity ? <DetailRow name="Action index" value={activity.actionIndex.toLocaleString()} /> : null}
         {activity?.timestamp ? <DetailRow name="Time" value={new Date(activity.timestamp).toLocaleString()} /> : null}
-        {/* Recipient, told honestly per kind: only SENT transfers depend on
-            this device's journal — everything else is either you or public. */}
+        {/* Sent metadata may be locally saved or recovered from outgoing
+            envelopes. Other recipients are this wallet or publicly recorded. */}
         {internal ? null : kind === 'deposit' ? (
           <DetailRow name="Recipient" value="Your private balance" />
         ) : kind === 'withdraw' ? (
@@ -134,33 +143,39 @@ export function PrivateActivityDetails({
                 <span className="mono">{localRecipient}</span>
               </span>
             ) : (
-              'Unavailable after seed recovery'
+              'Unavailable in recovered history'
             )}
           />
         )}
-        {/* Private memos exist only on transfers. A sent transfer with an
-            intact journal but no memo simply had none; an inflow's memo shows
+        {/* Private memos exist only on transfers. A sent transfer with
+            recovered recipient metadata but no memo had none; an inflow's memo shows
             when it was decrypted into this activity, and is never claimed
             lost — the note plaintext carries it through seed recovery. */}
         {sentTransfer ? (
           <DetailRow
             name="Memo"
-            value={localMemo ?? (localRecipient ? 'None' : 'Unavailable after seed recovery')}
+            value={localMemo ?? (localRecipient ? 'None' : 'Unavailable in recovered history')}
           />
         ) : kind === 'transfer' && inflow && localMemo ? (
           <DetailRow name="Memo" value={localMemo} />
         ) : null}
       </dl>
+      {unsignedExposure ? (
+        <Notice tone="warn">
+          A spend proof was shared before a signed transaction was recorded. A party holding it can still execute this exact payment.
+          Inputs remain reserved while its outcome is unknown; cancellation or transaction expiry does not revoke the proof.
+        </Notice>
+      ) : null}
       <Notice>
         {internal
-          ? 'This step prepared your balance for a payment — nothing left your private balance, and the amounts involved stay encrypted.'
+          ? 'This step combines notes in your private balance. Historical relayed steps may include a private helper fee; new steps have no helper fee. The amounts stay encrypted.'
           : kind === 'deposit'
             ? 'Adding funds is public on Stellar; the private balance it creates stays encrypted, and your recovery phrase alone restores it.'
             : kind === 'withdraw'
               ? 'This withdrawal is public on Stellar like any payment — its amount, recipient, and timing appear on the public record.'
               : inflow
                 ? 'Received payments travel encrypted with the payment itself, so your recovery phrase alone restores them — amount and memo included. The public record cannot prove the hidden amount.'
-                : 'Recipient and memo for payments you sent are saved only in this device’s encrypted history — a recovery from your phrase alone cannot reconstruct them. The public record cannot prove the hidden recipient or amount.'}
+                : 'When included, sent recipient and memo details can be recovered from archived encrypted outgoing records using your recovery phrase. Missing details here do not prove those records never existed. The public record cannot prove the hidden recipient or amount.'}
       </Notice>
       {checkError !== null ? <HumanizedErrorNotice cause={checkError} /> : null}
       {pending ? (
@@ -174,17 +189,26 @@ export function PrivateActivityDetails({
           {checking ? 'Checking…' : 'Check Status'}
         </Button>
       ) : null}
+      {explorerTransactionHash ? (
+        <a
+          href={NETWORKS[network].explorerTxUrl(explorerTransactionHash)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-secondary flex tap w-full items-center justify-center gap-2"
+        >
+          View Transaction <IconExternal size={14} />
+        </a>
+      ) : null}
       {poolContractId ? (
         <a
           href={NETWORKS[network].explorerAccountUrl(poolContractId)}
           target="_blank"
           rel="noopener noreferrer"
-          className="btn btn-secondary flex w-full items-center justify-center gap-2"
+          className="btn btn-secondary flex tap w-full items-center justify-center gap-2"
         >
           View Public Record <IconExternal size={14} />
         </a>
       ) : null}
-      <Button type="button" variant="ghost" className="w-full" onClick={onBack}>Back to activity</Button>
-    </div>
+    </ModalBody>
   );
 }

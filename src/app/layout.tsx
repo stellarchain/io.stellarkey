@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
+import { ThemeController } from "@/components/ThemeController";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import {
   BRAND_DESCRIPTION,
   BRAND_NAME,
@@ -78,14 +80,15 @@ export const viewport: Viewport = {
   viewportFit: "cover",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="h-full antialiased">
+    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <body className="flex min-h-full flex-col">
+        {/* Applies the saved appearance before first paint to avoid a flash. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <ThemeController />
         <a className="skip-link" href="#app-content">Skip to content</a>
         <script
           type="application/ld+json"

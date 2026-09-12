@@ -9,7 +9,7 @@ const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8
 
 test("swap activity renders one bank-style debit and credit pair", () => {
   const dashboard = read("src/components/Dashboard.tsx");
-  const detail = read("src/components/TxDetailModal.tsx");
+  const detail = read("src/components/TxDetailModalBody.tsx");
 
   assert.match(dashboard, /function ActivityAmountDisplay\(/);
   assert.match(dashboard, /activityAmountLines\(item\)/);

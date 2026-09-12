@@ -43,11 +43,11 @@ function isZoomProneControl(node, sourceFile) {
   return !type || ["text", "search", "password", "number", "email", "tel", "url"].includes(type);
 }
 
-test("Next viewport disables pinch and form-focus zoom", () => {
+test("Next viewport allows user zoom while form typography prevents unwanted focus zoom", () => {
   const layout = read("src/app/layout.tsx");
   assert.match(layout, /export const viewport: Viewport = \{/);
-  assert.match(layout, /maximumScale:\s*1,/);
-  assert.match(layout, /userScalable:\s*false,/);
+  assert.doesNotMatch(layout, /maximumScale:\s*1,/);
+  assert.doesNotMatch(layout, /userScalable:\s*false,/);
 });
 
 test("mobile scrolling has one document owner and hides scrollbar chrome", () => {
@@ -57,7 +57,7 @@ test("mobile scrolling has one document owner and hides scrollbar chrome", () =>
   const htmlRule = css.match(/html\s*\{(?<body>[\s\S]*?)\}/)?.groups?.body ?? "";
 
   assert.doesNotMatch(htmlRule, /scrollbar-gutter|overflow-y/);
-  assert.match(css, /touch-action:\s*pan-x pan-y;/);
+  assert.match(css, /touch-action:\s*pan-x pan-y pinch-zoom;/);
   assert.match(
     css,
     /\*\s*\{[\s\S]*?scrollbar-width:\s*none;/,
@@ -97,7 +97,7 @@ test("Dashboard owns the only mobile page gutter and Settings restores desktop s
     /max-w-\[520px\][^"\n]*min-w-0[^"\n]*px-0[^"\n]*pb-0/,
   );
   assert.match(ui, /modal-dialog[^`]*min-w-0/);
-  assert.match(ui, /bg-\[#121214\]\/80 px-4 py-4[^"\n]*sm:px-6/);
+  assert.match(ui, /bg-\[var\(--color-elevated\)\] px-4 py-4[^"\n]*sm:px-6/);
 });
 
 test("swap amount cards give mobile numbers and asset selectors separate layout ownership", () => {
@@ -112,8 +112,9 @@ test("swap amount cards give mobile numbers and asset selectors separate layout 
 test("long transaction toasts stay inside the narrowest mobile viewport", () => {
   const toast = read("src/components/Toast.tsx");
 
-  assert.match(toast, /fade-up pointer-events-auto flex min-w-0 max-w-full/);
-  assert.match(toast, /min-w-0 truncate text-\[13px\]/);
+  assert.match(toast, /toast-leave" : "toast-enter"\} pointer-events-auto flex min-w-0 max-w-full/);
+  assert.match(toast, /min-w-0 break-words text-\[13px\]/);
+  assert.doesNotMatch(toast, /truncate|text-ellipsis|whitespace-nowrap/);
 });
 
 test("paper wallet encrypted export keeps its icon, title, and description aligned", () => {
@@ -256,7 +257,7 @@ test("network switch modal uses the shared mobile padding", () => {
   const dashboard = read("src/components/Dashboard.tsx");
   assert.match(
     dashboard,
-    /title="Switch Network"[\s\S]*?<div className="space-y-4 p-4 sm:p-6">/,
+    /title="Switch Network"[\s\S]*?<ModalBody>/,
   );
 });
 

@@ -1,4 +1,5 @@
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
+import { sha256 } from "@noble/hashes/sha2.js";
 import {
   decryptString,
   encryptString,
@@ -22,16 +23,23 @@ import {
   isEncryptedPayloadValue,
   isRawKeyEncryptedPayloadValue,
   isRecord,
+  isTransactionNoteKey,
+  MAX_ACCOUNT_LABEL_CHARS,
+  MAX_TRANSACTION_NOTE_CHARS,
   type FullBackupPayload,
 } from "./backup-schema";
-import { getMerchantRepository } from "./merchant/repository";
 import {
   MERCHANT_BOOTSTRAP_STORAGE_KEY,
   readMerchantBootstrapState,
   writeMerchantBootstrapState,
 } from "./merchant/bootstrap";
-import { validateNewVaultPassword } from "./password-strength";
+import { validateNewVaultPasswordWithGuessability } from "./password-strength";
 import { replaceBackupStorage } from "./backup-storage";
+import {
+  MAX_BACKUP_FILE_BYTES,
+  MAX_KEYSTORE_FILE_BYTES,
+  utf8ByteLength,
+} from "./import-limits";
 import {
   createVaultMasterKey,
   decryptVaultBytes,
@@ -53,11 +61,124 @@ import {
 } from "./passkey-prf";
 
 const VAULT_KEY = "stellarkey.vault.v1";
+const PASSWORD_ATTEMPT_KEY = "stellarkey.vault.password-attempts.v1";
 const NETWORK_KEY = "stellarkey.network.v1";
 const AUTOLOCK_KEY = "stellarkey.autolock.v1";
+const WALLET_LIFECYCLE_EPOCH_KEY = "stellarkey.lifecycle-epoch.v1";
+const WALLET_LIFECYCLE_LOCK = "stellarkey.wallet-lifecycle.v1";
 
 let sessionMasterKey: Uint8Array | null = null;
 let sessionMerchantKey: Uint8Array | null = null;
+let sessionGeneration = 0;
+const sessionRevocationListeners = new Set<() => void>();
+const sessionChangeListeners = new Set<() => void>();
+let publishedSessionSnapshot: number | null = null;
+let fallbackLifecycleEpoch = 0;
+
+function readWalletLifecycleEpoch(): number {
+  try {
+    const raw = typeof window === "undefined"
+      ? null
+      : window.localStorage.getItem(WALLET_LIFECYCLE_EPOCH_KEY);
+    if (raw !== null && /^\d+$/.test(raw)) {
+      const value = Number(raw);
+      if (Number.isSafeInteger(value) && value >= 0) {
+        fallbackLifecycleEpoch = Math.max(fallbackLifecycleEpoch, value);
+      }
+    }
+  } catch {
+    // The in-process epoch still revokes this tab when storage is unavailable.
+  }
+  return fallbackLifecycleEpoch;
+}
+
+export function invalidateWalletLifecycle(): number {
+  const next = readWalletLifecycleEpoch() + 1;
+  fallbackLifecycleEpoch = next;
+  try {
+    window.localStorage.setItem(WALLET_LIFECYCLE_EPOCH_KEY, String(next));
+  } catch {
+    // BroadcastChannel and the in-process epoch remain effective fallbacks.
+  }
+  return next;
+}
+
+export async function withWalletLifecycleLock<T>(operation: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  if (!locks) return operation();
+  return locks.request(WALLET_LIFECYCLE_LOCK, { mode: "exclusive" }, operation);
+}
+
+function assertWalletLifecycleEpoch(expected: number): void {
+  if (readWalletLifecycleEpoch() !== expected) {
+    throw new VaultLockedError("Wallet replacement was cancelled by a lock or reset.");
+  }
+}
+
+function assertUnlockGeneration(expected: number): void {
+  if (expected !== sessionGeneration) {
+    throw new VaultLockedError("Vault unlock authority was revoked.");
+  }
+}
+
+function assertSessionGeneration(expected: number): void {
+  if (!sessionMasterKey || expected !== sessionGeneration) {
+    throw new VaultLockedError("Vault signing authority was revoked.");
+  }
+}
+
+/** Capture the current unlocked session and reject use after lock/reset/restore. */
+export function createSessionRevocationGuard(): () => void {
+  const expected = sessionGeneration;
+  assertSessionGeneration(expected);
+  return () => assertSessionGeneration(expected);
+}
+
+/** Observe only this unlocked generation; unsubscribe when scoped work settles. */
+export function subscribeSessionRevocation(onRevoke: () => void): () => void {
+  assertSessionGeneration(sessionGeneration);
+  sessionRevocationListeners.add(onRevoke);
+  return () => { sessionRevocationListeners.delete(onRevoke); };
+}
+
+/** Non-sensitive observable state; the signing guards still own authority. */
+export function getSessionSnapshot(): number | null {
+  return sessionMasterKey ? sessionGeneration : null;
+}
+
+export function subscribeSessionChanges(onChange: () => void): () => void {
+  sessionChangeListeners.add(onChange);
+  return () => { sessionChangeListeners.delete(onChange); };
+}
+
+function notifySessionChanges(): void {
+  const snapshot = getSessionSnapshot();
+  if (snapshot === publishedSessionSnapshot) return;
+  publishedSessionSnapshot = snapshot;
+  for (const notify of [...sessionChangeListeners]) {
+    try { notify(); } catch {
+      // Observers cannot interrupt key cleanup or another observer.
+    }
+  }
+}
+
+function revokeSessionAuthority(): number {
+  const revokedGeneration = ++sessionGeneration;
+  sessionMasterKey?.fill(0);
+  sessionMerchantKey?.fill(0);
+  sessionMasterKey = null;
+  sessionMerchantKey = null;
+  const listeners = [...sessionRevocationListeners];
+  sessionRevocationListeners.clear();
+  for (const notify of listeners) {
+    try { notify(); } catch {
+      // An observer cannot prevent revocation or another observer's cleanup.
+      // Never log observer errors: they may contain private operation context.
+    }
+  }
+  notifySessionChanges();
+  return revokedGeneration;
+}
 
 function requireSessionMasterKey(): Uint8Array {
   if (!sessionMasterKey) throw new VaultLockedError();
@@ -67,16 +188,33 @@ function requireSessionMasterKey(): Uint8Array {
 async function establishVaultSession(
   masterKey: Uint8Array,
   vault: VaultFile,
+  expectedGeneration?: number,
 ): Promise<void> {
   const merchantKey = await decryptVaultBytes(vault.wrappedMerchantKey, masterKey);
   if (merchantKey.byteLength !== 32) {
     zeroKey(merchantKey);
     throw new Error("Encrypted merchant key is invalid.");
   }
-  zeroKey(sessionMasterKey);
-  zeroKey(sessionMerchantKey);
+  if (expectedGeneration !== undefined) {
+    try {
+      assertUnlockGeneration(expectedGeneration);
+    } catch (error) {
+      zeroKey(merchantKey);
+      throw error;
+    }
+  }
+  const establishmentGeneration = revokeSessionAuthority();
+  try {
+    // Synchronous revocation observers may themselves lock/reset the vault.
+    assertUnlockGeneration(establishmentGeneration);
+  } catch (error) {
+    zeroKey(merchantKey);
+    throw error;
+  }
   sessionMasterKey = masterKey.slice();
   sessionMerchantKey = merchantKey;
+  notifySessionChanges();
+  assertSessionGeneration(establishmentGeneration);
 }
 
 export function getMerchantEncryptionKey(): Uint8Array {
@@ -137,7 +275,8 @@ export function loadVaultResult(): StorageLoadResult<VaultFile> {
         message: `This wallet was created by a newer app version (${parsed.version}).`,
       };
     }
-    const vault = decodeVaultFile(parsed);
+    const decodedVault = decodeVaultFile(parsed);
+    const vault = decodedVault ? repairDuplicateDerivedAccounts(decodedVault) : null;
     return vault
       ? { kind: "ready", value: vault }
       : {
@@ -150,36 +289,131 @@ export function loadVaultResult(): StorageLoadResult<VaultFile> {
   }
 }
 
+function derivedAccountIdentity(vault: VaultFile, account: StoredAccount): string | null {
+  if (
+    !vault.mnemonic ||
+    account.index === undefined ||
+    account.secret ||
+    account.watchOnly ||
+    account.hardware
+  ) {
+    return null;
+  }
+  return `${account.index}:${account.publicKey}`;
+}
+
+/**
+ * Collapse legacy duplicate metadata for the same mnemonic-derived identity.
+ * The selected active record wins, followed by the first active record, so an
+ * archived copy can never displace the account the user is currently using.
+ */
+function repairDuplicateDerivedAccounts(vault: VaultFile): VaultFile {
+  if (!vault.mnemonic) return vault;
+  const records = [
+    ...vault.accounts.map((account) => ({ account, active: true })),
+    ...(vault.archivedAccounts ?? []).map((account) => ({ account, active: false })),
+  ];
+  const groups = new Map<string, typeof records>();
+  for (const record of records) {
+    const identity = derivedAccountIdentity(vault, record.account);
+    if (!identity) continue;
+    const group = groups.get(identity) ?? [];
+    group.push(record);
+    groups.set(identity, group);
+  }
+
+  const discarded = new Set<StoredAccount>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const selected = group.find(
+      (record) => record.active && record.account.id === vault.activeAccountId,
+    );
+    const canonical = selected ?? group.find((record) => record.active) ?? group[0];
+    for (const record of group) {
+      if (record !== canonical) discarded.add(record.account);
+    }
+  }
+  if (discarded.size === 0) return vault;
+
+  return {
+    ...vault,
+    accounts: vault.accounts.filter((account) => !discarded.has(account)),
+    ...(vault.archivedAccounts
+      ? { archivedAccounts: vault.archivedAccounts.filter((account) => !discarded.has(account)) }
+      : {}),
+  };
+}
+
 function readVault(): VaultFile | null {
   const result = loadVaultResult();
   return result.kind === "ready" ? result.value : null;
 }
 
-function persist(vault: VaultFile): void {
-  const serialized = JSON.stringify(vault);
+export class VaultRevisionConflictError extends Error {
+  constructor() {
+    super("The wallet changed in another tab. Reload it and retry your change.");
+    this.name = "VaultRevisionConflictError";
+  }
+}
+
+function vaultRevision(vault: VaultFile): number {
+  return vault.revision ?? 0;
+}
+
+function persist(vault: VaultFile, options: { create?: boolean } = {}): void {
+  const live = readVault();
+  let nextRevision: number;
+  if (options.create) {
+    if (live) throw new VaultRevisionConflictError();
+    nextRevision = 0;
+  } else {
+    if (!live || vaultRevision(live) !== vaultRevision(vault)) {
+      throw new VaultRevisionConflictError();
+    }
+    nextRevision = vaultRevision(vault) + 1;
+  }
+  const nextVault = { ...vault, revision: nextRevision };
+  if (!decodeVaultFile(nextVault)) {
+    throw new Error("The wallet change would create an unreadable vault and was not saved.");
+  }
+  const serialized = JSON.stringify(nextVault);
   window.localStorage.setItem(VAULT_KEY, serialized);
   if (window.localStorage.getItem(VAULT_KEY) !== serialized) {
     throw new Error("Browser storage did not retain the encrypted vault.");
   }
+  vault.revision = nextRevision;
 }
 
 function replacePersistedVault(previous: VaultFile, next: VaultFile): void {
-  const previousSerialized = JSON.stringify(previous);
-  try {
-    persist(next);
-  } catch (error) {
-    try {
-      window.localStorage.setItem(VAULT_KEY, previousSerialized);
-    } catch {
-      // The original persistence error remains authoritative. The next load
-      // still validates the record before granting any vault authority.
-    }
-    throw error;
-  }
+  if (vaultRevision(previous) !== vaultRevision(next)) throw new VaultRevisionConflictError();
+  persist(next);
 }
 
 export function loadVault(): VaultFile | null {
   return readVault();
+}
+
+export function backupVaultIdentity(vault: VaultFile | null = readVault()): string | null {
+  if (!vault) return null;
+  const credentialState = {
+    wrappedMasterKey: vault.wrappedMasterKey,
+    wrappedMerchantKey: vault.wrappedMerchantKey,
+    mnemonic: vault.mnemonic ?? null,
+    accounts: [...vault.accounts, ...(vault.archivedAccounts ?? [])]
+      .map((account) => ({
+        id: account.id,
+        publicKey: account.publicKey,
+        index: account.index ?? null,
+        path: account.path ?? null,
+        secret: account.secret ?? null,
+        watchOnly: account.watchOnly === true,
+        hardware: account.hardware ?? null,
+      }))
+      .sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
+  };
+  return [...sha256(new TextEncoder().encode(JSON.stringify(credentialState)))]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function assertVaultCreationAllowed(): void {
@@ -195,25 +429,25 @@ export function wipeVault(): void {
     const keys: string[] = [];
     for (let index = 0; index < window.localStorage.length; index += 1) {
       const key = window.localStorage.key(index);
-      if (key && (key.startsWith("stellarkey.") || key.startsWith("wallet."))) keys.push(key);
+      if (
+        key &&
+        key !== WALLET_LIFECYCLE_EPOCH_KEY &&
+        (key.startsWith("stellarkey.") || key.startsWith("wallet."))
+      ) {
+        keys.push(key);
+      }
     }
     for (const key of keys) window.localStorage.removeItem(key);
   }
 }
 
 export function lockVault(): void {
-  sessionMasterKey?.fill(0);
-  sessionMerchantKey?.fill(0);
-  sessionMasterKey = null;
-  sessionMerchantKey = null;
+  revokeSessionAuthority();
 }
 
 /** Wipe in-memory secrets after a full-vault restore (old ids no longer exist) */
 export function clearSessionSecrets(): void {
-  sessionMasterKey?.fill(0);
-  sessionMerchantKey?.fill(0);
-  sessionMasterKey = null;
-  sessionMerchantKey = null;
+  revokeSessionAuthority();
 }
 
 export function isUnlocked(): boolean {
@@ -262,6 +496,50 @@ export async function withSecretKey<T>(
   } finally {
     secret = "";
   }
+}
+
+export function revocableKeypairFromSecret(secret: string): Keypair {
+  const generation = sessionGeneration;
+  assertSessionGeneration(generation);
+  const keypair = Keypair.fromSecret(secret);
+  return new Proxy(keypair, {
+    get(target, property, receiver) {
+      if (
+        property === "sign" ||
+        property === "signDecorated" ||
+        property === "signPayloadDecorated" ||
+        property === "signatureHint"
+      ) {
+        const method = Reflect.get(target, property, target) as (...args: unknown[]) => unknown;
+        return (...args: unknown[]) => {
+          assertSessionGeneration(generation);
+          return Reflect.apply(method, target, args);
+        };
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  });
+}
+
+/**
+ * Give one operation a signer whose secret bytes are erased on return and whose
+ * signing methods fail after any lock, reset, or replacement vault session.
+ * Transaction code must use this instead of retaining a decrypted secret string.
+ */
+export async function withSigningKeypair<T>(
+  accountId: string,
+  operation: (signer: Keypair) => T | Promise<T>,
+): Promise<T> {
+  const generation = sessionGeneration;
+  return withSecretKey(accountId, async (secret) => {
+    assertSessionGeneration(generation);
+    const guarded = revocableKeypairFromSecret(secret);
+    try {
+      return await operation(guarded);
+    } finally {
+      guarded.rawSecretKey().fill(0);
+    }
+  });
 }
 
 function decodePrivacyContextHex(value: string, name: string): Uint8Array {
@@ -376,7 +654,7 @@ export async function initializeVault(
   opts: InitializeOptions = {},
 ): Promise<{ account: AccountMeta; revealed: string }> {
   assertVaultCreationAllowed();
-  const passwordPolicy = validateNewVaultPassword(password);
+  const passwordPolicy = await validateNewVaultPasswordWithGuessability(password);
   if (!passwordPolicy.valid) throw new Error(passwordPolicy.message ?? "Choose a stronger password.");
 
   if (opts.secret) {
@@ -403,7 +681,7 @@ export async function initializeVault(
         activeAccountId: account.id,
         requirePasswordForSigning: opts.requirePasswordForSigning ?? false,
       };
-      persist(vault);
+      persist(vault, { create: true });
       writeMerchantBootstrapState({ enabled: false, configured: false });
       await writePrivateContacts([], masterKey);
       await writePrivateTxNotes({}, masterKey);
@@ -454,7 +732,7 @@ async function createDerivedVault(
       activeAccountId: account.id,
       requirePasswordForSigning,
     };
-    persist(vault);
+    persist(vault, { create: true });
     writeMerchantBootstrapState({ enabled: false, configured: false });
     await writePrivateContacts([], masterKey);
     await writePrivateTxNotes({}, masterKey);
@@ -485,7 +763,7 @@ export async function initializeHardwareVault(
   if (account.device !== "trezor") {
     throw new Error("Ledger is not supported in this build. No account was imported.");
   }
-  const passwordPolicy = validateNewVaultPassword(password);
+  const passwordPolicy = await validateNewVaultPasswordWithGuessability(password);
   if (!passwordPolicy.valid) throw new Error(passwordPolicy.message ?? "Choose a stronger password.");
   if (!isValidPublicAddress(account.publicKey)) {
     throw new Error("Invalid Stellar address read from device.");
@@ -510,7 +788,7 @@ export async function initializeHardwareVault(
       activeAccountId: stored.id,
       requirePasswordForSigning: security.requirePasswordForSigning ?? false,
     };
-    persist(vault);
+    persist(vault, { create: true });
     writeMerchantBootstrapState({ enabled: false, configured: false });
     await writePrivateContacts([], masterKey);
     await writePrivateTxNotes({}, masterKey);
@@ -525,9 +803,60 @@ async function masterKeyForPassword(vault: VaultFile, password: string): Promise
   vault: VaultFile;
   masterKey: Uint8Array;
 }> {
+  const now = Date.now();
+  const vaultId = `${vault.wrappedMasterKey.salt}:${vault.wrappedMasterKey.ciphertext.slice(0, 48)}`;
+  const attempts = (() => {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(PASSWORD_ATTEMPT_KEY) ?? "null") as unknown;
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        (parsed as { version?: unknown }).version !== 1 ||
+        (parsed as { vaultId?: unknown }).vaultId !== vaultId
+      ) {
+        return { failures: 0, blockedUntil: 0, lockoutLevel: 0 };
+      }
+      const record = parsed as {
+        failures?: unknown;
+        blockedUntil?: unknown;
+        lockoutLevel?: unknown;
+      };
+      if (
+        !Number.isSafeInteger(record.failures) ||
+        !Number.isSafeInteger(record.blockedUntil) ||
+        !Number.isSafeInteger(record.lockoutLevel) ||
+        (record.failures as number) < 0 ||
+        (record.blockedUntil as number) < 0 ||
+        (record.lockoutLevel as number) < 0
+      ) {
+        return { failures: 0, blockedUntil: 0, lockoutLevel: 0 };
+      }
+      return record as { failures: number; blockedUntil: number; lockoutLevel: number };
+    } catch {
+      return { failures: 0, blockedUntil: 0, lockoutLevel: 0 };
+    }
+  })();
+  if (now < attempts.blockedUntil) {
+    const seconds = Math.max(1, Math.ceil((attempts.blockedUntil - now) / 1000));
+    throw new Error(`Too many password attempts. Try again in ${seconds} seconds.`);
+  }
   try {
-    return { vault, masterKey: await unwrapVaultMasterKey(vault.wrappedMasterKey, password) };
+    const masterKey = await unwrapVaultMasterKey(vault.wrappedMasterKey, password);
+    window.localStorage.removeItem(PASSWORD_ATTEMPT_KEY);
+    return { vault, masterKey };
   } catch {
+    const failures = (attempts.blockedUntil > 0 ? 0 : attempts.failures) + 1;
+    const lockoutLevel = failures >= 5 ? attempts.lockoutLevel + 1 : attempts.lockoutLevel;
+    const lockoutMs = failures >= 5
+      ? Math.min(30_000 * (2 ** Math.max(0, lockoutLevel - 1)), 15 * 60_000)
+      : 0;
+    window.localStorage.setItem(PASSWORD_ATTEMPT_KEY, JSON.stringify({
+      version: 1,
+      vaultId,
+      failures,
+      blockedUntil: lockoutMs > 0 ? now + lockoutMs : 0,
+      lockoutLevel,
+    }));
     throw new Error("Incorrect password.");
   }
 }
@@ -571,7 +900,7 @@ export async function changeVaultPassword(
   newPassword: string,
 ): Promise<void> {
   requireSessionMasterKey();
-  const passwordPolicy = validateNewVaultPassword(newPassword);
+  const passwordPolicy = await validateNewVaultPasswordWithGuessability(newPassword);
   if (!passwordPolicy.valid) {
     throw new Error(passwordPolicy.message ?? "Choose a stronger password.");
   }
@@ -600,11 +929,11 @@ export async function unlockVault(password: string): Promise<VaultFile> {
   }
   requireWebCrypto();
   lockVault();
+  const unlockGeneration = sessionGeneration;
   const unlocked = await masterKeyForPassword(vault, password);
   try {
-    await readPrivateContacts(unlocked.masterKey);
-    await readPrivateTxNotes(unlocked.masterKey);
-    await establishVaultSession(unlocked.masterKey, unlocked.vault);
+    assertUnlockGeneration(unlockGeneration);
+    await establishVaultSession(unlocked.masterKey, unlocked.vault, unlockGeneration);
     return unlocked.vault;
   } finally {
     zeroKey(unlocked.masterKey);
@@ -624,8 +953,6 @@ export async function enablePasskeyUnlock(
   requireWebCrypto();
   const unlocked = await masterKeyForPassword(vault, password);
   try {
-    await readPrivateContacts(unlocked.masterKey);
-    await readPrivateTxNotes(unlocked.masterKey);
     await registerPasskeyMasterKey(unlocked.masterKey, dependencies);
   } finally {
     zeroKey(unlocked.masterKey);
@@ -642,12 +969,13 @@ export async function unlockVaultWithPasskey(
   }
   requireWebCrypto();
   lockVault();
+  const unlockGeneration = sessionGeneration;
   const masterKey = await unwrapPasskeyMasterKey(undefined, dependencies);
   try {
     // AES-GCM authentication of wrappedMerchantKey proves that the passkey
     // unwrapped the exact master key belonging to this vault.
-    await readPrivateContacts(masterKey);
-    await establishVaultSession(masterKey, vault);
+    assertUnlockGeneration(unlockGeneration);
+    await establishVaultSession(masterKey, vault, unlockGeneration);
     return vault;
   } finally {
     zeroKey(masterKey);
@@ -741,7 +1069,7 @@ export async function addStoredAccount(
   }
 
   let nextIndex = 0;
-  for (const a of vault.accounts) {
+  for (const a of [...vault.accounts, ...(vault.archivedAccounts ?? [])]) {
     if (a.index !== undefined && a.index >= nextIndex) {
       nextIndex = a.index + 1;
     }
@@ -791,14 +1119,18 @@ export function updateAccountLabel(accountId: string, newLabel: string): VaultFi
   if (!vault) return null;
   const acc = vault.accounts.find((a) => a.id === accountId);
   if (!acc) return null;
-  acc.label = newLabel.trim() || acc.label;
+  const label = newLabel.trim();
+  if (label.length > MAX_ACCOUNT_LABEL_CHARS) {
+    throw new Error(`Account label must be ${MAX_ACCOUNT_LABEL_CHARS} characters or fewer.`);
+  }
+  acc.label = label || acc.label;
   persist(vault);
   return vault;
 }
 
 
 /**
- * Add a watch-only account: tracks an existing public key with no secret.
+ * Add a Watch-Only Account: tracks an existing public key with no secret.
  * Balances and activity are visible; signing is impossible by design.
  */
 
@@ -911,16 +1243,30 @@ export async function restoreAccountByIndex(
   const masterKey = requireSessionMasterKey();
   if (!vault.mnemonic) throw new Error("Wallet has no recovery phrase");
 
-  const existing = vault.accounts.find((a) => a.index === index);
-  if (existing) return stripSecret(existing);
-
   let mnemonic = await decryptVaultString(vault.mnemonic, masterKey);
   const kp = await keypairFromMnemonicIndex(mnemonic, index);
   mnemonic = "";
+  const publicKey = kp.publicKey();
+  const existing = vault.accounts.find(
+    (account) => derivedAccountIdentity(vault, account) === `${index}:${publicKey}`,
+  );
+  if (existing) return stripSecret(existing);
+
+  const archivedIndex = (vault.archivedAccounts ?? []).findIndex(
+    (account) => derivedAccountIdentity(vault, account) === `${index}:${publicKey}`,
+  );
+  if (archivedIndex >= 0 && vault.archivedAccounts) {
+    const [account] = vault.archivedAccounts.splice(archivedIndex, 1);
+    vault.accounts.push(account);
+    vault.activeAccountId = account.id;
+    persist(vault);
+    return stripSecret(account);
+  }
+
   const account: StoredAccount = {
     id: randomHex(8),
     label: label?.trim() || `Account ${index + 1}`,
-    publicKey: kp.publicKey(),
+    publicKey,
     createdAt: Date.now(),
     index,
     path: stellarAccountPath(index),
@@ -1042,8 +1388,10 @@ async function encodePrivateContacts(
 async function writePrivateContacts(
   contacts: PrivateContactRecord[],
   masterKey: Uint8Array,
+  assertCurrent?: () => void,
 ): Promise<void> {
   const serialized = await encodePrivateContacts(contacts, masterKey);
+  assertCurrent?.();
   window.localStorage.setItem(CONTACTS_KEY, serialized);
   if (window.localStorage.getItem(CONTACTS_KEY) !== serialized) {
     throw new Error("Browser storage did not retain the encrypted contacts.");
@@ -1071,7 +1419,7 @@ export async function loadPrivateContactRecords(): Promise<PrivateContactRecord[
 export async function savePrivateContactRecords(
   contacts: PrivateContactRecord[],
 ): Promise<void> {
-  await writePrivateContacts(contacts, requireSessionMasterKey());
+  await writePrivateContacts(contacts, requireSessionMasterKey(), createSessionRevocationGuard());
 }
 
 interface TxNoteEnvelope {
@@ -1079,44 +1427,88 @@ interface TxNoteEnvelope {
   crypto: RawKeyEncryptedPayload;
 }
 
+interface NormalizedTransactionNotes {
+  notes: Record<string, string>;
+  omittedCount: number;
+}
+
+class BackupTransactionNotesError extends Error {}
+
 function isTxNoteEnvelope(value: unknown): value is TxNoteEnvelope {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<TxNoteEnvelope>;
   return candidate.version === 3 && isRawKeyEncryptedPayloadValue(candidate.crypto);
 }
 
-async function writePrivateTxNotes(
+async function encodePrivateTxNotes(
   notes: Record<string, string>,
   masterKey: Uint8Array,
-): Promise<void> {
+): Promise<string> {
   const envelope: TxNoteEnvelope = {
     version: 3,
     crypto: await encryptVaultString(JSON.stringify(notes), masterKey),
   };
-  window.localStorage.setItem(TX_NOTES_KEY, JSON.stringify(envelope));
+  return JSON.stringify(envelope);
 }
 
-function decodeNotes(value: unknown): Record<string, string> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return Object.fromEntries(
-    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-  );
+async function writePrivateTxNotes(
+  notes: Record<string, string>,
+  masterKey: Uint8Array,
+): Promise<void> {
+  window.localStorage.setItem(TX_NOTES_KEY, await encodePrivateTxNotes(notes, masterKey));
+}
+
+function normalizeTransactionNotes(value: unknown): NormalizedTransactionNotes | null {
+  if (!isRecord(value)) return null;
+  const notes: Record<string, string> = {};
+  let omittedCount = 0;
+  for (const [key, note] of Object.entries(value)) {
+    if (
+      isTransactionNoteKey(key) &&
+      typeof note === "string" &&
+      note.length <= MAX_TRANSACTION_NOTE_CHARS
+    ) {
+      notes[key] = note;
+    } else {
+      omittedCount += 1;
+    }
+  }
+  return { notes, omittedCount };
+}
+
+async function readPrivateTxNotesResult(
+  masterKey: Uint8Array,
+): Promise<NormalizedTransactionNotes> {
+  const raw = window.localStorage.getItem(TX_NOTES_KEY);
+  if (raw === null) return { notes: {}, omittedCount: 0 };
+  let stored: unknown;
+  try {
+    stored = JSON.parse(raw);
+  } catch {
+    throw new Error("Private transaction notes are malformed.");
+  }
+  if (!isTxNoteEnvelope(stored)) {
+    throw new Error("Private transaction notes use an unsupported POC format.");
+  }
+  try {
+    const normalized = normalizeTransactionNotes(
+      JSON.parse(await decryptVaultString(stored.crypto, masterKey)) as unknown,
+    );
+    if (!normalized) throw new Error("Private transaction notes are malformed.");
+    return normalized;
+  } catch {
+    throw new Error("Private transaction notes could not be decrypted.");
+  }
 }
 
 async function readPrivateTxNotes(masterKey: Uint8Array): Promise<Record<string, string>> {
-  const stored = readLocalJson(TX_NOTES_KEY);
-  if (stored === null) return {};
-  if (isTxNoteEnvelope(stored)) {
-    try {
-      return decodeNotes(JSON.parse(await decryptVaultString(stored.crypto, masterKey)) as unknown);
-    } catch {
-      throw new Error("Private transaction notes could not be decrypted.");
-    }
-  }
-  throw new Error("Private transaction notes use an unsupported POC format.");
+  return (await readPrivateTxNotesResult(masterKey)).notes;
 }
 
 export async function loadPrivateTxNote(transactionHash: string): Promise<string> {
+  if (!isTransactionNoteKey(transactionHash)) {
+    throw new Error("Transaction note identifier is invalid.");
+  }
   const masterKey = requireSessionMasterKey();
   const notes = await readPrivateTxNotes(masterKey);
   return notes[transactionHash] ?? "";
@@ -1128,9 +1520,12 @@ export async function savePrivateTxNote(
 ): Promise<void> {
   const masterKey = requireSessionMasterKey();
   const key = transactionHash.trim();
-  if (!key) throw new Error("Transaction hash is required.");
+  if (!isTransactionNoteKey(key)) throw new Error("Transaction note identifier is invalid.");
   const notes = await readPrivateTxNotes(masterKey);
   const value = note.trim();
+  if (value.length > MAX_TRANSACTION_NOTE_CHARS) {
+    throw new Error(`Transaction notes must be ${MAX_TRANSACTION_NOTE_CHARS} characters or fewer.`);
+  }
   if (value) notes[key] = value;
   else delete notes[key];
   await writePrivateTxNotes(notes, masterKey);
@@ -1140,16 +1535,34 @@ export interface VaultRestoreResult {
   accountCount: number;
   hasMnemonic: boolean;
   contactCount: number;
+  warnings: string[];
 }
 
 export interface VaultBackupInfo {
   accountCount: number;
+  primaryAccountPublicKey: string;
+  primaryAccountKind: "software" | "watch-only" | "ledger" | "trezor";
+  primaryAccountAuthenticated: boolean;
   contactCount: number;
   hasMnemonic: boolean;
   hasSettings: boolean;
   hasMerchantArchive: boolean;
   hasPrivateBalanceArchive: boolean;
+  warnings: string[];
   exportedAt?: string;
+}
+
+interface PreparedBackupPayload {
+  encryptedContacts: string;
+  encryptedTxNotes: string;
+  preparedPrivateBalanceStore: string | null;
+  warnings: string[];
+}
+
+function transactionNoteOmissionWarning(count: number): string {
+  return `${count} private transaction note${count === 1 ? " was" : "s were"} omitted because ${
+    count === 1 ? "its identifier or value was" : "their identifiers or values were"
+  } invalid.`;
 }
 
 function readLocalJson(key: string): unknown {
@@ -1163,6 +1576,7 @@ function readLocalJson(key: string): unknown {
 
 /** True when the file is a valid v2 fully-encrypted backup envelope. */
 export function isEncryptedBackup(json: string): boolean {
+  if (utf8ByteLength(json) > MAX_BACKUP_FILE_BYTES) return false;
   try {
     const p = JSON.parse(json) as { kind?: string; version?: number; crypto?: unknown };
     return p.kind === BACKUP_KIND && p.version === 2 && isEncryptedPayloadValue(p.crypto);
@@ -1175,6 +1589,9 @@ async function decodeBackup(
   json: string,
   password?: string,
 ): Promise<{ payload: FullBackupPayload }> {
+  if (utf8ByteLength(json) > MAX_BACKUP_FILE_BYTES) {
+    throw new Error("Backup file exceeds the supported size limit.");
+  }
   let parsed: {
     kind?: string;
     version?: number;
@@ -1203,6 +1620,9 @@ async function decodeBackup(
   } catch {
     throw new Error("Incorrect password for this backup file.");
   }
+  if (utf8ByteLength(plaintext) > MAX_BACKUP_FILE_BYTES) {
+    throw new Error("The decrypted backup payload exceeds the supported size limit.");
+  }
   let decoded: unknown;
   try {
     decoded = JSON.parse(plaintext);
@@ -1214,112 +1634,53 @@ async function decodeBackup(
   return { payload };
 }
 
-/** Summarize a backup file (requires the backup password). */
-export async function inspectVaultBackup(
-  json: string,
-  password?: string,
-): Promise<VaultBackupInfo> {
-  const { payload } = await decodeBackup(json, password);
-  return {
-    accountCount: Array.isArray(payload.vault.accounts) ? payload.vault.accounts.length : 0,
-    contactCount: Array.isArray(payload.contacts) ? payload.contacts.length : 0,
-    hasMnemonic: Boolean(payload.vault.mnemonic),
-    hasSettings: Boolean(payload.settings),
-    hasMerchantArchive: typeof payload.merchantStore === "string" && Boolean(payload.merchantStore),
-    hasPrivateBalanceArchive:
-      typeof payload.privateBalanceStore === "string" && Boolean(payload.privateBalanceStore),
-    exportedAt: payload.exportedAt || undefined,
-  };
-}
-
-/**
- * Export the ENTIRE wallet — vault (all accounts + mnemonic), contacts,
- * settings, private tx notes, and the encrypted merchant archive — as a
- * single AES-256-GCM encrypted file, locked by the wallet password. No
- * plaintext metadata is ever written.
- */
-export async function exportVaultBackup(password: string): Promise<string> {
-  const storedVault = readVault();
-  if (!storedVault) throw new Error("No wallet to back up.");
-  const verified = await masterKeyForPassword(storedVault, password);
-  let contacts: PrivateContactRecord[];
-  try {
-    contacts = await readPrivateContacts(verified.masterKey);
-  } finally {
-    zeroKey(verified.masterKey);
-  }
-  const vault = readVault();
-  if (!vault) throw new Error("No wallet to back up.");
-
-  const notesRaw = readLocalJson(TX_NOTES_KEY);
-  const autoLockRaw = window.localStorage.getItem(AUTOLOCK_KEY);
-  const merchantBootstrap = readMerchantBootstrapState();
-  let merchantKey: Uint8Array | null = null;
-  let merchantStore: string | null;
-  let privateBalanceStore: string | null = null;
-  try {
-    merchantKey = typeof indexedDB === "undefined" ? null : getMerchantEncryptionKey();
-    merchantStore = merchantKey
-      ? await getMerchantRepository().exportEncryptedArchive(merchantKey)
-      : null;
-    if (typeof indexedDB !== "undefined") {
-      const { exportPrivateBalanceBackupArchive } = await import(
-        "@/features/private-balance/runtime/backup"
-      );
-      privateBalanceStore = JSON.stringify(await exportPrivateBalanceBackupArchive());
-    }
-  } finally {
-    zeroKey(merchantKey);
-  }
-  const payload: FullBackupPayload = {
-    exportedAt: new Date().toISOString(),
-    vault,
-    contacts,
-    settings: {
-      network: loadNetworkPref(),
-      fiatCurrency: window.localStorage.getItem(CURRENCY_KEY),
-      autoLockMs: autoLockRaw !== null ? Number(autoLockRaw) : null,
-      privacy: window.localStorage.getItem(PRIVACY_KEY) === "1",
-      sound: window.localStorage.getItem(SOUND_KEY) !== "0",
-      ...(merchantBootstrap ? {
-        merchantMode: {
-          enabled: merchantBootstrap.enabled,
-          configured: merchantBootstrap.configured,
-        },
-      } : {}),
-    },
-    txNotes:
-      notesRaw && typeof notesRaw === "object" && !Array.isArray(notesRaw)
-        ? (notesRaw as Record<string, unknown>)
-        : {},
-    merchantStore,
-    privateBalanceStore,
-  };
-  const crypto = await encryptString(JSON.stringify(payload), password);
-  return JSON.stringify({ kind: BACKUP_KIND, version: 2, crypto }, null, 2);
-}
-
-/**
- * Restore a full wallet from a backup file. Replaces any existing wallet —
- * the caller must confirm with the user first. v2 backups need the backup's
- * password (they are fully encrypted) and also restore contacts, settings
- * and tx notes. The restored wallet stays locked afterwards.
- */
-export async function restoreVaultBackup(
-  json: string,
-  password?: string,
-): Promise<VaultRestoreResult> {
-  const { payload } = await decodeBackup(json, password);
+async function prepareDecodedBackup(
+  payload: FullBackupPayload,
+  password: string,
+): Promise<PreparedBackupPayload> {
   const vault = payload.vault;
-  let encryptedContacts: string;
-  let preparedPrivateBalanceStore: string | null = null;
   let masterKey: Uint8Array | null = null;
+  let merchantKey: Uint8Array | null = null;
   try {
-    masterKey = await unwrapVaultMasterKey(vault.wrappedMasterKey, password as string);
-    encryptedContacts = await encodePrivateContacts(payload.contacts, masterKey);
+    masterKey = await unwrapVaultMasterKey(vault.wrappedMasterKey, password);
+
+    for (const account of [...vault.accounts, ...(vault.archivedAccounts ?? [])]) {
+      if (account.watchOnly || account.hardware) continue;
+      await decryptAccountSecret(vault, account, masterKey);
+    }
+
+    const encryptedContacts = await encodePrivateContacts(payload.contacts, masterKey);
+    let normalizedNotes: NormalizedTransactionNotes;
+    try {
+      if (!isTxNoteEnvelope(payload.txNotes)) {
+        throw new Error("Private transaction notes are malformed.");
+      }
+      const notes = JSON.parse(await decryptVaultString(payload.txNotes.crypto, masterKey)) as unknown;
+      const normalized = normalizeTransactionNotes(notes);
+      if (!normalized) {
+        throw new Error("Private transaction notes are malformed.");
+      }
+      normalizedNotes = normalized;
+    } catch {
+      throw new BackupTransactionNotesError(
+        "Private transaction notes could not be decrypted or authenticated.",
+      );
+    }
+    const encryptedTxNotes = await encodePrivateTxNotes(normalizedNotes.notes, masterKey);
+    const txNoteOmissions = (payload.txNoteOmissions ?? 0) + normalizedNotes.omittedCount;
+    const warnings = txNoteOmissions > 0 ? [transactionNoteOmissionWarning(txNoteOmissions)] : [];
+
+    merchantKey = await decryptVaultBytes(vault.wrappedMerchantKey, masterKey);
+    if (merchantKey.byteLength !== 32) throw new Error("Merchant recovery key is invalid.");
+    if (payload.merchantStore) {
+      const { getMerchantRepository } = await import("./merchant/repository");
+      getMerchantRepository().verifyEncryptedArchive(payload.merchantStore, merchantKey);
+    }
+
+    let preparedPrivateBalanceStore: string | null = null;
     if (payload.privateBalanceStore) {
       if (typeof indexedDB === "undefined") {
-        throw new Error("IndexedDB is required to restore this backup's Private Balance records.");
+        throw new Error("IndexedDB is required to verify this backup's Private Balance records.");
       }
       const { preparePrivateBalanceBackupArchive } = await import(
         "@/features/private-balance/runtime/backup"
@@ -1327,9 +1688,10 @@ export async function restoreVaultBackup(
       const prepared = await preparePrivateBalanceBackupArchive({
         archive: payload.privateBalanceStore,
         resolveStorageKey: async context => {
-          const account = vault.accounts.find(candidate => candidate.id === context.accountId);
+          const account = [...vault.accounts, ...(vault.archivedAccounts ?? [])]
+            .find(candidate => candidate.id === context.accountId);
           if (!account || account.watchOnly || account.hardware) {
-            throw new Error("Private Balance backup references an unsupported wallet account.");
+            return null;
           }
           let secret = "";
           let rawSeed: Uint8Array | null = null;
@@ -1350,10 +1712,7 @@ export async function restoreVaultBackup(
             );
             return derivePrivateStorageKey(
               sessionRoot,
-              decodePrivacyContextHex(
-                context.deploymentBindingHash,
-                "Deployment binding hash",
-              ),
+              decodePrivacyContextHex(context.deploymentBindingHash, "Deployment binding hash"),
             );
           } finally {
             secret = "";
@@ -1370,15 +1729,172 @@ export async function restoreVaultBackup(
           }
         },
       });
-      preparedPrivateBalanceStore = JSON.stringify(prepared);
+      preparedPrivateBalanceStore = JSON.stringify(prepared.archive);
+      if (prepared.omittedRecords > 0) {
+        warnings.push(
+          `${prepared.omittedRecords} Private Payments record${
+            prepared.omittedRecords === 1 ? " was" : "s were"
+          } omitted because the referenced wallet account was unavailable.`,
+        );
+      }
     } else if (typeof indexedDB !== "undefined") {
       preparedPrivateBalanceStore = JSON.stringify({ schemaVersion: 1, records: [] });
     }
-  } catch {
+    return { encryptedContacts, encryptedTxNotes, preparedPrivateBalanceStore, warnings };
+  } catch (error) {
+    if (error instanceof BackupTransactionNotesError) throw error;
     throw new Error("The backup could not unlock or validate its encrypted wallet data.");
   } finally {
+    zeroKey(merchantKey);
     zeroKey(masterKey);
   }
+}
+
+/** Summarize a backup file (requires the backup password). */
+export async function inspectVaultBackup(
+  json: string,
+  password?: string,
+): Promise<VaultBackupInfo> {
+  const { payload } = await decodeBackup(json, password);
+  const prepared = await prepareDecodedBackup(payload, password as string);
+  const activeAccount = payload.vault.accounts.find(
+    account => account.id === payload.vault.activeAccountId,
+  );
+  const isSoftwareAccount = (account: StoredAccount): boolean =>
+    !account.watchOnly && !account.hardware;
+  const authenticatedAccount = activeAccount && isSoftwareAccount(activeAccount)
+    ? activeAccount
+    : payload.vault.accounts.find(isSoftwareAccount);
+  const primaryAccount = authenticatedAccount ?? activeAccount ?? payload.vault.accounts[0];
+  if (!primaryAccount) throw new Error("Backup contains no accounts.");
+  const primaryAccountKind = primaryAccount.hardware ??
+    (primaryAccount.watchOnly ? "watch-only" : "software");
+  return {
+    accountCount: Array.isArray(payload.vault.accounts) ? payload.vault.accounts.length : 0,
+    primaryAccountPublicKey: primaryAccount.publicKey,
+    primaryAccountKind,
+    primaryAccountAuthenticated: primaryAccountKind === "software",
+    contactCount: Array.isArray(payload.contacts) ? payload.contacts.length : 0,
+    hasMnemonic: Boolean(payload.vault.mnemonic),
+    hasSettings: Boolean(payload.settings),
+    hasMerchantArchive: typeof payload.merchantStore === "string" && Boolean(payload.merchantStore),
+    hasPrivateBalanceArchive:
+      typeof payload.privateBalanceStore === "string" && Boolean(payload.privateBalanceStore),
+    warnings: prepared.warnings,
+    exportedAt: payload.exportedAt || undefined,
+  };
+}
+
+/**
+ * Export the ENTIRE wallet — vault (all accounts + mnemonic), contacts,
+ * settings, private tx notes, and the encrypted merchant archive — as a
+ * single AES-256-GCM encrypted file, locked by the wallet password. No
+ * plaintext metadata is ever written.
+ */
+export async function exportVaultBackup(password: string): Promise<string> {
+  const storedVault = readVault();
+  if (!storedVault) throw new Error("No wallet to back up.");
+  const verified = await masterKeyForPassword(storedVault, password);
+  let contacts: PrivateContactRecord[];
+  let txNotes: Record<string, unknown>;
+  let txNoteOmissions = 0;
+  try {
+    contacts = await readPrivateContacts(verified.masterKey);
+    const normalizedNotes = await readPrivateTxNotesResult(verified.masterKey);
+    txNotes = JSON.parse(await encodePrivateTxNotes(normalizedNotes.notes, verified.masterKey)) as
+      Record<string, unknown>;
+    txNoteOmissions = normalizedNotes.omittedCount;
+  } finally {
+    zeroKey(verified.masterKey);
+  }
+  const autoLockRaw = window.localStorage.getItem(AUTOLOCK_KEY);
+  const merchantBootstrap = readMerchantBootstrapState();
+  let merchantKey: Uint8Array | null = null;
+  let merchantStore: string | null;
+  let privateBalanceStore: string | null = null;
+  try {
+    merchantKey = typeof indexedDB === "undefined" ? null : getMerchantEncryptionKey();
+    if (merchantKey) {
+      const { getMerchantRepository } = await import("./merchant/repository");
+      merchantStore = await getMerchantRepository().exportEncryptedArchive(merchantKey);
+    } else {
+      merchantStore = null;
+    }
+    if (typeof indexedDB !== "undefined") {
+      const { exportPrivateBalanceBackupArchive } = await import(
+        "@/features/private-balance/runtime/backup"
+      );
+      privateBalanceStore = JSON.stringify(await exportPrivateBalanceBackupArchive());
+    }
+  } finally {
+    zeroKey(merchantKey);
+  }
+  const payload: FullBackupPayload = {
+    exportedAt: new Date().toISOString(),
+    vault: storedVault,
+    contacts,
+    settings: {
+      network: loadNetworkPref(),
+      fiatCurrency: window.localStorage.getItem(CURRENCY_KEY),
+      autoLockMs: autoLockRaw !== null ? Number(autoLockRaw) : null,
+      privacy: window.localStorage.getItem(PRIVACY_KEY) === "1",
+      sound: window.localStorage.getItem(SOUND_KEY) !== "0",
+      ...(merchantBootstrap ? {
+        merchantMode: {
+          enabled: merchantBootstrap.enabled,
+          configured: merchantBootstrap.configured,
+        },
+      } : {}),
+    },
+    txNotes,
+    ...(txNoteOmissions > 0 ? { txNoteOmissions } : {}),
+    merchantStore,
+    privateBalanceStore,
+  };
+  const currentVault = readVault();
+  if (
+    !currentVault ||
+    currentVault.revision !== storedVault.revision ||
+    backupVaultIdentity(currentVault) !== backupVaultIdentity(storedVault)
+  ) {
+    throw new Error("The wallet changed while the backup was being prepared. Try again.");
+  }
+  const crypto = await encryptString(JSON.stringify(payload), password);
+  const backup = JSON.stringify({ kind: BACKUP_KIND, version: 2, crypto }, null, 2);
+  await inspectVaultBackup(backup, password);
+  const finalVault = readVault();
+  if (
+    !finalVault ||
+    finalVault.revision !== storedVault.revision ||
+    backupVaultIdentity(finalVault) !== backupVaultIdentity(storedVault)
+  ) {
+    throw new Error("The wallet changed while the backup was being prepared. Try again.");
+  }
+  return backup;
+}
+
+/**
+ * Restore a full wallet from a backup file. Replaces any existing wallet —
+ * the caller must confirm with the user first. v2 backups need the backup's
+ * password (they are fully encrypted) and also restore contacts, settings
+ * and tx notes. The restored wallet stays locked afterwards.
+ */
+export async function restoreVaultBackup(
+  json: string,
+  password?: string,
+): Promise<VaultRestoreResult> {
+  const lifecycleEpoch = readWalletLifecycleEpoch();
+  const { payload } = await decodeBackup(json, password);
+  const vault = payload.vault;
+  const {
+    encryptedContacts,
+    encryptedTxNotes,
+    preparedPrivateBalanceStore,
+    warnings,
+  } = await prepareDecodedBackup(
+    payload,
+    password as string,
+  );
   const restoreKeys = [
     VAULT_KEY,
     NETWORK_KEY,
@@ -1391,7 +1907,9 @@ export async function restoreVaultBackup(
     PASSKEY_RECORD_KEY,
     MERCHANT_BOOTSTRAP_STORAGE_KEY,
   ];
-  const merchantRepository = typeof indexedDB === "undefined" ? null : getMerchantRepository();
+  const merchantRepository = typeof indexedDB === "undefined"
+    ? null
+    : (await import("./merchant/repository")).getMerchantRepository();
   if (payload.merchantStore && !merchantRepository) {
     throw new Error("IndexedDB is required to restore this backup's merchant records.");
   }
@@ -1401,7 +1919,7 @@ export async function restoreVaultBackup(
   const writes = new Map<string, string | null>([
     [VAULT_KEY, JSON.stringify(vault)],
     [CONTACTS_KEY, encryptedContacts],
-    [TX_NOTES_KEY, JSON.stringify(payload.txNotes)],
+    [TX_NOTES_KEY, encryptedTxNotes],
   ]);
   // A passkey wraps one exact vault master key and is never portable in a
   // backup, so replacing the vault must revoke the previous local wrapper.
@@ -1420,42 +1938,50 @@ export async function restoreVaultBackup(
     writes.set(PRIVACY_KEY, settings.privacy ? "1" : "0");
     writes.set(SOUND_KEY, settings.sound ? "1" : "0");
   }
-  await replaceBackupStorage({
-    storage: window.localStorage,
-    keys: restoreKeys,
-    writes,
-    archives: [
-      ...(merchantRepository ? [{
-        archive: {
-          read: () => merchantRepository.snapshotEncryptedArchive(),
-          replace: async (value: string | null) => {
-            if (value) await merchantRepository.importEncryptedArchive(value);
-            else await merchantRepository.clear();
+  await withWalletLifecycleLock(async () => {
+    assertWalletLifecycleEpoch(lifecycleEpoch);
+    await replaceBackupStorage({
+      storage: window.localStorage,
+      keys: restoreKeys,
+      writes,
+      archives: [
+        ...(merchantRepository ? [{
+          archive: {
+            read: () => merchantRepository.snapshotEncryptedArchive(),
+            replace: async (value: string | null) => {
+              if (value) await merchantRepository.importEncryptedArchive(value);
+              else await merchantRepository.clear();
+            },
           },
-        },
-        value: payload.merchantStore ?? null,
-      }] : []),
-      ...(privateBalanceArchive ? [{
-        archive: {
-          read: async () => JSON.stringify(
-            await privateBalanceArchive.exportPrivateBalanceBackupArchive(),
-          ),
-          replace: async (value: string | null) => {
-            await privateBalanceArchive.replacePrivateBalanceBackupArchive(
-              value ?? { schemaVersion: 1, records: [] },
-            );
+          value: payload.merchantStore ?? null,
+        }] : []),
+        ...(privateBalanceArchive ? [{
+          archive: {
+            read: async () => JSON.stringify(
+              await privateBalanceArchive.exportPrivateBalanceBackupArchive(),
+            ),
+            replace: async (value: string | null) => {
+              await privateBalanceArchive.replacePrivateBalanceBackupArchive(
+                value ?? { schemaVersion: 1, records: [] },
+              );
+            },
           },
-        },
-        value: preparedPrivateBalanceStore,
-      }] : []),
-    ],
+          value: preparedPrivateBalanceStore,
+        }] : []),
+      ],
+    });
+    if (readWalletLifecycleEpoch() !== lifecycleEpoch) {
+      wipeVault();
+      throw new VaultLockedError("Wallet replacement was cancelled by a lock or reset.");
+    }
+    lockVault();
   });
-  lockVault();
 
   return {
     accountCount: vault.accounts.length,
     hasMnemonic: Boolean(vault.mnemonic),
     contactCount: Array.isArray(payload.contacts) ? payload.contacts.length : 0,
+    warnings,
   };
 }
 
@@ -1488,14 +2014,35 @@ export async function importKeystore(
   json: string,
   keystorePassword: string,
 ): Promise<AccountMeta> {
-  const parsed = JSON.parse(json) as KeystoreFile;
+  if (utf8ByteLength(json) > MAX_KEYSTORE_FILE_BYTES) {
+    throw new Error("Keystore file exceeds the supported size limit.");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new Error("Invalid Wallet keystore format");
+  }
   if (
-    !parsed ||
+    !isRecord(parsed) ||
     parsed.format !== KEYSTORE_FORMAT ||
-    !parsed.crypto
+    parsed.version !== 1 ||
+    typeof parsed.address !== "string" ||
+    !isValidPublicAddress(parsed.address) ||
+    typeof parsed.exportedAt !== "number" ||
+    !Number.isFinite(parsed.exportedAt) ||
+    !isEncryptedPayloadValue(parsed.crypto)
   ) {
     throw new Error("Invalid Wallet keystore format");
   }
-  const secret = await decryptString(parsed.crypto, keystorePassword);
-  return addStoredAccount({ secret });
+  let secret = await decryptString(parsed.crypto, keystorePassword);
+  try {
+    if (!validateStellarSecret(secret)) throw new Error("Keystore signing credential is invalid.");
+    if (Keypair.fromSecret(secret).publicKey() !== parsed.address) {
+      throw new Error("Keystore address does not match its encrypted signing credential.");
+    }
+    return await addStoredAccount({ secret });
+  } finally {
+    secret = "";
+  }
 }

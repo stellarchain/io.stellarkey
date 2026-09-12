@@ -10,9 +10,9 @@ import { formatPrivateBalanceAmount } from '../runtime/selectors';
 
 /**
  * Headless listener mounted inside the private runtime: each verified batch of
- * incoming private transfers becomes one toast plus the receive chime — the
- * success toast already carries the success haptic. Privacy mode drops the
- * amount.
+ * incoming private transfers becomes one toast plus the receive chime. The
+ * toast is silent so the chime is the single sound for the event. Privacy
+ * mode drops the amount.
  */
 export function PrivateIncomingToasts() {
   const { onIncomingPrivatePayment, asset } = usePrivateBalanceRuntimeData();
@@ -26,7 +26,7 @@ export function PrivateIncomingToasts() {
     const message = privacyMode
       ? 'Received a private payment'
       : `Received ${amount} ${asset?.code ?? ''} privately`.replace(/\s{2,}/g, ' ');
-    toast(message, 'success');
+    toast(message, 'success', { silent: true });
     playReceiveSound();
   }), [asset, onIncomingPrivatePayment, privacyMode, toast]);
 

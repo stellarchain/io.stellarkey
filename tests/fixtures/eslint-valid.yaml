@@ -1,0 +1,6 @@
+root: true
+env:
+  browser: true
+  es2022: true
+rules:
+  no-debugger: error

@@ -9,13 +9,13 @@ pub struct DeploymentBinding {
     pub network_id: [u8; 32],
     pub realm_id: [u8; 32],
     pub pool_id: [u8; 32],
+    pub asset_admin: (u8, [u8; 32]),
     pub guardian: (u8, [u8; 32]),
     pub poseidon2_parameter_hash: [u8; 32],
     pub circuit_hash: [u8; 32],
     pub verification_key_hash: [u8; 32],
     pub tree_depth: u32,
     pub root_window_ledgers: u32,
-    pub page_capacity: u32,
     pub private_address_payload_bytes: u32,
     pub private_address_ascii_bytes: u32,
     pub address_context_tag_bytes: u32,
@@ -33,13 +33,13 @@ impl DeploymentBinding {
         bytes.extend_from_slice(&self.network_id);
         bytes.extend_from_slice(&self.realm_id);
         bytes.extend_from_slice(&self.pool_id);
+        encode_address(self.asset_admin.0, &self.asset_admin.1, &mut bytes)?;
         encode_address(self.guardian.0, &self.guardian.1, &mut bytes)?;
         bytes.extend_from_slice(&self.poseidon2_parameter_hash);
         bytes.extend_from_slice(&self.circuit_hash);
         bytes.extend_from_slice(&self.verification_key_hash);
         encode_u32_be(self.tree_depth, &mut bytes);
         encode_u32_be(self.root_window_ledgers, &mut bytes);
-        encode_u32_be(self.page_capacity, &mut bytes);
         encode_u32_be(self.private_address_payload_bytes, &mut bytes);
         encode_u32_be(self.private_address_ascii_bytes, &mut bytes);
         encode_u32_be(self.address_context_tag_bytes, &mut bytes);

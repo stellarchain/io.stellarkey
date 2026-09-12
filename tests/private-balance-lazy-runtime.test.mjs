@@ -87,7 +87,7 @@ test('private runtime accepts only unlocked software accounts and explicit activ
     deploymentReady: true,
     requested: false,
     encryptedStateExists: true,
-  }), true);
+  }), false);
   assert.equal(shouldMountPrivateBalanceRuntime({
     accountReady: true,
     deploymentReady: false,

@@ -3,6 +3,7 @@ export * from './random.js';
 export * from './encoding.js';
 export * from './poseidon2.js';
 export * from './keys.js';
+export * from './base58.js';
 export * from './address.js';
 export * from './stealth.js';
 export * from './note.js';

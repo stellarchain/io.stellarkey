@@ -1,7 +1,9 @@
 mod common;
 
 use common::{MockNativeTokenClient, register_pool};
-use private_balance_pool::{DepositAction, OutputPackage, PrivateBalancePoolClient};
+use private_balance_pool::{
+    AssetStatus, DepositAction, OutputPackage, PoolError, PrivateBalancePoolClient,
+};
 use private_balance_verifier::types::ProofBytes;
 use serde::Deserialize;
 use soroban_sdk::{BytesN, Env, address_payload::AddressPayload};
@@ -87,10 +89,18 @@ fn test_pool_initialization_and_deposit() {
     let proof = proof_bytes.to_contract_proof(&env);
 
     let ctx_bytes = field_str_to_bytes(&dep_item.public_signals[0]);
-    let out_cm0_bytes = field_str_to_bytes(&dep_item.public_signals[11]);
+    let nf0_bytes = field_str_to_bytes(&dep_item.public_signals[6]);
+    let nf1_bytes = field_str_to_bytes(&dep_item.public_signals[7]);
+    let out_cm0_bytes = field_str_to_bytes(&dep_item.public_signals[8]);
+    let out_cm1_bytes = field_str_to_bytes(&dep_item.public_signals[9]);
+    let out_cm2_bytes = field_str_to_bytes(&dep_item.public_signals[10]);
 
     let context_field = BytesN::from_array(&env, &ctx_bytes);
+    let nf0 = BytesN::from_array(&env, &nf0_bytes);
+    let nf1 = BytesN::from_array(&env, &nf1_bytes);
     let out_cm0 = BytesN::from_array(&env, &out_cm0_bytes);
+    let out_cm1 = BytesN::from_array(&env, &out_cm1_bytes);
+    let out_cm2 = BytesN::from_array(&env, &out_cm2_bytes);
 
     let config = pool_client.config();
     assert_eq!(config.protocol_version, 1);
@@ -98,16 +108,26 @@ fn test_pool_initialization_and_deposit() {
     assert!(!pool_client.deposits_paused());
 
     let action = DepositAction {
-        asset: fixture.asset.clone(),
         action_nonce: BytesN::from_array(&env, &[0x11; 32]),
         anchor_root: BytesN::from_array(&env, &[0; 32]),
-        nullifier_0: BytesN::from_array(&env, &[0; 32]),
-        nullifier_1: BytesN::from_array(&env, &[0; 32]),
+        nullifier_0: nf0.clone(),
+        nullifier_1: nf1.clone(),
         output_0: OutputPackage {
             commitment: out_cm0,
             recipient_envelope: BytesN::from_array(&env, &[0xaa; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xab; 157]),
         },
-        output_1: OutputPackage::dummy(&env),
+        output_1: OutputPackage {
+            commitment: out_cm1,
+            recipient_envelope: BytesN::from_array(&env, &[0xac; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xad; 157]),
+        },
+        output_2: OutputPackage {
+            commitment: out_cm2,
+            recipient_envelope: BytesN::from_array(&env, &[0xae; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xaf; 157]),
+        },
+        asset_index: 0,
         public_value: 5_000_000,
         deposit_source: user.clone(),
     };
@@ -122,12 +142,21 @@ fn test_pool_initialization_and_deposit() {
     assert_eq!(pool_client.archive_meta().action_count, 0);
     assert_eq!(pool_client.tree_state().next_index, 0);
 
-    let mut malformed_dummy = action.clone();
-    malformed_dummy.output_1.recipient_envelope = BytesN::from_array(&env, &[1; 181]);
+    let mut malformed_output = action.clone();
+    malformed_output.output_1.outgoing_envelope = BytesN::from_array(&env, &[0; 157]);
     assert!(
-        pool_client.try_deposit(&malformed_dummy, &proof).is_err(),
-        "a zero commitment cannot carry nonzero package bytes",
+        pool_client.try_deposit(&malformed_output, &proof).is_err(),
+        "every output must carry an outgoing recovery envelope",
     );
+
+    pool_client.set_asset_status(&0, &AssetStatus::ExitOnly);
+    assert_eq!(
+        pool_client.try_deposit(&action, &proof),
+        Err(Ok(PoolError::AssetExitOnly)),
+        "ExitOnly must block new public inflows",
+    );
+    assert_eq!(pool_client.tree_state().next_index, 0);
+    pool_client.set_asset_status(&0, &AssetStatus::Active);
 
     // Deposit 5,000,000 stroops
     let action_index = pool_client.deposit(&action, &proof);
@@ -144,8 +173,18 @@ fn test_pool_initialization_and_deposit() {
     assert_ne!(meta.transcript_head.to_array(), [0; 32]);
 
     let tree = pool_client.tree_state();
-    assert_eq!(tree.next_index, 2);
+    assert_eq!(tree.next_index, 3);
     assert!(env.as_contract(&fixture.pool_id, || {
         private_balance_pool::storage::known_root(&env, &tree.current_root).is_ok()
     }));
+    assert!(env.as_contract(&fixture.pool_id, || {
+        private_balance_pool::nullifier::is_spent(&env, &nf0)
+    }));
+    assert!(!env.as_contract(&fixture.pool_id, || {
+        private_balance_pool::nullifier::is_spent(&env, &nf1)
+    }));
+    assert!(
+        pool_client.try_deposit(&action, &proof).is_err(),
+        "the retained deposit replay key must reject the same proof",
+    );
 }

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   deriveStealthMetaKeys,
+  derivePrivateAddressDeploymentTag,
   encodePrivateAddress,
   encodeStealthMetaAddress,
 } from '@stellarkey/private-balance';
@@ -17,23 +18,37 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 
 test('receive payload contains only the canonical private address', () => {
   const address = encodePrivateAddress({
+    deploymentTag: derivePrivateAddressDeploymentTag(new Uint8Array(32).fill(6)),
     diversifier: Uint8Array.of(1, 2, 3, 4),
     ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
     hpkePublicKey: new Uint8Array(32).fill(2),
-  }, 'tks');
+  }, 'tskpay_');
   assert.equal(privateReceivePayload(address), address);
-  assert.match(privateAddressFingerprint(address), /^[A-F0-9]{4} [A-F0-9]{4}$/);
+  assert.match(
+    privateAddressFingerprint(address),
+    /^(?:[A-F0-9]{4} ){7}[A-F0-9]{4}$/,
+  );
   assert.throws(() => privateReceivePayload(` ${address}`), /canonical/);
-  assert.throws(() => privateReceivePayload(`sks1${address.slice(4)}`), /network/);
+  assert.throws(
+    () => privateReceivePayload(`skpay_${address.slice('tskpay_'.length)}`),
+    /network/,
+  );
 });
 
 test('reusable receive payload validates the canonical network-bound meta address', () => {
   const address = encodeStealthMetaAddress(
-    deriveStealthMetaKeys(new Uint8Array(32).fill(7), 'testnet'),
+    deriveStealthMetaKeys(
+      new Uint8Array(32).fill(7),
+      'testnet',
+      new Uint8Array(32).fill(6),
+    ),
     'testnet',
   );
   assert.equal(stealthReceivePayload(address, 'tsm'), address);
-  assert.match(stealthAddressFingerprint(address), /^[A-F0-9]{4} [A-F0-9]{4}$/);
+  assert.match(
+    stealthAddressFingerprint(address),
+    /^(?:[A-F0-9]{4} ){7}[A-F0-9]{4}$/,
+  );
   assert.throws(() => stealthReceivePayload(` ${address}`, 'tsm'), /canonical/);
   assert.throws(() => stealthReceivePayload(`ssm1${address.slice(4)}`, 'tsm'), /network/);
 });
@@ -101,12 +116,15 @@ test('receive rotates to a fresh address in place while old addresses stay valid
 test('a configured account with a transiently missing address never sees setup copy', () => {
   const receive = read('src/features/private-balance/components/ReceivePrivate.tsx');
 
-  // Follower tab / leader not yet published: calm loading guidance.
+  // Only real progress loads; stopped and follower runtimes have recovery.
   assert.match(receive, /configured/);
-  assert.match(receive, /Your address is loading — one moment/);
+  assert.doesNotMatch(receive, /Your address is loading — one moment/);
+  assert.match(receive, /privateReceiveState/);
+  assert.match(receive, /Try Again/);
+  assert.match(receive, /Use in This Tab/);
   assert.match(receive, /active in another tab/i);
   // Setup copy stays reserved for genuinely unconfigured accounts.
-  assert.match(receive, /if \(configured\) \{[\s\S]*?\}[\s\S]*?Set up Private Payments to receive privately/);
+  assert.match(receive, /state === 'setup' \? 'Set up Private Payments to receive privately/);
 });
 
 test('receive is embeddable and available whenever the durable address exists', () => {
@@ -114,9 +132,9 @@ test('receive is embeddable and available whenever the durable address exists', 
   const card = read('src/features/private-balance/components/PrivateBalanceCard.tsx');
 
   // Named body export for embedding without the Modal wrapper.
-  assert.match(receive, /export function PrivateReceiveContent\(\)/);
+  assert.match(receive, /export function PrivateReceiveContent\(/);
   assert.match(receive, /export function ReceivePrivate\(/);
-  assert.match(receive, /<PrivateReceiveContent \/>/);
+  assert.match(receive, /<PrivateReceiveContent onBusyChange=\{setBusy\} \/>/);
   // The card gates Receive only on the durable private address — no sync and
   // no current phase required.
   assert.match(card, /label="Receive" disabled=\{privateAddress === null\}/);

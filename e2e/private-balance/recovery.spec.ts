@@ -65,6 +65,9 @@ test("switches the selected RPC and verifies Private Payments through it", async
   }).click();
   await page.getByLabel("Stellar RPC endpoint").fill(alternateRpc);
   await page.getByRole("button", { name: "Test & Save RPC" }).click();
+  const authorization = page.getByRole("dialog", { name: "Confirm security change" });
+  await authorization.getByLabel("Wallet Password", { exact: true }).fill("Private-MVP-2026!");
+  await authorization.getByRole("button", { name: "Authorize" }).click();
   await expect.poll(() => page.evaluate(() =>
     localStorage.getItem("wallet.endpoint.rpc.testnet.v1"),
   )).toBe(alternateRpc);
@@ -74,7 +77,9 @@ test("switches the selected RPC and verifies Private Payments through it", async
   await page.getByRole("button", { name: "Home", exact: true }).first().click();
   const region = await openPrivateBalance(page);
   const details = await openPrivateDetails(page, region);
-  await details.getByRole("button", { name: "Check for new private activity" }).click();
+  const refresh = details.getByRole("button", { name: "Check for new private activity" });
+  await expect(refresh).toBeEnabled({ timeout: 180_000 });
+  await refresh.click();
   await expect.poll(() => alternateRequests, { timeout: 180_000 }).toBeGreaterThan(requestsAfterSave);
   await expect(
     details.getByRole("status", { name: "Private payments status: Up to date" }),

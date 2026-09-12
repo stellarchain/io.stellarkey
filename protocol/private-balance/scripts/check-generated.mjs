@@ -9,6 +9,8 @@ const trackedOutputs = [
   'protocol/private-balance/manifests/development.json',
   'public/protocol/private-balance/v1/manifest.json',
   'public/protocol/private-balance/v1/catalogue.json',
+  'public/protocol/private-balance/v1/xlm/manifest.json',
+  'public/protocol/private-balance/v1/usdc/manifest.json',
   'public/protocol/private-balance/v1/circuit.wasm',
   'public/protocol/private-balance/v1/circuit.zkey',
   'public/protocol/private-balance/v1/circuit.zkey.pc',
@@ -16,6 +18,7 @@ const trackedOutputs = [
   'public/protocol/private-balance/v1/verification-key.json',
   'src/lib/private-balance-expected-manifest.ts',
   'src/lib/private-balance-expected-catalogue.ts',
+  'protocol/private-balance/packages/browser/dist',
   'protocol/private-balance/generated/pool-client',
   'protocol/private-balance/vectors/keys-v1.json',
   'protocol/private-balance/vectors/addresses-v1.json',
@@ -48,7 +51,10 @@ function snapshot() {
 }
 
 const before = snapshot();
-execFileSync(process.execPath, ['protocol/private-balance/scripts/generate-manifest.mjs'], {
+execFileSync(process.execPath, [
+  'protocol/private-balance/scripts/generate-manifest.mjs',
+  '--publish-deployment',
+], {
   cwd: root,
   stdio: 'inherit',
 });

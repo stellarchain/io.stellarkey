@@ -5,6 +5,7 @@ import {
 import {
   decodePrivateAddress,
   type ActionModel,
+  type MerklePathWitness,
 } from '@stellarkey/private-balance';
 import { loadCircuitArtifacts, computeSha256 } from '../../../lib/private-balance-artifacts';
 import type { PrivateBalanceManifest } from '../../../lib/private-balance-manifest';
@@ -12,9 +13,13 @@ import type { PrivateBalanceStorageScope } from '../../../lib/private-balance-bo
 import { privateAddressFingerprint } from './receive';
 import { parsePrivateAmount, selectPrivateNotes } from './coin-selection';
 import { PrivateBalanceArchiveClient } from './archive-client';
-import { loadPrivateBalanceCommitments } from './public-cache';
+import {
+  clearPrivateBalanceMerkleCache,
+  loadPrivateBalanceMerklePaths,
+} from './merkle-cache';
 import {
   commitPrivateBuildReservation,
+  commitPrivateSpendRecovery,
   loadPrivateBalanceState,
   releasePrivateBuildReservation,
   releasePrivatePendingAction,
@@ -24,6 +29,8 @@ import {
 } from './storage';
 import { PrivateBalanceTransactionBuilder, type ContractProof } from './transaction-builder';
 import { prepareReviewedPrivateBalanceTransaction } from './action-transaction';
+import { hasExposedPrivateSpend, PrivateProofExposedError } from './proof-exposure';
+import { disclosePrivateProof, type AuthorizePrivateProofDisclosure } from './proof-disclosure';
 import type { PrivateBalanceTransactionReview } from './transaction-review';
 import type {
   PrivateBalanceDurableState,
@@ -31,17 +38,20 @@ import type {
   ShieldedNoteRecord,
 } from './types';
 import type { PrivateBalanceWorkerClient } from '../worker/client';
+import { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS, privateActionClassicFeeStroops, type PrivateFeePayer } from './fee-policy';
+import { privateOutgoingHistoryMode, type PrivateOutgoingHistoryMode } from './outgoing-history';
+import { assertPrivateRecoveryReplacement, selectPrivateRecoveryInputs } from './spend-recovery';
+import { assertDirectPrivateSubmission } from './direct-submission';
 
-export const MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS = 10_000_000n;
+export { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
 const MAX_RESOURCE_FEE_STROOPS = MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS;
-const ROOT_EXPIRY_SAFETY_LEDGERS = 12;
 const HEX_PROOF_BYTES = (64 + 128 + 64) * 2;
 
-export type PrivateActionDraft =
+export type PrivateActionDraft = (
   | { kind: 'deposit'; amount: string }
   | { kind: 'transfer'; amount: string; recipientAddress: string; memo?: string }
   | { kind: 'withdraw'; amount: string; publicRecipient: string }
-  | { kind: 'consolidate' };
+  | { kind: 'consolidate' }) & { feePayerAccountId?: string };
 
 export type PrivateActionProgressStage =
   | 'checking-chain'
@@ -54,8 +64,13 @@ export type PrivateActionProgressStage =
 
 export interface PreparedPrivateActionReview {
   id: string;
+  recoveryOfActionId?: string;
   actionField: string;
+  outgoingHistoryMode?: PrivateOutgoingHistoryMode;
   kind: PrivateActionDraft['kind'];
+  assetContractId?: string;
+  selectedNoteIds?: string[];
+  recipientOutputCommitment?: string;
   rpcUrl: string;
   amountStroops: string;
   inputValueStroops: string;
@@ -101,14 +116,14 @@ export class PrivateConsolidationRequiredError extends Error {
 
 export class PrivateActionInFlightError extends Error {
   constructor() {
-    super("Your previous payment is still confirming. It'll be ready in a moment.");
+    super('A previous private payment is unresolved. Its inputs remain reserved until canonical reconciliation.');
     this.name = 'PrivateActionInFlightError';
   }
 }
 
 /**
- * The verified local chain view went stale between syncs (root changed or
- * near expiry, or the commitment cache trails the head). A fresh sync
+ * The verified local chain view went stale between syncs (the root changed
+ * or the commitment cache trails the head). A fresh sync
  * followed by one automatic re-prepare resolves it without user action.
  */
 export class PrivateStaleChainStateError extends Error {
@@ -140,16 +155,17 @@ function proofFromHex(value: string): ContractProof {
 
 function commonContractAction(action: ActionModel) {
   return {
-    assetContractId: StrKey.encodeContract(action.asset.payload),
     actionNonce: action.actionNonce,
     anchorRoot: action.anchorRoot,
     nullifiers: action.nullifiers,
     outputs: action.outputs.map(output => ({
       commitment: output.cm,
       recipientEnvelope: output.recipientEnvelope,
+      outgoingEnvelope: output.outgoingEnvelope,
     })) as [
-      { commitment: Uint8Array; recipientEnvelope: Uint8Array },
-      { commitment: Uint8Array; recipientEnvelope: Uint8Array },
+      { commitment: Uint8Array; recipientEnvelope: Uint8Array; outgoingEnvelope: Uint8Array },
+      { commitment: Uint8Array; recipientEnvelope: Uint8Array; outgoingEnvelope: Uint8Array },
+      { commitment: Uint8Array; recipientEnvelope: Uint8Array; outgoingEnvelope: Uint8Array },
     ],
     publicValue: action.publicValue,
   };
@@ -208,6 +224,31 @@ export function assertSufficientPublicDepositBalance(input: {
   );
 }
 
+export function assertSufficientStealthSweepBalance(input: {
+  available: bigint;
+  requested: bigint;
+  minimumBalance: bigint;
+  classicFee: bigint;
+  maximumResourceFee: bigint;
+}): void {
+  if (
+    input.available < 0n ||
+    input.requested <= 0n ||
+    input.minimumBalance < 0n ||
+    input.classicFee <= 0n ||
+    input.maximumResourceFee < 0n
+  ) {
+    throw new Error('Reusable private payment balance inputs are invalid.');
+  }
+  const required = input.requested + input.minimumBalance +
+    input.classicFee + input.maximumResourceFee;
+  if (input.available < required) {
+    throw new Error(
+      'The one-time account has insufficient balance to preserve its minimum reserve and the reviewed Private Balance fee budget. This receipt cannot be signed safely.',
+    );
+  }
+}
+
 function consolidationSelection(notes: readonly ShieldedNoteRecord[]): {
   noteIds: string[];
   amount: bigint;
@@ -257,7 +298,7 @@ async function releaseFailedPreparation(input: {
     return;
   }
   const pending = state.pendingActions.find(item => item.id === input.actionId);
-  if (pending && pending.broadcastAttempts === 0) {
+  if (pending && pending.broadcastAttempts === 0 && !hasExposedPrivateSpend(pending)) {
     await releasePrivatePendingAction(
       input.context,
       input.storageKey,
@@ -273,7 +314,7 @@ export async function validatePrivateTransferRecipient(
   address: string,
   manifest: PrivateBalanceManifest,
 ): Promise<{ fingerprint: string }> {
-  const prefix = manifest.networkPassphrase.startsWith('Public ') ? 'sks' : 'tks';
+  const prefix = manifest.networkPassphrase.startsWith('Public ') ? 'skpay_' : 'tskpay_';
   await decodePrivateAddress(address, prefix);
   return { fingerprint: privateAddressFingerprint(address) };
 }
@@ -288,21 +329,45 @@ export async function preparePrivateBalanceActionFlow(input: {
   worker: PrivateBalanceWorkerClient;
   rpcUrl: string;
   classicFeeStroops: bigint;
+  feePayer?: PrivateFeePayer;
+  depositSourceMinimumBalanceStroops?: bigint;
   assetContractId: string;
+  assetIndex: number;
+  registryAssets: ReadonlyArray<{ index: number; contractId: string }>;
   assetCode: string;
   assetDecimals: number;
   draft: PrivateActionDraft;
   signal?: AbortSignal;
+  authorizeDisclosure?: AuthorizePrivateProofDisclosure;
+  directChainApprovalId?: string;
+  recoveryActionId?: string;
+  assertContext?(): void;
   onProgress?(stage: PrivateActionProgressStage): void;
   now?: () => number;
 }): Promise<{ review: PreparedPrivateActionReview; state: PrivateBalanceDurableState }> {
+  assertDirectPrivateSubmission(input);
+  assertDirectPrivateSubmission(input.draft);
+  const feePayer = input.feePayer ? Object.freeze({ ...input.feePayer }) : undefined;
+  const classicFeeCap = privateActionClassicFeeStroops(input.classicFeeStroops, feePayer);
   const now = input.now ?? Date.now;
   const actionId = globalThis.crypto?.randomUUID?.() ?? `private-${now().toString(36)}`;
   const createdAt = now();
+  if (input.recoveryActionId && (input.draft.kind !== 'consolidate' || input.directChainApprovalId)) {
+    throw new Error('Private recovery must be an explicit direct self-transfer.');
+  }
   if (!StrKey.isValidContract(input.assetContractId)) {
     throw new Error('Private Balance asset contract is invalid.');
   }
+  const manifestAsset = input.registryAssets[input.assetIndex];
+  if (
+    !manifestAsset
+    || manifestAsset.index !== input.assetIndex
+    || manifestAsset.contractId !== input.assetContractId
+  ) {
+    throw new Error('Private Balance asset does not match the authenticated registry metadata.');
+  }
   let reserved = false;
+  let exposedSpend = false;
   const progress = (stage: PrivateActionProgressStage) => {
     throwIfAborted(input.signal);
     input.onProgress?.(stage);
@@ -315,12 +380,17 @@ export async function preparePrivateBalanceActionFlow(input: {
       input.storageDriver,
     );
     if (!state || state.account.syncStatus !== 'current') {
-      throw new Error('Sync Private Balance before creating an action.');
+      throw new PrivateStaleChainStateError('Sync Private Balance before creating an action.');
     }
+    // Snapshot once before any asynchronous building or proving. All lanes of
+    // this proof and its later journal/review retain this same policy.
+    const outgoingHistoryMode = privateOutgoingHistoryMode(state.outgoingHistoryMode);
+    const recovery = input.recoveryActionId ? selectPrivateRecoveryInputs(state, input.recoveryActionId, input.assetContractId) : null;
     if (state.pendingActions.some(action =>
-      action.status === 'signed' || action.broadcastAttempts > 0)) {
+      action.id !== recovery?.pending.id && (hasExposedPrivateSpend(action) || action.status === 'signed' || action.broadcastAttempts > 0))) {
       throw new PrivateActionInFlightError();
     }
+    throwIfAborted(input.signal);
     const depositAmount = input.draft.kind === 'deposit'
       ? parsePrivateAmount(input.draft.amount, input.assetDecimals)
       : null;
@@ -346,6 +416,15 @@ export async function preparePrivateBalanceActionFlow(input: {
         assetCode: input.assetCode,
         assetDecimals: input.assetDecimals,
       });
+      if (input.depositSourceMinimumBalanceStroops !== undefined) {
+        assertSufficientStealthSweepBalance({
+          available: publicAssetBalance,
+          requested: depositAmount,
+          minimumBalance: input.depositSourceMinimumBalanceStroops,
+          classicFee: input.classicFeeStroops,
+          maximumResourceFee: MAX_RESOURCE_FEE_STROOPS,
+        });
+      }
     }
 
     let amount: bigint;
@@ -355,13 +434,21 @@ export async function preparePrivateBalanceActionFlow(input: {
     let localMemoHex: string | undefined;
     let publicRecipient: string | null = null;
     let intent: Parameters<PrivateBalanceWorkerClient['buildAction']>[1] | null = null;
-    let commitments: Uint8Array[] = [];
-    const selfRelayer = publicAddressPayload(input.accountPublicKey);
-
+    let merklePaths: MerklePathWitness[] = [];
+    let recoveryAddress: string | null = null;
+    if (recovery) {
+      const diversifier = crypto.getRandomValues(new Uint8Array(4));
+      try {
+        recoveryAddress = (await input.worker.deriveAddressForDiversifier(diversifier)).address;
+        const decoded = await decodePrivateAddress(recoveryAddress, input.manifest.networkPassphrase.startsWith('Public ') ? 'skpay_' : 'tskpay_');
+        if (hex(decoded.diversifier) !== hex(diversifier) || recoveryAddress === input.privateAddress) throw new Error('Private recovery worker returned a different self address.');
+      } finally { diversifier.fill(0); }
+    }
     if (input.draft.kind === 'deposit') {
       amount = depositAmount!;
       intent = {
         kind: 'deposit',
+        assetIndex: input.assetIndex,
         assetContractId: input.assetContractId,
         publicValue: amount.toString(),
         depositSource: publicAddressPayload(input.accountPublicKey),
@@ -370,39 +457,29 @@ export async function preparePrivateBalanceActionFlow(input: {
       if (!state.checkpoint || state.checkpoint.treeRoot !== hex(head.tree.currentRoot)) {
         throw new PrivateStaleChainStateError('Private Balance root changed. Sync and review again.');
       }
-      const root = await archive.readKnownRoot(head.tree.currentRoot);
-      if (root.validUntilLedger - root.latestLedger <= ROOT_EXPIRY_SAFETY_LEDGERS) {
-        throw new PrivateStaleChainStateError('Private Balance root is too close to expiry. Sync and review again.');
+      anchorExpiresAtLedger = head.latestLedger + input.manifest.constants.rootWindowLedgers;
+      if (anchorExpiresAtLedger > 0xffff_ffff) {
+        throw new Error('Private Balance root refresh exceeds the supported ledger range.');
       }
-      anchorExpiresAtLedger = root.validUntilLedger;
-      commitments = await loadPrivateBalanceCommitments(
-        input.storageContext,
-        input.storageDriver,
-      );
-      if (commitments.length !== head.tree.nextIndex) {
-        throw new PrivateStaleChainStateError('Private Balance commitment cache is incomplete. Sync and review again.');
-      }
-
       if (input.draft.kind === 'consolidate') {
-        const selected = consolidationSelection(
+        const selected = recovery ? { amount: recovery.amount, noteIds: recovery.pending.reservedNoteIds } : consolidationSelection(
           state.notes.filter(note => note.assetContractId === input.assetContractId),
         );
         amount = selected.amount;
         selectedNoteIds = selected.noteIds;
         recipientFingerprint = (await validatePrivateTransferRecipient(
-          input.privateAddress,
+          recoveryAddress ?? input.privateAddress,
           input.manifest,
         )).fingerprint;
         intent = {
           kind: 'transfer',
+          assetIndex: input.assetIndex,
           assetContractId: input.assetContractId,
           amount: amount.toString(),
-          recipientAddress: input.privateAddress,
+          recipientAddress: recoveryAddress ?? input.privateAddress,
           selectedNoteIds,
           anchorRoot: head.tree.currentRoot,
           anchorExpiresAtLedger,
-          relayerFee: '0',
-          relayer: selfRelayer,
         };
       } else {
         amount = parsePrivateAmount(input.draft.amount, input.assetDecimals);
@@ -430,6 +507,7 @@ export async function preparePrivateBalanceActionFlow(input: {
         localMemoHex = memo ? hex(memo) : undefined;
         intent = {
           kind: 'transfer',
+          assetIndex: input.assetIndex,
           assetContractId: input.assetContractId,
           amount: amount.toString(),
           recipientAddress: input.draft.recipientAddress,
@@ -437,40 +515,67 @@ export async function preparePrivateBalanceActionFlow(input: {
           anchorRoot: head.tree.currentRoot,
           anchorExpiresAtLedger,
           memo,
-          relayerFee: '0',
-          relayer: selfRelayer,
         };
       } else if (input.draft.kind === 'withdraw') {
         publicRecipient = input.draft.publicRecipient;
         intent = {
           kind: 'withdraw',
+          assetIndex: input.assetIndex,
           assetContractId: input.assetContractId,
           publicValue: amount.toString(),
           publicRecipient: publicAddressPayload(publicRecipient),
           selectedNoteIds,
           anchorRoot: head.tree.currentRoot,
           anchorExpiresAtLedger,
-          relayerFee: '0',
-          relayer: selfRelayer,
         };
       }
     }
 
     if (!intent) throw new Error('Private Balance action intent is incomplete.');
+    intent = { ...intent, outgoingHistory: outgoingHistoryMode };
     const availableNotes = privateActionNoteSnapshot(
-      state.notes,
+      recovery ? recovery.notes.map(note => ({ ...note, status: 'unspent' as const })) : state.notes,
       selectedNoteIds,
       input.assetContractId,
     );
+    if (selectedNoteIds.length > 0) {
+      const checkpoint = state.checkpoint;
+      if (!checkpoint) {
+        throw new PrivateStaleChainStateError('Private Balance Merkle checkpoint is unavailable. Sync and review again.');
+      }
+      try {
+        merklePaths = await loadPrivateBalanceMerklePaths(
+          input.storageContext,
+          {
+            deploymentBindingHash: checkpoint.deploymentBindingHash,
+            cursor: checkpoint.lastActionIndex + 1,
+            transcriptHead: checkpoint.lastRecordHash,
+            commitmentCount: (checkpoint.lastActionIndex + 1) * 3,
+            root: checkpoint.treeRoot,
+            frontier: [...checkpoint.treeFrontier],
+          },
+          availableNotes.map(note => note.leafIndex),
+          input.storageDriver,
+        );
+      } catch {
+        await clearPrivateBalanceMerkleCache(
+          input.storageContext,
+          input.storageDriver,
+        ).catch(() => undefined);
+        throw new PrivateStaleChainStateError('Private Balance Merkle cache is invalid. Sync and review again.');
+      }
+    }
     progress('reserving-inputs');
     const reservationKind = input.draft.kind === 'consolidate' ? 'transfer' : input.draft.kind;
-    let durable = await reservePrivateBuildReservation(
+    let durable = recovery ? state : await reservePrivateBuildReservation(
       input.storageContext,
       input.storageKey,
       state.revision,
       {
         id: actionId,
         kind: reservationKind,
+        proofExposure: 'local',
+        outgoingHistoryMode,
         assetContractId: input.assetContractId,
         reservedNoteIds: selectedNoteIds,
         createdAt,
@@ -478,16 +583,21 @@ export async function preparePrivateBalanceActionFlow(input: {
       },
       input.storageDriver,
     );
-    reserved = true;
+    reserved = !recovery;
     progress('building-outputs');
     const prepared = await input.worker.buildAction(
       actionId,
       intent,
-      commitments,
+      merklePaths,
       availableNotes,
     );
     if (prepared.reservationId !== actionId) {
       throw new Error('Private Balance worker returned a mismatched reservation.');
+    }
+    if (recovery && (prepared.inputValue !== recovery.amount.toString() || prepared.changeValue !== '0' ||
+      prepared.action.publicValue !== 0n || !prepared.recipientOutputCommitment ||
+      !prepared.action.outputs.some(output => hex(output.cm) === prepared.recipientOutputCommitment))) {
+      throw new Error('Private recovery worker returned a different self-transfer.');
     }
     progress('loading-artifacts');
     const artifacts = await loadCircuitArtifacts(input.manifest);
@@ -504,49 +614,40 @@ export async function preparePrivateBalanceActionFlow(input: {
     const common = commonContractAction(prepared.action);
     const operation = input.draft.kind === 'deposit'
       ? builder.buildDepositOperation({
-          action: { ...common, depositSource: input.accountPublicKey },
+          action: {
+            ...common,
+            assetIndex: input.assetIndex,
+            depositSource: input.accountPublicKey,
+          },
           proof,
         })
       : input.draft.kind === 'withdraw'
         ? builder.buildWithdrawOperation({
             action: {
               ...common,
+              assetIndex: input.assetIndex,
               publicRecipient: publicRecipient!,
-              relayerFee: prepared.action.relayerFee,
-              relayer: input.accountPublicKey,
             },
             proof,
           })
         : builder.buildTransferOperation({
-            action: {
-              ...common,
-              relayerFee: prepared.action.relayerFee,
-              relayer: input.accountPublicKey,
-            },
+            action: common,
             proof,
           });
-    progress('simulating');
-    const endpoint = new URL(input.rpcUrl);
-    const allowHttp = endpoint.protocol === 'http:' &&
-      ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
-    const rpc = new SorobanRpc.Server(endpoint.toString(), { allowHttp });
-    const transaction = await prepareReviewedPrivateBalanceTransaction({
-      rpc,
-      operation,
-      manifest: input.manifest,
-      assetContractId: input.assetContractId,
-      source: input.accountPublicKey,
-      classicFeeStroops: input.classicFeeStroops,
-      maximumResourceFeeStroops: MAX_RESOURCE_FEE_STROOPS,
-    });
     const proofBytes = Uint8Array.from(proved.sorobanProofHex.match(/../g) ?? [], value => Number.parseInt(value, 16));
     const proofHash = await computeSha256(proofBytes.buffer);
     const updatedAt = Math.max(createdAt, now());
     const pendingAction: PrivatePendingAction = {
       id: actionId,
       kind: reservationKind,
+      assetIndex: input.assetIndex,
       assetContractId: input.assetContractId,
       status: 'prepared',
+      submissionMode: 'direct',
+      ...(feePayer ? { feePayer } : {}),
+      proofExposure: 'shared',
+      outgoingHistoryMode,
+      ...(input.directChainApprovalId ? { directChainApprovalId: input.directChainApprovalId } : {}),
       reservedNoteIds: prepared.reservedNoteIds,
       actionField: prepared.actionFieldHex,
       nullifiers: prepared.action.nullifiers.map(hex),
@@ -554,8 +655,8 @@ export async function preparePrivateBalanceActionFlow(input: {
       anchorRoot: hex(prepared.action.anchorRoot),
       anchorExpiresAtLedger: prepared.anchorExpiresAtLedger,
       proofHash,
-      classicFeeCapStroops: transaction.review.classicFeeStroops.toString(),
-      resourceFeeCapStroops: transaction.review.resourceFeeStroops.toString(),
+      classicFeeCapStroops: classicFeeCap.toString(),
+      resourceFeeCapStroops: MAX_RESOURCE_FEE_STROOPS.toString(),
       amountStroops: amount.toString(),
       changeValueStroops: prepared.changeValue,
       broadcastAttempts: 0,
@@ -568,14 +669,41 @@ export async function preparePrivateBalanceActionFlow(input: {
       createdAt,
       updatedAt,
     };
-    durable = await commitPrivateBuildReservation(
-      input.storageContext,
-      input.storageKey,
-      durable.revision,
-      actionId,
-      pendingAction,
-      input.storageDriver,
-    );
+    if (recovery) assertPrivateRecoveryReplacement(recovery.pending, pendingAction, recovery.amount);
+    const recipientAddress = recoveryAddress ?? (input.draft.kind === 'transfer' ? input.draft.recipientAddress : input.draft.kind === 'consolidate' ? input.privateAddress : null);
+    const reviewKind = recovery ? 'transfer' : input.draft.kind;
+    const transaction = await disclosePrivateProof({
+      request: { kind: reviewKind, actionId, actionField: prepared.actionFieldHex, assetContractId: input.assetContractId,
+        feePayer,
+        ...(recovery ? { recoveryOfActionId: recovery.pending.id } : {}),
+        amountStroops: amount.toString(), recipientAddress,
+        publicRecipient, memoHex: localMemoHex ?? null, privateFeeAtomic: '0',
+        maximumNetworkFeeStroops: (classicFeeCap + MAX_RESOURCE_FEE_STROOPS).toString(), submissionMode: 'direct' },
+      signal: input.signal,
+      authorize: input.authorizeDisclosure,
+      assertContext: input.assertContext,
+      commit: async () => {
+        pendingAction.updatedAt = Math.max(createdAt, now());
+        durable = recovery
+          ? await commitPrivateSpendRecovery(input.storageContext, input.storageKey, durable.revision, recovery.pending.id, pendingAction, recoveryAddress!, input.storageDriver)
+          : await commitPrivateBuildReservation(input.storageContext, input.storageKey, durable.revision, actionId, pendingAction, input.storageDriver);
+        exposedSpend = hasExposedPrivateSpend(pendingAction);
+      },
+      disclose: async () => {
+        progress('simulating');
+        const endpoint = new URL(input.rpcUrl);
+        const allowHttp = endpoint.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
+        const rpc = new SorobanRpc.Server(endpoint.toString(), { allowHttp });
+        return prepareReviewedPrivateBalanceTransaction({ rpc, submissionMode: 'direct',
+          signal: input.signal, operation, manifest: { networkPassphrase: input.manifest.networkPassphrase, poolContractId: input.manifest.poolContractId, assets: input.registryAssets },
+          source: input.accountPublicKey, classicFeeStroops: input.classicFeeStroops, maximumResourceFeeStroops: MAX_RESOURCE_FEE_STROOPS });
+      },
+    });
+    const transactionReview: PrivateBalanceTransactionReview = {
+      ...transaction.review,
+      ...(feePayer ? { feePayer } : {}),
+      classicFeeStroops: privateActionClassicFeeStroops(transaction.review.classicFeeStroops, feePayer),
+    };
     durable = await transitionPrivatePendingAction(
       input.storageContext,
       input.storageKey,
@@ -585,6 +713,8 @@ export async function preparePrivateBalanceActionFlow(input: {
         from: 'prepared',
         to: 'reviewed',
         transactionHash: transaction.review.transactionHash,
+        classicFeeCapStroops: transactionReview.classicFeeStroops.toString(),
+        resourceFeeCapStroops: transaction.review.resourceFeeStroops.toString(),
         updatedAt: Math.max(updatedAt, now()),
       },
       input.storageDriver,
@@ -595,19 +725,24 @@ export async function preparePrivateBalanceActionFlow(input: {
       state: durable,
       review: {
         id: actionId,
+        ...(recovery ? { recoveryOfActionId: recovery.pending.id } : {}),
         actionField: prepared.actionFieldHex,
-        kind: input.draft.kind,
+        outgoingHistoryMode,
+        kind: reviewKind,
+        assetContractId: input.assetContractId,
+        selectedNoteIds: [...selectedNoteIds],
+        recipientOutputCommitment: prepared.recipientOutputCommitment,
         rpcUrl: input.rpcUrl,
         amountStroops: amount.toString(),
         inputValueStroops: prepared.inputValue,
         changeValueStroops: prepared.changeValue,
-        recipientAddress: input.draft.kind === 'transfer' ? input.draft.recipientAddress : null,
+        recipientAddress,
         recipientFingerprint,
         memoHex: input.draft.kind === 'transfer' ? localMemoHex ?? null : null,
         publicRecipient,
         anchorExpiresAtLedger,
         latestLedger: head.latestLedger,
-        transaction: transaction.review,
+        transaction: transactionReview,
       },
     };
   } catch (error) {
@@ -629,6 +764,7 @@ export async function preparePrivateBalanceActionFlow(input: {
         );
       }
     }
+    if (exposedSpend && !input.signal?.aborted) throw new PrivateProofExposedError(error);
     throw error;
   }
 }

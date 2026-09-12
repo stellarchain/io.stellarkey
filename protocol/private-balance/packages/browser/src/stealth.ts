@@ -11,6 +11,7 @@ import {
 export type StealthNetwork = 'testnet' | 'mainnet';
 
 export interface StealthMetaAddress {
+  deploymentBindingHash: Uint8Array;
   scanPublicKey: Uint8Array;
   spendPublicKey: Uint8Array;
 }
@@ -19,6 +20,12 @@ export interface StealthMetaKeys extends StealthMetaAddress {
   scanPrivateKey: Uint8Array;
   spendScalar: bigint;
   nonceKey: Uint8Array;
+  network: StealthNetwork;
+}
+
+/** Sensitive recognition material, without one-time spending authority. */
+export interface StealthViewingKeys extends StealthMetaAddress {
+  scanPrivateKey: Uint8Array;
   network: StealthNetwork;
 }
 
@@ -33,8 +40,8 @@ export interface StealthRecipientKey {
   nonceKey: Uint8Array;
 }
 
-export const STEALTH_META_ADDRESS_PAYLOAD_BYTES = 64;
-export const STEALTH_META_ADDRESS_ASCII_BYTES = 113;
+export const STEALTH_META_ADDRESS_PAYLOAD_BYTES = 96;
+export const STEALTH_META_ADDRESS_ASCII_BYTES = 164;
 
 const DOMAIN_META_ROOT = utf8('SK_STEALTH_META_ROOT_V1');
 const DOMAIN_STEALTH_ROOT_KEY = utf8('SK_STEALTH_ROOT_KEY_V1');
@@ -91,9 +98,14 @@ function bigIntToBytesLe(value: bigint, length = 32): Uint8Array {
 }
 
 function nonzeroScalar(...chunks: Uint8Array[]): bigint {
-  const scalar = bytesToBigIntLe(sha512Bytes(...chunks)) % SCALAR_ORDER;
-  if (scalar === 0n) throw new Error('Derived an invalid zero scalar; retry with fresh randomness');
-  return scalar;
+  const digest = sha512Bytes(...chunks);
+  try {
+    const scalar = bytesToBigIntLe(digest) % SCALAR_ORDER;
+    if (scalar === 0n) throw new Error('Derived an invalid zero scalar; retry with fresh randomness');
+    return scalar;
+  } finally {
+    digest.fill(0);
+  }
 }
 
 function validateSpendPoint(publicKey: Uint8Array): void {
@@ -127,6 +139,7 @@ function deriveTweak(
     networkBytes(network),
     ephemeralPublicKey,
     sharedSecret,
+    address.deploymentBindingHash,
     address.scanPublicKey,
     address.spendPublicKey,
   );
@@ -142,8 +155,10 @@ function deriveOneTimePublicKey(spendPublicKey: Uint8Array, tweak: bigint): Uint
 export function deriveStealthMetaKeys(
   rootKey: Uint8Array,
   network: StealthNetwork,
+  deploymentBindingHash: Uint8Array,
 ): StealthMetaKeys {
   assertBytes(rootKey, 32, 'Stealth root key');
+  assertBytes(deploymentBindingHash, 32, 'Deployment binding hash');
   const networkContext = networkBytes(network);
   const salt = sha512Bytes(DOMAIN_META_ROOT, networkContext);
   const scanPrivateKey = hkdf(sha512, rootKey, salt, DOMAIN_SCAN_KEY, 32);
@@ -153,6 +168,7 @@ export function deriveStealthMetaKeys(
   spendMaterial.fill(0);
   if (spendScalar === 0n) throw new Error('Derived an invalid zero spend scalar');
   return {
+    deploymentBindingHash: deploymentBindingHash.slice(),
     scanPrivateKey,
     scanPublicKey: x25519.getPublicKey(scanPrivateKey),
     spendScalar,
@@ -162,15 +178,50 @@ export function deriveStealthMetaKeys(
   };
 }
 
+export function deriveStealthViewingKeys(
+  rootKey: Uint8Array,
+  network: StealthNetwork,
+  deploymentBindingHash: Uint8Array,
+): StealthViewingKeys {
+  assertBytes(rootKey, 32, 'Stealth root key');
+  assertBytes(deploymentBindingHash, 32, 'Deployment binding hash');
+  const networkContext = networkBytes(network);
+  const salt = sha512Bytes(DOMAIN_META_ROOT, networkContext);
+  let scanPrivateKey: Uint8Array | null = null;
+  let spendMaterial: Uint8Array | null = null;
+  let transferred = false;
+  try {
+    scanPrivateKey = hkdf(sha512, rootKey, salt, DOMAIN_SCAN_KEY, 32);
+    spendMaterial = hkdf(sha512, rootKey, salt, DOMAIN_SPEND_KEY, 64);
+    // The public point requires this transient bigint, which JavaScript cannot
+    // reliably erase. Neither it nor a spending nonce leaves this scope.
+    const spendScalar = bytesToBigIntLe(spendMaterial) % SCALAR_ORDER;
+    if (spendScalar === 0n) throw new Error('Derived an invalid zero spend scalar');
+    const viewing = {
+      deploymentBindingHash: deploymentBindingHash.slice(),
+      scanPrivateKey,
+      scanPublicKey: x25519.getPublicKey(scanPrivateKey),
+      spendPublicKey: ed25519.Point.BASE.multiply(spendScalar).toBytes(),
+      network,
+    };
+    transferred = true;
+    return viewing;
+  } finally {
+    spendMaterial?.fill(0);
+    if (!transferred) scanPrivateKey?.fill(0);
+  }
+}
+
 export function encodeStealthMetaAddress(
   address: StealthMetaAddress,
   network: StealthNetwork,
 ): string {
+  assertBytes(address.deploymentBindingHash, 32, 'Deployment binding hash');
   validateScanPoint(address.scanPublicKey);
   validateSpendPoint(address.spendPublicKey);
   const encoded = encodeBech32m(
     networkPrefix(network),
-    concatBytes(address.scanPublicKey, address.spendPublicKey),
+    concatBytes(address.deploymentBindingHash, address.scanPublicKey, address.spendPublicKey),
   );
   if (encoded.length !== STEALTH_META_ADDRESS_ASCII_BYTES) {
     throw new Error('Unexpected stealth meta-address length');
@@ -181,6 +232,7 @@ export function encodeStealthMetaAddress(
 export async function decodeStealthMetaAddress(
   encoded: string,
   network: StealthNetwork,
+  expectedDeploymentBindingHash?: Uint8Array,
 ): Promise<StealthMetaAddress> {
   if (encoded.length !== STEALTH_META_ADDRESS_ASCII_BYTES) {
     throw new Error('Invalid stealth meta-address spelling');
@@ -198,9 +250,16 @@ export async function decodeStealthMetaAddress(
     throw new Error(message.replace('Bech32m', 'stealth meta-address'), { cause: error });
   }
   const address = {
-    scanPublicKey: payload.slice(0, 32),
-    spendPublicKey: payload.slice(32, 64),
+    deploymentBindingHash: payload.slice(0, 32),
+    scanPublicKey: payload.slice(32, 64),
+    spendPublicKey: payload.slice(64, 96),
   };
+  if (expectedDeploymentBindingHash) {
+    assertBytes(expectedDeploymentBindingHash, 32, 'Expected deployment binding hash');
+    if (!address.deploymentBindingHash.every((byte, index) => byte === expectedDeploymentBindingHash[index])) {
+      throw new Error('Stealth meta-address belongs to another Private Payments deployment');
+    }
+  }
   validateScanPoint(address.scanPublicKey);
   validateSpendPoint(address.spendPublicKey);
   return address;
@@ -262,6 +321,32 @@ export async function deriveStealthRecipientKey(
       publicKey,
     ).slice(0, 32);
     return { publicKey, spendScalar, nonceKey };
+  } finally {
+    sharedSecret.fill(0);
+  }
+}
+
+export async function deriveStealthRecipientPublicKey(
+  keys: StealthViewingKeys,
+  ephemeralPublicKey: Uint8Array,
+  network: StealthNetwork,
+  implementation: X25519Implementation = 'auto',
+): Promise<Uint8Array> {
+  if (keys.network !== network) throw new Error('Stealth key network mismatch');
+  const scanPrivateKey = keys.scanPrivateKey;
+  assertBytes(keys.deploymentBindingHash, 32, 'Deployment binding hash');
+  assertBytes(scanPrivateKey, 32, 'Stealth scan private key');
+  validateScanPoint(keys.scanPublicKey);
+  validateSpendPoint(keys.spendPublicKey);
+  assertBytes(ephemeralPublicKey, 32, 'Stealth ephemeral public key');
+  const sharedSecret = await deriveX25519SharedSecret(
+    scanPrivateKey,
+    ephemeralPublicKey,
+    implementation,
+  );
+  try {
+    const tweak = deriveTweak(sharedSecret, ephemeralPublicKey, keys, network);
+    return deriveOneTimePublicKey(keys.spendPublicKey, tweak);
   } finally {
     sharedSecret.fill(0);
   }

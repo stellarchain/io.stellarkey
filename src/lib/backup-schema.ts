@@ -21,11 +21,30 @@ export interface FullBackupPayload {
   contacts: Array<{ name: string; address: string; favorite?: boolean }>;
   settings?: BackupSettings;
   txNotes: Record<string, unknown>;
+  txNoteOmissions?: number;
   merchantStore?: string | null;
   privateBalanceStore?: string | null;
 }
 
 const FIAT_CURRENCIES = new Set(["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"]);
+const MAX_ACCOUNTS = 1_000;
+const MAX_CONTACTS = 5_000;
+const MAX_MERCHANT_ARCHIVE_CHARS = 32 * 1024 * 1024;
+export const MAX_ACCOUNT_LABEL_CHARS = 256;
+export const MAX_TRANSACTION_NOTE_CHARS = 10_000;
+
+const PUBLIC_TRANSACTION_NOTE_KEY = /^[0-9a-f]{1,128}$/i;
+const PRIVATE_ACTIVITY_NOTE_KEY =
+  /^private:[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?:[0-9a-f]{64}$/i;
+const PRIVATE_PENDING_NOTE_KEY = /^private-pending:[A-Za-z0-9._:-]{1,128}$/;
+
+export function isTransactionNoteKey(value: unknown): value is string {
+  return typeof value === "string" && (
+    PUBLIC_TRANSACTION_NOTE_KEY.test(value) ||
+    PRIVATE_ACTIVITY_NOTE_KEY.test(value) ||
+    PRIVATE_PENDING_NOTE_KEY.test(value)
+  );
+}
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -51,20 +70,23 @@ export function isRawKeyEncryptedPayloadValue(value: unknown): value is RawKeyEn
 
 function isStoredAccount(value: unknown): value is StoredAccount {
   if (!isRecord(value)) return false;
-  if (typeof value.id !== "string" || !value.id) return false;
-  if (typeof value.label !== "string") return false;
+  if (typeof value.id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value.id)) return false;
+  if (
+    typeof value.label !== "string" ||
+    value.label.length > MAX_ACCOUNT_LABEL_CHARS
+  ) return false;
   if (typeof value.publicKey !== "string" || !StrKey.isValidEd25519PublicKey(value.publicKey)) {
     return false;
   }
   if (typeof value.createdAt !== "number" || !Number.isFinite(value.createdAt)) return false;
-  if (value.emoji !== undefined && typeof value.emoji !== "string") return false;
+  if (value.emoji !== undefined && (typeof value.emoji !== "string" || value.emoji.length > 32)) return false;
   if (
     value.index !== undefined &&
     (typeof value.index !== "number" || !Number.isSafeInteger(value.index) || value.index < 0)
   ) {
     return false;
   }
-  if (value.path !== undefined && typeof value.path !== "string") return false;
+  if (value.path !== undefined && (typeof value.path !== "string" || value.path.length > 128)) return false;
   if (
     value.secret !== undefined &&
     !isRawKeyEncryptedPayloadValue(value.secret)
@@ -80,13 +102,24 @@ export function decodeVaultFile(value: unknown): VaultFile | null {
   if (!isRecord(value) || value.version !== 3) {
     return null;
   }
-  if (!Array.isArray(value.accounts) || value.accounts.length === 0) return null;
+  if (
+    !Array.isArray(value.accounts) ||
+    value.accounts.length === 0 ||
+    value.accounts.length > MAX_ACCOUNTS
+  ) return null;
+  if (
+    value.revision !== undefined &&
+    (!Number.isSafeInteger(value.revision) || (value.revision as number) < 0)
+  ) {
+    return null;
+  }
   if (!value.accounts.every(isStoredAccount)) {
     return null;
   }
   if (value.archivedAccounts !== undefined) {
     if (
       !Array.isArray(value.archivedAccounts) ||
+      value.archivedAccounts.length > MAX_ACCOUNTS ||
       !value.archivedAccounts.every(isStoredAccount)
     ) {
       return null;
@@ -118,7 +151,7 @@ export function decodeVaultFile(value: unknown): VaultFile | null {
 
 function isContact(value: unknown): value is FullBackupPayload["contacts"][number] {
   if (!isRecord(value)) return false;
-  if (typeof value.name !== "string" || !value.name.trim()) return false;
+  if (typeof value.name !== "string" || !value.name.trim() || value.name.length > 256) return false;
   if (typeof value.address !== "string" || !StrKey.isValidEd25519PublicKey(value.address.trim())) {
     return false;
   }
@@ -192,9 +225,19 @@ export function decodeFullBackupPayload(value: unknown): FullBackupPayload | nul
   }
   const vault = decodeVaultFile(value.vault);
   if (!vault) return null;
-  if (!Array.isArray(value.contacts) || !value.contacts.every(isContact)) return null;
+  if (
+    !Array.isArray(value.contacts) ||
+    value.contacts.length > MAX_CONTACTS ||
+    !value.contacts.every(isContact)
+  ) return null;
   if (value.settings !== undefined && !isBackupSettings(value.settings)) return null;
   if (!isTxNotes(value.txNotes)) return null;
+  if (
+    value.txNoteOmissions !== undefined &&
+    (!Number.isSafeInteger(value.txNoteOmissions) || (value.txNoteOmissions as number) < 0)
+  ) {
+    return null;
+  }
   if (
     value.merchantStore !== undefined &&
     value.merchantStore !== null &&
@@ -203,6 +246,7 @@ export function decodeFullBackupPayload(value: unknown): FullBackupPayload | nul
     return null;
   }
   if (typeof value.merchantStore === "string") {
+    if (value.merchantStore.length > MAX_MERCHANT_ARCHIVE_CHARS) return null;
     try {
       const merchantArchive: unknown = JSON.parse(value.merchantStore);
       if (!isEncryptedMerchantRecordArchive(merchantArchive)) return null;
@@ -223,6 +267,7 @@ export function decodeFullBackupPayload(value: unknown): FullBackupPayload | nul
     contacts: value.contacts,
     settings: value.settings,
     txNotes: value.txNotes,
+    txNoteOmissions: value.txNoteOmissions as number | undefined,
     merchantStore: value.merchantStore,
     privateBalanceStore: value.privateBalanceStore,
   };

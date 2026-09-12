@@ -1,6 +1,6 @@
 "use client";
 
-import { Keypair, StrKey } from "@stellar/stellar-sdk";
+import { Keypair } from "@stellar/stellar-sdk";
 import { BIP39_WORDLIST } from "./bip39-wordlist";
 import { requireWebCrypto } from "./web-crypto";
 
@@ -121,10 +121,6 @@ export async function slip10Ed25519Derive(
   seed: Uint8Array,
   path: string,
 ): Promise<Uint8Array> {
-  const I = await hmacSha512(te.encode("ed25519 seed"), seed);
-  let k = I.slice(0, 32);
-  let c = I.slice(32, 64);
-
   if (path !== "m" && !/^m\/(?:0|[1-9]\d*)(?:'|h)(?:\/(?:0|[1-9]\d*)(?:'|h))*$/.test(path)) {
     throw new Error("SLIP-0010 ed25519 only supports hardened paths in canonical form.");
   }
@@ -132,16 +128,37 @@ export async function slip10Ed25519Derive(
     ? []
     : path.slice(2).split("/").map((segment) => Number(segment.slice(0, -1)));
 
-  for (const idx of segments) {
-    const data = new Uint8Array(1 + 32 + 4);
-    data[0] = 0;
-    data.set(k, 1);
-    data.set(ser32Hardened(idx), 33);
-    const Ik = await hmacSha512(c, data);
-    k = Ik.slice(0, 32);
-    c = Ik.slice(32, 64);
+  const digest = await hmacSha512(te.encode("ed25519 seed"), seed);
+  let key = digest.slice(0, 32);
+  let chainCode = digest.slice(32, 64);
+  try {
+    for (const idx of segments) {
+      const data = new Uint8Array(1 + 32 + 4);
+      const indexBytes = ser32Hardened(idx);
+      let derived: Uint8Array | null = null;
+      try {
+        data[0] = 0;
+        data.set(key, 1);
+        data.set(indexBytes, 33);
+        derived = await hmacSha512(chainCode, data);
+        const nextKey = derived.slice(0, 32);
+        const nextChainCode = derived.slice(32, 64);
+        key.fill(0);
+        chainCode.fill(0);
+        key = nextKey;
+        chainCode = nextChainCode;
+      } finally {
+        data.fill(0);
+        indexBytes.fill(0);
+        derived?.fill(0);
+      }
+    }
+    return key.slice();
+  } finally {
+    digest.fill(0);
+    key.fill(0);
+    chainCode.fill(0);
   }
-  return k;
 }
 
 export const STELLAR_COIN_TYPE = 148;
@@ -158,7 +175,12 @@ export async function keypairFromMnemonicIndex(
   accountIndex: number,
 ): Promise<Keypair> {
   const seed = await mnemonicToSeed(mnemonic);
-  const raw = await slip10Ed25519Derive(seed, stellarAccountPath(accountIndex));
-  const secret = StrKey.encodeEd25519SecretSeed(raw);
-  return Keypair.fromSecret(secret);
+  let raw: Uint8Array | null = null;
+  try {
+    raw = await slip10Ed25519Derive(seed, stellarAccountPath(accountIndex));
+    return Keypair.fromRawEd25519Seed(raw);
+  } finally {
+    seed.fill(0);
+    raw?.fill(0);
+  }
 }

@@ -59,6 +59,7 @@ test('the chained review shows the step count, cumulative fee cap, and honest ti
   assert.doesNotMatch(review, /quick(?:ly)?[.!]/i);
 });
 
+
 test('the chained fee preflight shortfall gets humanized copy with the missing amount', () => {
   const errorPanel = read('src/features/private-balance/components/PrivateActionError.tsx');
 

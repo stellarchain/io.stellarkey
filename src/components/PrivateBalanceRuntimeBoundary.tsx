@@ -1,9 +1,17 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { StrKey } from '@stellar/stellar-sdk';
 import { useWalletIdentity, useWalletPhase } from '@/hooks/useWallet';
+import { usePrivateAccountPortfolio } from '@/hooks/usePrivateAccountPortfolio';
 import {
   PrivateBalancePortfolioProvider,
   PrivateBalanceRuntimeControlProvider,
@@ -20,6 +28,7 @@ import {
   hasEncryptedPrivateBalanceState,
   privateBalanceAccountSupport,
   selectPrivateBalanceDeploymentId,
+  shouldRetainPrivateCatalogueAfterRefreshFailure,
   shouldMountPrivateBalanceRuntime,
   updatePrivateBalancePoolStorageState,
   type PrivateBalanceStorageScope,
@@ -30,8 +39,10 @@ import {
 import {
   loadExpectedPrivateBalanceCatalogue,
   loadPrivateBalanceDeployments,
+  reconcilePrivateBalanceRegistry,
   type LoadedPrivateBalanceDeployment,
 } from '@/lib/private-balance-assets';
+import { getRpcUrl } from '@/lib/stellar-endpoints';
 import {
   ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE,
 } from '@/lib/private-balance-expected-manifest';
@@ -54,10 +65,12 @@ const DynamicPrivateBalanceProvider = dynamic(
   { ssr: false, loading: () => null },
 );
 
+
 interface ReadyDeployment extends LoadedPrivateBalanceDeployment {
   storageScope: PrivateBalanceStorageScope;
   encryptedStateExists: boolean;
   deployment: PrivateBalanceDeploymentSummary;
+  registryAssets: ReadonlyArray<{ index: number; contractId: string }>;
 }
 
 interface BootstrapState {
@@ -194,12 +207,15 @@ function summarizeManifest(
   manifest: LoadedPrivateBalanceDeployment['manifest'],
   network: 'testnet' | 'mainnet',
   manifestHash: string,
+  assetAdminAddress: string,
 ): PrivateBalanceDeploymentSummary {
   return {
     manifestStatus: manifest.status,
     network,
     poolContractId: manifest.poolContractId,
     assetContractId: null,
+    assetAdminAddress,
+    networkId: manifest.networkId,
     realmId: manifest.realmId,
     artifactVersion: manifest.artifactVersion,
     manifestHash,
@@ -216,6 +232,57 @@ function summarizeManifest(
     latestLedger: null,
     recoveryEvidence: null,
   };
+}
+
+async function loadLivePrivateBalanceRegistry(
+  deployments: LoadedPrivateBalanceDeployment[],
+  network: 'testnet' | 'mainnet',
+): Promise<LoadedPrivateBalanceDeployment[]> {
+  if (deployments.length === 0) return [];
+  const rpcUrl = getRpcUrl(network);
+  if (!rpcUrl) throw new Error('Configure a Stellar RPC endpoint for Private Payments.');
+  const byPool = new Map<string, LoadedPrivateBalanceDeployment[]>();
+  for (const deployment of deployments) {
+    const current = byPool.get(deployment.poolDeploymentId) ?? [];
+    current.push(deployment);
+    byPool.set(deployment.poolDeploymentId, current);
+  }
+  const [{
+    PrivateBalanceArchiveClient,
+    readCorroboratedPrivateAssetRegistry,
+    readCorroboratedPrivateAssetTokenMetadata,
+  }, { corroboratePrivateRpcCheckpoint }] = await Promise.all([
+    import('@/features/private-balance/runtime/archive-client'),
+    import('@/features/private-balance/runtime/rpc-checkpoint'),
+  ]);
+  const resolved = await Promise.all([...byPool.values()].map(async poolDeployments => {
+    const manifest = poolDeployments[0].manifest;
+    if (new URL(rpcUrl).origin === new URL(manifest.witnessRpcUrl).origin) {
+      throw new Error('Private Payments primary and witness RPCs must use independent origins.');
+    }
+    const primary = new PrivateBalanceArchiveClient(rpcUrl, manifest);
+    const witness = new PrivateBalanceArchiveClient(manifest.witnessRpcUrl, manifest);
+    await corroboratePrivateRpcCheckpoint({
+      primary,
+      witness,
+      expectedNetworkPassphrase: manifest.networkPassphrase,
+      deploymentCheckpoint: manifest.deploymentCheckpoint,
+    });
+    const registry = await readCorroboratedPrivateAssetRegistry(primary, witness);
+    const curatedContracts = new Set(manifest.assets.map(asset => asset.contractId));
+    const metadataEntries = await Promise.all(registry.assets
+      .filter(asset => !curatedContracts.has(asset.contractId))
+      .map(async asset => [
+        asset.contractId,
+        await readCorroboratedPrivateAssetTokenMetadata(asset.contractId, primary, witness),
+      ] as const));
+    return reconcilePrivateBalanceRegistry({
+      deployments: poolDeployments,
+      registry,
+      metadataByContract: new Map(metadataEntries),
+    });
+  }));
+  return resolved.flat();
 }
 
 function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
@@ -296,19 +363,40 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
 
     void loadExpectedPrivateBalanceCatalogue()
       .then(({ catalogue }) => loadPrivateBalanceDeployments({ catalogue, network }))
+      .then(loadedDeployments => runtimeRequestVersion > 0
+        ? loadLivePrivateBalanceRegistry(loadedDeployments, network)
+        : loadedDeployments)
       .then(async loadedDeployments => {
+        if (!active) return;
         // The verified catalogue is sufficient to render asset rows. Local
         // storage determines setup state, but must never hide the catalogue if
         // IndexedDB is slow, blocked by another tab, or unavailable.
         publishAvailableDeployments(loadedDeployments);
         const driver = new IndexedDbEncryptedRecordDriver();
         const deploymentsByPool = new Map<string, PrivateBalanceDeploymentSummary>();
+        const registryAssetsByPool = new Map<
+          string,
+          Array<{ index: number; contractId: string }>
+        >();
+        for (const loaded of loadedDeployments) {
+          const registryAssets = registryAssetsByPool.get(loaded.poolDeploymentId) ?? [];
+          registryAssets.push({
+            index: loaded.asset.index,
+            contractId: loaded.asset.contractId,
+          });
+          registryAssetsByPool.set(loaded.poolDeploymentId, registryAssets);
+        }
         const scopesByPool = new Map<string, PrivateBalanceStorageScope>();
         const stateProbeByPool = new Map<string, Promise<boolean>>();
         const candidates = await Promise.all(loadedDeployments.map(async loaded => {
           let deployment = deploymentsByPool.get(loaded.poolDeploymentId);
           if (!deployment) {
-            deployment = summarizeManifest(loaded.manifest, network, loaded.manifestHash);
+            deployment = summarizeManifest(
+              loaded.manifest,
+              network,
+              loaded.manifestHash,
+              loaded.assetAdminAddress,
+            );
             deploymentsByPool.set(loaded.poolDeploymentId, deployment);
           }
           const availability = privateBalanceAvailability(loaded.manifest, network, {
@@ -339,6 +427,7 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
             storageScope,
             encryptedStateExists,
             deployment,
+            registryAssets: registryAssetsByPool.get(loaded.poolDeploymentId) ?? [],
           };
           return { ready, deployment, reason: null };
         }));
@@ -402,16 +491,30 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        setBootstrap({
-          key: bootstrapKey,
-          ready: [],
-          fallbackDeployment: null,
-          reason: error instanceof Error
-            ? error.message
-            : 'Private Balance deployment verification failed.',
-          checking: false,
+        const reason = error instanceof Error
+          ? error.message
+          : 'Private Balance deployment verification failed.';
+        setBootstrap(current => {
+          if (shouldRetainPrivateCatalogueAfterRefreshFailure({
+            runtimeRequestVersion,
+            currentScopeKey: current.key,
+            requestedScopeKey: bootstrapKey,
+            readyCount: current.ready.length,
+          })) {
+            return current;
+          }
+          return {
+            key: bootstrapKey,
+            ready: [],
+            fallbackDeployment: null,
+            reason,
+            checking: false,
+          };
         });
-        setPrivatePortfolio({ key: bootstrapKey, entries: [] });
+        if (runtimeRequestVersion === 0) {
+          registerAvailableAssets([], null);
+          setPrivatePortfolio({ key: bootstrapKey, entries: [] });
+        }
       });
     return () => {
       active = false;
@@ -423,6 +526,7 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
     network,
     publishAvailableDeployments,
     registerAvailableAssets,
+    runtimeRequestVersion,
   ]);
 
   const currentBootstrap: BootstrapState = bootstrap.key === bootstrapKey
@@ -560,9 +664,13 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
   const portfolioEntries = selectedRuntimeEntry
     ? upsertPrivatePortfolioEntry(bootstrappedPortfolioEntries, selectedRuntimeEntry)
     : bootstrappedPortfolioEntries;
+  const { accountBalances, refresh: refreshAccountBalances } = usePrivateAccountPortfolio(portfolioEntries, Boolean(
+    bootstrapKey && privatePortfolio.key === bootstrapKey &&
+    currentBootstrap.key === bootstrapKey && !currentBootstrap.checking && !currentBootstrap.reason,
+  ));
 
   return (
-    <PrivateBalancePortfolioProvider entries={portfolioEntries}>
+    <PrivateBalancePortfolioProvider entries={portfolioEntries} accountBalances={accountBalances} refreshAccountBalances={refreshAccountBalances}>
       <PrivateBalanceRuntimeDataProvider value={effectiveRuntime}>
         {runtimeKey && deployment && activeAccount && bootstrapKey ? (
           <DynamicPrivateBalanceProvider
@@ -577,6 +685,7 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
           encryptedStateExists={deployment.encryptedStateExists}
           deployment={deployment.deployment}
           asset={deployment.asset}
+          registryAssets={deployment.registryAssets}
           runtimeKey={runtimeKey}
           portfolioKey={bootstrapKey}
           deploymentId={deployment.id}
@@ -599,8 +708,10 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
 }
 
 export function PrivateBalanceRuntimeBoundary({ children }: { children: ReactNode }) {
+  const { activeAccount, network } = useWalletIdentity();
+  const controlScopeKey = activeAccount ? `${network}:${activeAccount.id}` : null;
   return (
-    <PrivateBalanceRuntimeControlProvider>
+    <PrivateBalanceRuntimeControlProvider scopeKey={controlScopeKey}>
       <PrivateBalanceRuntimeBootstrap>{children}</PrivateBalanceRuntimeBootstrap>
     </PrivateBalanceRuntimeControlProvider>
   );

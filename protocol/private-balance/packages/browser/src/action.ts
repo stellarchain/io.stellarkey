@@ -1,12 +1,9 @@
-import { encodeDomain, encodeU16Be, encodeU64Be } from './encoding.js';
+import { encodeDomain, encodeU16Be, encodeU32Be, encodeU64Be } from './encoding.js';
 import { fieldId, bigintTo32Bytes, isCanonicalField } from './field.js';
 import { equalBytes } from './hash.js';
-import { p2 } from './poseidon2.js';
 
 export const DOMAIN_ACTION = 'SKSB_ACTION_V1';
-export const DOMAIN_ACTION_BINDING = 'SKSB_ACTION_BINDING_V1';
 export const DOMAIN_ASSET = 'SKSB_ASSET_V1';
-export const DOMAIN_RELAYER = 'SKSB_RELAYER_V1';
 const MAX_PUBLIC_VALUE = (1n << 63n) - 1n;
 
 export enum ActionKind {
@@ -18,21 +15,21 @@ export enum ActionKind {
 export interface OutputPackageModel {
   cm: Uint8Array; // 32 bytes
   recipientEnvelope: Uint8Array; // 181 bytes
+  outgoingEnvelope: Uint8Array; // 157 bytes
 }
 
 export interface ActionModel {
   protocolVersion: number;
   kind: ActionKind;
-  asset: { kind: number; payload: Uint8Array };
+  assetIndex?: number;
+  asset?: { kind: number; payload: Uint8Array };
   actionNonce: Uint8Array;
   anchorRoot: Uint8Array;
   nullifiers: [Uint8Array, Uint8Array];
-  outputs: [OutputPackageModel, OutputPackageModel];
+  outputs: [OutputPackageModel, OutputPackageModel, OutputPackageModel];
   publicValue: bigint;
   depositSource?: { kind: number; payload: Uint8Array };
   publicRecipient?: { kind: number; payload: Uint8Array };
-  relayerFee: bigint;
-  relayer?: { kind: number; payload: Uint8Array };
 }
 
 function isZero(bytes: Uint8Array): boolean {
@@ -61,13 +58,24 @@ function encodeOptionalAddress(addr: { kind: number; payload: Uint8Array } | und
   }
 }
 
+function validateAssetBoundary(action: ActionModel): void {
+  const hasAsset = action.asset !== undefined;
+  const hasIndex = action.assetIndex !== undefined;
+  if (hasAsset !== hasIndex) throw new Error('Boundary asset and asset index must appear together');
+  if (!hasAsset) return;
+  validateAddress(action.asset!, 'Asset');
+  if (action.asset!.kind !== 1) throw new Error('Asset must be a contract address');
+  if (!Number.isInteger(action.assetIndex) || action.assetIndex! < 0 || action.assetIndex! > 0xffff_ffff) {
+    throw new Error('Asset index must be an unsigned 32-bit integer');
+  }
+}
+
 function validateAction(action: ActionModel): void {
   if (action.protocolVersion !== 1) throw new Error('Unsupported action protocol version');
   if (![ActionKind.Deposit, ActionKind.PrivateTransfer, ActionKind.Withdraw].includes(action.kind)) {
     throw new Error('Invalid action kind');
   }
-  validateAddress(action.asset, 'Asset');
-  if (action.asset.kind !== 1) throw new Error('Asset must be a contract address');
+  validateAssetBoundary(action);
   requireLength('Action nonce', action.actionNonce, 32);
   requireLength('Anchor root', action.anchorRoot, 32);
   if (!isCanonicalField(action.anchorRoot)) throw new Error('Anchor root is not canonical');
@@ -75,40 +83,42 @@ function validateAction(action: ActionModel): void {
     requireLength(`Nullifier ${index}`, nullifier, 32);
     if (!isCanonicalField(nullifier)) throw new Error(`Nullifier ${index} is not canonical`);
   }
+  if (action.outputs.length !== 3) throw new Error('Action must contain exactly three outputs');
   for (const [index, output] of action.outputs.entries()) {
     requireLength(`Output ${index} commitment`, output.cm, 32);
     requireLength(`Output ${index} recipient envelope`, output.recipientEnvelope, 181);
+    requireLength(`Output ${index} outgoing envelope`, output.outgoingEnvelope, 157);
     if (!isCanonicalField(output.cm)) throw new Error(`Output ${index} commitment is not canonical`);
-    if (isZero(output.cm) && !isZero(output.recipientEnvelope)) {
-      throw new Error(`Output ${index} dummy envelope must be zero`);
+    if (isZero(output.cm) || isZero(output.recipientEnvelope) || isZero(output.outgoingEnvelope)) {
+      throw new Error(`Output ${index} package must be nonzero`);
     }
   }
-  if (action.kind !== ActionKind.Withdraw && isZero(action.outputs[0].cm)) {
-    throw new Error('Output 0 must be real');
-  }
-  if (!isZero(action.outputs[1].cm) && equalBytes(action.outputs[0].cm, action.outputs[1].cm)) {
-    throw new Error('Real output commitments must differ');
+  for (let left = 0; left < action.outputs.length; left += 1) {
+    for (let right = left + 1; right < action.outputs.length; right += 1) {
+      if (equalBytes(action.outputs[left].cm, action.outputs[right].cm)) {
+        throw new Error('Output commitments must differ');
+      }
+    }
   }
   if (action.publicValue < 0n || action.publicValue > MAX_PUBLIC_VALUE) {
     throw new Error('Invalid public value');
   }
-  if (action.relayerFee < 0n || action.relayerFee > MAX_PUBLIC_VALUE) {
-    throw new Error('Invalid relayer fee');
-  }
 
   const anchorIsZero = isZero(action.anchorRoot);
-  const firstNullifierIsZero = isZero(action.nullifiers[0]);
-  const secondNullifierIsZero = isZero(action.nullifiers[1]);
+  if (action.nullifiers.some(isZero)) throw new Error('Nullifiers must be nonzero');
+  if (equalBytes(action.nullifiers[0], action.nullifiers[1])) {
+    throw new Error('Nullifiers must differ');
+  }
   if (action.kind === ActionKind.Deposit) {
-    if (!anchorIsZero || !firstNullifierIsZero || !secondNullifierIsZero) {
+    if (!anchorIsZero) {
       throw new Error('Invalid deposit private slots');
     }
     if (
       action.publicValue === 0n ||
+      !action.asset ||
+      action.assetIndex === undefined ||
       !action.depositSource ||
-      action.publicRecipient ||
-      action.relayerFee !== 0n ||
-      action.relayer
+      action.publicRecipient
     ) {
       throw new Error('Invalid deposit public boundary');
     }
@@ -116,22 +126,29 @@ function validateAction(action: ActionModel): void {
     return;
   }
 
-  if (anchorIsZero || firstNullifierIsZero) throw new Error('Invalid private spend slots');
-  if (!secondNullifierIsZero && equalBytes(action.nullifiers[0], action.nullifiers[1])) {
-    throw new Error('Real nullifiers must differ');
-  }
+  if (anchorIsZero) throw new Error('Invalid private spend slots');
   if (action.kind === ActionKind.PrivateTransfer) {
-    if (action.publicValue !== 0n || action.depositSource || action.publicRecipient || !action.relayer) {
-      throw new Error('Invalid transfer public boundary');
+    if (
+      action.publicValue !== 0n
+      || action.asset
+      || action.assetIndex !== undefined
+      || action.depositSource
+      || action.publicRecipient
+    ) {
+      throw new Error('Private transfer must not expose a boundary asset or address');
     }
-    validateAddress(action.relayer, 'Relayer');
     return;
   }
-  if (action.publicValue === 0n || action.depositSource || !action.publicRecipient || !action.relayer) {
+  if (
+    action.publicValue === 0n
+    || !action.asset
+    || action.assetIndex === undefined
+    || action.depositSource
+    || !action.publicRecipient
+  ) {
     throw new Error('Invalid withdrawal public boundary');
   }
   validateAddress(action.publicRecipient, 'Public recipient');
-  validateAddress(action.relayer, 'Relayer');
 }
 
 export function serializeCanonicalActionBytes(
@@ -156,36 +173,29 @@ export function serializeCanonicalActionBytes(
   for (const b of poolId) buf.push(b);
 
   buf.push(action.kind);
-  buf.push(action.asset.kind, ...action.asset.payload);
+  encodeOptionalAddress(action.asset, buf);
+  encodeU32Be(action.assetIndex ?? 0, buf);
   for (const b of action.actionNonce) buf.push(b);
   for (const b of action.anchorRoot) buf.push(b);
   for (const b of action.nullifiers[0]) buf.push(b);
   for (const b of action.nullifiers[1]) buf.push(b);
 
-  // outputs[0] (213 bytes)
+  // outputs[0] (370 bytes)
   for (const b of action.outputs[0].cm) buf.push(b);
   for (const b of action.outputs[0].recipientEnvelope) buf.push(b);
+  for (const b of action.outputs[0].outgoingEnvelope) buf.push(b);
 
-  // outputs[1] (213 bytes)
-  for (const b of action.outputs[1].cm) buf.push(b);
-  for (const b of action.outputs[1].recipientEnvelope) buf.push(b);
+  for (let index = 1; index < 3; index += 1) {
+    for (const b of action.outputs[index].cm) buf.push(b);
+    for (const b of action.outputs[index].recipientEnvelope) buf.push(b);
+    for (const b of action.outputs[index].outgoingEnvelope) buf.push(b);
+  }
 
   encodeU64Be(action.publicValue, buf);
-  encodeU64Be(action.relayerFee, buf);
-  encodeOptionalAddress(action.relayer, buf);
   encodeOptionalAddress(action.depositSource, buf);
   encodeOptionalAddress(action.publicRecipient, buf);
 
   return Uint8Array.from(buf);
-}
-
-export function computeRelayerField(action: ActionModel): Uint8Array {
-  if (!action.relayer) return new Uint8Array(32);
-  validateAddress(action.relayer, 'Relayer');
-  const bytes = new Uint8Array(33);
-  bytes[0] = action.relayer.kind;
-  bytes.set(action.relayer.payload, 1);
-  return fieldId(DOMAIN_RELAYER, bytes);
 }
 
 export function computeAssetField(asset: { kind: number; payload: Uint8Array }): Uint8Array {
@@ -207,18 +217,6 @@ export function computeActionField(
   return fieldId(DOMAIN_ACTION, bytes);
 }
 
-export async function computeActionBinding(
-  contextField: Uint8Array,
-  actionField: Uint8Array
-): Promise<Uint8Array> {
-  requireLength('Context field', contextField, 32);
-  requireLength('Action field', actionField, 32);
-  if (!isCanonicalField(contextField) || !isCanonicalField(actionField)) {
-    throw new Error('Action binding fields must be canonical');
-  }
-  return p2(DOMAIN_ACTION_BINDING, [contextField, actionField]);
-}
-
 export async function computePublicSignals(
   action: ActionModel,
   contextField: Uint8Array,
@@ -226,30 +224,25 @@ export async function computePublicSignals(
   realmId: Uint8Array,
   poolId: Uint8Array,
 ): Promise<Uint8Array[]> {
-  const assetField = computeAssetField(action.asset);
+  validateAction(action);
+  const assetField = action.asset ? computeAssetField(action.asset) : new Uint8Array(32);
   const actionField = computeActionField(action, networkId, realmId, poolId);
-  const actionBinding = await computeActionBinding(contextField, actionField);
 
   const kindField = new Uint8Array(32);
   kindField[31] = action.kind;
 
   const valField = bigintTo32Bytes(action.publicValue);
-  const relayerFeeField = bigintTo32Bytes(action.relayerFee);
-  const relayerField = computeRelayerField(action);
-
   return [
     contextField,
     assetField,
     kindField,
     action.anchorRoot,
     valField,
-    relayerFeeField,
-    relayerField,
     actionField,
-    actionBinding,
     action.nullifiers[0],
     action.nullifiers[1],
     action.outputs[0].cm,
     action.outputs[1].cm,
+    action.outputs[2].cm,
   ];
 }

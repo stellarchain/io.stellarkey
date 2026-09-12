@@ -39,7 +39,7 @@ the browser; the app connects directly to Stellar services.
 | Principle | What it means |
 | --- | --- |
 | **Self-custodial** | Software-account secrets are encrypted locally and opened only for the operation that needs them. Optional Trezor signing keeps approval on the hardware device. |
-| **Backend-free** | There are no StellarKey application servers, accounts, sessions, relays, indexers, analytics services, or server-side databases. |
+| **Backend-free** | There are no StellarKey application servers, accounts, sessions, operated relays, indexers, analytics services, or server-side databases. Private payments submit directly to the selected Stellar RPC. |
 | **Local-first** | Wallet and merchant records live in browser storage. Encrypted backups and exports—not a hidden cloud account—are the recovery path. |
 | **Verifiable** | Every production build exposes its source commit through the UI and `/release.json`; release artifacts include checksums, an SBOM, and provenance. |
 
@@ -51,7 +51,7 @@ the browser; the app connects directly to Stellar services.
 | **Transaction safety** | Exact seven-decimal arithmetic, typed memos, live reserve inputs, reviewed signing intent, multisig envelopes, durable submission recovery, and SEP-7 unsigned payment links |
 | **Local security** | Password-encrypted vaults, encrypted contacts and private notes, failure-atomic backups, watch-only accounts, inactivity auto-lock, optional WebAuthn PRF unlock, and complete local reset |
 | **Hardware** | Trezor address discovery and on-device Stellar signing through the official Trezor Connect popup |
-| **Private Payments preview** | Testnet-only private XLM and USDC balances, reusable private addresses, encrypted memos, local proving, recovery, deposits, transfers, and withdrawals |
+| **Private Payments research** | One live, hash-pinned Testnet pool with an administrator-curated XLM/USDC registry, hidden assets for internal transfers, and direct submission; Mainnet remains blocked. |
 | **Merchant Mode** | Encrypted transactional records, cash and external-card tenders, Horizon-confirmed crypto sales, staff permissions, shifts, refunds, invoices, counter codes, customers, loyalty, reports, and treasury handoffs |
 | **Installable app** | Static PWA shell, offline reopening, iPhone and iPad safe-area handling, and staged service-worker updates |
 
@@ -65,7 +65,7 @@ unsupported devices retain password unlock without a simulated biometric path.
 | --- | --- |
 | **Key material** | A random vault master key is password-wrapped. Sensitive records are encrypted beneath it, and secret bytes are scoped to the operation that requested them. |
 | **Browser storage** | The encrypted vault and preferences use browser storage. Merchant records use encrypted, transactional IndexedDB storage. Data is origin- and browser-profile-specific. |
-| **Network access** | Horizon and RPC requests go directly to HTTPS endpoints. Endpoint identity is checked against the selected Stellar network, reads are bounded, and retries are limited to safe requests. |
+| **Network access** | Operational Horizon and RPC requests go directly to verified HTTPS endpoints. Wallet activity/history deliberately uses SDF's public Horizon, independent of the custom endpoint setting. |
 | **Service worker** | Only the static application shell is cached. Wallet records, merchant data, prices, and Stellar responses do not enter the service-worker cache. |
 | **Passkeys** | Face ID or Touch ID can unwrap the existing local master key through an origin-bound WebAuthn PRF credential. The password and encrypted backup remain recovery paths. |
 | **Hardware wallets** | Trezor support is optional and lazy-loaded only after a hardware action. The browser sends the reviewed transaction to Trezor Connect for device approval. |
@@ -80,18 +80,26 @@ Read the complete [security policy](SECURITY.md), the public
 [security model](https://stellarkey.io/security), and the
 [privacy explanation](https://stellarkey.io/privacy).
 
-Private Payments is an experimental testnet-only preview and refuses Mainnet.
-Private transfers hide their amount, recipient, and memo; deposits, withdrawals,
-the fee-paying Stellar account, and timing remain public. Its privacy limits,
+Private Payments has one published development pool for XLM and USDC on Testnet;
+Mainnet is refused independently. Internal transfers hide their asset, amount,
+recipient and memo; deposits, withdrawals, the submitting
+Stellar account, and timing remain public. Payments submit directly from the user's
+account through the selected RPC. Peer relaying and helper earnings have been removed.
+Old encrypted pending records remain recoverable without resubmitting legacy relay routes. Its privacy limits,
 local storage, direct RPC metadata, and recovery model are documented in the
-[Private Balance security model](docs/private-balance.md).
+[Private Balance whitepaper](docs/private-balance.md). The single-party
+development key passes circuit/Powers-of-Tau compatibility verification, but
+that does not make its setup ceremony-secure. A public multi-party ceremony,
+independent review, and redeployment are required before real-value or Mainnet use.
 
 ## Backend-free architecture
 
 - `npm run build` creates immutable static files in `out/`. There are no
   dynamic application routes or runtime server requirements.
 - Direct Horizon and RPC access keeps the wallet independent of a proprietary
-  application API. Users can select verified HTTPS endpoints in Settings.
+  application API. Users can select verified HTTPS operational endpoints in
+  Settings after fresh password authorization. Public wallet activity/history
+  remains on SDF Horizon by design.
 - Asset identity is always the complete `(network, code, issuer)` tuple. A
   matching code alone is never treated as verified or assigned a price.
 - Mainnet portfolio values require an exact verified asset-price mapping.
@@ -124,7 +132,7 @@ offline behavior, recovery, and security boundaries.
 
 ## Verify a deployed release
 
-The current release is `1.4.1`. Every build embeds the full 40-character Git
+The current release is `1.5.0`. Every build embeds the full 40-character Git
 commit SHA in the interface and in
 [`/release.json`](https://stellarkey.io/release.json). Compare it with the
 commit attached to the corresponding source release or run:
@@ -182,9 +190,12 @@ deployment target.
 | `npm run test:e2e` | Production build plus the complete Playwright browser matrix |
 | `npm run test:hardware` | Deterministic Trezor adapter tests |
 | `npm run audit:prod` | High/critical production dependency gate |
-| `npm run release:verify` | Clean-tree preflight and every automated release gate |
+| `npm run release:verify` | Clean-tree preflight and the complete application verification suite |
 
 The browser matrix covers desktop Chromium, iPhone WebKit, and iPad WebKit.
+The required isolated private-component matrix uses Chromium and iPhone WebKit;
+the nested browser protocol tests run separately within application verification.
+Rust security and circuit Gate A jobs remain separately required in CI and releases.
 Physical Trezor, installed-PWA, backup/restore, and mainnet checks remain manual
 because emulation cannot prove device or network behavior.
 
@@ -196,14 +207,19 @@ hash-bound CSP; the host headers add response-only protections including
 `frame-ancestors 'none'`. Do not rebuild the source on the hosting platform or
 mix files from different releases.
 
-The optional `@trezor/connect-web@9.7.3` dependency currently brings ten
-low-severity `elliptic` advisories through its Bitcoin/UTXO support graph, not
-StellarKey's Stellar signing path. npm offers no fixed stable release. High and
-critical production advisories remain release-blocking.
+As checked on 2026-09-07, the installed production graph has ten low-severity
+vulnerable packages associated with one `elliptic` advisory through Trezor's
+dependency graph, and no high or critical findings. Trezor is a regular production
+dependency whose UI is optional. A reviewed, SDK-14.2.0-scoped TOML override removes
+the installed parser's high-severity findings; it does not patch upstream browser
+prebundles or Trezor's remotely hosted popup core. See the [dependency evidence and
+remaining limits](docs/dependency-security.md). High and critical production
+advisories remain release-blocking.
 
 Read the [production deployment runbook](docs/production-deployment.md) and
-[release checklist](docs/release-checklist.md) before publishing. Pinch zoom is
-disabled by product requirement and covered by the mobile release gate.
+[release checklist](docs/release-checklist.md) before publishing. Viewport metadata
+and global touch CSS permit user zoom. Automated 200% equivalent reflow checks do
+not replace physical-device pinch zoom or human VoiceOver/NVDA checks.
 
 ## Project documentation
 
@@ -214,7 +230,7 @@ disabled by product requirement and covered by the mobile release gate.
 | [Support](SUPPORT.md) | Help boundaries and recovery expectations |
 | [Contributing](CONTRIBUTING.md) | Development workflow, DCO, and review expectations |
 | [Merchant Mode operations](docs/merchant-mode.md) | Setup, daily operations, recovery, and limitations |
-| [Private Balance model](docs/private-balance.md) | Development status, privacy boundary, storage, recovery, and incident links |
+| [Private Balance whitepaper](docs/private-balance.md) | Implemented protocol, privacy boundary, measurements, recovery, and deployment status |
 | [Testing guide](docs/testing.md) | Automated and physical-device verification |
 | [Release checklist](docs/release-checklist.md) | Security, recovery, device, and mainnet release gates |
 | [Deployment runbook](docs/production-deployment.md) | Immutable Cloudflare Pages deployment and rollback |

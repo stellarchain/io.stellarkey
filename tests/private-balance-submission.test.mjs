@@ -45,25 +45,36 @@ test('action controllers publish terminal status outside remountable modal state
     new URL('../src/features/private-balance/components/usePrivateActionController.ts', import.meta.url),
     'utf8',
   );
-  assert.match(controller, /const status = await submitAction\(review\)/);
-  assert.match(controller, /onSubmission\?\.\(status\)/);
+  assert.match(controller, /const submitted = await submitAction\(review\)/);
+  assert.match(controller, /onSubmission\?\.\(submitted.status\)/);
+  assert.match(controller, /setSubmittedHash\(submitted.transactionHash\)/);
 });
 
 function reviewedFixture() {
   const signer = Keypair.random();
   const operation = new PrivateBalanceTransactionBuilder({ poolContractId }).buildTransferOperation({
     action: {
-      assetContractId: ASSET_CONTRACT_ID,
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 2),
-      nullifiers: [bytes(32, 3), bytes(32, 0)],
+      nullifiers: [bytes(32, 3), bytes(32, 4)],
       outputs: [
-        { commitment: bytes(32, 4), recipientEnvelope: bytes(181, 5) },
-        { commitment: bytes(32, 6), recipientEnvelope: bytes(181, 7) },
+        {
+          commitment: bytes(32, 4),
+          recipientEnvelope: bytes(181, 5),
+          outgoingEnvelope: bytes(157, 6),
+        },
+        {
+          commitment: bytes(32, 7),
+          recipientEnvelope: bytes(181, 8),
+          outgoingEnvelope: bytes(157, 9),
+        },
+        {
+          commitment: bytes(32, 10),
+          recipientEnvelope: bytes(181, 11),
+          outgoingEnvelope: bytes(157, 12),
+        },
       ],
       publicValue: 0n,
-      relayerFee: 0n,
-      relayer: signer.publicKey(),
     },
     proof: { a: bytes(64, 8), b: bytes(128, 9), c: bytes(64, 10) },
   });
@@ -75,8 +86,11 @@ function reviewedFixture() {
   }).addOperation(operation).setSorobanData(data).build();
   const review = reviewPrivateBalanceTransaction({
     envelopeXdr: transaction.toXdr(),
-    manifest: { networkPassphrase, poolContractId },
-    assetContractId: ASSET_CONTRACT_ID,
+    manifest: {
+      networkPassphrase,
+      poolContractId,
+      assets: [{ index: 0, contractId: ASSET_CONTRACT_ID }],
+    },
     source: signer.publicKey(),
     sequence: '8',
     timeBounds: { minTime: '1', maxTime: '2000000000' },
@@ -160,6 +174,7 @@ test('private signing persists the exact envelope before an ambiguous broadcast'
     id: '13'.repeat(32),
     commitment: '13'.repeat(32),
     value: '5000000',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     diversifier: '00000000',
     ownerCommitment: '14'.repeat(32),
@@ -181,13 +196,15 @@ test('private signing persists the exact envelope before an ambiguous broadcast'
   const fixture = reviewedFixture();
   const pending = {
     id: 'action-1',
+    submissionMode: 'direct',
     kind: 'transfer',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     status: 'prepared',
     reservedNoteIds: [note.id],
     actionField: '17'.repeat(32),
     nullifiers: ['18'.repeat(32), '00'.repeat(32)],
-    outputCommitments: ['19'.repeat(32), '1a'.repeat(32)],
+    outputCommitments: ['19'.repeat(32), '1a'.repeat(32), '1d'.repeat(32)],
     anchorRoot: '1b'.repeat(32),
     anchorExpiresAtLedger: 500,
     proofHash: '1c'.repeat(32),
@@ -240,6 +257,7 @@ test('private signing persists the exact envelope before an ambiguous broadcast'
     expectedRevision: 4,
     actionId: pending.id,
     networkPassphrase,
+    submissionMode: 'direct',
     rpc: { async sendTransaction() { throw new Error('timeout'); } },
     storageDriver: driver,
     now: () => 5,
@@ -259,7 +277,7 @@ test('private signing persists the exact envelope before an ambiguous broadcast'
     now: () => 6,
   });
   assert.equal(missing.outcome, 'ambiguous');
-  assert.equal(missing.state.pendingActions[0].latestRpcStatus, 'NOT_FOUND');
+  assert.equal(missing.state.pendingActions[0].latestRpcStatus, 'UNAVAILABLE');
   assert.equal(missing.state.pendingActions[0].broadcastAttempts, 1);
   assert.equal(missing.state.notes[0].status, 'reserved');
 
@@ -272,9 +290,9 @@ test('private signing persists the exact envelope before an ambiguous broadcast'
     storageDriver: driver,
     now: () => 7,
   });
-  assert.equal(failed.outcome, 'release');
-  assert.equal(failed.state.pendingActions.length, 0);
-  assert.equal(failed.state.notes[0].status, 'unspent');
+  assert.equal(failed.outcome, 'ambiguous');
+  assert.equal(failed.state.pendingActions.length, 1);
+  assert.equal(failed.state.notes[0].status, 'reserved');
 });
 
 test('post-broadcast polling is a read-only trigger for canonical reconciliation', async () => {
@@ -317,6 +335,35 @@ test('post-broadcast polling is a read-only trigger for canonical reconciliation
   assert.deepEqual(failedStatuses, ['FAILED', 'FAILED', 'FAILED', 'FAILED', 'FAILED']);
 });
 
+for (const boundary of ['start', 'sleep', 'rpc', 'rpc-error', 'reconcile', 'reconcile-error']) {
+  test(`broadcast poll revocation at ${boundary} cannot make another request or report confirmation`, async () => {
+    let active = boundary !== 'start';
+    let requests = 0;
+    let reconciliations = 0;
+    const cancelled = new DOMException('Synthetic watcher authority revoked', 'AbortError');
+    await assert.rejects(pollBroadcastPrivateBalanceTransaction({
+      transactionHash: 'ab'.repeat(32),
+      assertCurrent: () => { if (!active) throw cancelled; },
+      delays: [0, 0, 0],
+      sleep: async () => { if (boundary === 'sleep') active = false; },
+      rpc: { getTransaction: async () => {
+        requests++;
+        if (boundary.startsWith('rpc')) active = false;
+        if (boundary === 'rpc-error') throw new Error('Synthetic transport failure');
+        return { status: 'SUCCESS' };
+      } },
+      reconcile: async () => {
+        reconciliations++;
+        active = false;
+        if (boundary === 'reconcile-error') throw new Error('Synthetic canonical sync failure');
+        return true;
+      },
+    }), error => error === cancelled);
+    assert.equal(requests, ['start', 'sleep'].includes(boundary) ? 0 : 1);
+    assert.equal(reconciliations, boundary.startsWith('reconcile') ? 1 : 0);
+  });
+}
+
 test('accepted private broadcasts remain conservatively journaled across a concurrent state revision', async () => {
   class MemoryDriver {
     records = new Map();
@@ -343,6 +390,7 @@ test('accepted private broadcasts remain conservatively journaled across a concu
     id: '27'.repeat(32),
     commitment: '27'.repeat(32),
     value: '5000000',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     diversifier: '00000000',
     ownerCommitment: '28'.repeat(32),
@@ -364,13 +412,15 @@ test('accepted private broadcasts remain conservatively journaled across a concu
   const fixture = reviewedFixture();
   const pending = {
     id: 'concurrent-action',
+    submissionMode: 'direct',
     kind: 'transfer',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     status: 'prepared',
     reservedNoteIds: [note.id],
     actionField: '2b'.repeat(32),
     nullifiers: ['2c'.repeat(32), '00'.repeat(32)],
-    outputCommitments: ['2d'.repeat(32), '2e'.repeat(32)],
+    outputCommitments: ['2d'.repeat(32), '2e'.repeat(32), '31'.repeat(32)],
     anchorRoot: '2f'.repeat(32),
     anchorExpiresAtLedger: 500,
     proofHash: '30'.repeat(32),
@@ -418,6 +468,7 @@ test('accepted private broadcasts remain conservatively journaled across a concu
     expectedRevision: signed.revision,
     actionId: pending.id,
     networkPassphrase,
+    submissionMode: 'direct',
     rpc: {
       async sendTransaction() {
         const concurrent = await loadPrivateBalanceState(context, storageKey, driver);
@@ -469,6 +520,7 @@ function stateFixture(accountId) {
       id: '36'.repeat(32),
       commitment: '36'.repeat(32),
       value: '5000000',
+      assetIndex: 0,
       assetContractId: ASSET_CONTRACT_ID,
       diversifier: '00000000',
       ownerCommitment: '37'.repeat(32),
@@ -503,7 +555,7 @@ test('signing refuses an expired review before requesting a signature', async ()
   );
 });
 
-test('persisted signed actions resume through broadcast and release after time-bound finality', async () => {
+async function persistedSignedFixture(submissionMode = 'direct') {
   const { context, storageKey, note, driver } = stateFixture('resume-account');
   await commitPrivateBalanceState(
     context,
@@ -515,13 +567,15 @@ test('persisted signed actions resume through broadcast and release after time-b
   const fixture = reviewedFixture();
   const pending = {
     id: 'resume-action',
+    ...(submissionMode === 'legacy' ? {} : { submissionMode }),
     kind: 'transfer',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     status: 'prepared',
     reservedNoteIds: [note.id],
     actionField: '3a'.repeat(32),
     nullifiers: ['3b'.repeat(32), '00'.repeat(32)],
-    outputCommitments: ['3c'.repeat(32), '3d'.repeat(32)],
+    outputCommitments: ['3c'.repeat(32), '3d'.repeat(32), '40'.repeat(32)],
     anchorRoot: '3e'.repeat(32),
     anchorExpiresAtLedger: 500,
     proofHash: '3f'.repeat(32),
@@ -531,6 +585,17 @@ test('persisted signed actions resume through broadcast and release after time-b
     createdAt: 2,
     updatedAt: 2,
   };
+  if (submissionMode !== 'direct') {
+    // Seed historical signed bytes directly. New app APIs cannot create/sign this route.
+    fixture.transaction.sign(fixture.signer);
+    await commitPrivateBalanceState(context, storageKey, {
+      ...createEmptyPrivateBalanceState('39'.repeat(32), 1), revision: 1,
+      notes: [{ ...note, status: 'reserved', reservedAt: 2 }],
+      pendingActions: [{ ...pending, status: 'signed', transactionHash: fixture.review.transactionHash,
+        signedEnvelopeXdr: fixture.transaction.toXdr(), expiresAtSeconds: fixture.review.expiresAt, updatedAt: 4 }],
+    }, 0, driver);
+    return { context, storageKey, driver, fixture, pending };
+  }
   await reservePrivateBuildReservation(context, storageKey, 0, {
     id: pending.id,
     kind: pending.kind,
@@ -563,6 +628,11 @@ test('persisted signed actions resume through broadcast and release after time-b
     now: () => 4,
   });
 
+  return { context, storageKey, driver, fixture, pending };
+}
+
+test('persisted signed spends resume through broadcast but envelope expiry cannot revoke their proof', async () => {
+  const { context, storageKey, driver, fixture, pending } = await persistedSignedFixture();
   let sends = 0;
   const resumed = await resumeSignedPrivateBalanceActions({
     context,
@@ -628,9 +698,94 @@ test('persisted signed actions resume through broadcast and release after time-b
     storageDriver: driver,
     now: () => 8,
   });
-  assert.equal(recovered.outcome, 'release');
-  assert.equal(recovered.state.pendingActions.length, 0);
-  assert.equal(recovered.state.notes[0].status, 'unspent');
+  assert.equal(recovered.outcome, 'ambiguous');
+  assert.equal(recovered.state.pendingActions.length, 1);
+  assert.equal(recovered.state.notes[0].status, 'reserved');
+});
+
+
+for (const mode of ['relay', 'legacy']) {
+  test(`${mode} signed recovery never sends or looks up a transaction through sender RPC`, async () => {
+    const { context, storageKey, driver, fixture, pending } = await persistedSignedFixture(mode);
+    let sends = 0;
+    let lookups = 0;
+    const rpc = {
+      async sendTransaction() {
+        sends += 1;
+        return { status: 'PENDING', hash: fixture.review.transactionHash };
+      },
+      async getTransaction() { lookups += 1; return { status: 'FAILED' }; },
+    };
+    const resumed = await resumeSignedPrivateBalanceActions({
+      context, storageKey, networkPassphrase, rpc, storageDriver: driver,
+    });
+    assert.equal(sends, 0);
+    assert.equal(resumed.pendingActions[0].status, 'signed');
+    assert.equal(resumed.notes[0].status, 'reserved');
+    await assert.rejects(broadcastPrivateBalanceAction({
+      context, storageKey, expectedRevision: resumed.revision, actionId: pending.id,
+      networkPassphrase, submissionMode: 'direct', rpc, storageDriver: driver,
+    }), /route/i);
+    assert.equal(sends, 0);
+    const early = await recoverPrivateBalanceAction({
+      context, storageKey, actionId: pending.id, rpc, storageDriver: driver,
+      scanCanonicalTranscript: async () => ({ actionFields: [], nullifiers: [] }),
+    });
+    assert.equal(lookups, 0);
+    assert.equal(early.outcome, 'ambiguous');
+    assert.equal(early.state.notes[0].status, 'reserved');
+    const expired = await recoverPrivateBalanceAction({
+      context, storageKey, actionId: pending.id, rpc, storageDriver: driver,
+      scanCanonicalTranscript: async () => ({
+        actionFields: [], nullifiers: [],
+        headCloseTimeSeconds: fixture.review.expiresAt + PRIVATE_ACTION_EXPIRY_MARGIN_SECONDS + 1,
+      }),
+    });
+    assert.equal(lookups, 0);
+    assert.equal(expired.outcome, 'ambiguous');
+    assert.equal(expired.state.notes[0].status, 'reserved');
+  });
+}
+
+for (const rpcStatus of ['PENDING', 'ERROR']) {
+  test(`legacy relayed ${rpcStatus} record stays reconcile-only during recovery`, async () => {
+    const { context, storageKey, driver, pending } = await persistedSignedFixture('relay');
+    const state = await loadPrivateBalanceState(context, storageKey, driver);
+    await assert.rejects(broadcastPrivateBalanceAction({
+      context, storageKey, expectedRevision: state.revision, actionId: pending.id,
+      networkPassphrase, submissionMode: 'relay', storageDriver: driver,
+      rpc: { async sendTransaction() { assert.fail('No new relay submission'); } },
+    }), /Peer relaying has been removed/);
+    const historical = await transitionPrivatePendingAction(context, storageKey, state.revision, pending.id, {
+      from: 'signed', to: rpcStatus === 'PENDING' ? 'broadcast' : 'ambiguous',
+      latestRpcStatus: rpcStatus, updatedAt: 5,
+    }, driver);
+    assert.equal(historical.pendingActions[0].submissionMode, 'relay');
+    const recovery = await recoverPrivateBalanceAction({
+      context, storageKey, actionId: pending.id, storageDriver: driver,
+      rpc: { async getTransaction() { assert.fail('relay recovery must not reveal the hash'); } },
+      scanCanonicalTranscript: async () => ({ actionFields: [], nullifiers: [] }),
+    });
+    assert.equal(recovery.outcome, 'ambiguous');
+    assert.equal(recovery.state.notes[0].status, 'reserved');
+  });
+}
+
+test('legacy signed spend recovery retains inputs even if stored envelope expiry is derivable', async () => {
+  const { context, storageKey, driver, fixture, pending } = await persistedSignedFixture('legacy');
+  const state = await loadPrivateBalanceState(context, storageKey, driver);
+  const legacy = { ...state.pendingActions[0] };
+  delete legacy.expiresAtSeconds;
+  await commitPrivateBalanceState(context, storageKey, {
+    ...state, revision: state.revision + 1, pendingActions: [legacy],
+  }, state.revision, driver);
+  const recovered = await recoverPrivateBalanceAction({
+    context, storageKey, actionId: pending.id, storageDriver: driver, networkPassphrase,
+    rpc: { async getTransaction() { assert.fail('no hash lookup for legacy routes'); } },
+    scanCanonicalTranscript: async () => ({ actionFields: [], nullifiers: [],
+      headCloseTimeSeconds: fixture.review.expiresAt + PRIVATE_ACTION_EXPIRY_MARGIN_SECONDS + 1 }),
+  });
+  assert.equal(recovered.outcome, 'ambiguous');
 });
 
 test('prepare refuses while a previous payment is still confirming', async () => {
@@ -650,12 +805,13 @@ test('prepare refuses while a previous payment is still confirming', async () =>
       pendingActions: [{
         id: 'inflight-action',
         kind: 'transfer',
+        assetIndex: 0,
         assetContractId: ASSET_CONTRACT_ID,
         status: 'broadcast',
         reservedNoteIds: [note.id],
         actionField: '41'.repeat(32),
         nullifiers: ['42'.repeat(32), '00'.repeat(32)],
-        outputCommitments: ['43'.repeat(32), '44'.repeat(32)],
+        outputCommitments: ['43'.repeat(32), '44'.repeat(32), '49'.repeat(32)],
         anchorRoot: '45'.repeat(32),
         anchorExpiresAtLedger: 500,
         proofHash: '46'.repeat(32),
@@ -677,19 +833,21 @@ test('prepare refuses while a previous payment is still confirming', async () =>
 
   await assert.rejects(
     () => preparePrivateBalanceActionFlow({
-      manifest: {},
+      manifest: { assets: [{ index: 0, contractId: ASSET_CONTRACT_ID }] },
       accountPublicKey: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
-      privateAddress: `tks1${'q'.repeat(115)}`,
+      privateAddress: `tskpay_${'2'.repeat(121)}`,
       storageContext: context,
       storageKey,
       storageDriver: driver,
       worker: {},
       rpcUrl: 'http://localhost',
       classicFeeStroops: 100n,
+      assetIndex: 0,
       assetContractId: ASSET_CONTRACT_ID,
+      registryAssets: [{ index: 0, contractId: ASSET_CONTRACT_ID }],
       assetCode: 'XLM',
       assetDecimals: 7,
-      draft: { kind: 'transfer', amount: '1', recipientAddress: `tks1${'p'.repeat(115)}` },
+      draft: { kind: 'transfer', amount: '1', recipientAddress: `tskpay_${'3'.repeat(121)}` },
     }),
     PrivateActionInFlightError,
   );

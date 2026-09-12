@@ -6,6 +6,8 @@ import { emptyStore } from "../src/lib/merchant/defaults.ts";
 import { parseSep7PayUri } from "../src/lib/payuri.ts";
 import { NETWORKS } from "../src/lib/stellar.ts";
 import { muxedAddressForRouting } from "../src/lib/merchant/routing.ts";
+import { reconcileIncomingPayments } from "../src/lib/merchant/reconciliation.ts";
+import { decodeMerchantStore } from "../src/lib/merchant/storage.ts";
 
 const NOW = 1_800_000_000_000;
 const TILL = "GAVLAAAWTBEO5XJELA3TID4XVHELGTFYRMMFRU2MQ25C5VVCBI476ZVG";
@@ -91,7 +93,7 @@ function fixedInput(member, overrides = {}) {
 function payment(id, amount, asset, routingId) {
   return {
     id,
-    transactionHash: "a".repeat(64),
+    transactionHash: id.padEnd(64, "a").slice(0, 64),
     ledger: 12345,
     from: PAYER,
     destination: TILL,
@@ -186,8 +188,12 @@ test("code identity and payment facts stay stable while editable metadata persis
   );
 });
 
-test("active fixed-code payments reconcile once at their publication quote", async () => {
-  const { createCounterCode, reconcileCounterPayments } = await counterDomain();
+test("active fixed-code payments require staff review before changing takings", async () => {
+  const {
+    confirmCounterPayment,
+    createCounterCode,
+    reconcileCounterPayments,
+  } = await counterDomain();
   const { member, store } = merchantStore();
   const created = createCounterCode(store, fixedInput(member));
   const observed = payment("fixed-payment", "10.0000000", USDC, created.code.routingId);
@@ -199,12 +205,40 @@ test("active fixed-code payments reconcile once at their publication quote", asy
   });
 
   assert.equal(settled.unclaimed.length, 0);
-  assert.equal(settled.store.counterCodes[0].payments, 1);
-  assert.equal(settled.store.counterCodes[0].takingsMinor, 1000);
-  assert.equal(settled.store.counterPayments[0].amountMinor, 1000);
-  assert.deepEqual(settled.store.counterPayments[0].quote, created.code.quotes[0]);
+  assert.equal(settled.store.counterCodes[0].payments, 0);
+  assert.equal(settled.store.counterCodes[0].takingsMinor, 0);
+  assert.equal(settled.store.counterPayments.length, 0);
+  assert.equal(settled.store.paymentReconciliations[0].outcome, "needs_confirmation");
+  assert.equal(settled.store.paymentReconciliations[0].counterCodeId, created.code.id);
+  assert.equal(settled.store.unmatched[0].candidateCounterCodeId, created.code.id);
+  const serializableReview = {
+    ...emptyStore(),
+    paymentReconciliations: settled.store.paymentReconciliations,
+    unmatched: settled.store.unmatched,
+  };
+  assert.ok(decodeMerchantStore(JSON.parse(JSON.stringify(serializableReview))));
 
-  const replay = reconcileCounterPayments(settled.store, {
+  assert.throws(
+    () => confirmCounterPayment(
+      { ...settled.store, activeStaffId: null },
+      { paymentId: observed.id, actor: member, rates: [], now: NOW + 2400 },
+    ),
+    /not allowed/i,
+  );
+
+  const confirmed = confirmCounterPayment(settled.store, {
+    paymentId: observed.id,
+    actor: member,
+    rates: [],
+    now: NOW + 2500,
+  });
+  assert.equal(confirmed.counterCodes[0].payments, 1);
+  assert.equal(confirmed.counterCodes[0].takingsMinor, 1000);
+  assert.equal(confirmed.counterPayments[0].amountMinor, 1000);
+  assert.deepEqual(confirmed.counterPayments[0].quote, created.code.quotes[0]);
+  assert.equal(confirmed.paymentReconciliations[0].resolution.kind, "attached");
+
+  const replay = reconcileCounterPayments(confirmed, {
     network: "mainnet",
     payments: [observed],
     rates: [],
@@ -213,10 +247,52 @@ test("active fixed-code payments reconcile once at their publication quote", asy
   assert.equal(replay.unclaimed.length, 0);
   assert.equal(replay.store.counterCodes[0].payments, 1);
   assert.equal(replay.store.counterPayments.length, 1);
+
+  const replayedAsAnotherOperation = {
+    ...observed,
+    id: "provider-selected-alias",
+  };
+  const canonicalReplay = reconcileCounterPayments(confirmed, {
+    network: "mainnet",
+    payments: [replayedAsAnotherOperation],
+    rates: [],
+    now: NOW + 3_500,
+  });
+  assert.deepEqual(canonicalReplay.unclaimed, [replayedAsAnotherOperation]);
+  const reviewedReplay = reconcileIncomingPayments(canonicalReplay.store, {
+    network: "mainnet",
+    payments: canonicalReplay.unclaimed,
+    now: NOW + 3_500,
+  });
+  assert.equal(reviewedReplay.counterCodes[0].payments, 1);
+  assert.equal(reviewedReplay.paymentReconciliations[0].outcome, "duplicate");
+});
+
+test("counter codes from a previous receiving account cannot settle current takings", async () => {
+  const { createCounterCode, reconcileCounterPayments } = await counterDomain();
+  const { member, store } = merchantStore();
+  const created = createCounterCode(store, fixedInput(member));
+  const rotated = {
+    ...created.store,
+    settings: {
+      ...created.store.settings,
+      receivingPublicKey: ISSUER,
+    },
+  };
+  const observed = payment("old-destination", "10.0000000", USDC, created.code.routingId);
+  const reconciled = reconcileCounterPayments(rotated, {
+    network: "mainnet",
+    payments: [observed],
+    rates: [],
+    now: NOW + 2_000,
+  });
+
+  assert.deepEqual(reconciled.unclaimed.map((entry) => entry.id), [observed.id]);
+  assert.equal(reconciled.store.counterPayments.length, 0);
 });
 
 test("a counter-code payment created before expiry files after delayed observation", async () => {
-  const { createCounterCode, reconcileCounterPayments } = await counterDomain();
+  const { confirmCounterPayment, createCounterCode, reconcileCounterPayments } = await counterDomain();
   const { member, store } = merchantStore();
   const created = createCounterCode(store, fixedInput(member, { expiresAt: NOW + 1_500 }));
   const observed = payment("delayed-payment", "10.0000000", USDC, created.code.routingId);
@@ -228,7 +304,14 @@ test("a counter-code payment created before expiry files after delayed observati
   });
 
   assert.equal(settled.unclaimed.length, 0);
-  assert.equal(settled.store.counterPayments[0].id, observed.id);
+  assert.equal(settled.store.paymentReconciliations[0].id, observed.id);
+  const confirmed = confirmCounterPayment(settled.store, {
+    paymentId: observed.id,
+    actor: member,
+    rates: [],
+    now: NOW + 2_500,
+  });
+  assert.equal(confirmed.counterPayments[0].id, observed.id);
 });
 
 test("a counter-code payment with an invalid ledger timestamp stays unclaimed", async () => {
@@ -270,7 +353,7 @@ test("a counter-code payment cannot file against another receiving account", asy
 });
 
 test("open codes price live payments and retain unpriceable ones for review", async () => {
-  const { createCounterCode, reconcileCounterPayments } = await counterDomain();
+  const { confirmCounterPayment, createCounterCode, reconcileCounterPayments } = await counterDomain();
   const { member, store } = merchantStore();
   const created = createCounterCode(store, {
     ...fixedInput(member),
@@ -294,13 +377,26 @@ test("open codes price live payments and retain unpriceable ones for review", as
   });
 
   assert.equal(reconciled.unclaimed.length, 0);
-  assert.equal(reconciled.store.counterCodes[0].payments, 2);
-  assert.equal(reconciled.store.counterCodes[0].takingsMinor, 200);
+  assert.equal(reconciled.store.counterCodes[0].payments, 0);
+  const priced = confirmCounterPayment(reconciled.store, {
+    paymentId: "priced-payment",
+    actor: member,
+    rates: [{ asset: USDC, currencyPerUnit: 1 }],
+    now: NOW + 2_500,
+  });
+  const confirmed = confirmCounterPayment(priced, {
+    paymentId: "review-payment",
+    actor: member,
+    rates: [{ asset: USDC, currencyPerUnit: 1 }],
+    now: NOW + 2_600,
+  });
+  assert.equal(confirmed.counterCodes[0].payments, 2);
+  assert.equal(confirmed.counterCodes[0].takingsMinor, 200);
   assert.deepEqual(
-    reconciled.store.counterPayments.map((entry) => entry.amountMinor),
+    confirmed.counterPayments.map((entry) => entry.amountMinor),
     [200, null],
   );
-  assert.ok(reconciled.store.counterPayments.every((entry) => entry.quote === null));
+  assert.ok(confirmed.counterPayments.every((entry) => entry.quote === null));
 });
 
 test("paused and expired codes stop auto-filing while their printed request remains reproducible", async () => {
@@ -341,6 +437,7 @@ test("production counter-code surfaces use persisted state, live quotes, and rea
   const page = source("src/components/merchant/PaymentLinksPage.tsx");
   const editor = source("src/components/merchant/LinkEditorModal.tsx");
   const poster = source("src/components/merchant/CounterPosterModal.tsx");
+  const orders = source("src/components/merchant/OrdersPage.tsx");
 
   for (const screen of [page, editor, poster]) {
     assert.doesNotMatch(screen, /merchant\/mock|MOCK_COUNTER_CODES|MOCK_NOW|MOCK_TILL_ADDRESS|previewRateFor|PREVIEW_UNIT_PRICE/);
@@ -348,6 +445,11 @@ test("production counter-code surfaces use persisted state, live quotes, and rea
   assert.match(page, /counterCodes|setCounterCodeActive/);
   assert.match(editor, /createCounterCode|updateCounterCode/);
   assert.match(poster, /counterCodePayUriFor|window\.print/);
+  assert.match(poster, /const canRenderPaymentArtifact =/);
+  assert.match(poster, /canRenderPaymentArtifact && face/);
+  assert.match(poster, /canRenderPaymentArtifact \? \(/);
+  assert.match(orders, /confirmCounterPayment/);
+  assert.match(orders, /Reusable\s+counter routes never change takings automatically/);
   assert.doesNotMatch(page, /setCodes\(|on this screen/);
   assert.doesNotMatch(editor, /on this screen only|illustrative rate|example rate/);
 });

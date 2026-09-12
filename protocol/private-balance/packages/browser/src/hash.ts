@@ -36,6 +36,12 @@ export function hmacSha512(key: Uint8Array, ...chunks: Uint8Array[]): Uint8Array
   return mac.digest();
 }
 
+export function hmacSha256(key: Uint8Array, ...chunks: Uint8Array[]): Uint8Array {
+  const mac = hmac.create(sha256, key);
+  for (const chunk of chunks) mac.update(chunk);
+  return mac.digest();
+}
+
 export function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   if (left.length !== right.length) return false;
   let difference = 0;

@@ -233,7 +233,9 @@ const order = objectOf<Merchant.Order>({
   stockExceptions: arrayOf(inventoryException),
   payerAddress: nullableString,
   note: nullableString,
-}, {});
+}, {
+  shiftId: nullableString,
+});
 
 const chargeQuote = objectOf<Merchant.ChargeQuote>({
   unitPriceMinorE6: nonNegativeInteger,
@@ -317,7 +319,9 @@ const unmatchedPayment = objectOf<Merchant.UnmatchedPayment>({
   ),
   candidateChargeId: nullableString,
   candidateInvoiceId: nullableString,
-}, {});
+}, {
+  candidateCounterCodeId: nullableString,
+});
 
 const paymentResolution = objectOf<Merchant.PaymentResolution>({
   kind: oneOf("attached", "dismissed", "refund_submitted"),
@@ -326,7 +330,10 @@ const paymentResolution = objectOf<Merchant.PaymentResolution>({
   at: timestamp,
   targetChargeId: nullableString,
   refundId: nullableString,
-}, {});
+}, {
+  targetCounterCodeId: nullableString,
+  targetInvoiceId: nullableString,
+});
 
 const paymentReconciliation = objectOf<Merchant.PaymentReconciliation>({
   id: nonEmptyString,
@@ -354,7 +361,9 @@ const paymentReconciliation = objectOf<Merchant.PaymentReconciliation>({
   reversalAmount: nullableString,
   observedAt: timestamp,
   resolution: nullable(paymentResolution),
-}, {});
+}, {
+  counterCodeId: nullableString,
+});
 
 const refund = objectOf<Merchant.Refund>({
   id: nonEmptyString,
@@ -374,6 +383,8 @@ const refund = objectOf<Merchant.Refund>({
 }, {
   invoiceId: nullableString,
   requestId: nullableString,
+  submittedById: nonEmptyString,
+  submittedBy: nonEmptyString,
 });
 
 const staffPermissions = objectOf<Merchant.StaffPermissions>({
@@ -615,6 +626,16 @@ const customerRecord: Validator<Merchant.CustomerRecord> =
   (value): value is Merchant.CustomerRecord =>
     customerRecordShape(value) && new Set(value.sourceIds).size === value.sourceIds.length;
 
+const customerMutationEvent = objectOf<Merchant.CustomerMutationEvent>({
+  id: nonEmptyString,
+  kind: oneOf("note_updated", "forgotten"),
+  addressHash: (value): value is string =>
+    typeof value === "string" && /^[0-9a-f]{64}$/.test(value),
+  actorId: nonEmptyString,
+  actorName: nonEmptyString,
+  at: timestamp,
+}, {});
+
 const settlementRuleShape = objectOf<Merchant.SettlementRule>({
   autoConvert: booleanValue,
   maxSlippageBps: positiveInteger,
@@ -727,7 +748,14 @@ const merchantStoreShape = objectOf<Merchant.MerchantStore>({
   nextShiftNumber: positiveInteger,
   nextInvoiceNumber: positiveInteger,
   cursors: validCursors,
-}, {});
+}, {
+  pinAttempts: recordOf(objectOf<Merchant.MerchantPinAttemptState>({
+    failures: nonNegativeInteger,
+    blockedUntil: timestamp,
+    lockoutLevel: nonNegativeInteger,
+  }, {})),
+  customerEvents: arrayOf(customerMutationEvent),
+});
 
 function nextInvoiceNumberIsCurrent(store: Merchant.MerchantStore): boolean {
   const afterHighest = store.invoices.reduce((next, invoice) => {

@@ -15,8 +15,12 @@ async function inspect() {
   console.log(`- Private Inputs: ${r1cs.nPrvInputs}`);
   console.log(`- Outputs: ${r1cs.nOutputs}`);
 
-  if (r1cs.nPubInputs !== 13) {
-    console.error(`Expected 13 public inputs, got ${r1cs.nPubInputs}`);
+  if (r1cs.nPubInputs !== 11) {
+    console.error(`Expected 11 public inputs, got ${r1cs.nPubInputs}`);
+    process.exit(1);
+  }
+  if (r1cs.nConstraints !== 15_114) {
+    console.error(`Expected 15114 constraints, got ${r1cs.nConstraints}`);
     process.exit(1);
   }
   if (typeof r1cs.curve.terminate === 'function') {

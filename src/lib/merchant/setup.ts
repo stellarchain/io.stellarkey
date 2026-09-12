@@ -46,6 +46,32 @@ export interface MerchantSetupInput {
 export interface MerchantSetupMetadata {
   now: number;
   ownerId: string;
+  /** Required when an existing merchant owner is being replaced or updated. */
+  authorizedOwnerId?: string;
+}
+
+export type MerchantSettingsPatch = Partial<Omit<MerchantSettings, "enabled">>;
+
+/** Merchant Mode enablement has its own password-gated lifecycle boundary. */
+export function applyMerchantSettingsPatch(
+  settings: MerchantSettings,
+  patch: MerchantSettingsPatch,
+): MerchantSettings {
+  if (Object.prototype.hasOwnProperty.call(patch, "enabled")) {
+    throw new Error("Use setEnabled to change Merchant Mode enablement.");
+  }
+  return { ...settings, ...patch };
+}
+
+export function assertMerchantReceivingAccount(
+  accounts: Array<{ publicKey: string; watchOnly?: boolean; hardware?: string }>,
+  receivingPublicKey: string,
+): void {
+  const account = accounts.find((candidate) => candidate.publicKey === receivingPublicKey);
+  if (!account) throw new Error("Choose an account held by this wallet for merchant payments.");
+  if (account.watchOnly && !account.hardware) {
+    throw new Error("A watch-only account cannot be used as the merchant receiving account.");
+  }
 }
 
 function cleanAsset(asset: AcceptedAsset): AcceptedAsset {
@@ -176,7 +202,20 @@ export function completeMerchantSetup(
   const defaultTaxRateId = taxRates.some((rate) => rate.id === store.settings.defaultTaxRateId)
     ? store.settings.defaultTaxRateId
     : taxRates[0].id;
-  const existingOwner = store.staff.find((member) => member.role === "owner");
+  const hasExistingOwner = store.staff.some((member) => member.role === "owner");
+  const existingOwner = store.staff.find(
+    (member) => member.id === store.activeStaffId && member.role === "owner",
+  );
+  if (hasExistingOwner && !existingOwner) {
+    throw new Error("Unlock the active owner before reconfiguring Merchant Mode.");
+  }
+  if (
+    existingOwner &&
+    (!existingOwner.active ||
+      metadata.authorizedOwnerId !== existingOwner.id)
+  ) {
+    throw new Error("Unlock the active owner before reconfiguring Merchant Mode.");
+  }
   const owner: StaffMember = {
     id: existingOwner?.id ?? metadata.ownerId,
     name: ownerName,

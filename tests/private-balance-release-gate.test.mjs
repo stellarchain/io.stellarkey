@@ -4,7 +4,25 @@ import test from 'node:test';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
-test('testnet preview private payments remain behind a verified lazy boundary', async () => {
+test('CI and release require isolated phone/desktop components and nested browser protocol tests', () => {
+  const { scripts } = JSON.parse(read('../package.json'));
+  assert.equal(scripts['test:private-protocol'], 'npm --prefix protocol/private-balance/packages/browser test');
+  assert.equal(scripts['test:e2e:private-components'], 'node scripts/test-private-components.mjs');
+  assert.match(scripts['verify:application'], /npm run test:private-protocol/);
+  assert.match(scripts['verify:application'], /npm run test:e2e:reporter/);
+  assert.match(scripts['verify:application'], /npm run test:e2e:private-ui.*npm run test:e2e:private-components.*npm run check:fixture-clean.*npm run build.*npm run check:fixture-clean/);
+  assert.match(scripts['release:verify'], /npm run verify:application/);
+  assert.match(read('../.github/workflows/ci.yml'), /npm run verify:application/);
+  assert.match(read('../.github/workflows/release.yml'), /npm run release:verify/);
+  const isolated = read('../playwright.private-components.config.ts');
+  for (const suite of ['private-components', 'ux-primitives', 'qr-freshness', 'private-direct', 'private-recovery']) {
+    assert.ok(isolated.includes(`${suite}.spec.ts`), `${suite} must execute in the isolated gate`);
+  }
+  assert.match(isolated, /desktop-chromium/);
+  assert.match(isolated, /iphone-webkit/);
+});
+
+test('hash-pinned development private payments remain behind a Testnet-only lazy boundary', async () => {
   const shell = read('../src/components/UnlockedWalletShell.tsx');
   const boundary = read('../src/components/PrivateBalanceRuntimeBoundary.tsx');
   const dashboard = read('../src/components/Dashboard.tsx');
@@ -37,17 +55,15 @@ test('testnet preview private payments remain behind a verified lazy boundary', 
   assert.match(provider, /ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE/);
   assert.match(
     expectedManifest,
-    /^export const ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE =\n  process\.env\.NODE_ENV === 'development';$/m,
-    'development fixtures must be visible only in a development build',
-  );
-  assert.doesNotMatch(
-    expectedManifest,
-    /ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE = true/,
-    'a generated production module must never hardcode the fixture bypass',
+    /^export const ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE = true;$/m,
+    'the verified Testnet development deployment must remain available',
   );
   assert.deepEqual(
     privateBalanceAvailability(validateManifest(manifest), 'testnet'),
-    { ready: true },
+    {
+      ready: false,
+      reason: 'Private Balance is still using development artifacts.',
+    },
   );
   assert.deepEqual(
     privateBalanceAvailability(validateManifest(manifest), 'mainnet'),
@@ -56,16 +72,13 @@ test('testnet preview private payments remain behind a verified lazy boundary', 
       reason: 'Private Payments are available on Stellar testnet only.',
     },
   );
-  const shippedDevelopmentFixture = validateManifest({
-    ...manifest,
-    status: 'development',
-  });
+  const shippedDevelopmentFixture = validateManifest(manifest);
   assert.deepEqual(
     privateBalanceAvailability(shippedDevelopmentFixture, 'testnet', {
       allowDevelopmentFixture: true,
     }),
     { ready: true },
-    'the exact hash-pinned development fixture must be usable only when explicitly allowed',
+    'the shipped Testnet development deployment is explicitly enabled',
   );
   assert.deepEqual(
     privateBalanceAvailability(

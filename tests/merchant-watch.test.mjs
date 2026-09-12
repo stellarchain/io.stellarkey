@@ -6,11 +6,14 @@ import { createCharge } from "../src/lib/merchant/charge.ts";
 import { defaultSettings, emptyStore } from "../src/lib/merchant/defaults.ts";
 import {
   attachReconciledPayment,
+  bulkDismissPendingReconciliations,
   dismissReconciledPayment,
   markReconciledRefund,
+  pendingReconciliationTray,
   reconcileIncomingPayments,
 } from "../src/lib/merchant/reconciliation.ts";
 import { recordRefundSubmission } from "../src/lib/merchant/refunds.ts";
+import { closeShift, openShift, unresolvedShiftFlows } from "../src/lib/merchant/shifts.ts";
 import { fetchIncomingPayments } from "../src/lib/merchant/watch.ts";
 
 const NOW = 1_800_000_000_000;
@@ -274,6 +277,24 @@ test("a payment cannot settle a charge issued to another receiving account", () 
   assert.equal(reconciled.paymentReconciliations[0].outcome, "routing_unknown");
 });
 
+test("an awaiting charge stops settling after the merchant receiving account changes", () => {
+  const initial = awaitingStore();
+  const changed = {
+    ...initial,
+    settings: { ...initial.settings, receivingPublicKey: ISSUER },
+  };
+  const reconciled = reconcileIncomingPayments(changed, {
+    network: "mainnet",
+    payments: [payment()],
+    now: NOW,
+  });
+
+  assert.equal(reconciled.orders[0].status, "awaiting");
+  assert.equal(reconciled.charges[0].status, "awaiting");
+  assert.equal(reconciled.paymentReconciliations[0].outcome, "routing_unknown");
+  assert.equal(reconciled.unmatched[0].destination, TILL);
+});
+
 test("watch targets and cursors retain immutable destinations after settings change", async () => {
   const watch = await import("../src/lib/merchant/watch.ts");
   assert.equal(typeof watch.merchantWatchDestinations, "function");
@@ -380,6 +401,17 @@ test("a duplicate is resolved only by its persisted non-failed refund submission
     /failed|did not move/i,
   );
   assert.equal(recorded.paymentReconciliations[0].resolution, null);
+  const unknownRefund = { ...failedRefund, id: "refund-unknown", transactionHash: "d".repeat(64), submissionStatus: "status_unknown" };
+  const unknownRecorded = recordRefundSubmission(duplicate, unknownRefund);
+  assert.throws(
+    () => markReconciledRefund(unknownRecorded, {
+      paymentId: "payment-2",
+      refundId: "refund-unknown",
+      actor: actor(),
+      now: NOW + 3,
+    }),
+    /confirmed/i,
+  );
   assert.throws(
     () => markReconciledRefund(duplicate, {
       paymentId: "payment-2",
@@ -431,6 +463,94 @@ test("dismiss and exact manual attach keep an immutable staff audit", () => {
   );
 });
 
+test("reconciliation rows remain actionable after a dust flood evicts their tray projection", () => {
+  const owner = actor();
+  const opened = openShift(awaitingStore(), {
+    id: "shift-flood",
+    actor: owner,
+    terminalName: "Counter",
+    network: "mainnet",
+    floatMinor: 0,
+    now: NOW - 2_000,
+  });
+  const genuine = payment({ id: "genuine", routingId: null });
+  const dust = Array.from({ length: 250 }, (_, index) => payment({
+    id: `dust-${String(index).padStart(3, "0")}`,
+    transactionHash: index.toString(16).padStart(64, "0"),
+    amount: "0.0000001",
+    routingId: String(6_000 + index),
+  }));
+  const flooded = reconcileIncomingPayments(opened.store, {
+    network: "mainnet",
+    payments: [genuine, ...dust],
+    now: NOW,
+  });
+
+  assert.equal(flooded.paymentReconciliations.length, 251);
+  assert.equal(flooded.unmatched.length, 200);
+  assert.equal(flooded.unmatched.some((entry) => entry.id === genuine.id), false);
+  assert.equal(pendingReconciliationTray(flooded).length, 200);
+  assert.deepEqual(pendingReconciliationTray(flooded, 0), []);
+
+  const attached = attachReconciledPayment(flooded, {
+    paymentId: genuine.id,
+    chargeId: "charge-1",
+    actor: owner,
+    now: NOW + 1,
+  });
+  assert.equal(attached.orders[0].status, "paid");
+  assert.equal(
+    attached.paymentReconciliations.find((entry) => entry.id === genuine.id)?.resolution?.kind,
+    "attached",
+  );
+
+  const cashier = { ...owner, id: "cashier", name: "Cashier", role: "server" };
+  assert.throws(
+    () => bulkDismissPendingReconciliations(attached, {
+      actor: cashier,
+      now: NOW + 2,
+      limit: 100,
+    }),
+    /owner/i,
+  );
+
+  let cleared = attached;
+  const resolvedIds = [];
+  while (unresolvedShiftFlows(cleared, opened.shift.id, NOW + 10).length > 0) {
+    const result = bulkDismissPendingReconciliations(cleared, {
+      actor: owner,
+      now: NOW + 2 + resolvedIds.length,
+      limit: 100,
+    });
+    assert.ok(result.resolvedIds.length > 0 && result.resolvedIds.length <= 100);
+    resolvedIds.push(...result.resolvedIds);
+    cleared = result.store;
+  }
+
+  assert.equal(resolvedIds.length, 250);
+  assert.equal(resolvedIds[0], "dust-000", "bulk cleanup starts with evicted oldest rows");
+  assert.equal(pendingReconciliationTray(cleared).length, 0);
+  assert.ok(
+    cleared.paymentReconciliations
+      .filter((entry) => entry.id.startsWith("dust-"))
+      .every(
+        (entry) =>
+          entry.resolution?.kind === "dismissed" &&
+          entry.resolution.staffId === owner.id &&
+          entry.resolution.staffName === owner.name,
+      ),
+    "every bulk disposition keeps its own owner audit record",
+  );
+
+  const closed = closeShift(cleared, {
+    shiftId: opened.shift.id,
+    actor: owner,
+    countedMinor: 0,
+    now: NOW + 1_000,
+  });
+  assert.equal(closed.report.kind, "z");
+});
+
 test("the watcher resumes oldest-first and advances the cursor to the newest record", async (t) => {
   const olderToken = (BigInt(60_000_001) << 32n).toString();
   const newerToken = (BigInt(60_000_002) << 32n).toString();
@@ -440,7 +560,8 @@ test("the watcher resumes oldest-first and advances the cursor to the newest rec
     const record = (id, token, createdAt) => ({
       id,
       type: "payment",
-      transaction_hash: id.padEnd(64, "0"),
+      transaction_hash: (id === "newer" ? "a" : "b").repeat(64),
+      transaction_successful: true,
       created_at: createdAt,
       paging_token: token,
       to: TILL,
@@ -473,6 +594,59 @@ test("the watcher resumes oldest-first and advances the cursor to the newest rec
   assert.equal(requested.searchParams.get("cursor"), newerToken);
 });
 
+test("merchant settlement reads ignore a configured Horizon endpoint", async (t) => {
+  const previousWindow = globalThis.window;
+  const values = new Map([
+    ["wallet.endpoint.horizon.mainnet.v1", "https://malicious-horizon.example"],
+  ]);
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => values.delete(key),
+    },
+  };
+  t.after(() => {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  });
+  let requested = "";
+  t.mock.method(globalThis, "fetch", async (url) => {
+    requested = String(url);
+    return new Response(JSON.stringify({ _embedded: { records: [] } }), { status: 200 });
+  });
+
+  await fetchIncomingPayments({ publicKey: TILL, network: "mainnet", cursor: "1" });
+  assert.match(requested, /^https:\/\/horizon\.stellar\.org\/accounts\//);
+});
+
+test("the watcher fails closed on a payment without explicit successful transaction evidence", async (t) => {
+  const token = (BigInt(60_000_003) << 32n).toString();
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+    _embedded: {
+      records: [{
+        id: "missing-success",
+        type: "payment",
+        transaction_hash: "a".repeat(64),
+        created_at: "2027-01-15T08:02:00Z",
+        paging_token: token,
+        to: TILL,
+        from: PAYER,
+        asset_type: "credit_alphanum4",
+        asset_code: "USDC",
+        asset_issuer: ISSUER,
+        amount: "10.0000000",
+        transaction: { memo: "5001", memo_type: "id" },
+      }],
+    },
+  }), { status: 200, headers: { "content-type": "application/json" } }));
+
+  await assert.rejects(
+    fetchIncomingPayments({ publicKey: TILL, network: "mainnet", cursor: "1" }),
+    /invalid.*horizon|successful.*required/i,
+  );
+});
+
 test("duplicate and unmatched production surfaces expose real audited actions", () => {
   const hook = readFileSync(new URL("../src/hooks/useMerchant.tsx", import.meta.url), "utf8");
   const duplicate = readFileSync(
@@ -490,4 +664,21 @@ test("duplicate and unmatched production surfaces expose real audited actions", 
   assert.match(duplicate, /await submitPaymentRefund\(/);
   assert.match(orders, /reconciliationOutcome/);
   assert.match(orders, /DuplicateChargeSheet/);
+  assert.match(orders, /Owner cleanup/);
+  assert.match(orders, /dismissPendingReconciliations/);
+});
+
+test("stale charges cannot render a new payment request", () => {
+  const hook = readFileSync(new URL("../src/hooks/useMerchant.tsx", import.meta.url), "utf8");
+  const sheet = readFileSync(
+    new URL("../src/components/merchant/ChargeSheet.tsx", import.meta.url),
+    "utf8",
+  );
+  const payUriFor = hook.split("const payUriFor = useCallback")[1]
+    ?.split("const orderFor = useCallback")[0] ?? "";
+
+  assert.match(payUriFor, /isCurrentReceivingDestination\(settings, charge\.destination\)/);
+  assert.match(sheet, /receivingAccountChanged/);
+  assert.match(sheet, /requestAvailable/);
+  assert.match(sheet, /Receiving account changed/);
 });

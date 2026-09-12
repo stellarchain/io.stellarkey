@@ -25,6 +25,21 @@ export interface PaperWalletDoc {
   secQrDataUrl: string;
 }
 
+const openPaperWalletWindows = new Set<Window>();
+
+/** Close every secret-bearing print document owned by the current wallet session. */
+export function closePaperWalletPrints(): void {
+  for (const child of openPaperWalletWindows) {
+    try {
+      if (!child.closed) child.close();
+    } catch {
+      // Cross-origin navigation may make a child inaccessible; continue closing
+      // the remaining documents and forget the inaccessible reference.
+    }
+  }
+  openPaperWalletWindows.clear();
+}
+
 function chunk4(s: string): string {
   return (s.match(/.{1,4}/g) ?? [s]).join(" ");
 }
@@ -121,13 +136,13 @@ export function buildPaperWalletHtml(doc: PaperWalletDoc): string {
         <div class="panel">
           <p class="ptitle">Public Address</p>
           <p class="psub">Shareable — receive funds</p>
-          <img class="qr" src="${doc.pubQrDataUrl}" alt="Public address QR" />
+          <img class="qr" src="${escapeHtml(doc.pubQrDataUrl)}" alt="Public address QR" />
           <p class="mono">${chunk4(escapeHtml(doc.publicKey))}</p>
         </div>
         <div class="panel secret">
           <p class="ptitle">${doc.kind === "mnemonic" ? "Recovery Phrase" : "Secret Key"}</p>
           <p class="psub">Do not share — withdrawal authority</p>
-          <img class="qr" src="${doc.secQrDataUrl}" alt="Secret material QR" />
+          <img class="qr" src="${escapeHtml(doc.secQrDataUrl)}" alt="Secret material QR" />
           ${secretBlock}
         </div>
       </main>
@@ -150,7 +165,6 @@ export function buildPaperWalletHtml(doc: PaperWalletDoc): string {
       <div class="strip">Anyone holding this certificate controls 100% of the funds on this account</div>
     </div>
   </div>
-  <script>window.addEventListener("load", function () { setTimeout(function () { window.print(); }, 250); });</script>
 </body>
 </html>`;
 }
@@ -173,10 +187,18 @@ export function openPaperWalletPrint(doc: PaperWalletDoc): void {
     console.error("Popup blocked: allow popups to export the PDF certificate.");
     return;
   }
+  openPaperWalletWindows.add(win);
 
-  // Once the same-origin blob document has loaded it retains its DOM, while
-  // revoking here prevents any other same-origin script from fetching the
-  // secret-bearing URL for an arbitrary grace period.
-  win.addEventListener("load", revoke, { once: true });
-  if (win.document.readyState === "complete") revoke();
+  // Invoke printing from the trusted parent application rather than an inline
+  // child script, which the production CSP correctly blocks. Once loaded, the
+  // blob document retains its DOM; revoke its secret-bearing URL immediately.
+  const printAndRevoke = () => {
+    try {
+      win.print();
+    } finally {
+      revoke();
+    }
+  };
+  win.addEventListener("load", printAndRevoke, { once: true });
+  if (win.document.readyState === "complete") printAndRevoke();
 }

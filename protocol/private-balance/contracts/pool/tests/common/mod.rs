@@ -1,14 +1,13 @@
 use private_balance_pool::{
-    PrivateBalancePool,
+    PrivateBalancePool, PrivateBalancePoolClient,
     generated_artifacts::{
         EXPECTED_CIRCUIT_HASH, EXPECTED_POSEIDON2_PARAMETER_HASH, EXPECTED_VERIFICATION_KEY_HASH,
     },
 };
 use private_balance_protocol::{
     constants::{
-        ADDRESS_CHECKSUM_BYTES, ADDRESS_CONTEXT_TAG_BYTES, PAGE_CAPACITY,
-        PRIVATE_ADDRESS_ASCII_BYTES, PRIVATE_ADDRESS_PAYLOAD_BYTES, PROTOCOL_VERSION,
-        ROOT_WINDOW_LEDGERS, TREE_DEPTH,
+        ADDRESS_CHECKSUM_BYTES, ADDRESS_CONTEXT_TAG_BYTES, PRIVATE_ADDRESS_ASCII_BYTES,
+        PRIVATE_ADDRESS_PAYLOAD_BYTES, PROTOCOL_VERSION, ROOT_WINDOW_LEDGERS, TREE_DEPTH,
     },
     deployment::DeploymentBinding,
 };
@@ -65,6 +64,7 @@ pub struct PoolFixture {
     pub pool_id: Address,
     pub asset: Address,
     pub guardian: Address,
+    pub asset_admin: Address,
 }
 
 pub fn payload(address: &Address) -> (u8, [u8; 32]) {
@@ -89,18 +89,19 @@ pub fn register_pool(env: &Env) -> PoolFixture {
         .deployed_address();
     env.register_at(&asset, MockNativeToken, ());
     let guardian = Address::generate(env);
+    let asset_admin = Address::generate(env);
     let deployment_binding_hash = DeploymentBinding {
         protocol_version: PROTOCOL_VERSION,
         network_id: network_id.to_array(),
         realm_id: realm_id.to_array(),
         pool_id: payload(&pool_id).1,
+        asset_admin: payload(&asset_admin),
         guardian: payload(&guardian),
         poseidon2_parameter_hash: EXPECTED_POSEIDON2_PARAMETER_HASH,
         circuit_hash: EXPECTED_CIRCUIT_HASH,
         verification_key_hash: EXPECTED_VERIFICATION_KEY_HASH,
         tree_depth: TREE_DEPTH as u32,
         root_window_ledgers: ROOT_WINDOW_LEDGERS,
-        page_capacity: PAGE_CAPACITY as u32,
         private_address_payload_bytes: PRIVATE_ADDRESS_PAYLOAD_BYTES as u32,
         private_address_ascii_bytes: PRIVATE_ADDRESS_ASCII_BYTES as u32,
         address_context_tag_bytes: ADDRESS_CONTEXT_TAG_BYTES as u32,
@@ -120,19 +121,22 @@ pub fn register_pool(env: &Env) -> PoolFixture {
             &network_id,
             &realm_id,
             &guardian,
+            &asset_admin,
             &BytesN::from_array(env, &EXPECTED_POSEIDON2_PARAMETER_HASH),
             &BytesN::from_array(env, &EXPECTED_CIRCUIT_HASH),
             &BytesN::from_array(env, &EXPECTED_VERIFICATION_KEY_HASH),
             TREE_DEPTH as u32,
             ROOT_WINDOW_LEDGERS,
-            PAGE_CAPACITY as u32,
             &BytesN::from_array(env, &deployment_binding_hash),
         ),
     );
+    let pool_client = PrivateBalancePoolClient::new(env, &pool_id);
+    assert_eq!(pool_client.add_asset(&asset), 0);
 
     PoolFixture {
         pool_id,
         asset,
         guardian,
+        asset_admin,
     }
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useWalletIdentity,
   useWalletLedger,
@@ -33,7 +34,8 @@ import { playSwapSound } from "@/lib/sounds";
 import type { SubmissionLifecycleStatus, SubmissionResult } from "@/lib/submission";
 import { assetKey as merchantAssetKey } from "@/lib/merchant/charge";
 import type { SettlementSwapIntent } from "@/lib/merchant/settlement";
-import { Button, ErrorText, HashValue, NetworkBadge, Select, Spinner } from "./ui";
+import { Button, ErrorText, HashValue, NetworkBadge, Notice, Select, Spinner } from "./ui";
+import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 import {
   IconAlert,
   IconCheck,
@@ -445,9 +447,9 @@ export function SwapPage({
                   setSlippage(val);
                   invalidateQuoteForEdit();
                 }}
-                className={`rounded-xl py-2 text-[12.5px] font-semibold transition-all ${
+                className={`rounded-xl py-[5px] text-[12px] font-medium transition-all ${
                   slippage === val
-                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                     : "bg-white/[0.08] text-neutral-300 hover:text-white"
                 }`}
               >
@@ -463,6 +465,7 @@ export function SwapPage({
               <input
                 id="swap-custom-slippage"
                 type="number"
+                inputMode="decimal"
                 aria-label="Custom slippage percentage"
                 step="0.1"
                 min="0.05"
@@ -476,7 +479,7 @@ export function SwapPage({
                     invalidateQuoteForEdit();
                   }
                 }}
-                className="input mono !h-11 !w-20 text-center text-base md:!h-7 sm:text-[12px]"
+                className="input mono !w-24 text-center text-base sm:text-[13px]"
               />
               <span className="text-[12px] font-bold text-neutral-400">%</span>
             </div>
@@ -533,7 +536,7 @@ export function SwapPage({
                         fractionOfStellarAmount(sendAvailable, Math.round(pct * 100), 100),
                       );
                     }}
-                    className="min-h-9 rounded-xl bg-white/[0.06] px-1.5 py-1 text-[11px] font-semibold text-neutral-300 transition-colors hover:bg-white/[0.12] hover:text-white"
+                    className="rounded-xl bg-white/[0.06] px-2 py-[5px] text-[12px] font-medium text-neutral-300 transition-colors hover:bg-white/[0.12] hover:text-white"
                   >
                     {pct === 1.0 ? "MAX" : `${pct * 100}%`}
                   </button>
@@ -547,7 +550,7 @@ export function SwapPage({
             <button
               type="button"
               onClick={flipAssets}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-neutral-900 text-white shadow-lg ring-4 ring-black transition-all duration-200 hover:bg-neutral-800 active:scale-90"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-neutral-900 text-[var(--color-oncolor)] shadow-lg ring-4 ring-black transition-all duration-200 hover:bg-neutral-800 active:scale-90"
               aria-label="Invert Assets"
             >
               <IconSwap size={18} className="rotate-90" />
@@ -572,12 +575,9 @@ export function SwapPage({
           />
 
           {quoteExceedsBalance && quotedSpendLimit && sendAsset && (
-            <div className="flex items-start gap-2 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12.5px] text-[#FFB340]">
-              <IconAlert size={16} className="mt-0.5 shrink-0" />
-              <span className="min-w-0 break-words">
-                This quote can spend up to {fmtAmount(quotedSpendLimit)} {sendAsset.code}, but only {fmtAmount(sendAvailable)} is available.
-              </span>
-            </div>
+            <Notice tone="warn" compact icon={<IconAlert size={16} />}>
+              This quote can spend up to {fmtAmount(quotedSpendLimit)} {sendAsset.code}, but only {fmtAmount(sendAvailable)} is available.
+            </Notice>
           )}
 
           {error && <ErrorText message={error} />}
@@ -585,9 +585,7 @@ export function SwapPage({
           {/* Route Analytics — inline once a route is found */}
           {currentQuote && (
             <div className="panel-inset p-4 space-y-2.5 text-[12.5px]">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 mb-1">
-                Routing & Execution Analytics
-              </p>
+              <SectionHeader className="font-bold mb-1">Routing & Execution Analytics</SectionHeader>
               <button
                 type="button"
                 onClick={() => {
@@ -619,7 +617,10 @@ export function SwapPage({
               </div>
               <div className="flex flex-wrap justify-between gap-2 text-neutral-400">
                 <span>Estimated Network Fee</span>
-                <span className="mono text-neutral-300">{feeXlm} XLM</span>
+                <span className="flex flex-col items-end text-neutral-300">
+                  <span className="mono">{feeXlm} XLM</span>
+                  <XlmFeeFiatValue amount={feeXlm} />
+                </span>
               </div>
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 pt-1 text-neutral-400">
                 <span>Route Hops</span>
@@ -645,16 +646,15 @@ export function SwapPage({
           )}
 
           {noRoute && (
-            <div className="flex items-center gap-2 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12.5px] text-[#FF9F0A]">
-              <IconAlert size={16} className="shrink-0" />
-              <span>No DEX liquidity pool path found for this asset pair on {network}.</span>
-            </div>
+            <Notice tone="warn" compact icon={<IconAlert size={16} />}>
+              No DEX liquidity pool path found for this asset pair on {network}.
+            </Notice>
           )}
 
           {stage === "review" && currentQuote && sendAsset && destAsset ? (
             <div className="space-y-3">
               {activeAccount?.hardware && (
-                <div className="rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 flex items-center justify-between text-[12px] text-[#0A84FF]">
+                <Notice tone="accent" compact className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     {activeAccount.hardware === "ledger" ? (
                       <IconLedger size={15} className="text-[#64D2FF]" />
@@ -666,12 +666,10 @@ export function SwapPage({
                     </span>
                   </div>
                   <span className="mono text-[11px] text-neutral-400">{activeAccount.path ?? "m/44'/148'/0'"}</span>
-                </div>
+                </Notice>
               )}
               <div className="panel-inset p-4 space-y-2.5 text-[13px]">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-                  Review Swap Details & Routing
-                </p>
+                <SectionHeader className="font-bold">Review Swap Details & Routing</SectionHeader>
 
                 {/* Visual Route Flow */}
                 <div className="rounded-xl bg-white/[0.03] border border-white/10 p-2.5 flex items-center justify-between text-[12px]">
@@ -734,7 +732,10 @@ export function SwapPage({
                 </div>
                 <div className="flex justify-between text-neutral-400 text-[12px]">
                   <span>Base Network Fee</span>
-                  <span className="mono">{feeXlm} XLM</span>
+                  <span className="flex flex-col items-end">
+                    <span className="mono">{feeXlm} XLM</span>
+                    <XlmFeeFiatValue amount={feeXlm} />
+                  </span>
                 </div>
               </div>
 
@@ -850,7 +851,7 @@ function SwapResultView({
         </div>
 
         <Button variant="secondary" className="mt-5 w-full" onClick={onViewActivity}>
-          View activity
+          View Activity
         </Button>
       </section>
     );
@@ -935,7 +936,10 @@ function SwapResultView({
           </div>
           <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/[0.07] pt-3">
             <span className="text-[12px] text-neutral-400">Estimated network fee</span>
-            <span className="mono text-[12.5px] text-neutral-200">{feeXlm} XLM</span>
+            <span className="flex flex-col items-end text-[12.5px] text-neutral-200">
+              <span className="mono">{feeXlm} XLM</span>
+              <XlmFeeFiatValue amount={feeXlm} />
+            </span>
           </div>
           <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/[0.07] pt-3">
             <span className="text-[12px] text-neutral-400">Network</span>
@@ -955,8 +959,8 @@ function SwapResultView({
           Done
         </Button>
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-          <Button variant="secondary" onClick={onViewActivity}>View activity</Button>
-          <Button variant="ghost" onClick={onSwapAgain}>Swap again</Button>
+          <Button variant="secondary" onClick={onViewActivity}>View Activity</Button>
+          <Button variant="ghost" onClick={onSwapAgain}>Swap Again</Button>
         </div>
       </div>
     </section>
@@ -1023,7 +1027,7 @@ function SwapAmountCard({
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
         <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.08em] text-neutral-400">
           {label}
-          <span className={`rounded-full px-1.5 py-0.5 text-[9px] tracking-normal ${
+          <span className={`rounded-full px-1.5 py-0.5 text-[10px] tracking-normal ${
             exact ? "bg-[#0A84FF]/15 text-[#64D2FF]" : "bg-white/[0.07] text-neutral-400"
           }`}>
             {exact ? "Exact" : "Quoted"}

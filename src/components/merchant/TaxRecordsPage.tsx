@@ -1,18 +1,27 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useMerchantConfiguration,
   useMerchantReporting,
   useMerchantStatus,
   useMerchantTill,
 } from "@/hooks/useMerchant";
-import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { ExportRecord } from "@/lib/merchant/types";
 import { IconCheck, IconDownload, IconLock } from "../icons";
 import { useToast } from "../Toast";
-import { Button, IOSBackButton, Modal, ModalHeader, Notice, Select } from "../ui";
+import {
+  Button,
+  IOSBackButton,
+  Modal,
+  ModalFooter,
+  ModalHeader,
+  Notice,
+  Select,
+  useRetainedForExit,
+} from "../ui";
 import { MerchantDisclosure } from "./Disclosure";
 import { IconBars, IconClock, IconInfo, IconPercent, IconReceipt } from "./icons";
 import {
@@ -98,7 +107,14 @@ function retentionLabel(months: number | null | undefined): string {
 export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
   const { settings, updateSettings } = useMerchantConfiguration();
   const { catalogue } = useMerchantTill();
-  const { taxPeriods, exportRecords, previewReportExport, createReportExport } =
+  const {
+    taxPeriods,
+    exportRecords,
+    canSeeReports,
+    canExportRecords,
+    previewReportExport,
+    createReportExport,
+  } =
     useMerchantReporting();
   const { exportEncryptedArchive } = useMerchantStatus();
   const { toast } = useToast();
@@ -116,6 +132,10 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
   const [to, setTo] = useState(() => isoDay(currentMonth.to - 1));
   const [preview, setPreview] = useState<string | null>(null);
   const [activeSheet, setActiveSheet] = useState<TaxRecordsSheet | null>(null);
+  // The sheet keeps its content and width through the exit animation.
+  const shownSheet = useRetainedForExit(activeSheet);
+  const [exporting, setExporting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const basis: Basis = "transaction";
 
   const period = useMemo(
@@ -150,7 +170,6 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
   const retainedFor = retentionLabel(settings.recordRetentionMonths);
 
   function openSheet(sheet: TaxRecordsSheet) {
-    triggerHaptic("selection");
     setActiveSheet(sheet);
   }
 
@@ -175,8 +194,9 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
   }
 
   async function handleExport() {
+    if (exporting) return;
+    setExporting(true);
     try {
-      triggerHaptic("medium");
       const { file } = await createReportExport(reportInput());
       const blob = new Blob([file.contents], { type: file.mimeType });
       const url = URL.createObjectURL(blob);
@@ -189,28 +209,37 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
       toast(`${file.rowCount.toLocaleString("en-US")} rows exported`, "success");
     } catch (error) {
-      toast(error instanceof Error ? error.message : "The export could not be created.");
+      toast(error instanceof Error ? error.message : "The export could not be created.", "error");
+    } finally {
+      setExporting(false);
     }
   }
 
   async function handleEncryptedArchive() {
-    const archive = await exportEncryptedArchive();
-    if (!archive) {
-      toast("No encrypted merchant archive is available yet.", "error");
-      return;
+    if (archiving) return;
+    setArchiving(true);
+    try {
+      const archive = await exportEncryptedArchive();
+      if (!archive) {
+        toast("No encrypted merchant archive is available yet.", "error");
+        return;
+      }
+      const url = URL.createObjectURL(new Blob([archive], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `merchant-archive-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      toast("Encrypted merchant archive downloaded", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "The archive could not be exported.", "error");
+    } finally {
+      setArchiving(false);
     }
-    const url = URL.createObjectURL(new Blob([archive], { type: "application/json" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `merchant-archive-${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    toast("Encrypted merchant archive downloaded", "success");
   }
 
   function handlePreview() {
     try {
-      triggerHaptic("selection");
       const file = previewReportExport(reportInput());
       setPreview(file.contents.replace(/^\uFEFF/, "").slice(0, 5000));
       toast(`${file.rowCount.toLocaleString("en-US")} rows ready to preview`, "success");
@@ -219,16 +248,23 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
     }
   }
 
+  if (!canSeeReports) {
+    return (
+      <section className="space-y-4">
+        <IOSBackButton label="Back to Merchant settings" onClick={onBack} />
+        <Notice tone="warn">This staff member cannot view merchant reports.</Notice>
+      </section>
+    );
+  }
+
   return (
     <div className="fade-up w-full min-w-0 pb-[132px] md:pb-12">
       <div className="flex items-center justify-between pb-1 pt-2">
         <IOSBackButton label="Back to Merchant settings" onClick={onBack} />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-          Merchant
-        </span>
+        <SectionHeader as="span">Merchant</SectionHeader>
         <span className="w-11" aria-hidden />
       </div>
-      <h1 className="display-h text-[32px] font-bold tracking-tight text-white">Tax records</h1>
+      <h1 className="display-h text-[32px] font-bold tracking-tight text-white">Tax Records</h1>
       <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-neutral-400">
         Review the current period, prepare evidence files, and manage the records kept on this
         device.
@@ -243,7 +279,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                   first
                   icon={<IconReceipt size={16} />}
                   tint="#0A84FF"
-                  label="Reporting period"
+                  label="Reporting Period"
                   sub={
                     period
                       ? `${period.orderCount} ${period.orderCount === 1 ? "order" : "orders"}`
@@ -281,9 +317,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                 )}
 
                 <div className="border-t border-white/[0.08]">
-                  <p className="px-4 pb-1.5 pt-3.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
-                    Tax by rate
-                  </p>
+                  <SectionHeader className="px-4 pb-1.5 pt-3.5">Tax by rate</SectionHeader>
                   {taxRows.map((row, index) => {
                     const share = taxTotalMinor > 0 ? (row.minor / taxTotalMinor) * 100 : 0;
                     return (
@@ -326,7 +360,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                   first
                   icon={<IconPercent size={16} />}
                   tint="#BF5AF2"
-                  label="Tax rates"
+                  label="Tax Rates"
                   sub="Rates and catalogue mappings"
                   value={`${settings.taxRates.length}`}
                   chevron
@@ -336,17 +370,19 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                 <SettingsRow
                   icon={<IconDownload size={16} />}
                   tint="#30D158"
-                  label="Export report"
-                  sub={period?.label ?? "Choose a date range"}
+                  label="Export Report"
+                  sub={canExportRecords
+                    ? (period?.label ?? "Choose a date range")
+                    : "Owner or export permission required"}
                   value={format.toUpperCase()}
-                  chevron
-                  opensDialog
-                  onClick={() => openSheet("export")}
+                  chevron={canExportRecords}
+                  opensDialog={canExportRecords}
+                  onClick={canExportRecords ? () => openSheet("export") : undefined}
                 />
                 <SettingsRow
                   icon={<IconLock size={16} />}
                   tint="#5E5CE6"
-                  label="Encrypted archive"
+                  label="Encrypted Archive"
                   sub="Complete retained merchant record"
                   chevron
                   opensDialog
@@ -365,7 +401,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                 <SettingsRow
                   icon={<IconBars size={16} />}
                   tint="#64D2FF"
-                  label="Export history"
+                  label="Export History"
                   sub="Files prepared on this device"
                   value={`${exportRecords.length}`}
                   chevron
@@ -384,7 +420,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                   first
                   icon={<IconInfo size={16} />}
                   tint="#8E8E93"
-                  label="About tax records"
+                  label="About Tax Records"
                   sub="Calculations, ledger evidence, and limitations"
                   chevron
                   opensDialog
@@ -400,13 +436,15 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
         <Modal
           open={activeSheet !== null}
           onClose={() => setActiveSheet(null)}
-          wide={activeSheet === "export" || activeSheet === "history"}
+          wide={shownSheet === "export" || shownSheet === "history"}
+          busy={exporting || archiving}
+          busyReason="Wait for the file to finish downloading before closing."
         >
-          {activeSheet === "period" && (
+          {shownSheet === "period" && (
             <>
               <ModalHeader
-                title="Reporting period"
-                subtitle="Choose the period shown in Tax records"
+                title="Reporting Period"
+                subtitle="Choose the period shown in Tax Records"
                 onClose={() => setActiveSheet(null)}
               />
               <SheetBody sheet="period">
@@ -445,10 +483,10 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
             </>
           )}
 
-          {activeSheet === "rates" && (
+          {shownSheet === "rates" && (
             <>
               <ModalHeader
-                title="Tax rates"
+                title="Tax Rates"
                 subtitle="Read-only rates and catalogue mappings"
                 onClose={() => setActiveSheet(null)}
               />
@@ -490,10 +528,10 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
             </>
           )}
 
-          {activeSheet === "export" && (
+          {shownSheet === "export" && (
             <>
               <ModalHeader
-                title="Export report"
+                title="Export Report"
                 subtitle="Prepare a local evidence file"
                 onClose={() => setActiveSheet(null)}
               />
@@ -533,7 +571,8 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                             setFrom(event.target.value);
                             setPreview(null);
                           }}
-                          className="input input-mono text-base sm:text-[13.5px]"
+                          enterKeyHint="next"
+                          className="input mono text-base sm:text-[14px]"
                         />
                       </div>
                       <div>
@@ -548,7 +587,8 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                             setTo(event.target.value);
                             setPreview(null);
                           }}
-                          className="input input-mono text-base sm:text-[13.5px]"
+                          enterKeyHint="done"
+                          className="input mono text-base sm:text-[14px]"
                         />
                       </div>
                     </div>
@@ -581,15 +621,19 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                   </div>
                 </SettingsSection>
 
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Button onClick={handleExport} className="w-full">
-                    <IconDownload size={15} />
-                    Export file
-                  </Button>
-                  <Button variant="secondary" onClick={handlePreview} className="w-full">
-                    Preview rows
-                  </Button>
-                </div>
+                <ModalFooter
+                  secondary={
+                    <Button variant="ghost" onClick={handlePreview}>
+                      Preview Rows
+                    </Button>
+                  }
+                  primary={
+                    <Button onClick={handleExport} disabled={!canExportRecords} loading={exporting}>
+                      <IconDownload size={15} />
+                      Export file
+                    </Button>
+                  }
+                />
 
                 {preview && (
                   <div>
@@ -603,10 +647,10 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
             </>
           )}
 
-          {activeSheet === "archive" && (
+          {shownSheet === "archive" && (
             <>
               <ModalHeader
-                title="Encrypted archive"
+                title="Encrypted Archive"
                 subtitle="A portable encrypted merchant record set"
                 onClose={() => setActiveSheet(null)}
               />
@@ -626,13 +670,13 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                       first
                       icon={<IconReceipt size={16} />}
                       tint="#0A84FF"
-                      label="Operational records"
+                      label="Operational Records"
                       sub="Orders, receipts, staff audit, customers, and settings"
                     />
                     <SettingsRow
                       icon={<IconLock size={16} />}
                       tint="#5E5CE6"
-                      label="Encrypted locally"
+                      label="Encrypted Locally"
                       sub="Restorable only alongside the matching encrypted wallet backup"
                     />
                   </div>
@@ -641,20 +685,25 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                     backup as the recovery copy; it already includes these merchant records.
                   </SettingsCaption>
                 </SettingsSection>
-                <Button
-                  className="w-full min-w-0 !px-3"
-                  onClick={() => void handleEncryptedArchive()}
-                >
-                  <IconDownload size={15} />
-                  <span className="min-w-0 whitespace-normal text-center leading-tight">
-                    Download encrypted archive
-                  </span>
-                </Button>
+                <ModalFooter
+                  primary={
+                    <Button
+                      className="w-full min-w-0 !px-3"
+                      loading={archiving}
+                      onClick={() => void handleEncryptedArchive()}
+                    >
+                      <IconDownload size={15} />
+                      <span className="min-w-0 whitespace-normal text-center leading-tight">
+                        Download encrypted archive
+                      </span>
+                    </Button>
+                  }
+                />
               </SheetBody>
             </>
           )}
 
-          {activeSheet === "retention" && (
+          {shownSheet === "retention" && (
             <>
               <ModalHeader
                 title="Retention"
@@ -668,13 +717,22 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                       ariaLabel="How long records are kept on this device"
                       value={String(settings.recordRetentionMonths ?? 0)}
                       options={RETENTION_OPTIONS}
-                      onChange={(next) => {
-                        updateSettings({
-                          recordRetentionMonths: next === "0" ? null : Number(next),
-                        });
-                        const label =
-                          RETENTION_OPTIONS.find((option) => option.value === next)?.label ?? next;
-                        toast(`Record retention set to ${label.toLowerCase()}`, "success");
+                      onChange={async (next) => {
+                        try {
+                          await updateSettings({
+                            recordRetentionMonths: next === "0" ? null : Number(next),
+                          });
+                          const label =
+                            RETENTION_OPTIONS.find((option) => option.value === next)?.label ?? next;
+                          toast(`Record retention set to ${label.toLowerCase()}`, "success");
+                        } catch (error) {
+                          toast(
+                            error instanceof Error
+                              ? error.message
+                              : "Record retention could not be saved.",
+                            "error",
+                          );
+                        }
                       }}
                     />
                   </div>
@@ -691,10 +749,10 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
             </>
           )}
 
-          {activeSheet === "history" && (
+          {shownSheet === "history" && (
             <>
               <ModalHeader
-                title="Export history"
+                title="Export History"
                 subtitle="Reports prepared on this device"
                 onClose={() => setActiveSheet(null)}
               />
@@ -706,7 +764,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                         key={record.id}
                         first={index === 0}
                         icon={
-                          <span className="mono text-[8px] font-semibold">
+                          <span className="mono text-[10px] font-semibold">
                             {FORMAT_BADGE[record.format]}
                           </span>
                         }
@@ -725,10 +783,10 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
             </>
           )}
 
-          {activeSheet === "compliance" && (
+          {shownSheet === "compliance" && (
             <>
               <ModalHeader
-                title="About tax records"
+                title="About Tax Records"
                 subtitle="What these figures can and cannot prove"
                 onClose={() => setActiveSheet(null)}
               />
@@ -775,8 +833,8 @@ function Figure({
   tone?: "plain" | "neg";
 }) {
   return (
-    <div className="min-w-0 bg-[#1c1c1e] px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">{label}</p>
+    <div className="min-w-0 bg-[var(--color-panel)] px-4 py-3">
+      <SectionHeader>{label}</SectionHeader>
       <p
         className={`mono mt-0.5 truncate text-[16px] font-semibold ${
           tone === "neg" ? "text-[#FF453A]" : "text-white"

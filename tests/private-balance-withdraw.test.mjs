@@ -10,7 +10,7 @@ test('private withdrawal defaults to the active public account and discloses pub
   assert.match(source, /publicAddress/);
   assert.match(source, /PRIVACY_ROW\.withdraw/);
   assert.match(source, /amount, recipient, and timing/i);
-  assert.match(source, /flow\.prepare\(\{ kind: 'withdraw', amount: amount\.trim\(\), publicRecipient: trimmedRecipient \}\)/);
+  assert.match(source, /flow\.prepare\([\s\S]*kind: 'withdraw'[\s\S]*publicRecipient: trimmedRecipient/);
 });
 
 test('withdraw follows the movement-language naming and the shared flow pattern', () => {
@@ -79,4 +79,11 @@ test('private withdrawal follows an in-modal asset selection instead of waiting 
     /selectPrivateAsset\(privateWithdrawActiveDeploymentId\)/,
     'retry must keep the selected withdrawal asset instead of reverting to the opening asset',
   );
+});
+
+test('private withdrawal has a single direct path and retains the review shell', () => {
+  const source = read('src/features/private-balance/components/WithdrawPrivate.tsx');
+  assert.doesNotMatch(source, /PrivateRelay|submissionMode|loadPrivateRelayPreferences/);
+  assert.match(source, /flow\.prepare\(/);
+  assert.match(source, /<PrivateActionReview/);
 });

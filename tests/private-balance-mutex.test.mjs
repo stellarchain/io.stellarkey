@@ -48,7 +48,17 @@ test('the provider serializes sync with action flows instead of failing on phase
   assert.match(provider, /mutexRef\.current\.runExclusive/);
   // prepare/submit await the mutex (and any in-flight sync) rather than
   // throwing on a transient non-current phase.
-  assert.doesNotMatch(provider, /snapshot\.phase !== 'current'/);
+  const prepareAndSubmit = [
+    provider.slice(
+      provider.indexOf('const prepareActionInternal = useCallback'),
+      provider.indexOf('const prepareAction = useCallback'),
+    ),
+    provider.slice(
+      provider.indexOf('const submitActionInternal = useCallback'),
+      provider.indexOf('const submitAction = useCallback'),
+    ),
+  ].join('\n');
+  assert.doesNotMatch(prepareAndSubmit, /snapshot\.phase !== 'current'/);
   // Post-broadcast polling stays a read-only trigger outside the mutex.
   assert.match(provider, /pollBroadcastPrivateBalanceTransaction/);
 });

@@ -14,10 +14,12 @@ import {
   extractBaseAddress,
   type Transaction,
 } from "@stellar/stellar-sdk";
+import { sha256 } from "@noble/hashes/sha2.js";
 import {
   type AccountSignerInfo,
+  assertDestinationMemoRequirement,
   explainSubmitError,
-  fetchAccountSignerInfo,
+  fetchCanonicalAccountSignerInfo,
   getJson,
   loadRecommendedBaseFee,
   minimalAccount,
@@ -49,6 +51,10 @@ export interface MultisigConfig {
   low: number;
   medium: number;
   high: number;
+  authority: {
+    expectedFingerprint: string;
+    confirmedNewSignerKeys: string[];
+  };
 }
 
 export interface MultisigConfigOutcome {
@@ -71,6 +77,23 @@ export function hasAdditionalSignerCapacity(additionalSignerCount: number): bool
 
 export function totalWeight(signers: { weight: number }[]): number {
   return signers.reduce((sum, s) => sum + s.weight, 0);
+}
+
+export function multisigAuthorityFingerprint(info: AccountSignerInfo): string {
+  const normalized = {
+    thresholds: {
+      low: info.thresholds.low_threshold,
+      medium: info.thresholds.med_threshold,
+      high: info.thresholds.high_threshold,
+    },
+    signers: [...info.signers]
+      .sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0)
+      .map(({ key, type, weight }) => ({ key, type, weight })),
+  };
+  return Array.from(
+    sha256(new TextEncoder().encode(JSON.stringify(normalized))),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 /** Signing weight a transaction requires, derived from its operation types. */
@@ -120,6 +143,7 @@ export async function applyMultisigConfig(params: {
   accountPublicKey: string;
   config: MultisigConfig;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
@@ -156,14 +180,29 @@ export async function applyMultisigConfig(params: {
   for (const [label, v] of [["Low", config.low], ["Medium", config.medium], ["High", config.high]] as const) {
     if (v > total) throw new SendError(`${label} threshold (${v}) exceeds the total signer weight (${total}).`);
   }
+  if (
+    !config.authority ||
+    !/^[0-9a-f]{64}$/.test(config.authority.expectedFingerprint) ||
+    !Array.isArray(config.authority.confirmedNewSignerKeys) ||
+    new Set(config.authority.confirmedNewSignerKeys).size !==
+      config.authority.confirmedNewSignerKeys.length ||
+    config.authority.confirmedNewSignerKeys.some((key) => !isValidPublicAddress(key))
+  ) {
+    throw new SendError("Signer authority review is missing or invalid. Reload the signer configuration.");
+  }
 
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const { kp } = resolveSource(params.secretKey, params.hardwareSigner);
+  const { kp } = resolveSource(params.secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(`${horizonUrl}/accounts/${accountPublicKey}`);
   if (!source) throw new SendError("Account does not exist on this network.");
-  const current = await fetchAccountSignerInfo(accountPublicKey, network);
+  const current = await fetchCanonicalAccountSignerInfo(accountPublicKey, network);
   if (!current) throw new SendError("Account signer configuration could not be loaded.");
+  if (multisigAuthorityFingerprint(current) !== config.authority.expectedFingerprint) {
+    throw new SendError(
+      "The canonical signer configuration changed. Reload and review every signer before retrying.",
+    );
+  }
   if (current.signers.some((signer) => signer.type !== "ed25519_public_key")) {
     throw new SendError(
       "This account uses signer types this configuration editor cannot safely modify.",
@@ -194,6 +233,16 @@ export async function applyMultisigConfig(params: {
     signer.weight > 0 &&
     (currentByKey.get(signer.key) ?? 0) === 0
   );
+  const additionKeys = new Set(additions.map((signer) => signer.key));
+  const confirmedNewSignerKeys = new Set(config.authority.confirmedNewSignerKeys);
+  if (
+    additionKeys.size !== confirmedNewSignerKeys.size ||
+    [...additionKeys].some((key) => !confirmedNewSignerKeys.has(key))
+  ) {
+    throw new SendError(
+      "Every new signer must be explicitly added and confirmed in this configuration session.",
+    );
+  }
   const obsoleteSigners = currentAdditionalSigners.filter(
     (signer) => (desiredByKey.get(signer.key) ?? 0) === 0,
   );
@@ -211,7 +260,13 @@ export async function applyMultisigConfig(params: {
   for (const s of config.signers) {
     if (s.key === accountPublicKey) continue;
     const currentWeight = currentByKey.get(s.key) ?? 0;
-    if (currentWeight <= 0 || s.weight <= currentWeight) continue;
+    // Write every signer Horizon claims already exists, including an unchanged
+    // weight. The transaction must guarantee the desired signer set itself;
+    // otherwise a dishonest endpoint could invent a retained signer and make
+    // the final thresholds lock the account. A false report now produces an
+    // atomic setOptions failure (for example at real capacity), never a
+    // successful configuration whose safety depended on the report.
+    if (currentWeight <= 0 || s.weight < currentWeight) continue;
     builder.addOperation(
       Operation.setOptions({ signer: { ed25519PublicKey: s.key, weight: s.weight } }),
     );
@@ -317,9 +372,11 @@ export async function disableMultisig(params: {
   network: NetworkKey;
   accountPublicKey: string;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
+  expectedAuthorityFingerprint: string;
 }): Promise<MultisigConfigOutcome> {
   return applyMultisigConfig({
     ...params,
@@ -328,6 +385,10 @@ export async function disableMultisig(params: {
       low: 0,
       medium: 0,
       high: 0,
+      authority: {
+        expectedFingerprint: params.expectedAuthorityFingerprint,
+        confirmedNewSignerKeys: [],
+      },
     },
   });
 }
@@ -347,7 +408,9 @@ export async function prepareCosignPayment(params: {
   memo?: StellarMemoInput;
   feeStroops?: number;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
+  beforeSign?: () => void;
 }): Promise<{ xdr: string }> {
   const { network, destination, amount, assetCode, issuer } = params;
   const feeStroops = await loadRecommendedBaseFee(network, params.feeStroops);
@@ -359,19 +422,30 @@ export async function prepareCosignPayment(params: {
 
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const { kp } = resolveSource(params.secretKey, params.hardwareSigner);
+  const { kp } = resolveSource(params.secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${params.sourcePublicKey}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
-  const destExists = (await getJson(`${horizonUrl}/accounts/${destination}`)) !== null;
+  const destinationRecord = await getJson<unknown>(
+    `${NETWORKS[network].horizonUrl}/accounts/${destination}`,
+  );
+  const destExists = destinationRecord !== null;
   const paymentAsset = toStellarAsset(assetCode, issuer);
   const isNative = paymentAsset.isNative();
   if (!destExists && !isNative) {
     throw new SendError(
       "Destination account doesn't exist yet. New accounts must be activated with XLM.",
     );
+  }
+  if (destExists) {
+    assertDestinationMemoRequirement({
+      destination,
+      muxedDestination: false,
+      destinationAccount: destinationRecord,
+      hasMemo: memo !== null,
+    });
   }
 
   const builder = new TransactionBuilder(minimalAccount(params.sourcePublicKey, source.sequence), {
@@ -394,8 +468,10 @@ export async function prepareCosignPayment(params: {
   if (memo) builder.addMemo(memo);
 
   const tx = builder.setTimeout(180).build();
+  params.beforeSign?.();
   if (kp) tx.sign(kp);
   else if (params.hardwareSigner) await signHardwareTx(tx, params.hardwareSigner);
+  params.beforeSign?.();
   return { xdr: tx.toXdr() };
 }
 
@@ -535,7 +611,7 @@ async function loadAuthorizationContext(
   const requirements = authorizationRequirements(tx);
   const entries = await Promise.all(
     [...requirements.keys()].map(async (source) => {
-      const info = await fetchAccountSignerInfo(source, network);
+      const info = await fetchCanonicalAccountSignerInfo(source, network);
       if (!info) throw new SendError(`Required source account ${source} was not found on ${NETWORKS[network].label}.`);
       if (info.signers.some((signer) => signer.type !== "ed25519_public_key")) {
         throw new SendError(
@@ -782,6 +858,7 @@ export async function cosignTransaction(params: {
   xdr: string;
   signerPublicKey: string;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   onPrepared?: SubmissionPreparedCallback;
 }): Promise<CosignOutcome> {
@@ -818,7 +895,11 @@ export async function cosignTransaction(params: {
         "The selected signer does not contribute weight to any unsatisfied source account.",
       );
     }
-    const { kp, publicKey } = resolveSource(params.secretKey, params.hardwareSigner);
+    const { kp, publicKey } = resolveSource(
+      params.secretKey,
+      params.hardwareSigner,
+      params.softwareSigner,
+    );
     if (publicKey !== params.signerPublicKey) {
       throw new SendError("Signing credential does not match the selected account.");
     }

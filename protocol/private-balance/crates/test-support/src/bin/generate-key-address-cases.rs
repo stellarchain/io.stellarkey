@@ -1,5 +1,5 @@
 use private_balance_protocol::{
-    address::PrivateAddress,
+    address::{PrivateAddress, derive_private_address_deployment_tag},
     encoding::{compute_context_field, compute_context_hash},
     keys::derive_keys_from_seed,
 };
@@ -18,12 +18,14 @@ struct KeyAddressCase {
     context_hash: String,
     context_field: String,
     base_owner_commitment: String,
+    deployment_binding_hash: String,
     diversifier: String,
     ask: String,
     nk: String,
     owner_commitment: String,
     hpke_private_key: String,
     hpke_public_key: String,
+    outgoing_viewing_key: String,
     prefix: &'static str,
     address: String,
 }
@@ -61,8 +63,10 @@ fn main() {
             &context_field,
         );
         let diversifier = [0u8; 4];
-        let prefix = if index % 2 == 0 { "tks" } else { "sks" };
+        let deployment_binding_hash = random_bytes(&mut rng);
+        let prefix = if index % 2 == 0 { "tskpay_" } else { "skpay_" };
         let address = PrivateAddress {
+            deployment_tag: derive_private_address_deployment_tag(&deployment_binding_hash),
             diversifier,
             owner_commitment: keys.owner_commitment,
             hpke_public_key: keys.hpke_public_key,
@@ -79,12 +83,14 @@ fn main() {
             context_hash: hex::encode(context_hash),
             context_field: hex::encode(context_field),
             base_owner_commitment: hex::encode(keys.base_owner_commitment),
+            deployment_binding_hash: hex::encode(deployment_binding_hash),
             diversifier: hex::encode(diversifier),
             ask: hex::encode(keys.ask),
             nk: hex::encode(keys.nk),
             owner_commitment: hex::encode(keys.owner_commitment),
             hpke_private_key: hex::encode(keys.hpke_private_key),
             hpke_public_key: hex::encode(keys.hpke_public_key),
+            outgoing_viewing_key: hex::encode(keys.outgoing_viewing_key),
             prefix,
             address,
         });

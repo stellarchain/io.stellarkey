@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "benchmark": "private-action-groth16-curves",
+  "generatedAt": "2026-09-02T02:57:31.721Z",
+  "circuitCorpusSha256": "b05d9be6d977ac2341143cda5b960f2539dbb3fc585ea4c508a7a3c339f4ab66",
+  "decision": {
+    "status": "pending-physical-device-evidence",
+    "selectedCurve": null,
+    "reason": "Desktop smoke measurements cannot select a production curve without physical-phone and Soroban resource evidence."
+  },
+  "runs": [
+    {
+      "id": "bn254-node-desktop-smoke",
+      "curve": "bn254",
+      "proofSystem": "groth16",
+      "status": "measured",
+      "evidenceKind": "desktop-smoke",
+      "physicalDevice": false,
+      "physicalAttestation": null,
+      "device": {
+        "class": "desktop",
+        "manufacturer": "Apple",
+        "model": "Desktop benchmark host",
+        "cpu": "Apple M3 Max",
+        "os": {
+          "name": "macOS",
+          "version": "25.5.0",
+          "architecture": "arm64"
+        },
+        "browser": {
+          "name": "Node.js desktop harness",
+          "version": "26.7.0",
+          "userAgent": "Node.js/26.7.0 (darwin; arm64)"
+        }
+      },
+      "capabilities": {
+        "wasmSimd": false,
+        "wasmThreads": false,
+        "crossOriginIsolated": false,
+        "provingKeyStreaming": false,
+        "nativeMobileProver": false
+      },
+      "circuit": {
+        "constraintCount": 23437,
+        "publicInputCount": 13,
+        "privateInputCount": 152,
+        "r1csBytes": 11039180,
+        "witnessWasmBytes": 188366,
+        "provingKeyBytes": 14739008,
+        "verificationKeyBytes": 2930,
+        "r1csSha256": "e9dc8f37a8ffde400c7ed5cd9735857a63f361d183e985fcaaf893b7d62ee199",
+        "witnessWasmSha256": "a7a9a627b5919ce045cf1521a6fbfcf2c17916f843da408953ad5e6ec2d48fd7",
+        "provingKeySha256": "c3f66530b9ca270dc8b09d0bcd23e93ed87ba2c858684ededd91690ac4065f88"
+      },
+      "workload": {
+        "corpus": "deterministic-deposit-v1",
+        "corpusSha256": "b05d9be6d977ac2341143cda5b960f2539dbb3fc585ea4c508a7a3c339f4ab66",
+        "warmupIterations": 1,
+        "measuredIterations": 3
+      },
+      "proving": {
+        "samplesMs": [
+          1060.819,
+          1060.3,
+          1061.431
+        ],
+        "p50Ms": 1060.819,
+        "p95Ms": 1061.431,
+        "peakRssBytes": 1483735040
+      },
+      "verification": {
+        "samplesMs": [
+          38.836,
+          22.696,
+          15
+        ],
+        "p50Ms": 22.696,
+        "p95Ms": 38.836
+      },
+      "proof": {
+        "jsonBytes": 725,
+        "canonicalUncompressedBytes": 256,
+        "verified": true
+      },
+      "contract": {
+        "status": "pending",
+        "instructions": null,
+        "readBytes": null,
+        "writeBytes": null,
+        "resourceFeeStroops": null,
+        "transactionBytes": null,
+        "reason": "No curve-specific Soroban verifier transaction was built; resource and transaction measurements remain pending."
+      }
+    },
+    {
+      "id": "bls12-381-node-desktop-smoke",
+      "curve": "bls12-381",
+      "proofSystem": "groth16",
+      "status": "measured",
+      "evidenceKind": "desktop-smoke",
+      "physicalDevice": false,
+      "physicalAttestation": null,
+      "device": {
+        "class": "desktop",
+        "manufacturer": "Apple",
+        "model": "Desktop benchmark host",
+        "cpu": "Apple M3 Max",
+        "os": {
+          "name": "macOS",
+          "version": "25.5.0",
+          "architecture": "arm64"
+        },
+        "browser": {
+          "name": "Node.js desktop harness",
+          "version": "26.7.0",
+          "userAgent": "Node.js/26.7.0 (darwin; arm64)"
+        }
+      },
+      "capabilities": {
+        "wasmSimd": false,
+        "wasmThreads": false,
+        "crossOriginIsolated": false,
+        "provingKeyStreaming": false,
+        "nativeMobileProver": false
+      },
+      "circuit": {
+        "constraintCount": 23437,
+        "publicInputCount": 13,
+        "privateInputCount": 152,
+        "r1csBytes": 11039180,
+        "witnessWasmBytes": 188367,
+        "provingKeyBytes": 19522128,
+        "verificationKeyBytes": 4231,
+        "r1csSha256": "04d581fb6cf4f906c3ae2500ec77d99b1437aef201eaca5fef996e92c95254fe",
+        "witnessWasmSha256": "cdc00e1a82da796f24495141496cb7bb4604bc3520b11f18132221505c410670",
+        "provingKeySha256": "ab00fa2aff363ad936852eaa057d2a2ce463cae9af2ad2b7d42898ffb8bf95a3"
+      },
+      "workload": {
+        "corpus": "deterministic-deposit-v1",
+        "corpusSha256": "b05d9be6d977ac2341143cda5b960f2539dbb3fc585ea4c508a7a3c339f4ab66",
+        "warmupIterations": 1,
+        "measuredIterations": 3
+      },
+      "proving": {
+        "samplesMs": [
+          862.149,
+          696.674,
+          835.427
+        ],
+        "p50Ms": 835.427,
+        "p95Ms": 862.149,
+        "peakRssBytes": 1515044864
+      },
+      "verification": {
+        "samplesMs": [
+          11.257,
+          14.373,
+          12.459
+        ],
+        "p50Ms": 12.459,
+        "p95Ms": 14.373
+      },
+      "proof": {
+        "jsonBytes": 1032,
+        "canonicalUncompressedBytes": 384,
+        "verified": true
+      },
+      "contract": {
+        "status": "pending",
+        "instructions": null,
+        "readBytes": null,
+        "writeBytes": null,
+        "resourceFeeStroops": null,
+        "transactionBytes": null,
+        "reason": "No curve-specific Soroban verifier transaction was built; resource and transaction measurements remain pending."
+      }
+    }
+  ],
+  "pendingPhysicalDevices": [
+    {
+      "platform": "ios",
+      "browser": "iOS Safari",
+      "deviceClass": "mid-range-phone",
+      "physicalDevice": true,
+      "status": "pending"
+    },
+    {
+      "platform": "android",
+      "browser": "Android Chrome",
+      "deviceClass": "mid-range-phone",
+      "physicalDevice": true,
+      "status": "pending"
+    }
+  ],
+  "limitations": [
+    "These are Node.js desktop smoke measurements, not browser or physical-device evidence.",
+    "The BLS12-381 compile reuses the frozen circuit corpus for comparison; a production design still requires curve-reviewed hash parameters and verifier code.",
+    "Soroban instructions, ledger I/O, simulated resource fee, and transaction bytes remain pending until a curve-specific verifier transaction exists.",
+    "The benchmark-only powers-of-tau and Groth16 setup are disposable development material and are not release ceremony artifacts."
+  ]
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useMerchantConfiguration,
   useMerchantRecords,
@@ -12,7 +12,18 @@ import { referencePrefix } from "@/lib/merchant/charge";
 import { fmtMinor, minorToDecimal, orderTotals, toMinor } from "@/lib/merchant/money";
 import type { Invoice, InvoiceLine, Minor, OrderLine } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
-import { Button, ErrorText, Field, Modal, ModalHeader, Select } from "../ui";
+import {
+  Button,
+  ErrorText,
+  Field,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Select,
+  useModalContext,
+  useRetainedForExit,
+} from "../ui";
 import { IconPlus, IconTrash } from "../icons";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -85,14 +96,32 @@ export function InvoiceComposerModal({
   onClose: () => void;
 }) {
   // The composer only exists while the sheet is up, so its state resets on close.
+  // An edited invoice stays rendered through the exit so the key never flips mid-animation.
+  const retained = useRetainedForExit(invoice);
+  const shownInvoice = open ? invoice : retained;
+  const [dirty, setDirty] = useState(false);
   return (
-    <Modal open={open} onClose={onClose} wide>
-      <Composer key={invoice?.id ?? "new-invoice"} invoice={invoice} onClose={onClose} />
+    <Modal open={open} onClose={onClose} wide dirty={dirty}>
+      <Composer
+        key={shownInvoice?.id ?? "new-invoice"}
+        invoice={shownInvoice}
+        onClose={onClose}
+        onDirtyChange={setDirty}
+      />
     </Modal>
   );
 }
 
-function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () => void }) {
+function Composer({
+  invoice,
+  onClose,
+  onDirtyChange,
+}: {
+  invoice: Invoice | null;
+  onClose: () => void;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
+  const modal = useModalContext();
   const { catalogue } = useMerchantTill();
   const { createInvoiceDraft, nextInvoiceNumber, updateInvoiceDraft } = useMerchantRecords();
   const { settings } = useMerchantConfiguration();
@@ -131,6 +160,15 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
   );
   const [note, setNote] = useState(invoice?.note ?? "");
   const [error, setError] = useState("");
+
+  /* Unsaved edits: anything that differs from the invoice, or from a blank draft. */
+  const draftKey = JSON.stringify({ customerName, customerEmail, lines, terms, dueDate, note });
+  const [initialKey] = useState(draftKey);
+  const isDirty = draftKey !== initialKey;
+  useEffect(() => {
+    onDirtyChange(isDirty);
+    return () => onDirtyChange(false);
+  }, [isDirty, onDirtyChange]);
 
   /* The one place the money is decided: the shop's own rates and mode, through
      the same function that prices a ticket on the till. */
@@ -203,7 +241,6 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
   }
 
   function addFreeLine() {
-    triggerHaptic("selection");
     setError("");
     setLines((prev) => [
       ...prev,
@@ -223,7 +260,6 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
   }
 
   function removeLine(id: string) {
-    triggerHaptic("light");
     setLines((prev) => prev.filter((line) => line.id !== id));
   }
 
@@ -234,16 +270,13 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
     setDueDate(toDateInput(draftBase + days * DAY));
   }
 
-  function handleSave() {
+  /** The first thing wrong with the draft, or null when it can be saved. */
+  function validationError(): string | null {
     if (!customerName.trim()) {
-      triggerHaptic("error");
-      setError("Give the invoice a customer. It is the name that goes on the document.");
-      return;
+      return "Give the invoice a customer. It is the name that goes on the document.";
     }
     if (lines.length === 0) {
-      triggerHaptic("error");
-      setError("An invoice needs at least one line. Add one from the catalogue, or type your own.");
-      return;
+      return "An invoice needs at least one line. Add one from the catalogue, or type your own.";
     }
     const badLine = lines.find(
       (line) =>
@@ -252,18 +285,20 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
         parsePrice(line.priceText) === null,
     );
     if (badLine) {
+      return "Every line needs a description, a whole quantity and a plain price such as 12.00.";
+    }
+    if (fromDateInput(dueDate) === null) return "The due date has to be a real date.";
+    return null;
+  }
+
+  function handleSave() {
+    const problem = validationError();
+    if (problem !== null) {
       triggerHaptic("error");
-      setError(
-        "Every line needs a description, a whole quantity and a plain price such as 12.00.",
-      );
+      setError(problem);
       return;
     }
-    const dueAt = fromDateInput(dueDate);
-    if (dueAt === null) {
-      triggerHaptic("error");
-      setError("The due date has to be a real date.");
-      return;
-    }
+    const dueAt = fromDateInput(dueDate) as number;
     const invoiceLines: InvoiceLine[] = lines.map((line) => ({
       id: line.id,
       description: line.description.trim(),
@@ -291,7 +326,9 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
         });
       }
       triggerHaptic("success");
-      toast(invoice ? "Invoice draft updated" : "Invoice saved as a draft", "success");
+      toast(invoice ? "Invoice draft updated" : "Invoice saved as a draft", "success", {
+        silent: true,
+      });
       onClose();
     } catch (saveError) {
       triggerHaptic("error");
@@ -302,12 +339,12 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
   return (
     <>
       <ModalHeader
-        title={isEdit ? "Edit invoice" : "New invoice"}
+        title={isEdit ? "Edit invoice" : "New Invoice"}
         subtitle={`${identity.number} · reference ${identity.reference}`}
         onClose={onClose}
       />
 
-      <div className="space-y-5 p-4 sm:p-6">
+      <ModalBody gap={5}>
         {/* ---------- who it is for ---------- */}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Customer">
@@ -315,17 +352,22 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
               type="text"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="Praça Hotel"
+              placeholder="Customer name"
+              enterKeyHint="next"
+              autoCapitalize="words"
               className="input text-base sm:text-[14px]"
             />
           </Field>
           <Field label="Email" hint="Optional">
             <input
               type="email"
+              inputMode="email"
               value={customerEmail}
               onChange={(e) => setCustomerEmail(e.target.value)}
-              placeholder="contas@example.pt"
+              placeholder="name@example.com"
               autoComplete="off"
+              autoCapitalize="none"
+              enterKeyHint="next"
               className="input text-base sm:text-[14px]"
             />
           </Field>
@@ -354,6 +396,7 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
                       onChange={(e) => patchLine(line.id, { description: e.target.value })}
                       placeholder="What is being charged for"
                       aria-label="Line description"
+                      enterKeyHint="next"
                       className="input min-w-0 flex-1 text-base sm:text-[14px]"
                     />
                     <button
@@ -378,6 +421,7 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
                         id={`qty-${line.id}`}
                         type="text"
                         inputMode="numeric"
+                        enterKeyHint="next"
                         value={line.quantityText}
                         onChange={(e) => patchLine(line.id, { quantityText: e.target.value })}
                         className="input mono text-base sm:text-[14px]"
@@ -398,6 +442,7 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
                           id={`price-${line.id}`}
                           type="text"
                           inputMode="decimal"
+                          enterKeyHint="next"
                           value={line.priceText}
                           onChange={(e) => patchLine(line.id, { priceText: e.target.value })}
                           placeholder="0.00"
@@ -439,16 +484,9 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
                 ariaLabel="Add a catalogue item to the invoice"
               />
             </div>
-            {/* Built on `.input`, not `.btn`: it sits beside a Select in a form
-                row, so it has to share that control's height by construction
-                rather than by a matching number. */}
-            <button
-              type="button"
-              onClick={addFreeLine}
-              className="input flex shrink-0 cursor-pointer items-center justify-center gap-1.5 text-[14px] font-medium text-[#64D2FF] transition-colors hover:bg-[rgba(118,118,128,0.28)] sm:w-auto sm:px-4"
-            >
-              <IconPlus size={14} /> Free-text line
-            </button>
+            <Button type="button" variant="ghost" className="shrink-0 sm:w-auto" onClick={addFreeLine}>
+              <IconPlus size={14} /> Free-Text Line
+            </Button>
           </div>
         </div>
 
@@ -502,7 +540,7 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
               ariaLabel="Payment terms"
             />
           </div>
-          <Field label="Due date">
+          <Field label="Due Date">
             <input
               type="date"
               value={dueDate}
@@ -510,6 +548,7 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
                 setDueDate(e.target.value);
                 setTerms("custom");
               }}
+              enterKeyHint="done"
               className="input mono text-base sm:text-[14px]"
             />
           </Field>
@@ -521,34 +560,38 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}
-            placeholder="Monthly wholesale order."
+            placeholder="Shown on the invoice"
             className="input resize-none text-base sm:text-[14px]"
           />
         </Field>
 
-        {error && <ErrorText message={error} />}
+        <ErrorText message={error} />
 
         {/* ---------- out ---------- */}
-        <div className="flex flex-col gap-2.5 border-t border-white/[0.08] pt-4 sm:flex-row-reverse">
-          <Button className="sm:flex-1" onClick={handleSave}>
-            Save draft
-          </Button>
-          <Button
-            variant="ghost"
-            className="sm:flex-1"
-            onClick={() => {
-              triggerHaptic("light");
-              onClose();
-            }}
-          >
-            Cancel
-          </Button>
-        </div>
+        <ModalFooter
+          secondary={
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                if (modal) modal.requestClose("close");
+                else onClose();
+              }}
+            >
+              Cancel
+            </Button>
+          }
+          primary={
+            <Button type="button" onClick={handleSave}>
+              Save Draft
+            </Button>
+          }
+        />
         <p className="text-center text-[12px] leading-relaxed text-neutral-500">
           Saving keeps it as a draft on this device. Open it to print it, show its code, or draft an
           email to the customer.
         </p>
-      </div>
+      </ModalBody>
     </>
   );
 }

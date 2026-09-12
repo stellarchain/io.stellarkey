@@ -11,17 +11,16 @@ export interface ArchiveRecordModel {
   ledgerSequence: number;
   startingLeafIndex: number;
   actionKind: number;
-  asset: { kind: number; payload: Uint8Array };
+  assetIndex?: number;
+  asset?: { kind: number; payload: Uint8Array };
   actionNonce: Uint8Array;
   anchorRoot: Uint8Array;
   treeRootAfter: Uint8Array;
   nullifiers: [Uint8Array, Uint8Array];
-  outputs: [OutputPackageModel, OutputPackageModel];
+  outputs: [OutputPackageModel, OutputPackageModel, OutputPackageModel];
   publicValue: bigint;
   depositSource?: { kind: number; payload: Uint8Array };
   publicRecipient?: { kind: number; payload: Uint8Array };
-  relayerFee: bigint;
-  relayer?: { kind: number; payload: Uint8Array };
 }
 
 function encodeOptionalAddress(
@@ -44,8 +43,21 @@ function requireLength(name: string, bytes: Uint8Array, length: number): void {
 }
 
 function requireRecordWidths(record: ArchiveRecordModel): void {
-  if (record.asset.kind !== 1 || record.asset.payload.length !== 32) {
+  const boundary = record.actionKind === 1 || record.actionKind === 3;
+  if (boundary !== (record.asset !== undefined && record.assetIndex !== undefined)) {
+    throw new Error('Archive boundary asset shape is invalid');
+  }
+  if (record.asset && (record.asset.kind !== 1 || record.asset.payload.length !== 32)) {
     throw new Error('Archive asset must be a canonical contract address');
+  }
+  if (
+    record.assetIndex !== undefined
+    && (!Number.isInteger(record.assetIndex) || record.assetIndex < 0 || record.assetIndex > 0xffff_ffff)
+  ) {
+    throw new Error('Archive asset index must be an unsigned 32-bit integer');
+  }
+  if (record.outputs.length !== 3) {
+    throw new Error('Archive record must contain exactly three outputs');
   }
   for (const [name, bytes, length] of [
     ['Action nonce', record.actionNonce, 32],
@@ -55,8 +67,13 @@ function requireRecordWidths(record: ArchiveRecordModel): void {
     ['Nullifier 1', record.nullifiers[1], 32],
     ['Output 0 commitment', record.outputs[0].cm, 32],
     ['Output 0 envelope', record.outputs[0].recipientEnvelope, 181],
+    ['Output 0 outgoing envelope', record.outputs[0].outgoingEnvelope, 157],
     ['Output 1 commitment', record.outputs[1].cm, 32],
     ['Output 1 envelope', record.outputs[1].recipientEnvelope, 181],
+    ['Output 1 outgoing envelope', record.outputs[1].outgoingEnvelope, 157],
+    ['Output 2 commitment', record.outputs[2].cm, 32],
+    ['Output 2 envelope', record.outputs[2].recipientEnvelope, 181],
+    ['Output 2 outgoing envelope', record.outputs[2].outgoingEnvelope, 157],
   ] as const) requireLength(name, bytes, length);
 }
 
@@ -74,14 +91,23 @@ export function computeRecordHash(
   encodeU32Be(record.ledgerSequence, bytes);
   encodeU32Be(record.startingLeafIndex, bytes);
   bytes.push(record.actionKind);
-  bytes.push(record.asset.kind, ...record.asset.payload);
+  encodeOptionalAddress(record.asset, bytes);
+  encodeU32Be(record.assetIndex ?? 0, bytes);
   bytes.push(...record.actionNonce, ...record.anchorRoot, ...record.treeRootAfter);
   bytes.push(...record.nullifiers[0], ...record.nullifiers[1]);
-  bytes.push(...record.outputs[0].cm, ...record.outputs[0].recipientEnvelope);
-  bytes.push(...record.outputs[1].cm, ...record.outputs[1].recipientEnvelope);
+  bytes.push(
+    ...record.outputs[0].cm,
+    ...record.outputs[0].recipientEnvelope,
+    ...record.outputs[0].outgoingEnvelope,
+  );
+  for (let index = 1; index < 3; index += 1) {
+    bytes.push(
+      ...record.outputs[index].cm,
+      ...record.outputs[index].recipientEnvelope,
+      ...record.outputs[index].outgoingEnvelope,
+    );
+  }
   encodeU64Be(record.publicValue, bytes);
-  encodeU64Be(record.relayerFee, bytes);
-  encodeOptionalAddress(record.relayer, bytes);
   encodeOptionalAddress(record.depositSource, bytes);
   encodeOptionalAddress(record.publicRecipient, bytes);
   bytes.push(...priorRecordHash);

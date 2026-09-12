@@ -14,6 +14,8 @@ import { execFileSync } from 'node:child_process';
 import { brotliCompressSync, constants as zlibConstants } from 'node:zlib';
 import * as snarkjs from 'snarkjs';
 import { encodePointCompressedZkey } from './zkey-point-transport.mjs';
+import { POWERS_OF_TAU_SHA256 } from '../circuits/scripts/powers-of-tau.mjs';
+import { verifyProvingKey } from '../circuits/scripts/verify-proving-key.mjs';
 
 function sha256(buf) {
   return createHash('sha256').update(buf).digest('hex');
@@ -39,11 +41,15 @@ function contractSourceCommit() {
     return override;
   }
   const commit = execFileSync('git', ['log', '-1', '--format=%H', '--',
-    'protocol/private-balance/contracts/pool',
-    'protocol/private-balance/crates/protocol',
-    'protocol/private-balance/crates/verifier',
+    'protocol/private-balance/Cargo.toml',
     'protocol/private-balance/Cargo.lock',
     'protocol/private-balance/rust-toolchain.toml',
+    'protocol/private-balance/contracts/pool/Cargo.toml',
+    'protocol/private-balance/contracts/pool/src',
+    'protocol/private-balance/crates/protocol/Cargo.toml',
+    'protocol/private-balance/crates/protocol/src',
+    'protocol/private-balance/crates/verifier/Cargo.toml',
+    'protocol/private-balance/crates/verifier/src',
   ], { cwd: process.cwd(), encoding: 'utf8' }).trim();
   if (!/^[0-9a-f]{40}$/.test(commit)) {
     throw new Error('Unable to derive the Private Balance contract source commit.');
@@ -66,14 +72,19 @@ function loadTestnetDeploymentEvidence(baseManifest) {
     process.cwd(),
     'protocol/private-balance/results/fixtures',
   );
-  const fixtureNames = readdirSync(fixtureDir)
-    .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name));
+  const fixtureNames = existsSync(fixtureDir)
+    ? readdirSync(fixtureDir)
+      .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name))
+    : [];
   if (fixtureNames.length !== 1) {
     throw new Error(
-      `Expected exactly one current testnet deployment evidence file, found ${fixtureNames.length}.`,
+      `Expected exactly one current unified-pool testnet deployment evidence file, found ${fixtureNames.length}.`,
     );
   }
-  const evidence = JSON.parse(readFileSync(join(fixtureDir, fixtureNames[0]), 'utf8'));
+  const evidenceSet = fixtureNames.map(name =>
+    JSON.parse(readFileSync(join(fixtureDir, name), 'utf8')),
+  );
+  for (const evidence of evidenceSet) {
   const deployed = evidence.manifest;
   if (!evidence.fixtureOnly || !deployed || deployed.status !== 'development') {
     throw new Error('Testnet deployment evidence must be a development-only fixture.');
@@ -85,6 +96,7 @@ function loadTestnetDeploymentEvidence(baseManifest) {
     'minimumStellarProtocol',
     'networkPassphrase',
     'networkId',
+    'witnessRpcUrl',
   ]) {
     assertEqual(deployed[key], baseManifest[key], `manifest.${key}`);
   }
@@ -103,13 +115,29 @@ function loadTestnetDeploymentEvidence(baseManifest) {
   }
 
   assertEqual(evidence.networkPassphrase, baseManifest.networkPassphrase, 'network passphrase');
+  if (
+    !Number.isInteger(deployed.deploymentCheckpoint?.ledger) ||
+    deployed.deploymentCheckpoint.ledger < 1 ||
+    !/^[0-9a-f]{64}$/.test(deployed.deploymentCheckpoint?.hash ?? '')
+  ) {
+    throw new Error('Testnet deployment evidence must pin a ledger sequence and hash.');
+  }
+  assertJsonEqual(
+    evidence.deploymentCheckpoint,
+    deployed.deploymentCheckpoint,
+    'deployment checkpoint',
+  );
   assertEqual(evidence.poolContractId, deployed.poolContractId, 'pool contract ID');
+  assertEqual(evidence.assetAdminAddress, deployed.assetAdminAddress, 'asset administrator');
+  assertJsonEqual(evidence.assets, deployed.assets, 'registered asset metadata');
+  assertJsonEqual(evidence.registryCheckpoint, deployed.registryCheckpoint, 'registry checkpoint');
   assertEqual(evidence.wasmSha256, baseManifest.release.contractWasmSha256, 'pool Wasm hash');
   assertEqual(evidence.deploymentBindingHash, deployed.deploymentBindingHash, 'deployment binding');
   assertEqual(evidence.config?.deployment_binding_hash, deployed.deploymentBindingHash, 'contract binding');
   assertEqual(evidence.config?.network_id, baseManifest.networkId, 'contract network ID');
   assertEqual(evidence.config?.realm_id, deployed.realmId, 'contract realm ID');
   assertEqual(evidence.config?.guardian, deployed.guardianAddress, 'contract guardian');
+  assertEqual(evidence.config?.initial_asset_admin, deployed.assetAdminAddress, 'contract asset admin');
   assertEqual(evidence.config?.circuit_hash, baseManifest.artifacts.r1csSha256, 'contract circuit hash');
   assertEqual(
     evidence.config?.verification_key_hash,
@@ -121,17 +149,27 @@ function loadTestnetDeploymentEvidence(baseManifest) {
     baseManifest.release.poseidonParametersSha256,
     'contract Poseidon parameter hash',
   );
-  if (evidence.asset?.kind !== 'native' || !/^C[A-Z2-7]{55}$/.test(evidence.assetContractId)) {
-    throw new Error('Testnet deployment evidence must record the canonical native XLM SAC.');
+  if (!Array.isArray(evidence.assets) || evidence.assets.length < 1) {
+    throw new Error('Testnet deployment evidence must record the on-chain asset registry.');
   }
   if (evidence.depositsPaused !== false || evidence.treeState?.next_index !== 0) {
     throw new Error('Testnet deployment evidence must record a fresh, deposit-enabled pool.');
   }
-  return evidence;
+  }
+  const [deployment] = evidenceSet;
+  if (
+    deployment.assets[0]?.kind !== 'native'
+    || deployment.assets[0]?.index !== 0
+    || deployment.assets[1]?.code !== 'USDC'
+    || deployment.assets[1]?.index !== 1
+  ) {
+    throw new Error('Testnet evidence must contain contiguous XLM and USDC registry entries.');
+  }
+  return deployment;
 }
 
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
-const prepareDeployment = process.argv.includes('--prepare-deployment');
+const publishDeployment = process.argv.includes('--publish-deployment');
 
 const buildDir = join(process.cwd(), 'protocol/private-balance/circuits/build');
 const publicDir = join(process.cwd(), 'public/protocol/private-balance/v1');
@@ -159,6 +197,7 @@ const vkJsonBytes = readFileSync(join(buildDir, 'verification_key.json'));
 const vkBinBytes = readFileSync(join(buildDir, 'verifying-key.bin'));
 const r1csBytes = readFileSync(join(buildDir, 'action.r1cs'));
 const r1csInfo = await snarkjs.r1cs.info(join(buildDir, 'action.r1cs'));
+const zkeyVerified = verifyProvingKey();
 const contractWasmPath = join(
   process.cwd(),
   'protocol/private-balance/target/wasm32v1-none/release/private_balance_pool.wasm',
@@ -170,8 +209,8 @@ const contractWasmSource = existsSync(contractWasmPath)
 if (!existsSync(contractWasmSource)) {
   throw new Error('Private Balance pool Wasm is missing. Run private:generate first.');
 }
-if (r1csInfo.nPubInputs !== 13) {
-  throw new Error(`Expected 13 public inputs, got ${r1csInfo.nPubInputs}`);
+if (r1csInfo.nPubInputs !== 11) {
+  throw new Error(`Expected 11 public inputs, got ${r1csInfo.nPubInputs}`);
 }
 const r1csConstraints = r1csInfo.nConstraints;
 if (typeof r1csInfo.curve.terminate === 'function') await r1csInfo.curve.terminate();
@@ -197,7 +236,40 @@ const baseManifest = {
   realmId: '02'.repeat(32),
   poolContractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4',
   guardianAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+  assetAdminAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+  assets: [
+    {
+      index: 0,
+      kind: 'native',
+      code: 'XLM',
+      issuer: null,
+      name: 'Stellar Lumens',
+      decimals: 7,
+      displayDecimals: 7,
+      contractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
+    },
+    {
+      index: 1,
+      kind: 'stellar',
+      code: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      name: 'USD Coin',
+      decimals: 7,
+      displayDecimals: 2,
+      contractId: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
+    },
+  ],
   stealthAnnouncerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+  witnessRpcUrl: 'https://rpc.ankr.com/stellar_testnet_soroban',
+  deploymentCheckpoint: {
+    ledger: 0,
+    hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+  },
+  registryCheckpoint: {
+    ledger: 0,
+    hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    assetCount: 2,
+  },
   deploymentBindingHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
   artifacts: {
     r1csSha256: sha256(r1csBytes),
@@ -216,19 +288,19 @@ const baseManifest = {
     vkBinSha256: sha256(vkBinBytes),
   },
   constants: {
-    treeDepth: 32,
-    treeArity: 2,
+    treeDepth: 17,
+    treeArity: 3,
     rootWindowLedgers: 1440,
-    pageCapacity: 32,
-    maxPagesPerTouch: 4,
-    publicInputs: 13,
+    publicInputs: 11,
     notePlaintextBytes: 128,
     recipientEnvelopeBytes: 181,
-    outputPackageBytes: 213,
-    addressPayloadBytes: 68,
-    addressAsciiBytes: 119,
-    addressContextTagBytes: 0,
-    addressChecksumBytes: 6,
+    outgoingEnvelopeBytes: 157,
+    outputPackageBytes: 370,
+    outputsPerAction: 3,
+    addressPayloadBytes: 84,
+    addressAsciiBytes: 128,
+    addressContextTagBytes: 16,
+    addressChecksumBytes: 4,
   },
   hpke: {
     kemId: '0x0020',
@@ -258,7 +330,11 @@ const baseManifest = {
       join(process.cwd(), 'protocol/private-balance/parameters/generator.lock'),
       join(process.cwd(), 'protocol/private-balance/scripts/build-private-balance-artifacts.mjs'),
       join(process.cwd(), 'protocol/private-balance/scripts/zkey-point-transport.mjs'),
+      join(process.cwd(), 'protocol/private-balance/circuits/scripts/powers-of-tau.mjs'),
+      join(process.cwd(), 'protocol/private-balance/circuits/scripts/verify-proving-key.mjs'),
     ]),
+    powersOfTauSha256: POWERS_OF_TAU_SHA256,
+    zkeyVerified,
     ceremonyTranscriptRoot: '0'.repeat(64),
     auditReports: [],
     deploymentTransactions: [],
@@ -266,62 +342,31 @@ const baseManifest = {
   },
 };
 
-if (prepareDeployment) {
-  const developmentManifestPath = join(
-    process.cwd(),
-    'protocol/private-balance/manifests/development.json',
-  );
-  writeFileSync(developmentManifestPath, `${JSON.stringify(baseManifest, null, 2)}\n`);
-  console.log(
-    '✓ Staged Private Balance artifacts and development manifest for deployment; ' +
-    'published evidence and wallet hash pins are unchanged.',
-  );
-} else {
-const deploymentEvidence = loadTestnetDeploymentEvidence(baseManifest);
-const manifest = {
-  ...deploymentEvidence.manifest,
-  artifactVersion: '1.0.2-testnet-preview',
-  status: 'testnet-preview',
-  release: baseManifest.release,
-};
+const developmentManifestPath = join(
+  process.cwd(),
+  'protocol/private-balance/manifests/development.json',
+);
+const developmentManifestJson = `${JSON.stringify(baseManifest, null, 2)}\n`;
+writeFileSync(developmentManifestPath, developmentManifestJson);
 
+if (publishDeployment) {
+const deploymentEvidence = loadTestnetDeploymentEvidence(baseManifest);
+const manifest = { ...deploymentEvidence.manifest, release: baseManifest.release };
 const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
 const manifestHash = sha256(Buffer.from(manifestJson));
 const catalogue = {
   schemaVersion: 1,
   deployments: [{
-    id: 'testnet-private-pool-v2',
+    id: 'testnet-private-pool',
     network: 'testnet',
-    assets: [
-      {
-        kind: 'native',
-        code: 'XLM',
-        issuer: null,
-        name: 'Stellar Lumens',
-        decimals: 7,
-        displayDecimals: 7,
-        contractId: deploymentEvidence.assetContractId,
-      },
-      {
-        kind: 'stellar',
-        code: 'USDC',
-        issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
-        name: 'USD Coin',
-        decimals: 7,
-        displayDecimals: 2,
-        contractId: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
-      },
-    ],
     manifestUrl: '/protocol/private-balance/v1/manifest.json',
     manifestSha256: manifestHash,
   }],
 };
 const catalogueJson = `${JSON.stringify(catalogue, null, 2)}\n`;
 const catalogueHash = sha256(Buffer.from(catalogueJson));
-writeFileSync(
-  join(process.cwd(), 'protocol/private-balance/manifests/development.json'),
-  `${JSON.stringify(deploymentEvidence.manifest, null, 2)}\n`,
-);
+rmSync(join(publicDir, 'xlm'), { recursive: true, force: true });
+rmSync(join(publicDir, 'usdc'), { recursive: true, force: true });
 writeFileSync(join(publicDir, 'manifest.json'), manifestJson);
 writeFileSync(join(publicDir, 'catalogue.json'), catalogueJson);
 writeFileSync(
@@ -329,8 +374,8 @@ writeFileSync(
   `/** Generated by protocol/private-balance/scripts/generate-manifest.mjs. */\n` +
     `export const EXPECTED_PRIVATE_BALANCE_MANIFEST_SHA256 =\n` +
     `  '${manifestHash}';\n` +
-    `export const ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE =\n` +
-    `  process.env.NODE_ENV === 'development';\n`,
+    `// This exact hash-pinned development deployment is explicitly enabled on Testnet.\n` +
+    `export const ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE = true;\n`,
 );
 writeFileSync(
   expectedCatalogueModule,
@@ -338,6 +383,32 @@ writeFileSync(
     `export const EXPECTED_PRIVATE_BALANCE_CATALOGUE_SHA256 =\n` +
     `  '${catalogueHash}';\n`,
 );
-
-console.log('✓ Generated Private Balance manifest, expected hash, and static proof files.');
+  console.log('✓ Published verified Private Balance deployment evidence and static proof files.');
+} else {
+  const manifestHash = sha256(Buffer.from(developmentManifestJson));
+  const catalogue = { schemaVersion: 1, deployments: [] };
+  const catalogueJson = `${JSON.stringify(catalogue, null, 2)}\n`;
+  const catalogueHash = sha256(Buffer.from(catalogueJson));
+  writeFileSync(join(publicDir, 'manifest.json'), developmentManifestJson);
+  writeFileSync(join(publicDir, 'catalogue.json'), catalogueJson);
+  rmSync(join(publicDir, 'xlm'), { recursive: true, force: true });
+  rmSync(join(publicDir, 'usdc'), { recursive: true, force: true });
+  writeFileSync(
+    expectedManifestModule,
+    `/** Generated by protocol/private-balance/scripts/generate-manifest.mjs. */\n` +
+      `export const EXPECTED_PRIVATE_BALANCE_MANIFEST_SHA256 =\n` +
+      `  '${manifestHash}';\n` +
+      `// Re-enable only after replacement pools are deployed and their evidence is verified.\n` +
+      `export const ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE = false;\n`,
+  );
+  writeFileSync(
+    expectedCatalogueModule,
+    `/** Generated by protocol/private-balance/scripts/generate-manifest.mjs. */\n` +
+      `export const EXPECTED_PRIVATE_BALANCE_CATALOGUE_SHA256 =\n` +
+      `  '${catalogueHash}';\n`,
+  );
+  console.log(
+    '✓ Generated undeployed Private Balance artifacts; the authenticated catalogue is empty ' +
+    'until replacement pools are deployed.',
+  );
 }

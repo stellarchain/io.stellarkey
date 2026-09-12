@@ -5,7 +5,7 @@ use private_balance_protocol::{
 };
 use private_balance_test_support::{
     model::{ModelContext, PoolModel},
-    native_poseidon2::{NativeTreeHashContext, native_p2},
+    native_poseidon2::{NativeTreeHashContext, native_poseidon2_hash},
     recovery::recover_public_transcript_with_tree_hash_context,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -20,6 +20,7 @@ fn output(commitment: u32, envelope_byte: u8) -> OutputPackage {
     OutputPackage {
         cm: field(commitment),
         recipient_envelope: [envelope_byte; 181],
+        outgoing_envelope: [envelope_byte.wrapping_add(1); 157],
     }
 }
 
@@ -65,27 +66,23 @@ fn one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption() {
         let action = Action {
             protocol_version: PROTOCOL_VERSION,
             kind,
-            asset: (1, [4; 32]),
+            asset_index: (kind != ActionKind::PrivateTransfer).then_some(0),
+            asset: (kind != ActionKind::PrivateTransfer).then_some((1, [4; 32])),
             action_nonce: field(index + 1),
             anchor_root: if kind == ActionKind::Deposit {
                 [0; 32]
             } else {
                 model.tree.root
             },
-            nullifiers: if kind == ActionKind::Deposit {
-                [[0; 32]; 2]
-            } else {
-                [field(index + 1_000_001), [0; 32]]
-            },
+            nullifiers: [field(index + 1_000_001), field(index + 2_000_001)],
             outputs: [
                 output(first_commitment, 0xa1),
                 output(rng.gen_range(1..=2_000_000_000u32), 0xb2),
+                output(rng.gen_range(1..=2_000_000_000u32), 0xc3),
             ],
             public_value,
             deposit_source: (kind == ActionKind::Deposit).then_some((0, [7; 32])),
             public_recipient: (kind == ActionKind::Withdraw).then_some((0, [8; 32])),
-            relayer_fee: 0,
-            relayer: (kind != ActionKind::Deposit).then_some((0, [9; 32])),
         };
 
         model
@@ -108,6 +105,7 @@ fn one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption() {
     for (activity, record) in recovered.activities.iter().zip(&model.records) {
         assert_eq!(activity.action_index, record.action_index);
         assert_eq!(activity.action_kind as u8, record.action_kind);
+        assert_eq!(activity.asset_index, record.asset_index);
         assert_eq!(activity.asset, record.asset);
         assert_eq!(activity.public_value, record.public_value);
     }
@@ -127,11 +125,12 @@ fn one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption() {
 fn native_poseidon2_oracle_matches_canonical_protocol_hashes() {
     for value in 0..8u32 {
         assert_eq!(
-            native_p2("SKSB_MERKLE_NODE_V1", &[field(value), field(value + 1)]),
-            private_balance_protocol::poseidon2::p2(
-                "SKSB_MERKLE_NODE_V1",
-                &[field(value), field(value + 1)]
-            )
+            native_poseidon2_hash(&[field(value), field(value + 1), field(value + 2)]),
+            private_balance_protocol::poseidon2::poseidon2_hash(&[
+                field(value),
+                field(value + 1),
+                field(value + 2),
+            ])
         );
     }
 
@@ -147,13 +146,6 @@ fn native_poseidon2_oracle_matches_canonical_protocol_hashes() {
             .expect("canonical append");
         assert_eq!(native.root, canonical.root);
         assert_eq!(native.next_leaf_index, canonical.next_leaf_index);
-        for level in 0..private_balance_protocol::constants::TREE_DEPTH {
-            if (canonical.next_leaf_index >> level) & 1 == 1 {
-                assert_eq!(
-                    native.frontier[level], canonical.frontier[level],
-                    "live frontier subtree differs at level {level}"
-                );
-            }
-        }
+        assert_eq!(native.frontier, canonical.frontier);
     }
 }

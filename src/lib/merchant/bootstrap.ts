@@ -5,6 +5,8 @@ export interface MerchantBootstrapState {
   version: 1;
   enabled: boolean;
   configured: boolean;
+  /** Non-sensitive flag that keeps the lazy recovery runtime reachable. */
+  recoveryRequired?: boolean;
 }
 
 /**
@@ -16,12 +18,21 @@ export function merchantShellEnabled({
   ready,
   encryptedEnabled,
   enabledHint,
+  recoveryRequired = false,
 }: {
   ready: boolean;
   encryptedEnabled: boolean;
   enabledHint: boolean;
+  recoveryRequired?: boolean;
 }): boolean {
-  return ready ? encryptedEnabled : enabledHint;
+  return recoveryRequired || (ready ? encryptedEnabled : enabledHint);
+}
+
+export function merchantRuntimeShouldMount(
+  bootstrap: MerchantBootstrapState | null,
+  requested: boolean,
+): boolean {
+  return bootstrap?.enabled === true || bootstrap?.recoveryRequired === true || requested;
 }
 
 interface BootstrapStorage {
@@ -47,19 +58,27 @@ export function readMerchantBootstrapState(
     const raw = storage.getItem(MERCHANT_BOOTSTRAP_STORAGE_KEY);
     if (!raw) return null;
     const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object") return null;
+    const recoveryRequired = "recoveryRequired" in value
+      ? value.recoveryRequired
+      : undefined;
     if (
-      !value ||
-      typeof value !== "object" ||
       !("version" in value) ||
       value.version !== 1 ||
       !("enabled" in value) ||
       typeof value.enabled !== "boolean" ||
       !("configured" in value) ||
-      typeof value.configured !== "boolean"
+      typeof value.configured !== "boolean" ||
+      (recoveryRequired !== undefined && typeof recoveryRequired !== "boolean")
     ) {
       return null;
     }
-    return { version: 1, enabled: value.enabled, configured: value.configured };
+    return {
+      version: 1,
+      enabled: value.enabled,
+      configured: value.configured,
+      ...(recoveryRequired === undefined ? {} : { recoveryRequired }),
+    };
   } catch {
     return null;
   }
@@ -70,7 +89,9 @@ export function readMerchantBootstrapState(
  * authoritative; failure here may load extra code later but cannot hide data.
  */
 export function writeMerchantBootstrapState(
-  state: Pick<MerchantBootstrapState, "enabled" | "configured">,
+  state: Pick<MerchantBootstrapState, "enabled" | "configured"> & {
+    recoveryRequired?: boolean;
+  },
   storage: BootstrapStorage | null = browserStorage(),
 ): boolean {
   if (!storage) return false;

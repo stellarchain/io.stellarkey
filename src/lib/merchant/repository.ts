@@ -1,4 +1,5 @@
 import type { StorageLoadResult } from "../storage-load";
+import { sha256 } from "@noble/hashes/sha2.js";
 import {
   IndexedDbEncryptedRecordDriver,
   type EncryptedRecordDriver,
@@ -51,10 +52,17 @@ interface MerchantRecordPayload {
   value: unknown;
 }
 
-interface MerchantMetadataPayload {
+interface MerchantMetadataPayloadV1 {
   schema: 1;
   store: Record<string, unknown>;
   recordCounts: Record<RecordCollection, number>;
+}
+
+interface MerchantMetadataPayload {
+  schema: 2;
+  store: Record<string, unknown>;
+  recordCounts: Record<RecordCollection, number>;
+  recordSetDigest: string;
 }
 
 interface PersistedRecordState {
@@ -68,6 +76,7 @@ interface RepositorySnapshot {
   store: MerchantStore;
   metaRaw: string;
   records: Map<string, PersistedRecordState>;
+  requiresMetadataReseal: boolean;
 }
 
 interface BuiltRecordSet {
@@ -106,7 +115,10 @@ function encryptionMetadata(store: MerchantStore) {
   };
 }
 
-function metadataPayload(store: MerchantStore): MerchantMetadataPayload {
+function metadataPayload(
+  store: MerchantStore,
+  recordSetDigest: string,
+): MerchantMetadataPayload {
   const metadata = { ...store } as unknown as Record<string, unknown>;
   const recordCounts = {} as Record<RecordCollection, number>;
   for (const collection of RECORD_COLLECTIONS) {
@@ -114,7 +126,49 @@ function metadataPayload(store: MerchantStore): MerchantMetadataPayload {
     recordCounts[collection] = records.length;
     delete metadata[collection];
   }
-  return { schema: 1, store: metadata, recordCounts };
+  return { schema: 2, store: metadata, recordCounts, recordSetDigest };
+}
+
+function recordDigest(raw: string): string {
+  return Array.from(
+    sha256(new TextEncoder().encode(raw)),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+type StringComparator = (left: string, right: string) => number;
+
+const LEGACY_RECORD_COLLATION_LOCALES = ["da", "nb", "nn", "fo", "cy", "haw"] as const;
+
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function recordSetDigest(
+  records: ReadonlyMap<string, string>,
+  comparator: StringComparator = compareCodeUnits,
+): string {
+  const digest = sha256.create();
+  const encoder = new TextEncoder();
+  for (const [storageKey, raw] of [...records].sort(([left], [right]) =>
+    comparator(left, right))) {
+    digest.update(encoder.encode(storageKey));
+    digest.update(Uint8Array.of(0));
+    digest.update(encoder.encode(recordDigest(raw)));
+    digest.update(Uint8Array.of(10));
+  }
+  return Array.from(
+    digest.digest(),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+function matchesLegacyRecordSetDigest(
+  records: ReadonlyMap<string, string>,
+  expectedDigest: string,
+): boolean {
+  return LEGACY_RECORD_COLLATION_LOCALES.some((locale) =>
+    recordSetDigest(records, new Intl.Collator(locale).compare) === expectedDigest);
 }
 
 function previousCollection(
@@ -192,11 +246,8 @@ function buildRecordSet(
   previous: RepositorySnapshot | null,
 ): BuiltRecordSet {
   const metadata = encryptionMetadata(store);
-  const metaRaw = JSON.stringify(
-    encryptMerchantRecord(metadataPayload(store), key, RECORD_META_KEY, metadata),
-  );
-  const all = new Map<string, string>([[RECORD_META_KEY, metaRaw]]);
-  const puts = new Map<string, string>([[RECORD_META_KEY, metaRaw]]);
+  const all = new Map<string, string>();
+  const puts = new Map<string, string>();
   const persisted = new Map<string, PersistedRecordState>();
 
   for (const collection of RECORD_COLLECTIONS) {
@@ -234,11 +285,29 @@ function buildRecordSet(
   const removeKeys = previous
     ? [...previous.records.keys()].filter((storageKey) => !persisted.has(storageKey))
     : [];
+  const metaRaw = JSON.stringify(
+    encryptMerchantRecord(
+      metadataPayload(
+        store,
+        recordSetDigest(new Map([...persisted].map(([storageKey, state]) => [storageKey, state.raw]))),
+      ),
+      key,
+      RECORD_META_KEY,
+      metadata,
+    ),
+  );
+  all.set(RECORD_META_KEY, metaRaw);
+  puts.set(RECORD_META_KEY, metaRaw);
   return {
     all,
     puts,
     removeKeys,
-    snapshot: { store, metaRaw, records: persisted },
+    snapshot: {
+      store,
+      metaRaw,
+      records: persisted,
+      requiresMetadataReseal: false,
+    },
   };
 }
 
@@ -252,7 +321,8 @@ function archiveRaw(
     revision: meta.revision,
     writerId: meta.writerId,
     updatedAt: meta.updatedAt,
-    records: Object.fromEntries([...records].sort(([left], [right]) => left.localeCompare(right))),
+    records: Object.fromEntries([...records].sort(([left], [right]) =>
+      compareCodeUnits(left, right))),
   };
   return JSON.stringify(archive);
 }
@@ -272,21 +342,61 @@ export class MerchantRepositoryConflictError extends Error {
   }
 }
 
+export class MerchantRepositoryRevokedError extends Error {
+  constructor() {
+    super("Merchant repository access was revoked.");
+    this.name = "MerchantRepositoryRevokedError";
+  }
+}
+
 export class MerchantRepository {
   readonly recordKey = RECORD_META_KEY;
   readonly dataPrefix = RECORD_DATA_PREFIX;
   private readonly driver: EncryptedRecordDriver;
   private snapshot: RepositorySnapshot | null = null;
+  private generation = 0;
+  private replacements = 0;
+  private readonly replacementListeners = new Set<() => void>();
+
+  readonly getReplacementSnapshot = (): boolean => this.replacements > 0;
+
+  readonly subscribeReplacement = (onChange: () => void): (() => void) => {
+    this.replacementListeners.add(onChange);
+    return () => { this.replacementListeners.delete(onChange); };
+  };
+
+  private notifyReplacement(): void {
+    for (const notify of [...this.replacementListeners]) {
+      try { notify(); } catch {
+        // Observers cannot prevent replacement cleanup or another observer.
+      }
+    }
+  }
 
   constructor(driver: EncryptedRecordDriver) {
     this.driver = driver;
+  }
+
+  clearDecryptedSnapshot(): void {
+    this.generation += 1;
+    this.snapshot = null;
+  }
+
+  private assertGeneration(expected: number): void {
+    if (expected !== this.generation || this.replacements > 0) {
+      throw new MerchantRepositoryRevokedError();
+    }
   }
 
   private decodeRecordSet(
     metaRaw: string,
     recordRaws: ReadonlyMap<string, string>,
     key: Uint8Array,
+    generation: number | null,
   ): StorageLoadResult<MerchantStore> {
+    // Decoding is synchronous. Check outside the corruption catch so revoked
+    // work can never be reported as damaged encrypted storage.
+    if (generation !== null) this.assertGeneration(generation);
     let metaEnvelope: EncryptedMerchantRecordEnvelope | null = null;
     try {
       const parsedMeta: unknown = JSON.parse(metaRaw);
@@ -310,13 +420,27 @@ export class MerchantRepository {
       const decryptedMeta = decryptMerchantRecord(parsedMeta, key, RECORD_META_KEY);
       if (
         !isRecord(decryptedMeta) ||
-        decryptedMeta.schema !== 1 ||
+        (decryptedMeta.schema !== 1 && decryptedMeta.schema !== 2) ||
         !isRecord(decryptedMeta.store) ||
-        !isRecord(decryptedMeta.recordCounts)
+        !isRecord(decryptedMeta.recordCounts) ||
+        (decryptedMeta.schema === 2 &&
+          (typeof decryptedMeta.recordSetDigest !== "string" ||
+            !/^[0-9a-f]{64}$/.test(decryptedMeta.recordSetDigest)))
       ) {
         throw new Error("Merchant metadata payload is invalid.");
       }
-      const metadata = decryptedMeta as unknown as MerchantMetadataPayload;
+      const metadata = decryptedMeta as unknown as MerchantMetadataPayload | MerchantMetadataPayloadV1;
+      let requiresMetadataReseal = metadata.schema === 1;
+      if (metadata.schema === 2) {
+        const canonicalDigest = recordSetDigest(recordRaws);
+        if (
+          canonicalDigest !== metadata.recordSetDigest &&
+          !matchesLegacyRecordSetDigest(recordRaws, metadata.recordSetDigest)
+        ) {
+          throw new Error("Merchant metadata record manifest does not match history.");
+        }
+        requiresMetadataReseal = canonicalDigest !== metadata.recordSetDigest;
+      }
       const collections = Object.fromEntries(
         RECORD_COLLECTIONS.map((collection) => [collection, []]),
       ) as unknown as Record<RecordCollection, Array<{ position: number; value: unknown }>>;
@@ -380,7 +504,14 @@ export class MerchantRepository {
       ) {
         throw new Error("Merchant metadata does not match its records.");
       }
-      this.snapshot = { store: decoded, metaRaw, records: persisted };
+      if (generation !== null) {
+        this.snapshot = {
+          store: decoded,
+          metaRaw,
+          records: persisted,
+          requiresMetadataReseal,
+        };
+      }
       return { kind: "ready", value: decoded };
     } catch {
       const raw = metaEnvelope
@@ -395,9 +526,35 @@ export class MerchantRepository {
   }
 
   async load(key: Uint8Array): Promise<StorageLoadResult<MerchantStore>> {
+    const generation = this.generation;
+    this.assertGeneration(generation);
     const metaRaw = await this.driver.read(RECORD_META_KEY);
+    this.assertGeneration(generation);
     if (metaRaw !== null) {
-      return this.decodeRecordSet(metaRaw, await this.driver.readPrefix(RECORD_DATA_PREFIX), key);
+      const records = await this.driver.readPrefix(RECORD_DATA_PREFIX);
+      this.assertGeneration(generation);
+      const decoded = this.decodeRecordSet(metaRaw, records, key, generation);
+      if (decoded.kind !== "ready" || !this.snapshot?.requiresMetadataReseal) return decoded;
+
+      const sealed = buildRecordSet(decoded.value, key, this.snapshot);
+      const result = await this.driver.compareAndSetMany(
+        RECORD_META_KEY,
+        decoded.value.revision,
+        new Map([[RECORD_META_KEY, sealed.snapshot.metaRaw]]),
+        [],
+        { prefix: RECORD_DATA_PREFIX, entries: records },
+      );
+      this.assertGeneration(generation);
+      if (!result.ok) {
+        this.snapshot = null;
+        return {
+          kind: "corrupt",
+          raw: metaRaw,
+          message: "Merchant records changed while their integrity manifest was being upgraded.",
+        };
+      }
+      this.snapshot = sealed.snapshot;
+      return decoded;
     }
     this.snapshot = null;
     return { kind: "absent" };
@@ -410,14 +567,19 @@ export class MerchantRepository {
    * bytes and falls back to the complete fail-closed load path.
    */
   async loadCommitBasis(key: Uint8Array): Promise<StorageLoadResult<MerchantStore>> {
+    const generation = this.generation;
+    this.assertGeneration(generation);
     const metaRaw = await this.driver.read(RECORD_META_KEY);
+    this.assertGeneration(generation);
     if (this.snapshot && metaRaw === this.snapshot.metaRaw) {
       return { kind: "ready", value: this.snapshot.store };
     }
     if (metaRaw === null && this.snapshot === null) {
       return { kind: "absent" };
     }
-    return this.load(key);
+    const result = await this.load(key);
+    this.assertGeneration(generation);
+    return result;
   }
 
   async commit(
@@ -425,8 +587,11 @@ export class MerchantRepository {
     key: Uint8Array,
     expectedRevision: number | null,
   ): Promise<MerchantStore> {
+    const generation = this.generation;
+    this.assertGeneration(generation);
     if (expectedRevision !== null && this.snapshot?.store.revision !== expectedRevision) {
       const current = await this.load(key);
+      this.assertGeneration(generation);
       if (current.kind !== "ready" || current.value.revision !== expectedRevision) {
         throw new MerchantRepositoryConflictError(
           current.kind === "ready" ? this.snapshot?.metaRaw ?? null : null,
@@ -449,6 +614,9 @@ export class MerchantRepository {
           }
         : undefined,
     );
+    // A transaction already handed to storage remains durable. Only its
+    // plaintext return/cache publication is revocable after this await.
+    this.assertGeneration(generation);
     if (!result.ok) throw new MerchantRepositoryConflictError(result.current);
     if (result.current === null) throw new Error("IndexedDB did not return committed merchant metadata.");
     const verifiedMeta: unknown = JSON.parse(result.current);
@@ -456,7 +624,7 @@ export class MerchantRepository {
       throw new Error("IndexedDB merchant metadata could not be verified.");
     }
     const decodedMeta = decryptMerchantRecord(verifiedMeta, key, RECORD_META_KEY);
-    if (!isRecord(decodedMeta) || decodedMeta.schema !== 1) {
+    if (!isRecord(decodedMeta) || decodedMeta.schema !== 2) {
       throw new Error("IndexedDB merchant commit could not be verified.");
     }
     this.snapshot = built.snapshot;
@@ -464,14 +632,18 @@ export class MerchantRepository {
   }
 
   async exportEncryptedArchive(key: Uint8Array): Promise<string | null> {
+    const generation = this.generation;
+    this.assertGeneration(generation);
     const metaRaw = await this.driver.read(RECORD_META_KEY);
+    this.assertGeneration(generation);
     if (metaRaw === null) return null;
     const parsed: unknown = JSON.parse(metaRaw);
     if (!isEncryptedMerchantRecordEnvelope(parsed)) {
       throw new Error("Merchant recovery metadata is invalid.");
     }
     const dataRecords = await this.driver.readPrefix(RECORD_DATA_PREFIX);
-    const decoded = this.decodeRecordSet(metaRaw, dataRecords, key);
+    this.assertGeneration(generation);
+    const decoded = this.decodeRecordSet(metaRaw, dataRecords, key, null);
     if (decoded.kind !== "ready") {
       throw new Error("Merchant recovery data is corrupt or could not be authenticated.");
     }
@@ -510,13 +682,62 @@ export class MerchantRepository {
     ) {
       throw new Error("Merchant recovery archive metadata does not match.");
     }
-    await this.driver.replacePrefixVerified(RECORD_ROOT_PREFIX, records);
-    this.snapshot = null;
+    await this.replaceRecords(records);
+  }
+
+  verifyEncryptedArchive(raw: string, key: Uint8Array): MerchantStore {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error("Merchant recovery archive is invalid.");
+    }
+    if (!isEncryptedMerchantRecordArchive(parsed)) {
+      throw new Error("Merchant recovery archive is invalid.");
+    }
+    const records = new Map(Object.entries(parsed.records));
+    const metaRaw = records.get(RECORD_META_KEY);
+    if (!metaRaw) throw new Error("Merchant recovery archive metadata is missing.");
+    records.delete(RECORD_META_KEY);
+    if ([...records.keys()].some((storageKey) => !storageKey.startsWith(RECORD_DATA_PREFIX))) {
+      throw new Error("Merchant recovery archive contains unsupported records.");
+    }
+    let meta: unknown;
+    try {
+      meta = JSON.parse(metaRaw);
+    } catch {
+      throw new Error("Merchant recovery archive metadata is invalid.");
+    }
+    if (
+      !isEncryptedMerchantRecordEnvelope(meta) ||
+      meta.revision !== parsed.revision ||
+      meta.writerId !== parsed.writerId ||
+      meta.updatedAt !== parsed.updatedAt
+    ) {
+      throw new Error("Merchant recovery archive metadata does not match.");
+    }
+    const decoded = this.decodeRecordSet(metaRaw, records, key, null);
+    if (decoded.kind !== "ready") {
+      throw new Error("Merchant recovery archive could not be decrypted or authenticated.");
+    }
+    return decoded.value;
   }
 
   async clear(): Promise<void> {
-    await this.driver.replacePrefixVerified(RECORD_ROOT_PREFIX, new Map());
-    this.snapshot = null;
+    await this.replaceRecords(new Map());
+  }
+
+  private async replaceRecords(records: ReadonlyMap<string, string>): Promise<void> {
+    this.clearDecryptedSnapshot();
+    this.replacements += 1;
+    if (this.replacements === 1) this.notifyReplacement();
+    try {
+      await this.driver.replacePrefixVerified(RECORD_ROOT_PREFIX, records);
+    } finally {
+      this.replacements -= 1;
+      this.clearDecryptedSnapshot();
+      if (this.replacements === 0) this.notifyReplacement();
+    }
   }
 }
 

@@ -5,15 +5,18 @@ import {
   useMerchantConfiguration,
   useMerchantRecords,
   useMerchantReporting,
+  useMerchantStaff,
   useMerchantStatus,
   useMerchantTill,
 } from "@/hooks/useMerchant";
 import { useWalletPhase } from "@/hooks/useWallet";
 import { fmtMinor } from "@/lib/merchant/money";
+import { merchantPageAccess } from "@/lib/merchant/security-boundaries";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, Notice, SegmentedControl } from "../ui";
+import { Button, ErrorText, Notice, SegmentedControl } from "../ui";
 import { IconAlert, IconChevronDown, IconDownload } from "../icons";
 import { IconClock, IconInfo, IconReceiptStellar } from "./icons";
+import { useToast } from "../Toast";
 import { Stat, StatStrip } from "./Stat";
 import { ChargeSheet } from "./ChargeSheet";
 import { PosTerminal } from "./PosTerminal";
@@ -145,6 +148,8 @@ export function MerchantPage({
     online,
     enabled,
     chargeBlockedReason,
+    marketPriceStatus,
+    retryMarketPrices,
     watchError,
     queuedChargeCount,
     expiredChargeCount,
@@ -152,15 +157,22 @@ export function MerchantPage({
   } = useMerchantStatus();
   const { settings } = useMerchantConfiguration();
   const { today } = useMerchantReporting();
+  const { activeStaff } = useMerchantStaff();
   const { activeShift } = useMerchantTill();
   const { unmatched, activeCharge, closeCharge } = useMerchantRecords();
   const { phase } = useWalletPhase();
+  const { toast } = useToast();
 
   // Uncontrolled by default so the page works on its own; the shell passes both
   // props so the sidebar's shift row opens this very sheet.
   const [localShiftOpen, setLocalShiftOpen] = useState(false);
   const [connectionRestored, setConnectionRestored] = useState(false);
+  const [recoveryResetBusy, setRecoveryResetBusy] = useState(false);
+  const [pricesRefreshing, setPricesRefreshing] = useState(false);
   const previousOnline = useRef(online);
+  const previousActiveCharge = useRef(
+    activeCharge ? { id: activeCharge.id, status: activeCharge.status } : null,
+  );
   const shiftShowing = shiftOpen ?? localShiftOpen;
   const setShiftShowing = onShiftOpenChange ?? setLocalShiftOpen;
 
@@ -177,6 +189,47 @@ export function MerchantPage({
       if (hideTimer) clearTimeout(hideTimer);
     };
   }, [online]);
+
+  useEffect(() => {
+    const previous = previousActiveCharge.current;
+    previousActiveCharge.current = activeCharge
+      ? { id: activeCharge.id, status: activeCharge.status }
+      : null;
+    if (
+      activeCharge?.status === "paid" &&
+      previous?.id === activeCharge.id &&
+      previous.status !== "paid" &&
+      activeStaff === null
+    ) {
+      triggerHaptic("success");
+      toast("Payment received. Till locked.", "success");
+    }
+  }, [activeCharge, activeStaff, toast]);
+
+  async function handleRecoveryReset(): Promise<void> {
+    if (
+      recoveryResetBusy ||
+      !window.confirm("Erase this device's unreadable merchant data?")
+    ) {
+      return;
+    }
+    setRecoveryResetBusy(true);
+    try {
+      await resetRecoveryData();
+      triggerHaptic("success");
+      toast("Unreadable merchant data erased", "success");
+    } catch (cause) {
+      triggerHaptic("error");
+      toast(
+        cause instanceof Error
+          ? cause.message
+          : "Merchant recovery data could not be erased.",
+        "error",
+      );
+    } finally {
+      setRecoveryResetBusy(false);
+    }
+  }
 
   if (!ready) {
     return (
@@ -203,6 +256,11 @@ export function MerchantPage({
         <p className="mt-2 text-[12px] leading-relaxed text-neutral-500">
           Till writes are blocked so the original record cannot be overwritten.
         </p>
+        {storageError && (
+          <div className="mt-4 text-left">
+            <ErrorText message={storageError} />
+          </div>
+        )}
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Button
             onClick={() => {
@@ -220,9 +278,9 @@ export function MerchantPage({
           </Button>
           <Button
             variant="danger"
-            onClick={() => {
-              if (window.confirm("Erase this device's unreadable merchant data?")) resetRecoveryData();
-            }}
+            loading={recoveryResetBusy}
+            disabled={recoveryResetBusy}
+            onClick={() => void handleRecoveryReset()}
           >
             Erase merchant data
           </Button>
@@ -265,6 +323,17 @@ export function MerchantPage({
   const showAlerts = Boolean(storageError) || showChargeBlock || showTray || showRuntime;
   const active = navKey(sub);
   const onBilling = sub === "invoices" || sub === "links";
+  const { hasActiveOperator, canAccessRecords, canSeeReports } = merchantPageAccess({
+    activeStaff,
+    vaultPhase: phase,
+  });
+  const operatorNotice = (
+    <Notice tone="warn">
+      {hasActiveOperator
+        ? "This staff member cannot view retained merchant records."
+        : "Unlock an authorized staff member to continue."}
+    </Notice>
+  );
 
   /*
     The takings strip carries today's three figures to the screens that do not
@@ -278,7 +347,7 @@ export function MerchantPage({
     say it is a sample. So the strip stands down on Insights instead, and the
     page keeps the figures it can qualify.
   */
-  const showTakings = sub !== "insights";
+  const showTakings = canSeeReports && phase !== "locked" && sub !== "insights";
 
   // Every sub-page clears the floating mobile tab bar itself — Orders, Catalogue
   // and Insights with their own bottom padding, the till with the sticky charge
@@ -330,6 +399,9 @@ export function MerchantPage({
                     <span>
                       <span className="font-semibold text-white">Charges are paused. </span>
                       {chargeBlockedReason}
+                      {chargeBlockedReason.startsWith("No live price") && (
+                        <span className="mt-1 block text-xs">{marketPriceStatus}</span>
+                      )}
                     </span>
                   </span>
                   {needsStaff && (
@@ -343,6 +415,12 @@ export function MerchantPage({
                     >
                       Choose staff
                     </button>
+                  )}
+                  {chargeBlockedReason.startsWith("No live price") && (
+                    <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={async () => {
+                      setPricesRefreshing(true);
+                      try { await retryMarketPrices(); } finally { setPricesRefreshing(false); }
+                    }}>Retry Prices</Button>
                   )}
                 </span>
               </Notice>
@@ -391,10 +469,13 @@ export function MerchantPage({
         <div className="flex items-center gap-2">
           <nav
             aria-label="Merchant sections"
-            className="scrollbar-none -ml-4 min-w-0 flex-1 overflow-x-auto pl-4"
+            className="scrollbar-none -ml-4 min-w-0 flex-1 overflow-x-auto pl-4 [mask-image:linear-gradient(to_right,black_calc(100%-32px),transparent)]"
           >
-            <div className="flex w-max items-center gap-1.5 pr-2">
-              {NAV.map((item) => {
+            <div className="flex w-max items-center gap-1.5 pr-10">
+              {NAV.filter(
+                (item) =>
+                  (item.value !== "insights" && item.value !== "customers") || canSeeReports,
+              ).map((item) => {
                 const isActive = item.value === active;
                 return (
                   <button
@@ -408,7 +489,7 @@ export function MerchantPage({
                     }}
                     className={`chip min-h-[44px] shrink-0 font-sans text-[13px] font-semibold ${
                       isActive
-                        ? "bg-[#0A84FF] text-white shadow-sm hover:bg-[#0A84FF]"
+                        ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm hover:bg-[#0A84FF]"
                         : "text-neutral-300"
                     }`}
                   >
@@ -452,29 +533,31 @@ export function MerchantPage({
       )}
 
       {sub === "pos" ? (
-        <PosTerminal onOpenShift={() => setShiftShowing(true)} />
+        hasActiveOperator ? <PosTerminal onOpenShift={() => setShiftShowing(true)} /> : operatorNotice
       ) : sub === "orders" ? (
-        <OrdersPage />
+        canAccessRecords ? <OrdersPage /> : operatorNotice
       ) : sub === "catalogue" ? (
-        <CataloguePage />
+        hasActiveOperator ? <CataloguePage /> : operatorNotice
       ) : sub === "invoices" ? (
-        <InvoicesPage />
+        canAccessRecords ? <InvoicesPage /> : operatorNotice
       ) : sub === "links" ? (
-        <PaymentLinksPage />
+        canAccessRecords ? <PaymentLinksPage /> : operatorNotice
       ) : sub === "customers" ? (
-        <CustomersPage />
+        canAccessRecords ? <CustomersPage /> : operatorNotice
+      ) : sub === "insights" ? (
+        canAccessRecords ? <InsightsPage /> : operatorNotice
       ) : (
-        <InsightsPage />
+        operatorNotice
       )}
 
       {/* The charge sheet hangs off the whole of Merchant Mode, not off the till:
           a request stays on screen while the staff member steps over to Orders,
           and Orders can put a live one back on screen from its own list. */}
-      <ChargeSheet charge={activeCharge} onClose={closeCharge} />
+      <ChargeSheet charge={hasActiveOperator && activeCharge ? activeCharge : null} onClose={closeCharge} />
 
       {/* The shift belongs to the counter, not to any one tab: it opens over
           whatever is on screen and closes back onto it. */}
-      <ShiftSheet open={shiftShowing} onClose={() => setShiftShowing(false)} />
+      <ShiftSheet open={hasActiveOperator && shiftShowing} onClose={() => setShiftShowing(false)} />
     </section>
   );
 }

@@ -11,7 +11,6 @@ import {
 import { Button } from '@/components/ui';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { fmtAmount } from '@/lib/format';
-import { triggerHaptic } from '@/lib/haptics';
 import {
   ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE,
 } from '@/lib/private-balance-expected-manifest';
@@ -35,6 +34,7 @@ import { PrivatePaymentsDetails } from './PrivatePaymentsDetails';
 import { ReceivePrivate } from './ReceivePrivate';
 import { SendPrivate } from './SendPrivate';
 import { WithdrawPrivate } from './WithdrawPrivate';
+import { hasExposedPrivateSpend } from '../runtime/proof-exposure';
 
 function ActionButton({
   icon,
@@ -57,9 +57,9 @@ function ActionButton({
       aria-label={`${label} · private balance`}
       className="group flex w-full min-w-0 flex-col items-center gap-2 outline-none disabled:cursor-not-allowed"
     >
-      <span className={`flex h-[clamp(48px,16vw,60px)] w-[clamp(48px,16vw,60px)] items-center justify-center rounded-full transition-all duration-200 group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.86] ${
+      <span className={`flex h-[clamp(48px,16vw,60px)] w-[clamp(48px,16vw,60px)] items-center justify-center rounded-full transition-[background-color,transform] group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.86] ${
         primary
-          ? 'bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_26px_-8px_rgba(10,132,255,0.55)]'
+          ? 'bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-[var(--color-oncolor)] shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_26px_-8px_rgba(10,132,255,0.55)]'
           : 'border border-white/[0.1] bg-white/[0.07] text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]'
       } ${disabled ? 'opacity-30' : 'group-hover:bg-white/[0.12]'}`}>
         {icon}
@@ -98,11 +98,12 @@ export function PrivateBalanceCard({
   } = usePrivateBalanceRuntimeData();
   const [setupOpen, setSetupOpen] = useState(false);
   const [action, setAction] = useState<
-    'add' | 'send' | 'receive' | 'withdraw' | 'details' | null
+    'add' | 'send' | 'receive' | 'withdraw' | 'details' | 'recovery' | null
   >(null);
   const [prefillRecipient, setPrefillRecipient] = useState<string | undefined>(undefined);
   const [prefillAmount, setPrefillAmount] = useState<string | undefined>(undefined);
   const current = phase === 'current';
+  const statusUnknown = phase === 'status-unknown';
   const follower = configured && !isLeader;
   const actionable = current && isLeader;
   const decimals = asset?.decimals ?? 7;
@@ -118,7 +119,6 @@ export function PrivateBalanceCard({
   };
 
   const openAction = (next: NonNullable<typeof action>) => {
-    triggerHaptic('selection');
     submittedRef.current = false;
     setAction(next);
   };
@@ -205,11 +205,11 @@ export function PrivateBalanceCard({
       {showAssetSelector ? <PrivateAssetSelector /> : null}
       <div className="balance-display mt-1.5 text-white">
         <span className="balance-display-value">
-          {!configured ? '0' : privacyMode ? '••••••' : fmtAmount(balance)}
+          {!configured ? '0' : statusUnknown ? '—' : privacyMode ? '••••••' : fmtAmount(balance)}
         </span>
-        {!configured || !privacyMode ? <span className="balance-display-unit">{assetCode}</span> : null}
+        {!configured || statusUnknown || !privacyMode ? <span className="balance-display-unit">{assetCode}</span> : null}
       </div>
-      {configured ? (
+      {configured && !statusUnknown ? (
         <div className="mt-1 flex min-h-[18px] items-center justify-center">
           <FiatValue
             amount={balance}
@@ -229,11 +229,8 @@ export function PrivateBalanceCard({
             <p className="text-[12.5px] font-medium text-neutral-400">Active in another tab</p>
             <button
               type="button"
-              onClick={() => {
-                triggerHaptic('selection');
-                takeoverLeadership();
-              }}
-              className="chip min-h-8 font-semibold text-[#0A84FF]"
+              onClick={() => takeoverLeadership()}
+              className="chip font-semibold text-[#0A84FF]"
             >
               Use Here
             </button>
@@ -244,7 +241,7 @@ export function PrivateBalanceCard({
               <button
                 type="button"
                 onClick={() => openAction('details')}
-                className={`min-h-6 text-[12.5px] font-medium ${
+                className={`text-[12.5px] font-medium ${
                   statusLine.tone === 'caution' ? 'text-[#FFB340]' : 'text-neutral-400'
                 }`}
               >
@@ -263,10 +260,7 @@ export function PrivateBalanceCard({
           type="button"
           className="mt-8 min-w-48"
           disabled={working || (deployment.manifestStatus === 'development' && !ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE)}
-          onClick={() => {
-            triggerHaptic('selection');
-            setSetupOpen(true);
-          }}
+          onClick={() => setSetupOpen(true)}
         >
           Set Up Private Payments
         </Button>
@@ -280,25 +274,34 @@ export function PrivateBalanceCard({
       )}
 
       <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+        {configured && pendingActions.some(hasExposedPrivateSpend) ? <Button type="button" variant="secondary" onClick={() => openAction('recovery')}>Recover held balance</Button> : null}
         <button type="button" onClick={() => openAction('details')} className="chip min-h-11 sm:min-h-0">
           Details
         </button>
       </div>
 
+      {/* Every dialog stays mounted so its shell can play the exit animation;
+          each one renders its content only while open. */}
       <PrivateBalanceSetup open={setupOpen} onClose={() => setSetupOpen(false)} />
-      {configured && action === 'add' ? (
-        <AddPrivateFunds onClose={closeAction} prefillAmount={prefillAmount} onSubmitted={markSubmitted} />
-      ) : null}
-      {configured && action === 'send' ? (
-        <SendPrivate
-          onClose={closeAction}
-          prefill={prefillRecipient !== undefined ? { recipient: prefillRecipient } : undefined}
-          onSubmitted={markSubmitted}
-        />
-      ) : null}
-      {configured && action === 'receive' ? <ReceivePrivate onClose={closeAction} /> : null}
-      {configured && action === 'withdraw' ? <WithdrawPrivate onClose={closeAction} onSubmitted={markSubmitted} /> : null}
-      {action === 'details' ? <PrivatePaymentsDetails onClose={closeAction} /> : null}
+      <AddPrivateFunds
+        open={configured && action === 'add'}
+        onClose={closeAction}
+        prefillAmount={prefillAmount}
+        onSubmitted={markSubmitted}
+      />
+      <SendPrivate
+        open={configured && action === 'send'}
+        onClose={closeAction}
+        prefill={prefillRecipient !== undefined ? { recipient: prefillRecipient } : undefined}
+        onSubmitted={markSubmitted}
+      />
+      <ReceivePrivate open={configured && action === 'receive'} onClose={closeAction} />
+      <WithdrawPrivate onClose={closeAction} onSubmitted={markSubmitted} open={configured && action === 'withdraw'} />
+      <PrivatePaymentsDetails
+        open={action === 'details' || (configured && action === 'recovery')}
+        initialStep={action === 'recovery' ? 'recovery' : 'details'}
+        onClose={closeAction}
+      />
     </section>
   );
 }

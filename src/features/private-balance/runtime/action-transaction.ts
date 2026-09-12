@@ -4,11 +4,12 @@ import {
   rpc as SorobanRpc,
   type xdr,
 } from '@stellar/stellar-sdk';
-import type { PrivateBalanceManifest } from '../../../lib/private-balance-manifest';
 import {
   reviewPrivateBalanceTransaction,
   type PrivateBalanceTransactionReview,
+  type PrivateBalanceTransactionManifest,
 } from './transaction-review';
+import { assertDirectPrivateSubmission } from './direct-submission';
 
 const REVIEW_WINDOW_SECONDS = 5 * 60;
 
@@ -26,15 +27,18 @@ export interface PreparedReviewedPrivateBalanceTransaction {
 }
 
 export async function prepareReviewedPrivateBalanceTransaction(input: {
-  rpc: PrivateActionSimulationRpc;
+  rpc?: PrivateActionSimulationRpc;
   operation: xdr.Operation;
-  manifest: Pick<PrivateBalanceManifest, 'networkPassphrase' | 'poolContractId'>;
-  assetContractId: string;
+  manifest: PrivateBalanceTransactionManifest;
   source: string;
   classicFeeStroops: bigint;
   maximumResourceFeeStroops: bigint;
   nowSeconds?: number;
+  timeBounds?: { minTime: string; maxTime: string };
+  submissionMode?: 'direct';
+  signal?: AbortSignal;
 }): Promise<PreparedReviewedPrivateBalanceTransaction> {
+  assertDirectPrivateSubmission(input);
   if (input.classicFeeStroops < 1n || input.classicFeeStroops > 0xffff_ffffn) {
     throw new Error('Private Balance classic fee is outside the supported range');
   }
@@ -45,11 +49,22 @@ export async function prepareReviewedPrivateBalanceTransaction(input: {
   if (!Number.isSafeInteger(nowSeconds) || nowSeconds < 0) {
     throw new Error('Private Balance review time is invalid');
   }
-  const timeBounds = {
+  const timeBounds = input.timeBounds ?? {
     minTime: '0',
     maxTime: String(nowSeconds + REVIEW_WINDOW_SECONDS),
   };
+  const assertCurrent = () => {
+    if (input.signal?.aborted) throw new DOMException('Private preparation cancelled.', 'AbortError');
+    const now = input.nowSeconds ?? Math.floor(Date.now() / 1_000);
+    if (timeBounds.minTime !== '0' || !/^[1-9][0-9]{0,10}$/u.test(timeBounds.maxTime) ||
+      Number(timeBounds.maxTime) <= now || Number(timeBounds.maxTime) > now + REVIEW_WINDOW_SECONDS) {
+      throw new Error('Private preparation time bounds are invalid or expired');
+    }
+  };
+  assertCurrent();
+  if (!input.rpc) throw new Error('Private Balance simulation RPC is unavailable');
   const account = await input.rpc.getAccount(input.source);
+  assertCurrent();
   const raw = new TransactionBuilder(account, {
     fee: input.classicFeeStroops.toString(),
     networkPassphrase: input.manifest.networkPassphrase,
@@ -59,6 +74,7 @@ export async function prepareReviewedPrivateBalanceTransaction(input: {
     },
   }).addOperation(input.operation).build();
   const simulation = await input.rpc.simulateTransaction(raw);
+  assertCurrent();
   if (SorobanRpc.Api.isSimulationError(simulation)) {
     throw new Error(`Private Balance simulation failed: ${simulation.error}`);
   }
@@ -76,7 +92,6 @@ export async function prepareReviewedPrivateBalanceTransaction(input: {
   const review = reviewPrivateBalanceTransaction({
     envelopeXdr: prepared.toXdr(),
     manifest: input.manifest,
-    assetContractId: input.assetContractId,
     source: input.source,
     sequence: prepared.sequence,
     timeBounds,

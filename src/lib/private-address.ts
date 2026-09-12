@@ -4,16 +4,16 @@
  * its lazy boundary (release-gate enforced) — shape checks only, no decoding.
  */
 
-/** Cheap shape check for a v2 Bech32m private address (tks testnet, sks mainnet). */
+/** Cheap shape check for a compact shareable Private Payments address. */
 export function isPrivateReceiveAddressLike(value: string): boolean {
   const trimmed = value.trim();
-  return /^(?:tks1|sks1)[02-9ac-hj-np-z]{115}$/.test(trimmed);
+  return /^(?:tskpay_[1-9A-HJ-NP-Za-km-z]{121}|skpay_[1-9A-HJ-NP-Za-km-z]{121})$/.test(trimmed);
 }
 
-/** Cheap shape check for a v2 reusable stealth handle (tsm testnet, ssm mainnet). */
+/** Cheap shape check for a reusable stealth handle (tsm testnet, ssm mainnet). */
 export function isStealthMetaAddressLike(value: string): boolean {
   const trimmed = value.trim();
-  return /^(?:tsm1|ssm1)[02-9ac-hj-np-z]{109}$/.test(trimmed);
+  return /^(?:tsm1|ssm1)[02-9ac-hj-np-z]{160}$/.test(trimmed);
 }
 
 /** Fired for a mounted Private Payments card to open a flow immediately. */
@@ -23,32 +23,26 @@ export const PRIVATE_RECEIVE_REQUEST_EVENT = 'stellarkey.private.receive-request
 /** Fired for the wallet shell to open the PUBLIC send sheet, prefilled. */
 export const PUBLIC_SEND_REQUEST_EVENT = 'stellarkey.public.send-request';
 
-const SEND_INTENT_KEY = 'stellarkey.private.send-intent.v1';
-const ADD_INTENT_KEY = 'stellarkey.private.add-intent.v1';
-const RECEIVE_INTENT_KEY = 'stellarkey.private.receive-intent.v1';
+const SEND_INTENT_KEY = 'send';
+const ADD_INTENT_KEY = 'add';
+const RECEIVE_INTENT_KEY = 'receive';
+const INTENT_TTL_MS = 60_000;
+const pendingIntents = new Map<string, { value: string; expiresAt: number }>();
 
 function setIntent(key: string, value: string): void {
-  try {
-    window.sessionStorage.setItem(key, value);
-  } catch {
-    // Session storage may be unavailable; the live event still covers the
-    // already-mounted case.
-  }
+  pendingIntents.set(key, { value, expiresAt: Date.now() + INTENT_TTL_MS });
 }
 
 function consumeIntent(key: string): string | null {
-  try {
-    const value = window.sessionStorage.getItem(key);
-    if (value !== null) window.sessionStorage.removeItem(key);
-    return value;
-  } catch {
-    return null;
-  }
+  const intent = pendingIntents.get(key) ?? null;
+  pendingIntents.delete(key);
+  if (!intent || intent.expiresAt < Date.now()) return null;
+  return intent.value;
 }
 
 /**
  * Ask Private Payments to open its send flow for `recipient`. Works whether or
- * not the private surface is mounted yet: an intent is stored for the next
+ * not the private surface is mounted yet: an expiring intent is held for the next
  * mount, and a live event covers a card already on screen.
  */
 export function requestPrivateSend(recipient: string): void {

@@ -5,22 +5,32 @@ export const MEMO_BYTES = 32;
 export const MAX_NOTE_VALUE = (1n << 63n) - 1n;
 export const DOMAIN_NOTE = 'SKSB_NOTE_COMMITMENT_V1';
 export const DOMAIN_NULLIFIER = 'SKSB_NULLIFIER_V1';
+export const DOMAIN_DUMMY_NULLIFIER = 'SKSB_DUMMY_NULLIFIER_V1';
 function requireLength(name, bytes, expected) {
     if (bytes.length !== expected)
         throw new Error(`${name} must be ${expected} bytes`);
 }
+function requireU32(value, name) {
+    if (!Number.isInteger(value) || value < 0 || value > 0xffff_ffff) {
+        throw new Error(`${name} must be an unsigned 32-bit integer`);
+    }
+}
 function validateNote(note) {
     if (note.protocolVersion !== 1)
         throw new Error('Unsupported note protocol version');
-    if (note.flags !== 0)
+    if (note.flags !== 0 && note.flags !== 1)
         throw new Error('Unsupported note flags');
-    if (note.value < 1n || note.value > MAX_NOTE_VALUE)
+    if (note.value < 0n
+        || note.value > MAX_NOTE_VALUE
+        || (note.flags === 0 && note.value === 0n)
+        || (note.flags === 1 && note.value !== 0n))
         throw new Error('Invalid note value');
     requireLength('Address diversifier', note.diversifier, 4);
     requireLength('Owner commitment', note.ownerCommitment, 32);
     requireLength('Rho', note.rho, 32);
     requireLength('Memo', note.memo, MEMO_BYTES);
-    requireLength('Reserved field', note.reserved, 15);
+    requireU32(note.assetIndex, 'Asset index');
+    requireLength('Reserved field', note.reserved, 11);
     if (!isCanonicalField(note.ownerCommitment) || note.ownerCommitment.every((byte) => byte === 0)) {
         throw new Error('Invalid owner commitment');
     }
@@ -51,7 +61,11 @@ export function encodeNotePlaintext(note) {
     output.set(note.rho, 48);
     output[80] = note.memoLength;
     output.set(note.memo, 81);
-    output.set(note.reserved, 113);
+    output[113] = (note.assetIndex >>> 24) & 0xff;
+    output[114] = (note.assetIndex >>> 16) & 0xff;
+    output[115] = (note.assetIndex >>> 8) & 0xff;
+    output[116] = note.assetIndex & 0xff;
+    output.set(note.reserved, 117);
     return output;
 }
 export function decodeNotePlaintext(bytes) {
@@ -69,13 +83,17 @@ export function decodeNotePlaintext(bytes) {
         rho: bytes.slice(48, 80),
         memoLength: bytes[80],
         memo: bytes.slice(81, 113),
-        reserved: bytes.slice(113, 128),
+        assetIndex: (bytes[113] * 0x100_0000
+            + bytes[114] * 0x1_0000
+            + bytes[115] * 0x100
+            + bytes[116]),
+        reserved: bytes.slice(117, 128),
     };
     validateNote(note);
     return note;
 }
 export function computeCommitment(contextField, assetField, ownerCommitment, value, rho) {
-    if (value < 1n || value > MAX_NOTE_VALUE)
+    if (value < 0n || value > MAX_NOTE_VALUE)
         throw new Error('Invalid commitment value');
     return p2(DOMAIN_NOTE, [contextField, assetField, ownerCommitment, bigintTo32Bytes(value), rho]);
 }
@@ -83,4 +101,10 @@ export function computeNullifier(contextField, nk, rho, leafIndex, cm) {
     if (leafIndex < 0n || leafIndex > 0xffffffffn)
         throw new Error('Invalid leaf index');
     return p2(DOMAIN_NULLIFIER, [contextField, nk, rho, bigintTo32Bytes(leafIndex), cm]);
+}
+export function computeDummyNullifier(contextField, dummySecret) {
+    if (!isCanonicalField(dummySecret) || dummySecret.every(byte => byte === 0)) {
+        throw new Error('Invalid dummy nullifier secret');
+    }
+    return p2(DOMAIN_DUMMY_NULLIFIER, [contextField, dummySecret]);
 }

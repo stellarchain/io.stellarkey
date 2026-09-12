@@ -22,26 +22,49 @@ test.setTimeout(900_000);
 
 const PRIVATE_TEST_PASSWORD = "Private-MVP-2026!";
 
+async function authorizePrivateTransaction(dialog: Locator): Promise<void> {
+  const authorization = dialog.page().getByRole("dialog", { name: "Confirm transaction" });
+  await authorization.getByLabel("Wallet Password", { exact: true }).fill(PRIVATE_TEST_PASSWORD);
+  await authorization.getByRole("button", { name: "Authorize" }).click();
+}
+
+async function waitForPreparedConfirmation(dialog: Locator, confirm: Locator): Promise<void> {
+  const sharing = dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true });
+  const failure = dialog.getByRole('alert');
+  await expect(confirm.or(sharing).or(failure).first()).toBeVisible({ timeout: 300_000 });
+  if (await sharing.isVisible().catch(() => false)) {
+    await expect(dialog.getByText(/Sharing authorizes the exact payment above/)).toBeVisible();
+    await expect(sharing).toBeEnabled();
+    await sharing.click();
+    await expect(confirm.or(failure).first()).toBeVisible({ timeout: 300_000 });
+  }
+  if (await failure.isVisible().catch(() => false)) {
+    throw new Error('Private action preparation failed in the isolated payment fixture.');
+  }
+}
+
 async function confirmPreparedAction(
   dialog: Locator,
   options: { confirm: string; success: string },
 ): Promise<void> {
-  // The review renders instantly; the proof prepares underneath while the fee
-  // row shows its skeleton, so the confirm button enables only when ready.
+  // Spend intent is approved before a proof leaves the browser. The later
+  // transaction confirmation waits for the returned reviewed envelope.
   const confirm = dialog.getByRole("button", {
     name: options.confirm,
     exact: true,
     disabled: false,
   });
-  const failure = dialog.getByRole("alert");
-  await expect(confirm.or(failure).first()).toBeVisible({ timeout: 300_000 });
-  if (await failure.isVisible().catch(() => false)) {
-    throw new Error(`Private action preparation failed: ${await failure.textContent()}`);
-  }
+  await waitForPreparedConfirmation(dialog, confirm);
   await confirm.click();
-  await expect(dialog.getByRole("heading", { name: options.success })).toBeVisible({
+  await authorizePrivateTransaction(dialog);
+  const success = dialog.getByText(options.success, { exact: true });
+  const submissionFailure = dialog.getByRole("alert");
+  await expect(success.or(submissionFailure).first()).toBeVisible({
     timeout: 600_000,
   });
+  if (await submissionFailure.isVisible().catch(() => false)) {
+    throw new Error(`Private action submission failed: ${await submissionFailure.textContent()}`);
+  }
   await dialog.getByRole("button", { name: "Done" }).click();
 }
 
@@ -59,7 +82,7 @@ async function readPrivateAddress(page: Page, region: Locator): Promise<string> 
   const addressText = dialog.getByLabel("Private address").locator("[title]").first();
   await expect(addressText).toBeVisible();
   const address = await addressText.getAttribute("title") ?? "";
-  expect(address).toMatch(/^tks1[023456789acdefghjklmnpqrstuvwxyz]{115}$/);
+  expect(address).toMatch(/^tskpay_[1-9A-HJ-NP-Za-km-z]{121}$/);
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   return address;
 }
@@ -90,11 +113,10 @@ test("completes payments, encrypted-backup restore, and seed-only recovery", asy
     // Sending more than any single deposit folds the old consolidation rescue
     // into the send review itself: one approval covering every step.
     const send = await openPrivateSend(senderPage);
-    await send.getByLabel("Private recipient").fill(recipientAddress);
+    await send.getByLabel("Private Recipient").fill(recipientAddress);
     await send.getByLabel("Amount", { exact: true }).fill("2.5");
-    await send.getByLabel("Private memo (optional)").fill("lifecycle");
+    await send.getByLabel("Private Memo (Optional)").fill("lifecycle");
     await send.getByRole("button", { name: "Review Private Send" }).click();
-    await expect(send.getByRole("heading", { name: "Review Private Send" })).toBeVisible();
     await confirmPreparedAction(send, { confirm: "Confirm Send", success: "Sent Privately" });
     await expectPrivateBalance(senderRegion, "0.5");
 
@@ -124,14 +146,9 @@ test("completes payments, encrypted-backup restore, and seed-only recovery", asy
       exact: true,
       disabled: false,
     });
-    const ambiguousFailure = ambiguousWithdrawal.getByRole("alert");
-    await expect(ambiguousConfirm.or(ambiguousFailure).first()).toBeVisible({ timeout: 300_000 });
-    if (await ambiguousFailure.isVisible().catch(() => false)) {
-      throw new Error(
-        `Private action preparation failed: ${await ambiguousFailure.textContent()}`,
-      );
-    }
+    await waitForPreparedConfirmation(ambiguousWithdrawal, ambiguousConfirm);
     await ambiguousConfirm.click();
+    await authorizePrivateTransaction(ambiguousWithdrawal);
     await expect(
       ambiguousWithdrawal.getByRole("heading", { name: /We couldn.t confirm this payment yet/ }),
     ).toBeVisible({ timeout: 180_000 });
@@ -150,7 +167,7 @@ test("completes payments, encrypted-backup restore, and seed-only recovery", asy
     await recipientPage.getByRole("button", { name: /^Activity/ }).first().click();
     const activity = recipientPage.getByRole("main");
     const pendingWithdrawal = activity.getByRole("button", {
-      name: /Private withdrawal.*Confirming.*0\.25 XLM/,
+      name: /Private payment.*Withdrew to public balance.*Confirming.*0\.25 XLM/,
     });
     await expect(pendingWithdrawal).toBeVisible({
       timeout: 60_000,
@@ -208,13 +225,13 @@ test("completes payments, encrypted-backup restore, and seed-only recovery", asy
     const protocol = senderPage.getByRole("dialog", { name: "Advanced privacy", exact: true });
     await expect(protocol.getByRole("heading", { name: "Advanced privacy" })).toBeVisible();
     await protocol.getByRole("button", { name: "Remove private data from this device" }).click();
-    await protocol.getByLabel("Type REMOVE PRIVATE BALANCE to confirm").fill("REMOVE PRIVATE BALANCE");
+    await protocol.getByLabel("Type REMOVE PRIVATE BALANCE to Confirm").fill("REMOVE PRIVATE BALANCE");
     await protocol.getByRole("button", { name: "Remove from this device" }).click();
     await expect(protocol).toBeHidden();
     const asset = senderPage.getByRole("dialog", { name: "XLM", exact: true });
     await expect(asset).toBeHidden();
     await expect(
-      restoredRegion.getByRole("button", { name: /^Open private XLM\. Not set up\./ }),
+      restoredRegion.getByRole("button", { name: /^Open private XLM\. Not enabled\./ }),
     ).toBeVisible({ timeout: 30_000 });
     const recoveredRegion = await setupPrivateBalance(senderPage);
     await expectPrivateBalance(recoveredRegion, "0.25");

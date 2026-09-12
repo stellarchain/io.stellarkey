@@ -219,8 +219,13 @@ test("issue-time quotes are immutable and SEP-7 uses muxed routing with a MEMO_I
   assert.equal(issued.store.invoices[0].quotes[0].unitPriceMinorE6, 100_000_000);
 });
 
-test("Horizon payments settle partially then fully and replay is idempotent", async () => {
-  const { createInvoiceDraft, issueInvoice, reconcileInvoicePayments } = await invoiceDomain();
+test("a disclosed partially-paid invoice route requires review before accepting another payment", async () => {
+  const {
+    confirmInvoicePayment,
+    createInvoiceDraft,
+    issueInvoice,
+    reconcileInvoicePayments,
+  } = await invoiceDomain();
   const { member, store } = merchantStore();
   const draft = createInvoiceDraft(store, draftInput(member));
   const issued = issueInvoice(draft.store, {
@@ -256,10 +261,33 @@ test("Horizon payments settle partially then fully and replay is idempotent", as
     payments: [payment("payment-2", "6.0000000", issued.invoice.routingId)],
     now: NOW + 2000,
   });
-  assert.equal(second.store.invoices[0].status, "paid");
-  assert.equal(second.store.invoices[0].paidMinor, 1000);
-  assert.equal(second.store.invoices[0].paidAt, NOW + 2000);
-  assert.equal(second.store.invoices[0].payments.length, 2);
+  assert.equal(second.store.invoices[0].status, "partially_paid");
+  assert.equal(second.store.invoices[0].paidMinor, 400);
+  assert.equal(second.store.invoices[0].paidAt, null);
+  assert.equal(second.store.invoices[0].payments.length, 1);
+  assert.equal(second.store.paymentReconciliations[0].outcome, "needs_confirmation");
+  assert.equal(second.store.paymentReconciliations[0].invoiceId, issued.invoice.id);
+  assert.equal(second.store.unmatched[0].candidateInvoiceId, issued.invoice.id);
+
+  assert.throws(
+    () => confirmInvoicePayment(
+      { ...second.store, activeStaffId: null },
+      { paymentId: "payment-2", actor: member, now: NOW + 2_400 },
+    ),
+    /not allowed/i,
+  );
+
+  const confirmed = confirmInvoicePayment(second.store, {
+    paymentId: "payment-2",
+    actor: member,
+    now: NOW + 2_500,
+  });
+  assert.equal(confirmed.invoices[0].status, "paid");
+  assert.equal(confirmed.invoices[0].paidMinor, 1000);
+  assert.equal(confirmed.invoices[0].payments.length, 2);
+  assert.equal(confirmed.invoices[0].payments[1].recordedById, member.id);
+  assert.equal(confirmed.paymentReconciliations[0].resolution.targetInvoiceId, issued.invoice.id);
+  assert.equal(confirmed.unmatched.length, 0);
 });
 
 test("an invoice overpayment settles only the balance and isolates the exact surplus", async () => {
@@ -376,6 +404,33 @@ test("an invoice payment cannot file against another receiving account", async (
     destination: ISSUER,
   };
   const reconciled = reconcileInvoicePayments(issued.store, {
+    network: "mainnet",
+    payments: [observed],
+    now: NOW + 2_000,
+  });
+
+  assert.deepEqual(reconciled.unclaimed, [observed]);
+  assert.equal(reconciled.store.invoices[0].paidMinor, 0);
+});
+
+test("an issued invoice stops settling after the merchant receiving account changes", async () => {
+  const { createInvoiceDraft, issueInvoice, reconcileInvoicePayments } = await invoiceDomain();
+  const { member, store } = merchantStore();
+  const draft = createInvoiceDraft(store, draftInput(member));
+  const issued = issueInvoice(draft.store, {
+    invoiceId: draft.invoice.id,
+    actor: member,
+    network: "mainnet",
+    destination: TILL,
+    quotes: [{ asset: USDC, currencyPerUnit: 1 }],
+    now: NOW + 100,
+  });
+  const changed = {
+    ...issued.store,
+    settings: { ...issued.store.settings, receivingPublicKey: ISSUER },
+  };
+  const observed = payment("old-invoice-destination", "10.0000000", issued.invoice.routingId);
+  const reconciled = reconcileInvoicePayments(changed, {
     network: "mainnet",
     payments: [observed],
     now: NOW + 2_000,
@@ -502,6 +557,11 @@ test("production invoice surfaces use persisted actions and real document handof
   assert.match(detail, /window\.print|mailto:|Blob/);
   assert.match(detail, /Invoice surplus/);
   assert.match(detail, /submitPaymentRefund/);
+  assert.match(detail, /const payable =/);
+  assert.match(detail, /payable=\{payable\}/);
+  const paper = detail.split("function InvoicePaper")[1] ?? "";
+  assert.match(paper, /payable \? \(/);
+  assert.match(paper, /PAYMENT REQUEST WITHDRAWN/);
   assert.match(hook, /reconciliation\.reversalAmount \?\? payment\.amount/);
   assert.doesNotMatch(detail, /statusOverride|would be closed|would be voided/);
 });

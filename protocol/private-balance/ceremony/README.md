@@ -2,8 +2,9 @@
 
 ## Current status
 
-Private Balance uses development proving material only. No file in this directory is production,
-testnet-beta, audit, or mainnet approval. A public multi-contributor phase-2 ceremony and an
+The replacement protocol is deployed in one explicitly enabled governed pool for XLM and USDC on
+Testnet. It uses single-party development proving material. No file in this directory is
+testnet-beta, audit, production, or mainnet approval. A public multi-contributor phase-2 ceremony and an
 independent transcript verification are mandatory before a testnet beta can hold external funds.
 Mainnet requires a separate go/no-go record and a newly approved ceremony; testnet artifacts are
 never promoted automatically.
@@ -14,14 +15,15 @@ The current development candidate is:
 | --- | --- |
 | Circuit | `circuits/circom/action.circom` |
 | Circom | `2.2.3` |
-| R1CS constraints | 22,408 (machine value: `22408`) |
-| Public inputs | 13 |
-| R1CS SHA-256 | `c5c598c09e09f7e546ef6cf8d924f44eea50c80d7ba9119e2215278de2babc07` |
-| Development zkey SHA-256 | `32dbe8b25b3b628e4627b53cbcd6da974acbf7c1f9d0a84985b0f1a693256db8` |
-| Development verifying-key SHA-256 | `bab0f56e6d3df42508d4f1147c709a83384cf40a82a1aa6cf1363136dd465e2d` |
+| R1CS constraints | 15,114 (machine value: `15114`) |
+| Public inputs | 11 |
+| R1CS SHA-256 | `e8e9566deeaabd745b9c4306f9b222e5f8dc3b224c5e1fd4741da729785fc2d3` |
+| Development zkey SHA-256 | `fd04e9225485bbdfcca999b5f46be3735c6435ca6a3c98a1346b5952e9672273` |
+| Development verifying-key JSON SHA-256 | `8a1fdbb8e21a688c5279edd43e4deafbed788604f518209c5cee27499ea996e7` |
+| Embedded verifying-key binary SHA-256 | `6af84a98f2e9bddc7fbcfdf08160c10b2d627e2aab19fa612290b1feaf09e0f7` |
 
-These values identify the development candidate; they do not make its zkey suitable for a beta.
-Regenerate this table from `manifests/development.json` whenever the circuit changes.
+These values identify the hash-pinned local candidate; they do not make its zkey suitable
+for a beta. Regenerate this table from the shipped manifest and artifacts whenever the circuit changes.
 
 ## Invalidation rule
 
@@ -98,21 +100,22 @@ Gate B/C contract, recovery, browser-crypto, vault/worker, and transaction-safet
    ```
 
 2. Obtain a sufficiently large, independently verified BN254 Powers of Tau transcript. Record its
-   origin, download URL, byte length, and SHA-256. Verify it before use. The development setup used
-   the Hermez Powers of Tau 15 transcript, but the final coordinator must revalidate the source and
-   hash rather than trusting a filename.
+   origin, download URL, byte length, and SHA-256. Verify it before use. The development setup pins
+   PSE's degree-14 Perpetual Powers of Tau artifact `ppot_0080_14.ptau` at SHA-256
+   `3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db`; the final coordinator must
+   still revalidate the source and contribution chain rather than trusting a filename.
 
 3. In `protocol/private-balance/circuits`, initialize phase 2 against the frozen R1CS:
 
    ```sh
-   npx --no-install snarkjs groth16 setup build/action.r1cs <verified-pot15.ptau> ../ceremony/v1/action_0000.zkey
+   npx --no-install snarkjs groth16 setup build/action.r1cs <verified-pot14.ptau> ../ceremony/v1/action_0000.zkey
    ```
 
 4. Pass each transcript to a contributor through an authenticated channel. Each contributor runs an
    interactive contribution locally and returns the result plus an attestation:
 
    ```sh
-   npx --no-install snarkjs zkey verify build/action.r1cs <verified-pot15.ptau> ../ceremony/v1/action_0000.zkey
+   npx --no-install snarkjs zkey verify build/action.r1cs <verified-pot14.ptau> ../ceremony/v1/action_0000.zkey
    npx --no-install snarkjs zkey contribute ../ceremony/v1/action_0000.zkey ../ceremony/v1/action_0001.zkey --name="<public contributor name>" -v
    ```
 
@@ -130,7 +133,7 @@ Gate B/C contract, recovery, browser-crypto, vault/worker, and transaction-safet
 6. Verify and export the final key:
 
    ```sh
-   npx --no-install snarkjs zkey verify build/action.r1cs <verified-pot15.ptau> ../ceremony/v1/action_final.zkey
+   npx --no-install snarkjs zkey verify build/action.r1cs <verified-pot14.ptau> ../ceremony/v1/action_final.zkey
    npx --no-install snarkjs zkey export verificationkey ../ceremony/v1/action_final.zkey ../ceremony/v1/verification_key.json
    ```
 
@@ -152,6 +155,6 @@ verifier and Gate A/B/C reviewers have approved the same final bytes.
 
 Replace the development zkey and verification key with the verified final artifacts, regenerate the
 embedded verifier, build twice from clean pinned environments, and compare every hash. Then deploy
-the exact manifest-pinned Stellar CLI-compatible Wasm, independently verify its native-XLM SAC,
-configuration, executable type, guardian, and transaction hashes, and rerun final Gate 0 plus the
+the exact manifest-pinned Stellar CLI-compatible Wasm, independently verify its append-only asset
+registry, configuration, executable type, guardian, administrator, and transaction hashes, and rerun final Gate 0 plus the
 complete Task 26 browser/recovery suite. Record all evidence in the immutable testnet manifest.

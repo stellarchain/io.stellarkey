@@ -35,7 +35,7 @@ test("merchant PIN UI states its per-window deterrence boundary", () => {
   assert.match(staff, /local till deterrent/i);
 });
 
-test("the accepted Trezor advisory boundary is explicit and release-gated", () => {
+test("the remaining Trezor advisory boundary distinguishes package counts and remote code", () => {
   const security = read("src/app/security/page.tsx");
   const checklist = read("docs/release-checklist.md");
   const readme = read("README.md");
@@ -44,10 +44,12 @@ test("the accepted Trezor advisory boundary is explicit and release-gated", () =
   const combined = `${security}\n${checklist}\n${readme}`;
 
   assert.equal(packageJson.dependencies["@trezor/connect-web"], "^9.7.3");
-  assert.match(combined, /ten low-severity.*elliptic/is);
+  assert.ok(/ten low-severity vulnerable packages/.test(security), 'public security copy counts vulnerable packages');
+  assert.ok(/one.*elliptic.*advisory/is.test(security), 'public security copy identifies the single remaining advisory');
+  assert.ok(/override.*does not.*(?:prebundl|embedded).*remote/is.test(security), 'public security copy limits the override to installed dependencies');
+  assert.doesNotMatch(security, /ten low-severity\s*<code>elliptic<\/code>\s*advisories/i);
   assert.match(combined, /Bitcoin|UTXO/i);
-  assert.match(combined, /no fixed.*(?:stable )?(?:version|release)/i);
   assert.match(combined, /high and critical.*release-blocking/is);
-  assert.match(security, /optional.*lazy|lazy.*optional/is);
+  assert.match(security, /optional.*laz(?:y|ily)|laz(?:y|ily).*optional/is);
   assert.match(hardware, /import\("@trezor\/connect-web"\)/);
 });

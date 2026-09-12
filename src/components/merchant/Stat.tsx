@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { SectionHeader } from "@/components/ui";
 
 /**
  * The merchant summary strip.
@@ -63,9 +64,7 @@ export function Stat({
 }) {
   return (
     <div className={`min-w-0 px-3 py-2.5 ${divider ? DIVIDER[divider] : ""}`}>
-      <p className="truncate text-[10.5px] font-semibold uppercase tracking-[0.04em] text-neutral-500">
-        {label}
-      </p>
+      <SectionHeader className="truncate">{label}</SectionHeader>
       {children ?? (
         <p className="mt-0.5 flex items-baseline gap-1.5 truncate">
           <span className={`mono truncate text-[15.5px] font-semibold ${TONE[tone]}`}>{value}</span>
@@ -88,16 +87,21 @@ export function Stat({
 export function StatStrip({
   columns,
   className = "",
+  scrollLabel,
   children,
 }: {
   columns?: string;
   className?: string;
+  /** Lets a wide strip scroll sideways on narrow screens; the label names the
+   *  region so keyboard users can reach and scroll it. */
+  scrollLabel?: string;
   children: ReactNode;
 }) {
   return (
     <div
-      className={`panel-inset grid ${className}`}
+      className={`panel-inset grid ${scrollLabel ? "overflow-x-auto scrollbar-none" : ""} ${className}`}
       style={columns ? { gridTemplateColumns: columns } : undefined}
+      {...(scrollLabel ? { role: "region", "aria-label": scrollLabel, tabIndex: 0 } : {})}
     >
       {children}
     </div>

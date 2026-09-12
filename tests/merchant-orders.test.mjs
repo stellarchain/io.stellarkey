@@ -288,6 +288,51 @@ test("a line comp retains the item but removes only that line from the payable t
   });
 });
 
+test("a discount that gives away the remaining ticket requires comp authority and is audited as a comp", async () => {
+  const { applyTicketAdjustment } = await orderDomain();
+  const store = emptyStore();
+  const ticket = {
+    lines: [line()],
+    discountMinor: 0,
+    tipMinor: 0,
+  };
+  const discountOnly = staff({
+    permissions: {
+      ...staff().permissions,
+      comp: false,
+    },
+  });
+
+  assert.throws(
+    () => applyTicketAdjustment(store, ticket, {
+      id: "adjustment-disguised-comp",
+      kind: "discount",
+      lineId: null,
+      amountMinor: 1000,
+      reasonCode: "Promotion",
+      actor: discountOnly,
+      now: NOW + 9,
+    }),
+    /not allowed to comp/i,
+  );
+
+  const result = applyTicketAdjustment(store, ticket, {
+    id: "adjustment-authorised-comp",
+    kind: "discount",
+    lineId: null,
+    amountMinor: 1000,
+    reasonCode: "Owner giveaway",
+    actor: staff(),
+    now: NOW + 10,
+  });
+
+  assert.equal(result.totals.totalMinor, 0);
+  assert.equal(result.adjustment.kind, "comp");
+  assert.equal(result.adjustment.amountMinor, 1000);
+  assert.equal(result.ticket.discountMinor, 0);
+  assert.equal(result.ticket.lines[0].adjustmentMinor, 1000);
+});
+
 test("a whole-ticket void persists an audit order without moving stock", async () => {
   const {
     applyTicketAdjustment,
@@ -347,6 +392,15 @@ test("the till, tender, adjustment, and receipt surfaces use persisted actions i
   }
   assert.doesNotMatch(till, /would be recorded|Mock notice/);
   assert.match(receipt, /peripherals/);
+});
+
+test("automatic zero-total settlement still requires payment authority and an open shift", () => {
+  const hook = source("src/hooks/useMerchant.tsx");
+  const adjustmentFlow = hook.split("const adjustTicket = useCallback")[1]
+    ?.split("const applyAdjustment = useCallback")[0] ?? "";
+  const zeroSettlement = adjustmentFlow.split("if (result.totals.totalMinor === 0)")[1] ?? "";
+
+  assert.match(zeroSettlement, /requirePaymentActor\(current\)/);
 });
 
 test("the order detail surfaces durable inventory exceptions without questioning payment", () => {

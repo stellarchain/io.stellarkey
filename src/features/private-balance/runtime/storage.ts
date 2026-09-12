@@ -1,5 +1,12 @@
+import { decodePrivateAddress, TREE_FRONTIER_SIZE } from '@stellarkey/private-balance';
+import { hasExposedPrivateSpend } from './proof-exposure';
+import { assertPrivateRecoveryReplacement, isPrivateSpendRecovery, MAX_PRIVATE_RECOVERY_ATTEMPTS, selectPrivateRecoveryInputs } from './spend-recovery';
+import { privateOutgoingHistoryMode, type PrivateOutgoingHistoryMode } from './outgoing-history';
 import { decryptBytesWithKey, encryptBytesWithKey, type RawKeyEncryptedPayload } from '../../../lib/crypto';
 import { IndexedDbEncryptedRecordDriver } from '../../../lib/indexed-db';
+import { isLegacyPrivateRelayChainJournal, legacyPrivateRelayChainContextKey } from './legacy-relay-state';
+import { assertDirectPrivateSubmission } from './direct-submission';
+import { isPrivateFeePayer, assertSamePrivateFeePayer } from './fee-policy';
 import {
   privateBalanceSensitivePrefix,
   privateBalanceStateRecordKey,
@@ -17,10 +24,13 @@ import type {
 } from './types';
 
 const RECORD_KIND = 'stellarkey-private-balance-state';
-const RECORD_VERSION = 1;
-const PRIVATE_ADDRESS_PATTERN = /^(?:tks1|sks1)[02-9ac-hj-np-z]{115}$/;
-const RECIPIENT_FINGERPRINT_PATTERN = /^[0-9A-F]{4} [0-9A-F]{4}$/;
+const RECORD_VERSION = 2;
+const PRIVATE_ADDRESS_PATTERN = /^(?:tskpay_[1-9A-HJ-NP-Za-km-z]{121}|skpay_[1-9A-HJ-NP-Za-km-z]{121})$/;
+// Accept the former 32-bit code only for already-encrypted local preview data;
+// newly derived codes use a 128-bit SHA-256 prefix.
+const RECIPIENT_FINGERPRINT_PATTERN = /^(?:[0-9A-F]{4} ){1,7}[0-9A-F]{4}$/;
 export const MAX_RECENT_PRIVATE_RECIPIENTS = 5;
+export const MAX_ISSUED_PRIVATE_DIVERSIFIERS = 65_536;
 export const PRIVATE_BUILD_RESERVATION_TTL_MS = 10 * 60_000;
 // Must exceed the 15-minute chained approval window so a live chain's
 // prepared or reviewed step is never swept out from under its driver.
@@ -64,6 +74,33 @@ function isTimestamp(value: unknown): value is number {
 
 function isSafeIndex(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function isOutgoingHistoryMode(value: unknown): boolean {
+  try { privateOutgoingHistoryMode(value); return true; } catch { return false; }
+}
+
+function hexBytes(value: string): Uint8Array {
+  return Uint8Array.from(value.match(/../g) ?? [], byte => Number.parseInt(byte, 16));
+}
+
+async function assertPrivateAddress(
+  address: string,
+  context: PrivateStorageContext,
+): Promise<string> {
+  if (!PRIVATE_ADDRESS_PATTERN.test(address)) {
+    throw new Error('Private Balance address is invalid.');
+  }
+  try {
+    const decoded = await decodePrivateAddress(
+      address,
+      address.startsWith('tskpay_') ? 'tskpay_' : 'skpay_',
+      hexBytes(context.deploymentBindingHash),
+    );
+    return Array.from(decoded.diversifier, byte => byte.toString(16).padStart(2, '0')).join('');
+  } catch (error) {
+    throw new Error('Private Balance address is invalid.', { cause: error });
+  }
 }
 
 function validateContext(context: PrivateStorageContext): void {
@@ -152,11 +189,12 @@ function isNote(value: unknown): value is ShieldedNoteRecord {
     : note.spentInActionIndex === undefined;
   return (
     isHex(note.id, 32) &&
-    note.commitment === note.id &&
+    isHex(note.commitment, 32) &&
     typeof note.value === 'string' &&
     /^[1-9][0-9]*$/.test(note.value) &&
     typeof note.assetContractId === 'string' &&
     /^C[A-Z2-7]{55}$/.test(note.assetContractId) &&
+    isSafeIndex(note.assetIndex) &&
     isHex(note.diversifier, 4) &&
     isHex(note.ownerCommitment, 32) &&
     isSafeIndex(note.leafIndex) &&
@@ -183,6 +221,7 @@ function isActivity(value: unknown): value is ShieldedActivityRecord {
     ['deposit', 'transfer', 'withdraw'].includes(activity.actionKind ?? '') &&
     typeof activity.assetContractId === 'string' &&
     /^C[A-Z2-7]{55}$/.test(activity.assetContractId) &&
+    isSafeIndex(activity.assetIndex) &&
     typeof activity.amount === 'string' &&
     /^(?:0|[1-9][0-9]*)$/.test(activity.amount) &&
     ['inflow', 'outflow', 'internal'].includes(activity.direction ?? '') &&
@@ -192,7 +231,7 @@ function isActivity(value: unknown): value is ShieldedActivityRecord {
     Array.isArray(activity.outputCommitments) &&
     activity.outputCommitments.every(item => isHex(item, 32)) &&
     (activity.transactionHash === undefined || isHex(activity.transactionHash, 32)) &&
-    (activity.recipientFingerprint === undefined || /^[0-9A-F]{4} [0-9A-F]{4}$/.test(activity.recipientFingerprint)) &&
+    (activity.recipientFingerprint === undefined || RECIPIENT_FINGERPRINT_PATTERN.test(activity.recipientFingerprint)) &&
     (activity.memoHex === undefined || /^(?:[0-9a-f]{2}){1,32}$/.test(activity.memoHex)) &&
     (activity.actionKind === 'transfer' || (
       activity.recipientFingerprint === undefined && activity.memoHex === undefined
@@ -208,7 +247,7 @@ function isCheckpoint(value: unknown): value is ShieldedCheckpoint {
     isHex(checkpoint.lastRecordHash, 32) &&
     isHex(checkpoint.treeRoot, 32) &&
     Array.isArray(checkpoint.treeFrontier) &&
-    checkpoint.treeFrontier.length === 32 &&
+    checkpoint.treeFrontier.length === TREE_FRONTIER_SIZE &&
     checkpoint.treeFrontier.every(item => isHex(item, 32)) &&
     isHex(checkpoint.deploymentBindingHash, 32) &&
     isHex(checkpoint.manifestHash, 32) &&
@@ -221,12 +260,21 @@ function isPendingAction(value: unknown): value is PrivatePendingAction {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const action = value as Partial<PrivatePendingAction>;
   return (
+    (action.feePayer === undefined || (isPrivateFeePayer(action.feePayer) && action.submissionMode === 'direct')) &&
+    (action.feePayer && !['prepared', 'reviewed'].includes(action.status ?? '')
+      ? isHex(action.innerTransactionHash, 32) : action.innerTransactionHash === undefined) &&
     typeof action.id === 'string' &&
     /^[A-Za-z0-9._:-]{1,128}$/.test(action.id) &&
     ['deposit', 'transfer', 'withdraw'].includes(action.kind ?? '') &&
+    isSafeIndex(action.assetIndex) &&
     typeof action.assetContractId === 'string' &&
     /^C[A-Z2-7]{55}$/.test(action.assetContractId) &&
     ['prepared', 'reviewed', 'signed', 'broadcast', 'ambiguous'].includes(action.status ?? '') &&
+    (action.proofExposure === undefined || action.proofExposure === 'local' || action.proofExposure === 'shared') &&
+    isOutgoingHistoryMode(action.outgoingHistoryMode) &&
+    (action.directChainApprovalId === undefined || (typeof action.directChainApprovalId === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(action.directChainApprovalId) && action.submissionMode === 'direct')) &&
+    (action.submissionMode === undefined || action.submissionMode === 'direct' ||
+      (action.submissionMode === 'relay' && action.kind !== 'deposit')) &&
     Array.isArray(action.reservedNoteIds) &&
     (action.kind === 'deposit'
       ? action.reservedNoteIds.length === 0
@@ -238,7 +286,7 @@ function isPendingAction(value: unknown): value is PrivatePendingAction {
     action.nullifiers.length === 2 &&
     action.nullifiers.every(item => isHex(item, 32)) &&
     Array.isArray(action.outputCommitments) &&
-    action.outputCommitments.length === 2 &&
+    action.outputCommitments.length === 3 &&
     action.outputCommitments.every(item => isHex(item, 32)) &&
     isHex(action.anchorRoot, 32) &&
     isSafeIndex(action.anchorExpiresAtLedger) &&
@@ -277,8 +325,15 @@ function isPendingAction(value: unknown): value is PrivatePendingAction {
     (action.journalId === undefined || (
       typeof action.journalId === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(action.journalId)
     )) &&
-    (action.recipientFingerprint === undefined || /^[0-9A-F]{4} [0-9A-F]{4}$/.test(action.recipientFingerprint)) &&
+    (action.recipientFingerprint === undefined || RECIPIENT_FINGERPRINT_PATTERN.test(action.recipientFingerprint)) &&
     (action.memoHex === undefined || /^(?:[0-9a-f]{2}){1,32}$/.test(action.memoHex)) &&
+    (action.relayChain === undefined || (
+      action.submissionMode === 'relay' && action.kind === 'transfer' && typeof action.relayChain.approvalId === 'string' && action.relayChain.approvalId.length <= 128 &&
+      isSafeIndex(action.relayChain.step) && action.relayChain.step < 64 && typeof action.relayChain.feeAtomic === 'string' && /^[1-9][0-9]{0,20}$/.test(action.relayChain.feeAtomic) &&
+      isHex(action.relayChain.quoteId, 32) && isHex(action.relayChain.requestId, 32) && typeof action.relayChain.sourceAccount === 'string' && action.relayChain.sourceAccount.length <= 128 &&
+      typeof action.relayChain.recipientAddress === 'string' && action.relayChain.recipientAddress.length <= 256 &&
+      isHex(action.relayChain.recipientOutputCommitment, 32) && isSafeIndex(action.relayChain.expiresAtSeconds)
+    )) &&
     (action.kind === 'transfer' || (
       action.recipientFingerprint === undefined && action.memoHex === undefined
     )) &&
@@ -295,6 +350,8 @@ function isBuildReservation(value: unknown): value is PrivateBuildReservation {
     typeof reservation.id === 'string' &&
     /^[A-Za-z0-9._:-]{1,128}$/.test(reservation.id) &&
     ['deposit', 'transfer', 'withdraw'].includes(reservation.kind ?? '') &&
+    (reservation.proofExposure === undefined || reservation.proofExposure === 'local') &&
+    isOutgoingHistoryMode(reservation.outgoingHistoryMode) &&
     typeof reservation.assetContractId === 'string' &&
     /^C[A-Z2-7]{55}$/.test(reservation.assetContractId) &&
     Array.isArray(reservation.reservedNoteIds) &&
@@ -333,6 +390,7 @@ function pendingActionStatusFieldsAreValid(action: Partial<PrivatePendingAction>
 function isChainedApproval(value: unknown): value is PrivateChainedApproval {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const approval = value as Partial<PrivateChainedApproval>;
+  if (approval.feePayer !== undefined && !isPrivateFeePayer(approval.feePayer)) return false;
   const stroops = (candidate: unknown): candidate is string =>
     typeof candidate === 'string' && /^(?:0|[1-9][0-9]*)$/.test(candidate);
   return (
@@ -380,6 +438,13 @@ function isDurableState(
     !(state.account.lastVerifiedActionIndex === null || isSafeIndex(state.account.lastVerifiedActionIndex)) ||
     !isTimestamp(state.account.updatedAt) ||
     !(state.privateAddress === undefined || PRIVATE_ADDRESS_PATTERN.test(state.privateAddress)) ||
+    !isOutgoingHistoryMode(state.outgoingHistoryMode) ||
+    !(state.issuedAddressDiversifiers === undefined || (
+      Array.isArray(state.issuedAddressDiversifiers) &&
+      state.issuedAddressDiversifiers.length <= MAX_ISSUED_PRIVATE_DIVERSIFIERS &&
+      state.issuedAddressDiversifiers.every(value => isHex(value, 4)) &&
+      new Set(state.issuedAddressDiversifiers).size === state.issuedAddressDiversifiers.length
+    )) ||
     !(state.recentPrivateRecipients === undefined || (
       Array.isArray(state.recentPrivateRecipients) &&
       state.recentPrivateRecipients.length <= MAX_RECENT_PRIVATE_RECIPIENTS &&
@@ -388,6 +453,8 @@ function isDurableState(
         state.recentPrivateRecipients.length
     )) ||
     !(state.chainedApproval === undefined || isChainedApproval(state.chainedApproval)) ||
+    !(state.spendRecovery === undefined || isPrivateSpendRecovery(state.spendRecovery)) ||
+    !(state.relayChainedApproval === undefined || (isLegacyPrivateRelayChainJournal(state.relayChainedApproval) && state.relayChainedApproval.approval.contextKey === legacyPrivateRelayChainContextKey(context, state.relayChainedApproval.approval.assetContractId))) ||
     !Array.isArray(state.notes) ||
     !state.notes.every(isNote) ||
     new Set(state.notes.map(note => note.id)).size !== state.notes.length ||
@@ -458,6 +525,48 @@ export function createEmptyPrivateBalanceState(
   };
 }
 
+/** Rebuild chain-derived state without forgetting locally issued addresses. */
+export function createPrivateBalanceVerificationReset(
+  current: PrivateBalanceDurableState,
+  manifestHash: string,
+  now = Date.now(),
+): PrivateBalanceDurableState {
+  if (current.pendingActions.length > 0 || current.buildReservations.length > 0) {
+    throw new Error('Reconcile or cancel every pending Private Balance action before full verification.');
+  }
+  const empty = createEmptyPrivateBalanceState(manifestHash, now);
+  return {
+    ...empty,
+    revision: current.revision + 1,
+    account: { ...empty.account, setupState: 'ready' },
+    ...(current.privateAddress ? { privateAddress: current.privateAddress } : {}),
+    ...(current.outgoingHistoryMode ? { outgoingHistoryMode: current.outgoingHistoryMode } : {}),
+    ...(current.issuedAddressDiversifiers
+      ? { issuedAddressDiversifiers: [...current.issuedAddressDiversifiers] }
+      : {}),
+  };
+}
+
+/** A failed chain check must not roll back newer local address issuance. */
+export function createPrivateBalanceVerificationRollback(
+  authenticated: PrivateBalanceDurableState,
+  latest: PrivateBalanceDurableState,
+): PrivateBalanceDurableState {
+  if (latest.pendingActions.length > 0 || latest.buildReservations.length > 0) {
+    throw new Error('Cannot roll back private verification over pending actions.');
+  }
+  return {
+    ...authenticated,
+    revision: latest.revision + 1,
+    privateAddress: latest.privateAddress ?? authenticated.privateAddress,
+    outgoingHistoryMode: latest.outgoingHistoryMode,
+    issuedAddressDiversifiers: [...new Set([
+      ...authenticated.issuedAddressDiversifiers ?? [],
+      ...latest.issuedAddressDiversifiers ?? [],
+    ])],
+  };
+}
+
 export async function reservePrivateBuildReservation(
   context: PrivateStorageContext,
   key: Uint8Array,
@@ -472,6 +581,7 @@ export async function reservePrivateBuildReservation(
   if (!current || current.revision !== expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');
   }
+  if (privateOutgoingHistoryMode(reservation.outgoingHistoryMode) !== privateOutgoingHistoryMode(current.outgoingHistoryMode)) throw new Error('Private outgoing-history policy changed before input reservation.');
   if (
     current.buildReservations.some(item => item.id === reservation.id) ||
     current.pendingActions.some(action => action.id === reservation.id)
@@ -504,6 +614,7 @@ export async function commitPrivateBuildReservation(
   pendingAction: PrivatePendingAction,
   candidate?: PrivateRecordDriver,
 ): Promise<PrivateBalanceDurableState> {
+  assertDirectPrivateSubmission(pendingAction);
   if (pendingAction.status !== 'prepared' || !isPendingAction(pendingAction)) {
     throw new Error('Private Balance pending action is invalid.');
   }
@@ -516,6 +627,7 @@ export async function commitPrivateBuildReservation(
   if (
     pendingAction.id !== reservation.id ||
     pendingAction.kind !== reservation.kind ||
+    privateOutgoingHistoryMode(pendingAction.outgoingHistoryMode) !== privateOutgoingHistoryMode(reservation.outgoingHistoryMode) ||
     pendingAction.createdAt !== reservation.createdAt ||
     pendingAction.updatedAt < reservation.updatedAt ||
     pendingAction.reservedNoteIds.length !== reservation.reservedNoteIds.length ||
@@ -532,6 +644,44 @@ export async function commitPrivateBuildReservation(
     buildReservations: current.buildReservations.filter(item => item.id !== reservationId),
     pendingActions: [...current.pendingActions, { ...pendingAction }],
   };
+  if (pendingAction.proofExposure === 'shared' && pendingAction.directChainApprovalId) {
+    const approval = current.chainedApproval;
+    assertSamePrivateFeePayer(approval?.feePayer, pendingAction.feePayer);
+    const fee = BigInt(pendingAction.classicFeeCapStroops) + BigInt(pendingAction.resourceFeeCapStroops);
+    if (!approval || approval.id !== pendingAction.directChainApprovalId || Math.floor(pendingAction.updatedAt / 1000) >= approval.expiresAtSeconds ||
+      fee > BigInt(approval.perStepMaxFeeStroops) || BigInt(approval.accumulatedFeeStroops) + fee > BigInt(approval.cumulativeMaxFeeStroops)) throw new Error('Private chain disclosure exceeds its approved fee or lifetime.');
+    next.chainedApproval = { ...approval, accumulatedFeeStroops: (BigInt(approval.accumulatedFeeStroops) + fee).toString(), updatedAt: pendingAction.updatedAt };
+  }
+  await commitPrivateBalanceState(context, key, next, current.revision, candidate);
+  return next;
+}
+
+/** Keep the original exposed hold until this CAS; never create an unspent gap. */
+export async function commitPrivateSpendRecovery(
+  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number,
+  originalActionId: string, replacement: PrivatePendingAction, selfAddress: string, candidate?: PrivateRecordDriver,
+): Promise<PrivateBalanceDurableState> {
+  if (!isPendingAction(replacement)) throw new Error('Private recovery pending action is invalid.');
+  const current = await loadPrivateBalanceState(context, key, candidate);
+  if (!current || current.revision !== expectedRevision || current.account.syncStatus !== 'current') throw new Error('Private recovery state changed. Check for new activity and try again.');
+  const { pending, amount } = selectPrivateRecoveryInputs(current, originalActionId, replacement.assetContractId);
+  assertPrivateRecoveryReplacement(pending, replacement, amount);
+  if (privateOutgoingHistoryMode(replacement.outgoingHistoryMode) !== privateOutgoingHistoryMode(current.outgoingHistoryMode)) throw new Error('Private outgoing-history policy changed before recovery.');
+  const diversifier = await assertPrivateAddress(selfAddress, context);
+  const issued = new Set(current.issuedAddressDiversifiers ?? []);
+  if (current.privateAddress) issued.add(await assertPrivateAddress(current.privateAddress, context));
+  for (const note of current.notes) issued.add(note.diversifier);
+  if (issued.has(diversifier) || issued.size >= MAX_ISSUED_PRIVATE_DIVERSIFIERS) throw new Error('Private recovery requires a fresh self address.');
+  issued.add(diversifier);
+  const previous = current.spendRecovery?.outcome === 'pending' && current.spendRecovery.recoveryActionFields.includes(pending.actionField)
+    ? current.spendRecovery : undefined;
+  const next: PrivateBalanceDurableState = { ...current, revision: current.revision + 1,
+    pendingActions: [{ ...replacement }], issuedAddressDiversifiers: [...issued],
+    spendRecovery: { originalActionField: previous?.originalActionField ?? pending.actionField,
+      // Bound encrypted metadata, never the ability to recover. A pruned old
+      // winner is still detected as a canonical conflict through spent inputs.
+      recoveryActionFields: [...previous?.recoveryActionFields ?? [], replacement.actionField].slice(-MAX_PRIVATE_RECOVERY_ATTEMPTS),
+      reservedNoteIds: [...pending.reservedNoteIds], assetContractId: pending.assetContractId, outcome: 'pending' } };
   await commitPrivateBalanceState(context, key, next, current.revision, candidate);
   return next;
 }
@@ -553,6 +703,7 @@ export async function releasePrivateBuildReservation(
   if (!isTimestamp(updatedAt) || updatedAt < reservation.updatedAt) {
     throw new Error('Private Balance build reservation timestamp is invalid.');
   }
+  if (hasExposedPrivateSpend(reservation)) throw new Error('A legacy possibly exposed private proof cannot be released.');
   const reserved = new Set(reservation.reservedNoteIds);
   const next: PrivateBalanceDurableState = {
     ...current,
@@ -568,8 +719,8 @@ export async function releasePrivateBuildReservation(
 
 /**
  * Releases every build reservation past the TTL in one commit. Reservations
- * are pre-proof by construction — the only path to signed/broadcast deletes
- * the reservation atomically — so an expired one was provably never sent.
+ * explicitly marked local never reached a proof-bearing network boundary.
+ * Legacy spend reservations remain reserved because their exposure is unknown.
  */
 export async function releaseExpiredPrivateBuildReservations(
   context: PrivateStorageContext,
@@ -582,7 +733,7 @@ export async function releaseExpiredPrivateBuildReservations(
   const current = await loadPrivateBalanceState(context, key, candidate);
   if (!current) return null;
   const expired = current.buildReservations.filter(
-    reservation => now - reservation.createdAt >= ttlMilliseconds,
+    reservation => !hasExposedPrivateSpend(reservation) && now - reservation.createdAt >= ttlMilliseconds,
   );
   if (expired.length === 0) return current;
   const released = new Set(expired.flatMap(reservation => reservation.reservedNoteIds));
@@ -602,10 +753,8 @@ export async function releaseExpiredPrivateBuildReservations(
 /**
  * Releases every stale pre-broadcast pending action in one commit, using the
  * exact pre-broadcast-rejection guard: status 'prepared' or 'reviewed' with
- * zero broadcast attempts was provably never signed or sent. A tab closed or
- * locked mid-review, or a chain that died between preparing a step and
- * advancing its fee, leaves such an orphan holding reserved notes; past the
- * TTL it only locks value, so the leader sync sweeps it.
+ * zero broadcast attempts AND explicitly local proof exposure. Unsigned shared
+ * spend proofs can still execute in another envelope, even after this TTL.
  */
 export async function releaseStalePrivatePendingActions(
   context: PrivateStorageContext,
@@ -621,6 +770,7 @@ export async function releaseStalePrivatePendingActions(
   if (!current) return null;
   const stale = current.pendingActions.filter(action =>
     ['prepared', 'reviewed'].includes(action.status) &&
+    !hasExposedPrivateSpend(action) &&
     action.broadcastAttempts === 0 &&
     now - action.updatedAt >= ttlMilliseconds);
   if (stale.length === 0) return current;
@@ -645,18 +795,46 @@ export async function recordPrivateBalanceAddress(
   privateAddress: string,
   candidate?: PrivateRecordDriver,
 ): Promise<PrivateBalanceDurableState> {
-  if (!PRIVATE_ADDRESS_PATTERN.test(privateAddress)) {
-    throw new Error('Private Balance address is invalid.');
-  }
+  return recordPrivateAddressIssuance(context, key, expectedRevision, privateAddress, true, candidate);
+}
+
+export async function recordPrivateOutgoingHistoryMode(
+  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number,
+  mode: PrivateOutgoingHistoryMode, options?: { acknowledgeRecoveryLoss?: boolean }, candidate?: PrivateRecordDriver,
+): Promise<PrivateBalanceDurableState> {
+  if (mode !== 'recoverable' && mode !== 'minimized') throw new Error('Private outgoing-history policy is invalid.');
+  if (mode === 'minimized' && options?.acknowledgeRecoveryLoss !== true) throw new Error('Acknowledge outgoing-history recovery loss before minimizing future payments.');
+  const current = await loadPrivateBalanceState(context, key, candidate);
+  if (!current || current.revision !== expectedRevision) throw new Error('Private Balance state changed in another wallet session.');
+  if (current.pendingActions.length || current.buildReservations.length || current.chainedApproval || current.relayChainedApproval) throw new Error('Finish every pending action and chain approval before changing outgoing history.');
+  const next = { ...current, revision: current.revision + 1, outgoingHistoryMode: mode };
+  await commitPrivateBalanceState(context, key, next, current.revision, candidate);
+  return next;
+}
+
+async function recordPrivateAddressIssuance(
+  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number, privateAddress: string, replaceDisplay: boolean, candidate?: PrivateRecordDriver,
+): Promise<PrivateBalanceDurableState> {
+  const diversifier = await assertPrivateAddress(privateAddress, context);
   const current = await loadPrivateBalanceState(context, key, candidate);
   if (!current || current.revision !== expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');
   }
-  if (current.privateAddress === privateAddress) return current;
+  if (replaceDisplay && current.privateAddress === privateAddress) return current;
+  const issued = new Set(current.issuedAddressDiversifiers ?? []);
+  if (current.privateAddress) issued.add(await assertPrivateAddress(current.privateAddress, context));
+  if (issued.has(diversifier)) {
+    throw new Error('This private address diversifier was already issued. Sync and try creating a new address again.');
+  }
+  if (issued.size >= MAX_ISSUED_PRIVATE_DIVERSIFIERS) {
+    throw new Error('Private address rotation reached its local safety limit. Existing addresses still receive payments.');
+  }
+  issued.add(diversifier);
   const next: PrivateBalanceDurableState = {
     ...current,
     revision: current.revision + 1,
-    privateAddress,
+    ...(replaceDisplay ? { privateAddress } : {}),
+    issuedAddressDiversifiers: [...issued],
   };
   await commitPrivateBalanceState(context, key, next, current.revision, candidate);
   return next;
@@ -668,13 +846,20 @@ export async function recordPrivateRecentRecipient(
   expectedRevision: number,
   recipient: PrivateRecentRecipient,
   candidate?: PrivateRecordDriver,
+  pendingActionId?: string,
 ): Promise<PrivateBalanceDurableState> {
   if (!isRecentRecipient(recipient)) {
     throw new Error('Private Balance recent recipient is invalid.');
   }
+  await assertPrivateAddress(recipient.address, context);
   const current = await loadPrivateBalanceState(context, key, candidate);
   if (!current || current.revision !== expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');
+  }
+  if (pendingActionId !== undefined) {
+    const pending = current.pendingActions.find(action => action.id === pendingActionId);
+    if (!pending) throw new Error('Private recent-recipient action is unavailable.');
+    if (privateOutgoingHistoryMode(pending.outgoingHistoryMode) === 'minimized') return current;
   }
   const others = (current.recentPrivateRecipients ?? []).filter(
     item => item.address !== recipient.address,
@@ -722,11 +907,20 @@ export async function commitPrivateBalanceState(
   if (!result.ok) throw new Error('Private Balance state changed in another wallet session.');
 }
 
-/**
- * Journals the one-shot approval that authorizes a whole consolidation chain.
- * A previous approval must be finished, dead, or expired; the driver never
- * resumes an interrupted chain without fresh consent.
- */
+/** Retire obsolete consent only. Exposed inputs and pending records remain held.
+ * The normal encrypted-state CAS rejects concurrent changes, so an old reader
+ * cannot overwrite a newer action or release its reservations. */
+export async function retireLegacyPrivateRelayConsent(
+  context: PrivateStorageContext, key: Uint8Array, candidate?: PrivateRecordDriver,
+): Promise<PrivateBalanceDurableState | null> {
+  const current = await loadPrivateBalanceState(context, key, candidate);
+  if (!current?.relayChainedApproval) return current;
+  const next = { ...current, revision: current.revision + 1 };
+  delete next.relayChainedApproval;
+  await commitPrivateBalanceState(context, key, next, current.revision, candidate);
+  return next;
+}
+
 export async function beginPrivateChainedApproval(
   context: PrivateStorageContext,
   key: Uint8Array,
@@ -832,12 +1026,16 @@ export type PrivatePendingActionTransition =
     from: 'prepared';
     to: 'reviewed';
     transactionHash: string;
+    classicFeeCapStroops?: string;
+    resourceFeeCapStroops?: string;
     updatedAt: number;
   }
   | {
     from: 'reviewed';
     to: 'signed';
     signedEnvelopeXdr: string;
+    transactionHash?: string;
+    innerTransactionHash?: string;
     expiresAtSeconds: number;
     updatedAt: number;
   }
@@ -856,6 +1054,8 @@ export async function transitionPrivatePendingAction(
   transition: PrivatePendingActionTransition,
   candidate?: PrivateRecordDriver,
 ): Promise<PrivateBalanceDurableState> {
+  if ('outgoingHistoryMode' in transition) throw new Error('A prepared proof outgoing-history policy cannot be rewritten.');
+  if ('feePayer' in transition) throw new Error('A prepared proof fee payer cannot be rewritten.');
   const current = await loadPrivateBalanceState(context, key, candidate);
   if (!current || current.revision !== expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');
@@ -872,13 +1072,22 @@ export async function transitionPrivatePendingAction(
 
   let updated: PrivatePendingAction;
   if (transition.to === 'reviewed') {
+    if ((transition.classicFeeCapStroops !== undefined && (!/^(0|[1-9][0-9]*)$/.test(transition.classicFeeCapStroops) || BigInt(transition.classicFeeCapStroops) > BigInt(existing.classicFeeCapStroops))) ||
+      (transition.resourceFeeCapStroops !== undefined && (!/^(0|[1-9][0-9]*)$/.test(transition.resourceFeeCapStroops) || BigInt(transition.resourceFeeCapStroops) > BigInt(existing.resourceFeeCapStroops)))) throw new Error('Prepared network fee exceeds the pre-disclosure authorization.');
     updated = {
       ...existing,
       status: transition.to,
       transactionHash: transition.transactionHash,
+      classicFeeCapStroops: transition.classicFeeCapStroops ?? existing.classicFeeCapStroops,
+      resourceFeeCapStroops: transition.resourceFeeCapStroops ?? existing.resourceFeeCapStroops,
       updatedAt: transition.updatedAt,
     };
   } else if (transition.to === 'signed') {
+    if (existing.feePayer
+      ? (!isHex(transition.transactionHash, 32) || transition.innerTransactionHash !== existing.transactionHash)
+      : (transition.innerTransactionHash !== undefined || (transition.transactionHash !== undefined && transition.transactionHash !== existing.transactionHash))) {
+      throw new Error('Private sponsored transaction hashes do not match the reviewed action.');
+    }
     if (!isSafeIndex(transition.expiresAtSeconds)) {
       throw new Error('Private Balance pending action expiry is invalid.');
     }
@@ -886,6 +1095,7 @@ export async function transitionPrivatePendingAction(
       ...existing,
       status: transition.to,
       signedEnvelopeXdr: transition.signedEnvelopeXdr,
+      ...(existing.feePayer ? { transactionHash: transition.transactionHash, innerTransactionHash: transition.innerTransactionHash } : {}),
       expiresAtSeconds: transition.expiresAtSeconds,
       updatedAt: transition.updatedAt,
     };
@@ -972,9 +1182,10 @@ export async function releasePrivatePendingAction(
   }
   const mayReleaseRejectedReview =
     ['prepared', 'reviewed'].includes(pending.status) && pending.broadcastAttempts === 0;
-  const mayReleaseDefinitiveFailure =
-    ['broadcast', 'ambiguous'].includes(pending.status) && pending.broadcastAttempts > 0;
+  const mayReleaseDefinitiveFailure = pending.status === 'signed' ||
+    (['broadcast', 'ambiguous'].includes(pending.status) && pending.broadcastAttempts > 0);
   if (
+    hasExposedPrivateSpend(pending) ||
     (release.reason === 'pre-broadcast-rejection' && !mayReleaseRejectedReview) ||
     (release.reason === 'definitive-failure-nullifiers-absent' && !mayReleaseDefinitiveFailure)
   ) {

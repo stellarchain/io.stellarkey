@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
 import {
   useMerchantConfiguration,
   useMerchantRecords,
@@ -16,7 +17,7 @@ import { fmtMinor } from "@/lib/merchant/money";
 import { deriveInsightsHistory, startOfDay } from "@/lib/merchant/insights";
 import type { AcceptedAsset, Minor } from "@/lib/merchant/types";
 import { Sparkline } from "../Sparkline";
-import { IOSBackButton } from "../ui";
+import { IOSBackButton, Notice } from "../ui";
 import { MerchantDisclosure } from "./Disclosure";
 import { Stat, StatStrip } from "./Stat";
 
@@ -36,13 +37,13 @@ const MIX = ["#64D2FF", "#BF5AF2", "#5E5CE6", "#0A84FF"];
 const TODAY = "#0A84FF";
 /** A typical day of this weekday, behind today. Indigo, because it is not money. */
 const TYPICAL = "#5E5CE6";
-const POSITIVE = "#30D158";
+const POSITIVE = "var(--color-pos)";
 /** Down, not wrong. A quiet day is not an error, so it is never red. */
-const QUIET = "#FF9F0A";
+const QUIET = "var(--color-warn)";
 /** Money going back over the counter. */
-const NEGATIVE = "#FF453A";
+const NEGATIVE = "var(--color-neg)";
 /** No verdict: nothing to compare against, so nothing is claimed. */
-const UNTINTED = "rgba(235,235,245,0.66)";
+const UNTINTED = "var(--color-muted)";
 
 const AXIS = "rgba(235,235,245,0.38)";
 const AXIS_FAINT = "rgba(235,235,245,0.2)";
@@ -127,7 +128,7 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
   const { ready } = useMerchantStatus();
   const { settings } = useMerchantConfiguration();
   const { orders, refunds } = useMerchantRecords();
-  const { today } = useMerchantReporting();
+  const { today, canSeeReports } = useMerchantReporting();
   const { network } = useWalletIdentity();
   const reportingNow = useLiveNow(LIVE_MINUTE_MS);
   const currency = settings.currency;
@@ -377,6 +378,15 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
   const tipShare = summary.takingsMinor > 0 ? (summary.tipsMinor / summary.takingsMinor) * 100 : 0;
   const netMinor = summary.takingsMinor - summary.refundedMinor;
 
+  if (!canSeeReports) {
+    return (
+      <section className="space-y-4">
+        {onBack && <IOSBackButton onClick={onBack} label="Back to Merchant Mode" />}
+        <Notice tone="warn">This staff member cannot view merchant reports.</Notice>
+      </section>
+    );
+  }
+
   return (
     <section className="fade-up w-full pb-[132px] md:pb-12">
       {/* Only the sub-page variant needs a header; in Merchant Mode the app header
@@ -416,8 +426,9 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
             findings, so the lead does not have to carry it twice.
           */}
           <StatStrip
-            columns="minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.3fr)"
+            columns="minmax(136px,1.5fr) minmax(88px,1fr) minmax(112px,1fr) minmax(136px,1fr) minmax(128px,1.3fr)"
             className="md:col-span-2 lg:col-span-6"
+            scrollLabel="Today at a glance"
           >
             <Stat
               label={`Takings ${against.running ? `to ${against.through}` : "today"}`}
@@ -511,9 +522,7 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
             */}
             {against.base && (
               <div className="mt-4 border-t border-white/[0.08] pt-3.5">
-                <p className="text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
-                  Measured against
-                </p>
+                <SectionHeader>Measured against</SectionHeader>
                 <p className="mt-1 text-[13px] text-neutral-300">
                   last {weekdayName}
                   {against.running && (

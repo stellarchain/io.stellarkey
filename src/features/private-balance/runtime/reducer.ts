@@ -3,6 +3,7 @@ import {
   type ShieldedActivityRecord,
   type ShieldedCheckpoint,
   type PrivatePendingAction,
+  type PrivateSpendRecovery,
   type PrivateRecentRecipient,
 } from './types';
 
@@ -16,6 +17,7 @@ export interface PrivateBalanceState {
   activities: ShieldedActivityRecord[];
   checkpoint: ShieldedCheckpoint | null;
   pendingActions: PrivatePendingAction[];
+  spendRecovery?: PrivateSpendRecovery;
   recentRecipients: PrivateRecentRecipient[];
   error: string | null;
 }
@@ -44,6 +46,7 @@ export type PrivateBalanceAction =
   | { type: 'ADD_ACTIVITY'; activity: ShieldedActivityRecord }
   | { type: 'SET_CHECKPOINT'; checkpoint: ShieldedCheckpoint }
   | { type: 'SET_PENDING_ACTIONS'; pendingActions: PrivatePendingAction[] }
+  | { type: 'SET_SPEND_RECOVERY'; spendRecovery?: PrivateSpendRecovery }
   | { type: 'SET_RECENT_RECIPIENTS'; recentRecipients: PrivateRecentRecipient[] }
   | { type: 'SET_ERROR'; error: string | null }
   | { type: 'RESET' };
@@ -76,6 +79,8 @@ export function privateBalanceReducer(
       return { ...state, checkpoint: action.checkpoint };
     case 'SET_PENDING_ACTIONS':
       return { ...state, pendingActions: action.pendingActions };
+    case 'SET_SPEND_RECOVERY':
+      return { ...state, spendRecovery: action.spendRecovery };
     case 'SET_RECENT_RECIPIENTS':
       return { ...state, recentRecipients: action.recentRecipients };
     case 'SET_ERROR':

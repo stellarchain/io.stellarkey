@@ -4,11 +4,30 @@ import test from 'node:test';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
+test('all private action flows publish submission busy state to their shell before paint', () => {
+  for (const component of ['AddPrivateFunds', 'SendPrivate', 'WithdrawPrivate']) {
+    const source = read(`src/features/private-balance/components/${component}.tsx`);
+    assert.equal(/useLayoutEffect\(\(\) => \{\s*onWorkingChange\?\.\((?:flow\.working|blocksNavigation)\);\s*return \(\) => onWorkingChange\?\.\(false\);/.test(source), true, component);
+  }
+});
+
+test('explicit private review navigation retains focus in its active owning shell', () => {
+  for (const component of ['AddPrivateFunds', 'SendPrivate', 'WithdrawPrivate']) {
+    const source = read(`src/features/private-balance/components/${component}.tsx`);
+    const start = source.indexOf('const submitForm =');
+    const review = source.indexOf("setStage('review')", start);
+    const navigation = source.slice(start, review);
+    assert.equal(/event\.currentTarget\.closest<HTMLElement>\('\[data-modal-shell\]'\)/.test(navigation), true, component);
+    assert.equal(/!shell\.closest\('\[inert\]'\)/.test(navigation), true, component);
+    assert.equal(/shell\.focus\(\{ preventScroll: true \}\)/.test(navigation), true, component);
+  }
+});
+
 test('add-funds uses the reviewed action lifecycle and honest privacy copy', () => {
   const source = read('src/features/private-balance/components/AddPrivateFunds.tsx');
   const controller = read('src/features/private-balance/components/usePrivateActionController.ts');
 
-  assert.match(source, /flow\.prepare\(\{ kind: 'deposit', amount: amount\.trim\(\) \}\)/);
+  assert.match(source, /flow\.prepare\(\{ kind: 'deposit', amount: amount\.trim\(\), feePayerAccountId: feeAccount.feePayerAccountId \|\| undefined \}\)/);
   assert.match(source, /PRIVACY_ROW\.deposit/);
   assert.match(controller, /cancelAction/);
 });
@@ -48,7 +67,8 @@ test('add-funds mirrors Send with asset context, public balance, and quick amoun
   assert.match(selector, /presentation\?: 'pill' \| 'field'/);
   assert.match(selector, /Balance:/);
   assert.match(amount, /\[10, 25, 50, 100\]/);
-  assert.match(amount, />\s*MAX\s*</);
+  assert.match(amount, /<QuickAmountChips[\s\S]*?onMax=/);
+  assert.match(read('src/components/ui.tsx'), />\s*MAX\s*</);
 });
 
 test('issued-asset trustline and clawback facts stay visible, never collapsed', () => {

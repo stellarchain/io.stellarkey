@@ -14,6 +14,7 @@ import { writeShellMode } from "@/lib/shell-mode";
 import {
   MERCHANT_BOOTSTRAP_CHANGED_EVENT,
   MERCHANT_BOOTSTRAP_STORAGE_KEY,
+  merchantRuntimeShouldMount,
   readMerchantBootstrapState,
   type MerchantBootstrapState,
 } from "@/lib/merchant/bootstrap";
@@ -35,6 +36,9 @@ const EMPTY_SHELL: MerchantShellContextValue = {
   unmatched: [],
   charges: [],
   activeShift: null,
+  authorizeWalletExit: async () => {
+    throw new Error("Merchant Mode is still loading. Try again in a moment.");
+  },
 };
 
 /**
@@ -70,7 +74,7 @@ export function MerchantRuntimeBoundary({ children }: { children: ReactNode }) {
       const next = readMerchantBootstrapState();
       if (!next) return;
       setBootstrap(next);
-      if (next.enabled) {
+      if (next.enabled || next.recoveryRequired) {
         requestedRef.current = false;
         setRequested(false);
         setEnableOnReady(false);
@@ -109,12 +113,19 @@ export function MerchantRuntimeBoundary({ children }: { children: ReactNode }) {
     consumeIntent,
     releaseRuntime,
   }), [consumeIntent, intent, releaseRuntime, requestRuntime, runtimeMounted]);
+  const fallbackShell = useMemo<MerchantShellContextValue>(
+    () => ({
+      ...EMPTY_SHELL,
+      enabled: bootstrap?.enabled === true || bootstrap?.recoveryRequired === true,
+    }),
+    [bootstrap?.enabled, bootstrap?.recoveryRequired],
+  );
   const fallback = (
-    <MerchantRuntimeDataProviders shell={EMPTY_SHELL} settings={fallbackSettings}>
+    <MerchantRuntimeDataProviders shell={fallbackShell} settings={fallbackSettings}>
       {children}
     </MerchantRuntimeDataProviders>
   );
-  const shouldMount = bootstrap?.enabled === true || requested;
+  const shouldMount = merchantRuntimeShouldMount(bootstrap, requested);
 
   return (
     <MerchantRuntimeControlProvider value={control}>

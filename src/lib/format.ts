@@ -1,4 +1,6 @@
 import type { ActivityItem } from "./types";
+import { csvField } from "./csv";
+import { amountToStroops } from "./stellar-domain";
 import { activityAssetPresentation } from "./transaction-intent";
 
 export type FiatCurrency = "USD" | "EUR" | "GBP" | "JPY" | "CAD" | "AUD" | "CHF";
@@ -180,7 +182,11 @@ export function timeAgo(iso: string): string {
 }
 
 export function isValidAmount(raw: string): boolean {
-  return /^\d+(\.\d{1,7})?$/.test(raw.trim()) && parseFloat(raw) > 0;
+  try {
+    return amountToStroops(raw) > BigInt(0);
+  } catch {
+    return false;
+  }
 }
 
 export function memoByteLength(raw: string): number {
@@ -239,7 +245,7 @@ export function generateActivityCsv(items: ActivityItem[], network = "mainnet"):
     const status = item.pending ? "PENDING" : item.successful ? "SUCCESS" : "FAILED";
     const hash = item.hash;
     const link = network === "mainnet" ? `https://stellarchain.io/tx/${hash}` : `https://testnet.stellarchain.io/tx/${hash}`;
-    return [d, type, dir, amt, asset, cp, status, hash, link].map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",");
+    return [d, type, dir, amt, asset, cp, status, hash, link].map(csvField).join(",");
   });
   return [headers.join(","), ...rows].join("\n");
 }

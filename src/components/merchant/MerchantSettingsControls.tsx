@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { triggerHaptic } from "@/lib/haptics";
+import { IconTile, SectionHeader } from "@/components/ui";
+import { ModalBody } from "../ui";
 
 export function SettingsSection({
   title,
@@ -12,9 +13,7 @@ export function SettingsSection({
 }) {
   return (
     <section className="space-y-2">
-      <h2 className="px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-        {title}
-      </h2>
+      <SectionHeader as="h2" className="px-1">{title}</SectionHeader>
       {children}
     </section>
   );
@@ -85,12 +84,7 @@ export function SettingsRow({
   const content = (
     <>
       {tint ? (
-        <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
-          style={{ background: tint }}
-        >
-          {icon}
-        </span>
+        <IconTile tint={tint} icon={icon} />
       ) : (
         icon
       )}
@@ -107,7 +101,7 @@ export function SettingsRow({
           label
         )}
         {sub && (
-          <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
+          <span className="line-clamp-2 text-[12px] leading-tight text-neutral-400">
             {sub}
           </span>
         )}
@@ -130,10 +124,7 @@ export function SettingsRow({
       <button
         type="button"
         aria-haspopup={opensDialog ? "dialog" : undefined}
-        onClick={() => {
-          triggerHaptic("selection");
-          onClick();
-        }}
+        onClick={onClick}
         className={className}
       >
         {content}
@@ -156,7 +147,7 @@ export function DraftInput({
   align = "right",
 }: {
   value: string;
-  onCommit: (next: string) => string;
+  onCommit: (next: string) => string | Promise<string>;
   ariaLabel: string;
   placeholder?: string;
   className?: string;
@@ -166,9 +157,18 @@ export function DraftInput({
   align?: "left" | "right";
 }) {
   const [draft, setDraft] = useState(value);
+  const [pending, setPending] = useState(false);
 
-  function commit() {
-    setDraft(onCommit(draft));
+  async function commit() {
+    if (pending) return;
+    setPending(true);
+    try {
+      setDraft(await onCommit(draft));
+    } catch {
+      setDraft(value);
+    } finally {
+      setPending(false);
+    }
   }
 
   if (multiline) {
@@ -178,9 +178,10 @@ export function DraftInput({
         aria-label={ariaLabel}
         placeholder={placeholder}
         value={draft}
+        aria-busy={pending}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
-        className={`input resize-none text-base sm:text-[13.5px] ${className}`}
+        className={`input resize-none text-base sm:text-[14px] ${className}`}
       />
     );
   }
@@ -191,7 +192,9 @@ export function DraftInput({
       aria-label={ariaLabel}
       placeholder={placeholder}
       inputMode={inputMode}
+      enterKeyHint="done"
       value={draft}
+      aria-busy={pending}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
@@ -202,7 +205,7 @@ export function DraftInput({
           ? `w-full min-w-0 rounded-lg bg-transparent py-1.5 text-base leading-tight text-white outline-none placeholder:text-neutral-500 focus:bg-white/[0.06] sm:text-[15.5px] ${
               align === "right" ? "text-right" : ""
             } ${className}`
-          : `input text-base sm:text-[13.5px] ${className}`
+          : `input text-base sm:text-[14px] ${className}`
       }
     />
   );
@@ -256,7 +259,7 @@ export function ChoiceRow({
       }`}
     >
       <span
-        className="mb-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm sm:mb-0"
+        className="mb-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--color-oncolor)] shadow-sm sm:mb-0"
         style={{ background: tint }}
       >
         {icon}
@@ -266,7 +269,7 @@ export function ChoiceRow({
           {label}
         </span>
         {sub && (
-          <span className="mono block truncate pb-1.5 text-[12px] leading-tight text-neutral-400 sm:pb-0">
+          <span className="line-clamp-2 pb-1.5 text-[12px] leading-tight text-neutral-400 sm:pb-0">
             {sub}
           </span>
         )}
@@ -284,6 +287,7 @@ export function NoteRow({ children }: { children: ReactNode }) {
   );
 }
 
+/** The shared body rhythm, tagged with the sheet it carries for the layout tests. */
 export function SheetBody({
   sheet,
   children,
@@ -292,8 +296,8 @@ export function SheetBody({
   children: ReactNode;
 }) {
   return (
-    <div data-merchant-settings-sheet={sheet} className="space-y-5 p-4 sm:p-6">
-      {children}
+    <div data-merchant-settings-sheet={sheet}>
+      <ModalBody gap={5}>{children}</ModalBody>
     </div>
   );
 }
