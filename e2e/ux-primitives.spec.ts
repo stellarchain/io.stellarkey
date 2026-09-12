@@ -584,34 +584,36 @@ for (const motion of ['no-preference', 'reduce'] as const) {
     });
 
     for (const placement of ['top', 'right', 'flipped']) {
-      test(`Tooltip keeps pointer transfer across its ${placement} gap in both directions`, async ({ page }) => {
-        if (placement === 'flipped') await page.setViewportSize({ width: 390, height: 844 });
-        const trigger = page.getByRole('button', { name: `Show synthetic ${placement} help`, exact: true });
-        const tooltip = page.getByRole('tooltip', { name: `Synthetic ${placement} guidance`, exact: true });
-        await trigger.hover();
-        await expect(tooltip).toBeVisible();
-        const anchor = (await trigger.boundingBox())!;
-        const content = (await tooltip.boundingBox())!;
-        const anchorPoint = { x: anchor.x + anchor.width / 2, y: anchor.y + anchor.height / 2 };
-        const contentPoint = { x: content.x + content.width / 2, y: content.y + content.height / 2 };
-        const gap = placement === 'top' ? anchor.y - content.y - content.height
-          : placement === 'right' ? content.x - anchor.x - anchor.width : anchor.x - content.x - content.width;
-        expect(gap).toBeGreaterThan(0);
-        expect(gap).toBeLessThanOrEqual(9);
-        const gapPoint = placement === 'top'
-          ? { x: anchorPoint.x, y: (anchor.y + content.y + content.height) / 2 }
-          : { x: placement === 'right' ? (anchor.x + anchor.width + content.x) / 2 : (content.x + content.width + anchor.x) / 2, y: anchorPoint.y };
-        await page.mouse.move(gapPoint.x, gapPoint.y, { steps: 4 });
-        await expect(tooltip).toBeVisible();
-        await page.mouse.move(contentPoint.x, contentPoint.y, { steps: 4 });
-        await expect(tooltip).toBeVisible();
-        expect(await tooltip.evaluate(node => node.matches(':hover'))).toBe(true);
-        await page.mouse.move(gapPoint.x, gapPoint.y, { steps: 4 });
-        await expect(tooltip).toBeVisible();
-        await page.mouse.move(anchorPoint.x, anchorPoint.y, { steps: 4 });
-        await expect(tooltip).toBeVisible();
-        await page.mouse.move(1, 1);
-        await expect(tooltip).toBeHidden();
+      test.describe(`Tooltip ${placement} viewport`, () => {
+        if (placement === 'flipped') test.use({ viewport: { width: 390, height: 844 } });
+        test(`Tooltip keeps pointer transfer across its ${placement} gap in both directions`, async ({ page }) => {
+          const trigger = page.getByRole('button', { name: `Show synthetic ${placement} help`, exact: true });
+          const tooltip = page.getByRole('tooltip', { name: `Synthetic ${placement} guidance`, exact: true });
+          await trigger.hover();
+          await expect(tooltip).toBeVisible();
+          const anchor = (await trigger.boundingBox())!;
+          const content = (await tooltip.boundingBox())!;
+          const anchorPoint = { x: anchor.x + anchor.width / 2, y: anchor.y + anchor.height / 2 };
+          const contentPoint = { x: content.x + content.width / 2, y: content.y + content.height / 2 };
+          const gap = placement === 'top' ? anchor.y - content.y - content.height
+            : placement === 'right' ? content.x - anchor.x - anchor.width : anchor.x - content.x - content.width;
+          expect(gap).toBeGreaterThan(0);
+          expect(gap).toBeLessThanOrEqual(9);
+          const gapPoint = placement === 'top'
+            ? { x: anchorPoint.x, y: (anchor.y + content.y + content.height) / 2 }
+            : { x: placement === 'right' ? (anchor.x + anchor.width + content.x) / 2 : (content.x + content.width + anchor.x) / 2, y: anchorPoint.y };
+          await page.mouse.move(gapPoint.x, gapPoint.y, { steps: 4 });
+          await expect(tooltip).toBeVisible();
+          await page.mouse.move(contentPoint.x, contentPoint.y, { steps: 4 });
+          await expect(tooltip).toBeVisible();
+          expect(await tooltip.evaluate(node => node.matches(':hover'))).toBe(true);
+          await page.mouse.move(gapPoint.x, gapPoint.y, { steps: 4 });
+          await expect(tooltip).toBeVisible();
+          await page.mouse.move(anchorPoint.x, anchorPoint.y, { steps: 4 });
+          await expect(tooltip).toBeVisible();
+          await page.mouse.move(1, 1);
+          await expect(tooltip).toBeHidden();
+        });
       });
     }
 
