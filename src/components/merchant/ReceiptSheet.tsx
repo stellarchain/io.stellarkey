@@ -614,7 +614,7 @@ function ReceiptSheetInner({
                       <CopyButton value={transactionHash} label="Copy" />
                     </div>
                     <div className="mt-3 flex items-center gap-3">
-                      <div className="shrink-0 rounded-2xl bg-white p-2">
+                      <div className="shrink-0 rounded-2xl bg-[var(--color-oncolor)] p-2">
                         {qrDataUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -773,7 +773,7 @@ function ReceiptSheetInner({
             <div className="receipt-scroll overflow-x-auto">
               <div
                 id="merchant-receipt-paper"
-                className="mx-auto w-full min-w-[320px] max-w-[380px] rounded-2xl bg-white px-4 py-5"
+                className="mx-auto w-full min-w-[320px] max-w-[380px] rounded-2xl bg-[var(--color-oncolor)] px-4 py-5"
               >
                 <pre className="mono whitespace-pre text-[11px] leading-[1.5] text-black">
                   {paper.join("\n")}

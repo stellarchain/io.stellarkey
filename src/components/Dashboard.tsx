@@ -3078,7 +3078,7 @@ export function Dashboard() {
                       }}
                       className={`rounded-full sm:rounded-xl px-3.5 py-1 text-[12px] font-medium transition-colors shrink-0 ${
                         activityFilter === f.id
-                          ? "bg-white text-black font-semibold shadow-sm"
+                          ? "bg-[var(--color-oncolor)] text-black font-semibold shadow-sm"
                           : "bg-white/[0.08] sm:bg-transparent text-neutral-400 hover:text-white sm:hover:bg-white/[0.06]"
                       }`}
                     >

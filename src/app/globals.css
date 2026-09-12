@@ -57,7 +57,7 @@
   --color-accent-2: #0a84ff;
   --color-pos: #248a3d;
   --color-neg: #d70015;
-  --color-warn: #b25000;
+  --color-warn: #c93400;
 
   /* App-surface tokens (used by the custom component classes below). */
   --color-elevated: rgba(255, 255, 255, 0.86);
@@ -66,12 +66,14 @@
   --color-hairline: rgba(0, 0, 0, 0.1);
   --color-hairline-strong: rgba(0, 0, 0, 0.16);
   --color-control-thumb: #ffffff;
+  --color-switch-off: #e9e9ea;
+  --color-primary-fill: #007aff;
+  --color-primary-fill-hover: #0071eb;
   --color-scrim: 248, 248, 250;
 
   /* Tailwind base palette, flipped. text-white -> dark ink, bg-white/x -> a
      dark tint, border-white/x -> a dark hairline, bg-black -> light. */
   --color-white: #1c1c1e;
-  --color-black: #ffffff;
   --color-neutral-50: #1c1c1e;
   --color-neutral-100: #1c1c1e;
   --color-neutral-200: #2c2c2e;
@@ -112,6 +114,9 @@
   --color-hairline: rgba(255, 255, 255, 0.08);
   --color-hairline-strong: rgba(255, 255, 255, 0.14);
   --color-control-thumb: rgba(99, 99, 102, 0.75);
+  --color-switch-off: #39393d;
+  --color-primary-fill: #006edb;
+  --color-primary-fill-hover: #005fbe;
   --color-scrim: 18, 18, 20;
   --color-oncolor: #ffffff;
 }
@@ -504,10 +509,10 @@ body::after {
 
   .btn-primary {
     color: #ffffff;
-    background: #006edb;
+    background: var(--color-primary-fill);
   }
   .btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
-    background: #005fbe;
+    background: var(--color-primary-fill-hover);
   }
 
   /* Tinted text buttons use the iOS elevated accents so 16px text clears 4.5:1 on raised surfaces. */
@@ -576,7 +581,7 @@ body::after {
 
   .input {
     width: 100%;
-    background: rgba(118, 118, 128, 0.18);
+    background: var(--color-fill);
     border: none;
     border-radius: 12px;
     padding: 12px 14px;
@@ -784,7 +789,7 @@ body::after {
     display: grid;
     grid-auto-flow: column;
     grid-auto-columns: 1fr;
-    background: rgba(118, 118, 128, 0.18);
+    background: var(--color-fill-strong);
     border-radius: 9px;
     padding: 2px;
   }
@@ -1271,8 +1276,8 @@ input[type="checkbox"] {
   width: 20px;
   height: 20px;
   border-radius: 6px;
-  border: 1.5px solid rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1.5px solid var(--color-line-strong);
+  background: var(--color-fill);
   display: inline-grid;
   place-content: center;
   cursor: pointer;

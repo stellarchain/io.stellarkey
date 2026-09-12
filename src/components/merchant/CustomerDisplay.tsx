@@ -223,7 +223,7 @@ function CustomerDisplayInner({
               <span
                 key={index}
                 className={`h-3.5 w-3.5 rounded-full transition-colors ${
-                  index < pin.length ? "bg-white" : "bg-white/[0.14]"
+                  index < pin.length ? "bg-[var(--color-oncolor)]" : "bg-white/[0.14]"
                 }`}
               />
             ))}

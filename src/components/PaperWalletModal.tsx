@@ -174,7 +174,7 @@ function PaperWalletContent({
       />
       <ModalBody>
         {/* Certificate Container formatted for print and screen */}
-        <div className="rounded-3xl border-2 border-dashed border-white/20 bg-white p-6 text-black shadow-2xl print:border-black print:p-8">
+        <div className="rounded-3xl border-2 border-dashed border-white/20 bg-[var(--color-oncolor)] p-6 text-black shadow-2xl print:border-black print:p-8">
           {/* Header */}
           <div className="flex items-center justify-between border-b-2 border-black/15 pb-4">
             <div>
@@ -202,7 +202,7 @@ function PaperWalletContent({
               <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">
                 Public Address (Shareable)
               </span>
-              <div className="h-[120px] w-[120px] rounded-lg bg-white p-1 shadow-sm flex items-center justify-center">
+              <div className="h-[120px] w-[120px] rounded-lg bg-[var(--color-oncolor)] p-1 shadow-sm flex items-center justify-center">
                 {pubQr ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={pubQr} alt="Public Address QR" width={112} height={112} />
@@ -221,7 +221,7 @@ function PaperWalletContent({
                 <IconAlert size={12} />
                 <span>{kind === "mnemonic" ? "Recovery Phrase" : "Secret Key (DO NOT SHARE)"}</span>
               </span>
-              <div className="h-[120px] w-[120px] rounded-lg bg-white p-1 shadow-sm flex items-center justify-center">
+              <div className="h-[120px] w-[120px] rounded-lg bg-[var(--color-oncolor)] p-1 shadow-sm flex items-center justify-center">
                 {secQr ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={secQr} alt="Secret QR" width={112} height={112} />

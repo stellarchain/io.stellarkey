@@ -921,7 +921,7 @@ export function Modal({
     : isAlert
       ? "modal-overlay app-safe-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-6 backdrop-blur-sm"
       : isFullscreen
-        ? "modal-overlay fixed inset-0 z-50 flex items-stretch justify-center bg-black p-0"
+        ? "modal-overlay fixed inset-0 z-50 flex items-stretch justify-center bg-[var(--color-bg)] p-0"
         : `modal-overlay app-safe-overlay fixed inset-0 z-50 flex ${anchor === "top" ? "items-start pt-[15vh]" : "items-center"} justify-center bg-black/75 p-4 backdrop-blur-md`;
   const panelClass = isSheet
     ? `modal-sheet relative max-h-[calc(100dvh-var(--app-safe-area-top)-1.5rem)] w-full min-w-0 overflow-y-auto scrollbar-none overscroll-contain rounded-t-[28px] border border-b-0 border-white/[0.12] bg-[var(--color-elevated)] pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_50px_-20px_rgba(0,0,0,0.9)] ${
@@ -2629,12 +2629,12 @@ export function Toggle({
         onChange(!isChecked);
       }}
       className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent pointer-coarse:h-[31px] pointer-coarse:w-[51px] transition-colors duration-200 ease-in-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] ${
-        isChecked ? "bg-[#30D158]" : "bg-neutral-700"
+        isChecked ? "bg-[#30D158]" : "bg-[var(--color-switch-off)]"
       } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
     >
       <span className="sr-only">{label}</span>
       <span
-        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 pointer-coarse:h-[27px] pointer-coarse:w-[27px] transition-transform duration-200 ease-in-out ${
+        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--color-oncolor)] shadow-lg ring-0 pointer-coarse:h-[27px] pointer-coarse:w-[27px] transition-transform duration-200 ease-in-out ${
           isChecked ? "translate-x-5" : "translate-x-0"
         }`}
       />
