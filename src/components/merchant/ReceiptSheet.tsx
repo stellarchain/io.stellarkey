@@ -471,8 +471,8 @@ function ReceiptSheetInner({
   const qrDataUrl = qr !== null && qrTarget !== null && qr.url === qrTarget ? qr.dataUrl : null;
 
   const subject = `${profile.name || "Receipt"} — order ${order.number}`;
-  const smsHref = `sms:${phone.trim()}?&body=${encodeURIComponent(body)}`;
-  const mailHref = `mailto:${email.trim()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const smsHref = `sms:${encodeURIComponent(phone.trim()).replaceAll("%2B", "+").replaceAll("%20", " ")}?&body=${encodeURIComponent(body)}`;
+  const mailHref = `mailto:${encodeURIComponent(email.trim()).replaceAll("%40", "@").replaceAll("%2B", "+")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
   function print() {
     toast("Sent to the browser's print dialog — the receipt prints alone.");
