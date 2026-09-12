@@ -86,7 +86,7 @@ export function PrivateRecoveryFixture() {
     },
     submitAction: async review => {
       if (!scenario || scenario.review?.id !== review.id) throw new Error('Synthetic review mismatch');
-      try { return (await scenario.submit(submitMode)).status; }
+      try { return { status: (await scenario.submit(submitMode)).status, transactionHash: review.transaction.transactionHash }; }
       finally { if (mounted.current) { setDurable(await scenario.state()); setBalances(await scenario.balances()); } }
     } }}>
     <main data-app-surface className="min-h-screen space-y-4 p-6">

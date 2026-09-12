@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { aggregatePortfolio, portfolioSnapshotKey } from "../src/lib/portfolio.ts";
+import * as portfolio from "../src/lib/portfolio.ts";
+const { aggregatePortfolio, portfolioSnapshotKey } = portfolio;
 import { assetPriceKey } from "../src/lib/prices.ts";
 
 const ACCOUNT_A = "GA".padEnd(56, "A");
@@ -139,4 +140,43 @@ test("snapshots from another network never enter the selected-network total", ()
   assert.equal(result.nativeBalance, null);
   assert.equal(result.totalUsd, null);
   assert.deepEqual(result.loadingAccounts, [ACCOUNT_A]);
+});
+
+test("every account can show its own complete Testnet reference value", () => {
+  assert.equal(typeof portfolio.representativePortfolioUsd, "function");
+  const snapshots = {
+    [portfolioSnapshotKey("testnet", ACCOUNT_A)]: ready(ACCOUNT_A, [balance("XLM", null, "20")], "testnet"),
+    [portfolioSnapshotKey("testnet", ACCOUNT_B)]: ready(ACCOUNT_B, [balance("XLM", null, "40")], "testnet"),
+  };
+  const value = account => portfolio.representativePortfolioUsd({
+    portfolio: aggregatePortfolio({ accounts: [account], snapshots, network: "testnet", xlmPriceUsd: 0.25, assetPrices: {} }),
+    network: "testnet", xlmPriceUsd: 0.25, assetPrices: {},
+  });
+  assert.equal(value(ACCOUNT_A), 5);
+  assert.equal(value(ACCOUNT_B), 10);
+});
+
+test("account values include issued assets instead of falling back to native XLM alone", () => {
+  assert.equal(typeof portfolio.representativePortfolioUsd, "function");
+  const snapshots = {
+    [portfolioSnapshotKey("mainnet", ACCOUNT_B)]: ready(ACCOUNT_B, [
+      balance("XLM", null, "40"), balance("USDC", USDC_ISSUER, "7"),
+    ]),
+  };
+  const assetPrices = { [assetPriceKey("mainnet", "USDC", USDC_ISSUER)]: 1 };
+  const total = aggregatePortfolio({ accounts: [ACCOUNT_B], snapshots, network: "mainnet", xlmPriceUsd: 0.25, assetPrices });
+  assert.equal(portfolio.representativePortfolioUsd({ portfolio: total, network: "mainnet", xlmPriceUsd: 0.25, assetPrices }), 17);
+});
+
+test("account reference values distinguish missing data, unpriced holdings, and genuine zero", () => {
+  assert.equal(typeof portfolio.representativePortfolioUsd, "function");
+  const input = { accounts: [ACCOUNT_B], network: "testnet", xlmPriceUsd: 0.25, assetPrices: {} };
+  const value = snapshots => portfolio.representativePortfolioUsd({
+    portfolio: aggregatePortfolio({ ...input, snapshots }), ...input,
+  });
+  const key = portfolioSnapshotKey("testnet", ACCOUNT_B);
+  assert.equal(value({}), null);
+  assert.equal(value({ [key]: { ...ready(ACCOUNT_B, [], "testnet"), status: "unavailable" } }), null);
+  assert.equal(value({ [key]: ready(ACCOUNT_B, [balance("XLM", null, "40"), balance("USDC", OTHER_ISSUER, "7")], "testnet") }), null);
+  assert.equal(value({ [key]: ready(ACCOUNT_B, [], "testnet") }), 0);
 });

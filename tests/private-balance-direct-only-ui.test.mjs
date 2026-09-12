@@ -54,7 +54,7 @@ test('protocol settings retain maintenance, history and recovery but remove all 
 
 test('direct action completion and proof consent stay bound to their originating operation', () => {
   const source = read('src/features/private-balance/components/usePrivateActionController.ts');
-  assert.match(source, /const status = await submitAction\(review\);\s*if \(!ownsOperation\(\)\) return;/);
+  assert.match(source, /const submitted = await submitAction\(review\);\s*if \(!ownsOperation\(\)\) return;/);
   assert.match(source, /const authorizeDisclosure = async[\s\S]*?abortRef\.current !== controller/);
   assert.match(source, /finally \{\s*if \(abortRef\.current === controller\) \{\s*abortRef\.current = null;\s*setWorking\(false\);/);
 });

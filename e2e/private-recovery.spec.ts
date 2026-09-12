@@ -34,6 +34,342 @@ async function realProvider(page: Page) {
   return dialog;
 }
 
+async function feeProvider(page: Page, mode: 'deposit' | 'recovery') {
+  await page.getByRole('button', { name: 'Test real recovery provider', exact: true }).click();
+  await page.getByLabel('Synthetic provider scenario', { exact: true }).selectOption(`fee-payer-${mode}`);
+  await page.getByRole('button', { name: 'Prepare real recovery provider', exact: true }).click();
+  await expect(page.getByTestId('recovery-provider-setup')).toHaveText('ready', { timeout: 30_000 });
+  await expect(page.getByTestId('recovery-provider-phase')).toHaveText('current');
+  await expect(page.getByTestId('recovery-provider-owner-retained')).toHaveText('true');
+  await page.getByRole('button', { name: mode === 'deposit' ? 'Add · private balance' : 'Recover held balance', exact: true }).click();
+  return page.getByRole('dialog');
+}
+
+async function chooseTreasury(page: Page) {
+  const select = page.getByRole('button', { name: 'Network fee account', exact: true });
+  await expect(select).toHaveText('Synthetic Owner');
+  await expect(page.getByTestId('recovery-provider-account-count')).toHaveText('5');
+  await select.scrollIntoViewIfNeeded();
+  await select.press('ArrowDown');
+  await expect(select).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('listbox')).toHaveCount(1);
+  await expect(page.getByRole('listbox').getByRole('option')).toHaveCount(5);
+  await expect(page.getByRole('option', { name: /^Synthetic Watch/ })).toHaveAttribute('aria-disabled', 'true');
+  await expect(page.getByRole('option', { name: /^Synthetic Hardware/ })).toHaveAttribute('aria-disabled', 'true');
+  await expect.poll(() => page.getByRole('listbox').evaluate(node => !!node.closest('[data-modal-backdrop][role="dialog"]'))).toBe(true);
+  await page.getByRole('option', { name: /^Synthetic Owner/ }).press('ArrowDown');
+  await expect(page.getByRole('option', { name: /^Synthetic Treasury/ })).toBeFocused();
+  await expect(select).toHaveText('Synthetic Owner');
+  await page.getByRole('option', { name: /^Synthetic Treasury/ }).press('Enter');
+  await expect(select).toHaveText('Synthetic Treasury');
+  await expect(select).toBeFocused();
+  await expect(page.getByTestId('recovery-provider-owner-retained')).toHaveText('true');
+  return select;
+}
+
+for (const mode of ['deposit', 'recovery'] as const) test(`private fee payer actual provider: ${mode} signs both accounts and tracks the outer envelope`, async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: mode === 'deposit' ? 'reduce' : 'no-preference' });
+  const dialog = await feeProvider(page, mode);
+  const shell = await page.locator('[data-modal-shell]').elementHandle();
+  const backdrop = await page.locator('[data-modal-backdrop]').elementHandle();
+  await chooseTreasury(page);
+  if (mode === 'deposit') {
+    await dialog.getByLabel('Amount', { exact: true }).fill('1');
+    await dialog.getByRole('button', { name: 'Review Add Funds', exact: true }).click();
+  } else {
+    await dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true }).click();
+    await expect(dialog.getByText(/both accounts are visible on Stellar/i)).toBeVisible();
+    await dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true }).click();
+  }
+  await expect(dialog.locator('dd').filter({ hasText: /^Synthetic Treasury$/ })).toBeVisible();
+  await expect(dialog.getByText(/both accounts are visible on Stellar/i)).toBeVisible();
+  await expect.poll(() => shell!.evaluate(node => node.isConnected)).toBe(true);
+  await expect.poll(() => backdrop!.evaluate(node => node.isConnected)).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+  await expect.poll(() => page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(true);
+  const diagnostics = await new AxeBuilder({ page }).include('[role="dialog"]').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+  expect(diagnostics.violations.map(({ id, impact, nodes }) => ({ id, impact, count: nodes.length }))).toEqual([]);
+  await dialog.getByRole('button', { name: mode === 'deposit' ? 'Confirm' : 'Sign Recovery', exact: true }).click();
+  const password = page.getByRole('dialog', { name: 'Confirm transaction', exact: true });
+  await password.getByLabel('Wallet Password', { exact: true }).fill('synthetic recovery correct horse battery staple');
+  await password.getByRole('button', { name: 'Authorize', exact: true }).click();
+  await expect(password).toHaveCount(0);
+  await expect(page.getByTestId('recovery-provider-fee-binding')).toHaveText('matched');
+  await expect(page.getByTestId('recovery-provider-outer-tracked')).toHaveText('true');
+  await expect(page.getByTestId('recovery-provider-owner-retained')).toHaveText('true');
+  await expect(page.getByTestId('recovery-provider-submissions')).toHaveText('1');
+  if (mode === 'recovery') {
+    await expect(dialog.getByText('Recovery submitted; waiting for ledger confirmation.', { exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.getByRole('button', { name: 'Deliver real provider recovery record', exact: true }).click();
+    await expect(page.getByTestId('recovery-provider-outcome')).toHaveText('recovered');
+    await expect(page.getByTestId('recovery-provider-pending')).toHaveText('0');
+  } else {
+    await expect(dialog.getByText('Verifying on Stellar — your balance updates in a moment')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    await page.getByRole('button', { name: 'Add · private balance', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Network fee account', exact: true })).toHaveText('Synthetic Owner');
+  }
+});
+
+test('private fee payer actual provider: depleted fee balance stops before proof disclosure', async ({ page }) => {
+  const dialog = await feeProvider(page, 'deposit');
+  await chooseTreasury(page);
+  await page.getByRole('button', { name: 'Deplete synthetic fee balance', includeHidden: true, exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+  await dialog.getByLabel('Amount', { exact: true }).fill('1');
+  await dialog.getByRole('button', { name: 'Review Add Funds', exact: true }).click();
+  await expect(dialog.getByText('Not enough XLM for network fees', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Confirm', exact: true })).toBeDisabled();
+  await expect(page.getByTestId('recovery-provider-shared')).toHaveText('0');
+  await expect(page.getByTestId('recovery-provider-signs')).toHaveText('0');
+  await expect(page.getByTestId('recovery-provider-submissions')).toHaveText('0');
+});
+
+test('private fee payer actual provider: recovery fee error allows a different payer before a fresh review', async ({ page }) => {
+  const dialog = await feeProvider(page, 'recovery');
+  const select = await chooseTreasury(page);
+  await page.getByRole('button', { name: 'Deplete synthetic fee balance', includeHidden: true, exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+  await dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true }).click();
+  await expect(dialog.getByText('Not enough XLM for network fees', { exact: true })).toBeVisible();
+  await expect(select).toBeEnabled();
+  await select.click();
+  await page.getByRole('option', { name: /^Synthetic Reserve/ }).click();
+  await expect(select).toHaveText('Synthetic Reserve');
+  await expect(page.getByTestId('recovery-provider-signs')).toHaveText('0');
+  await expect(page.getByTestId('recovery-provider-submissions')).toHaveText('0');
+});
+
+test('private fee payer actual provider: Max preserves the owner reserve and selection survives Back', async ({ page }) => {
+  const dialog = await feeProvider(page, 'deposit');
+  await expect(page.getByTestId('recovery-provider-ledger-ready')).toHaveText('true');
+  const max = dialog.getByRole('button', { name: /^Max: / });
+  await max.click();
+  await expect(dialog.getByLabel('Amount', { exact: true })).toHaveValue('995.99999');
+  const select = await chooseTreasury(page);
+  await max.click();
+  await expect(dialog.getByLabel('Amount', { exact: true })).toHaveValue('997');
+  await select.click();
+  await page.getByRole('option', { name: /^Synthetic Reserve/ }).click();
+  await expect(select).toHaveText('Synthetic Reserve');
+  await expect(page.getByTestId('recovery-provider-owner-retained')).toHaveText('true');
+  await select.click();
+  await page.getByRole('option', { name: /^Synthetic Treasury/ }).click();
+  await dialog.getByLabel('Amount', { exact: true }).fill('1');
+  await dialog.getByRole('button', { name: 'Review Add Funds', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Confirm', exact: true })).toBeEnabled();
+  await dialog.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(select).toHaveText('Synthetic Treasury');
+  await expect(dialog.getByLabel('Amount', { exact: true })).toHaveValue('1');
+  await expect(page.getByTestId('recovery-provider-submissions')).toHaveText('0');
+  await page.setViewportSize({ width: 320, height: 568 });
+  await select.scrollIntoViewIfNeeded();
+  await select.click();
+  expect(await page.getByRole('listbox').evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(select).toBeFocused();
+  await expect(dialog).toHaveCount(1);
+  await select.press('ArrowDown');
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('button', { name: 'Review Add Funds', exact: true })).toBeFocused();
+});
+
+test('private fee payer actual provider: removing the payer during password approval cannot sign or fall back', async ({ page }) => {
+  const dialog = await feeProvider(page, 'deposit');
+  await chooseTreasury(page);
+  await dialog.getByLabel('Amount', { exact: true }).fill('1');
+  await dialog.getByRole('button', { name: 'Review Add Funds', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Confirm', exact: true }).click();
+  const password = page.getByRole('dialog', { name: 'Confirm transaction', exact: true });
+  await expect(password).toBeVisible();
+  await page.getByRole('button', { name: 'Remove synthetic fee payer', includeHidden: true, exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+  await expect(page.getByTestId('recovery-provider-account-count')).toHaveText('4');
+  await password.getByLabel('Wallet Password', { exact: true }).fill('synthetic recovery correct horse battery staple');
+  await password.getByRole('button', { name: 'Authorize', exact: true }).click();
+  await expect(password).toHaveCount(0);
+  await expect(dialog.getByText('Choose the fee account again', { exact: true })).toBeVisible();
+  await expect(dialog.locator('dd').filter({ hasText: /^Unavailable account$/ })).toBeVisible();
+  await expect(page.getByTestId('recovery-provider-signs')).toHaveText('0');
+  await expect(page.getByTestId('recovery-provider-submissions')).toHaveText('0');
+  await expect(page.getByTestId('recovery-provider-owner-retained')).toHaveText('true');
+});
+
+for (const presentation of ['reduced-motion', 'animated', '200-percent-reflow'] as const) test(`Receive actual provider recovers from a stopped scan: ${presentation}`, async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: presentation === 'animated' ? 'no-preference' : 'reduce' });
+  // Equivalent CSS viewport to a 1280×900 desktop at 200% zoom. Physical
+  // pinch-to-zoom and human screen-reader checks remain separate evidence.
+  if (presentation === '200-percent-reflow') await page.setViewportSize({ width: 640, height: 450 });
+  await page.getByRole('button', { name: 'Test real recovery provider', exact: true }).click();
+  await page.getByLabel('Synthetic provider scenario', { exact: true }).selectOption('receive-stopped');
+  await page.getByRole('button', { name: 'Prepare real recovery provider', exact: true }).click();
+  await expect(page.getByTestId('recovery-provider-setup')).toHaveText('ready', { timeout: 30_000 });
+  await expect(page.getByTestId('recovery-provider-phase')).toHaveText('safe-error');
+  const opener = page.getByRole('button', { name: 'Open real provider receive', exact: true });
+  await opener.click();
+  const dialog = page.getByRole('dialog', { name: 'Receive Funds', exact: true });
+  const shell = await page.locator('[data-modal-shell]').elementHandle();
+  const backdrop = await page.locator('[data-modal-backdrop]').elementHandle();
+  const retry = dialog.getByRole('button', { name: 'Try Again', exact: true });
+  await expect(retry).toBeVisible();
+  await expect(dialog.getByText('Your address is loading — one moment', { exact: true })).toHaveCount(0);
+  await retry.press('Enter');
+  await expect(retry).toBeEnabled();
+  await expect(page.getByTestId('recovery-provider-phase')).toHaveText('safe-error');
+  await page.getByRole('button', { name: 'Restore synthetic receive archive', includeHidden: true, exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+  await retry.click();
+  await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toBeVisible();
+  await expect(page.getByTestId('recovery-provider-phase')).toHaveText('current');
+  await expect(page.getByTestId('recovery-provider-submissions')).toHaveText('0');
+  await expect(page.getByTestId('recovery-provider-signs')).toHaveText('0');
+  const type = dialog.getByRole('button', { name: 'Private receive address type', exact: true });
+  await type.press('ArrowDown');
+  await dialog.getByRole('option', { name: 'Shielded', exact: true }).press('End');
+  await expect(type).toHaveText('Shielded');
+  await dialog.getByRole('option', { name: 'Reusable', exact: true }).press('Enter');
+  await expect(type).toHaveText('Reusable');
+  await expect(type).toBeFocused();
+  await type.press('ArrowDown');
+  await dialog.getByRole('option', { name: 'Reusable', exact: true }).press('Home');
+  await dialog.getByRole('option', { name: 'Shielded', exact: true }).press('Enter');
+  const publicTab = dialog.getByRole('tab', { name: 'Public', exact: true });
+  const privateTab = dialog.getByRole('tab', { name: 'Private', exact: true });
+  await privateTab.press('Home');
+  await expect(publicTab).toBeFocused();
+  await expect(privateTab).toHaveAttribute('aria-selected', 'true');
+  await publicTab.press('Enter');
+  await expect(type).toHaveCount(0);
+  for (let repeat = 0; repeat < 3; repeat++) {
+    await privateTab.click();
+    await expect(type).toBeVisible();
+    await publicTab.click();
+  }
+  await privateTab.click();
+  await expect(type).toBeVisible();
+  await dialog.getByRole('button', { name: 'New address', exact: true }).click();
+  await expect(page.getByTestId('recovery-provider-rotation')).toHaveText('waiting');
+  await expect(type).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Asset', exact: true })).toBeDisabled();
+  await expect(publicTab).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeDisabled();
+  await dialog.press('Escape');
+  await expect(dialog).toBeVisible();
+  await page.getByRole('button', { name: 'Complete synthetic address rotation', includeHidden: true, exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+  await expect(dialog.getByRole('button', { name: 'New address', exact: true })).toBeEnabled();
+  await expect(type).toBeEnabled();
+  await expect(publicTab).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeEnabled();
+  await expect.poll(() => dialog.evaluate(node => {
+    const bounds = node.getBoundingClientRect();
+    return bounds.left >= -1 && bounds.right <= window.innerWidth + 1 && document.documentElement.scrollWidth <= window.innerWidth + 1;
+  })).toBe(true);
+  await expect.poll(() => shell!.evaluate(node => node === document.querySelector('[data-modal-shell]'))).toBe(true);
+  await expect.poll(() => backdrop!.evaluate(node => node === document.querySelector('[data-modal-backdrop]'))).toBe(true);
+  await expect.poll(() => page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+  const audit = await new AxeBuilder({ page }).include('[role="dialog"]').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+  expect(audit.violations.map(({ id, impact, nodes }) => ({ id, impact, count: nodes.length }))).toEqual([]);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  await expect.poll(() => page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(false);
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('');
+});
+
+for (const mode of ['deposit-worker-failure', 'deposit-pending-worker-restart', 'deposit-uncertain-worker-restart']) {
+  test(`Add funds actual provider: ${mode}`, async ({ page }) => {
+    await page.getByRole('button', { name: 'Test real recovery provider', exact: true }).click();
+    await page.getByLabel('Synthetic provider scenario', { exact: true }).selectOption(mode);
+    await page.getByRole('button', { name: 'Prepare real recovery provider', exact: true }).click();
+    await expect(page.getByTestId('recovery-provider-setup')).toHaveText('ready', { timeout: 30_000 });
+    await expect(page.getByTestId('recovery-provider-phase')).toHaveText('current');
+    const opener = page.getByRole('button', { name: 'Add · private balance', exact: true });
+    await opener.click();
+    const dialog = page.getByRole('dialog');
+    const shell = await page.locator('[data-modal-shell]').elementHandle();
+    const backdrop = await page.locator('[data-modal-backdrop]').elementHandle();
+    await dialog.getByLabel('Amount', { exact: true }).fill('1');
+    await dialog.getByRole('button', { name: 'Review Add Funds', exact: true }).press('Enter');
+    if (mode === 'deposit-worker-failure') {
+      await expect(dialog.getByText('Something interrupted the preparation', { exact: true })).toBeVisible();
+      await expect(page.getByTestId('recovery-provider-worker-crashes')).toHaveText('1');
+      await expect(page.getByTestId('recovery-provider-submissions')).toHaveText('0');
+      await expect(page.getByTestId('recovery-provider-phase')).toHaveText('current');
+      await expect(dialog.getByText(/nothing was sent|wallet context changed/i)).toHaveCount(0);
+      await dialog.getByRole('button', { name: 'Back', exact: true }).first().click();
+      await dialog.getByRole('button', { name: 'Review Add Funds', exact: true }).click();
+    }
+    await expect(dialog.getByRole('button', { name: 'Confirm', exact: true })).toBeEnabled();
+    await expect.poll(() => shell!.evaluate(node => node === document.querySelector('[data-modal-shell]'))).toBe(true);
+    await expect.poll(() => backdrop!.evaluate(node => node === document.querySelector('[data-modal-backdrop]'))).toBe(true);
+    await expect.poll(() => page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(true);
+    await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+    await dialog.getByRole('button', { name: 'Confirm', exact: true }).click();
+    const password = page.getByRole('dialog', { name: 'Confirm transaction', exact: true });
+    await password.getByLabel('Wallet Password', { exact: true }).fill('synthetic recovery correct horse battery staple');
+    await password.getByRole('button', { name: 'Authorize', exact: true }).click();
+    await expect(password).toHaveCount(0);
+    await expect(dialog.getByRole('heading', { name: mode.includes('uncertain') ? "We couldn't confirm this payment yet" : 'Deposit Sent', exact: true }).last()).toBeVisible();
+    await expect(page.getByTestId('recovery-provider-submissions')).toHaveText('1');
+    await expect(page.getByTestId('recovery-provider-pending')).toHaveText('1');
+    await expect(page.getByTestId('recovery-provider-worker-crashes')).toHaveText('1');
+    await expect(page.getByTestId('recovery-provider-authority')).toHaveText('unchanged');
+    await expect(dialog.getByText(/nothing was sent|wallet context changed/i)).toHaveCount(0);
+    const audit = await new AxeBuilder({ page }).include('[role="dialog"]').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+    expect(audit.violations.map(({ id, impact, nodes }) => ({ id, impact, count: nodes.length }))).toEqual([]);
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect.poll(() => page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(false);
+    await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('');
+    await expect(opener).toBeFocused();
+  });
+}
+
+for (const phase of ['review', 'expired-confirm'] as const) test(`Add funds actual provider fee limit: ${phase}`, async ({ page }) => {
+  await page.getByRole('button', { name: 'Test real recovery provider', exact: true }).click();
+  await page.getByLabel('Synthetic provider scenario', { exact: true }).selectOption('deposit-fee-limit');
+  await page.getByRole('button', { name: 'Prepare real recovery provider', exact: true }).click();
+  await expect(page.getByTestId('recovery-provider-setup')).toHaveText('ready', { timeout: 30_000 });
+  await expect(page.getByTestId('recovery-provider-phase')).toHaveText('current');
+  const opener = page.getByRole('button', { name: 'Add · private balance', exact: true });
+  await opener.click();
+  const dialog = page.getByRole('dialog');
+  const shell = await page.locator('[data-modal-shell]').elementHandle();
+  const backdrop = await page.locator('[data-modal-backdrop]').elementHandle();
+  const raiseFee = () => page.getByRole('button', { name: 'Raise synthetic resource fee', includeHidden: true, exact: true })
+    .evaluate(node => (node as HTMLButtonElement).click());
+  if (phase === 'review') await raiseFee();
+  await dialog.getByLabel('Amount', { exact: true }).fill('1');
+  await dialog.getByRole('button', { name: 'Review Add Funds', exact: true }).press('Enter');
+  if (phase === 'expired-confirm') {
+    const confirm = dialog.getByRole('button', { name: 'Confirm', exact: true });
+    await expect(confirm).toBeEnabled();
+    await raiseFee();
+    // Advance wall time only: expire the review without firing inactivity
+    // timers or replacing the synthetic wallet/provider session.
+    await page.clock.setSystemTime(new Date(Date.now() + 301_000));
+    await confirm.press('Enter');
+  }
+  await expect(dialog.getByText('Network fee exceeds the limit', { exact: true })).toBeVisible();
+  await expect(dialog.getByText(/check private activity/i)).toBeVisible();
+  await expect(dialog.getByText(/status could not be determined|nothing was sent|nothing left/i)).toHaveCount(0);
+  await expect(page.getByTestId('recovery-provider-signs')).toHaveText('0');
+  await expect(page.getByTestId('recovery-provider-submissions')).toHaveText('0');
+  await expect(page.getByTestId('recovery-provider-pending')).toHaveText('0');
+  await expect.poll(() => shell!.evaluate(node => node === document.querySelector('[data-modal-shell]'))).toBe(true);
+  await expect.poll(() => backdrop!.evaluate(node => node === document.querySelector('[data-modal-backdrop]'))).toBe(true);
+  await expect.poll(() => dialog.evaluate(node => node.contains(document.activeElement))).toBe(true);
+  await expect.poll(() => page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+  const audit = await new AxeBuilder({ page }).include('[role="dialog"]').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+  expect(audit.violations.map(({ id, impact, nodes }) => ({ id, impact, count: nodes.length }))).toEqual([]);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  const discard = page.getByRole('dialog', { name: 'Discard changes?', exact: true });
+  await discard.getByRole('button', { name: 'Discard', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  await expect.poll(() => page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(false);
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('');
+});
+
 for (const winner of ['recovery', 'original'] as const) test(`held balance recovery: actual wallet provider confirms ${winner} winner`, async ({ page }) => {
   const dialog = await realProvider(page);
   await dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true }).click();

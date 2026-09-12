@@ -12,7 +12,7 @@ export default async function teardown() {
   // Global teardown runs before the owned Next server stops. Removing the
   // fixture here lets Next remove its temporary route from generated types.
   await unlink(page);
-  const validator = new URL('../../.next-dev/dev/types/validator.ts', import.meta.url);
+  const validator = new URL('../../.next-e2e/dev/types/validator.ts', import.meta.url);
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const generated = await readFile(validator, 'utf8').catch(error => {
       if (error.code === 'ENOENT') return '';
@@ -21,5 +21,5 @@ export default async function teardown() {
     if (!generated.includes('private-component-fixture')) return;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  throw new Error('Next did not clear temporary fixture route types; restart the local dev server before typechecking.');
+  throw new Error('The browser-test server did not clear temporary fixture route types.');
 }

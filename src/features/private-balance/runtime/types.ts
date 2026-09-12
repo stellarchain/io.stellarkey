@@ -1,5 +1,6 @@
 import type { LegacyPrivateRelayChainJournal } from './legacy-relay-state';
 import type { PrivateOutgoingHistoryMode } from './outgoing-history';
+import type { PrivateFeePayer } from './fee-policy';
 
 export interface DeploymentContext {
   protocolVersion: number;
@@ -81,6 +82,9 @@ export type PendingActionStatus =
   | 'ambiguous';
 
 export interface PrivatePendingAction {
+  feePayer?: PrivateFeePayer;
+  /** Reviewed inner hash; present only once a sponsored envelope is signed. */
+  innerTransactionHash?: string;
   id: string;
   kind: 'deposit' | 'transfer' | 'withdraw';
   assetIndex: number; // Immutable index in the pool's on-chain registry
@@ -156,6 +160,7 @@ export interface PrivateRecentRecipient {
 }
 
 export interface PrivateChainedApproval {
+  feePayer?: PrivateFeePayer;
   id: string;
   steps: number; // Total approved actions: consolidations plus the final send
   perStepMaxFeeStroops: string;

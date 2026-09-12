@@ -70,6 +70,57 @@ async function openSigningReview(page: Page) {
   return send;
 }
 
+test('account values include saved private funds before selection and stay stable on switching', async ({ page }) => {
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByRole('button', { name: 'Test signing context', exact: true }).click();
+  await page.getByRole('button', { name: 'Prepare account values', exact: true }).click();
+  const first = page.getByRole('button').filter({ hasText: /^Signing account24 XLM\$13\.00$/ });
+  const second = page.getByRole('button').filter({ hasText: /^Other account26 XLM\$13\.50$/ });
+  await expect(first).toBeVisible();
+  await expect(second).toBeVisible();
+  await page.getByRole('button', { name: 'All (2)', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Total portfolio $26.50 USD', exact: true })).toBeVisible();
+  for (const row of [second, first, second, first]) {
+    await row.click();
+    await expect(first).toBeVisible();
+    await expect(second).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Total portfolio $26.50 USD', exact: true })).toBeVisible();
+  }
+  const accessibility = await new AxeBuilder({ page }).include('aside').analyze();
+  expect(accessibility.violations.map(violation => ({ id: violation.id, impact: violation.impact, count: violation.nodes.length }))).toEqual([]);
+  await page.getByRole('button', { name: 'Hide balances', exact: true }).click();
+  await expect(first).toHaveCount(0);
+  await expect(second).toHaveCount(0);
+  await page.getByRole('button', { name: 'Show balances', exact: true }).click();
+  await expect(first).toBeVisible();
+  await expect(second).toBeVisible();
+  await page.getByRole('button', { name: 'Update other private checkpoint', exact: true, includeHidden: true }).evaluate(element => (element as HTMLButtonElement).click());
+  await expect(page.getByTestId('signing-stage')).toHaveText('private checkpoint updated');
+  await page.getByRole('button', { name: 'Refresh network data', exact: true }).click();
+  const updated = page.getByRole('button').filter({ hasText: /^Other account29 XLM\$14\.25$/ });
+  await expect(updated).toBeVisible();
+  await updated.click();
+  await expect(updated).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Total portfolio $27.25 USD', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Switch provider result network', exact: true, includeHidden: true }).evaluate(element => (element as HTMLButtonElement).click());
+  await expect(page.getByRole('button').filter({ hasText: /^Other account20 XLM/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Refresh network data', exact: true }).click();
+  await expect(page.getByRole('button').filter({ hasText: /^Other account20 XLM\$5\.00$/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Restore account values network', exact: true, includeHidden: true }).evaluate(element => (element as HTMLButtonElement).click());
+  await expect(page.getByRole('button').filter({ hasText: /^Other account29 XLM/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Refresh network data', exact: true }).click();
+  await expect(first).toBeVisible();
+  await expect(updated).toBeVisible();
+  expect(page.workers()).toHaveLength(0);
+  await expect(page.getByTestId('signing-posts')).toHaveText('0');
+  await page.getByRole('button', { name: 'Lock account values', exact: true, includeHidden: true }).evaluate(element => (element as HTMLButtonElement).click());
+  await expect(first).toHaveCount(0);
+  await expect(second).toHaveCount(0);
+  await expect(updated).toHaveCount(0);
+  await expect(page.getByRole('button').filter({ hasText: /^Other account— XLM—$/ })).toBeVisible();
+});
+
 async function openSigningApproval(page: Page, pauseInitialFocus = false) {
   const send = await openSigningReview(page);
   if (pauseInitialFocus) {

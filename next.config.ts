@@ -47,7 +47,8 @@ export function sourceTreeIsDirty(cwd = projectRoot): boolean {
 const buildCommit = resolveBuildCommit();
 const buildDirty = sourceTreeIsDirty();
 const developmentAssetPrefix = "/__stellarkey-dev-v2";
-const developmentDistDir = ".next-dev";
+// Runner-owned browser checks must not take the lock of a person's dev server.
+const developmentDistDir = process.env.E2E_NEXT_DEV === "1" ? ".next-e2e" : ".next-dev";
 
 const nextConfig: NextConfig = {
   output: "export",

@@ -10,6 +10,7 @@ import * as walletApi from "../src/lib/api.ts";
 import * as multisig from "../src/lib/multisig.ts";
 import { runPreparedBroadcast } from "../src/lib/submission.ts";
 import * as privateSigning from '../src/lib/private-balance-signing.ts';
+import { resolvePrivateFeePayer, assertSamePrivateFeePayer } from '../src/features/private-balance/runtime/fee-policy.ts';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -73,6 +74,8 @@ async function signingHarness(t, gap) {
   const current = { current: origin };
   const context = {
     ...vault, ...signing,
+    assertSamePrivateFeePayer,
+    resolvePrivateBalanceFeePayer: id => resolvePrivateFeePayer([account], account.id, id),
     activeAccount: account, network: 'testnet', signingContext: origin, signingContextRef: current,
     NETWORKS: { testnet: { networkPassphrase: Networks.TESTNET } },
     recommendedBaseFeeStroops: 100,

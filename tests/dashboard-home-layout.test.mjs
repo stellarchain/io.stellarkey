@@ -31,3 +31,13 @@ test("funded dashboard cards share a responsive desktop row without fixed height
     "dashboard alignment must not depend on a fixed card height",
   );
 });
+
+test("every sidebar account uses its complete scoped portfolio value", () => {
+  const dashboard = read("src/components/Dashboard.tsx");
+  const sidebar = dashboard.slice(dashboard.indexOf("{/* Accounts Subgroup"), dashboard.indexOf("{/* Footer Controls */}"));
+  assert.match(sidebar, /accountTotals\[acct\.publicKey\]/);
+  assert.match(sidebar, /!privacyMode/);
+  assert.match(sidebar, /accountUsd === null \? ['"]—['"]/);
+  assert.doesNotMatch(sidebar, /<FiatValue/);
+  assert.match(sidebar, /Testnet reference value/);
+});

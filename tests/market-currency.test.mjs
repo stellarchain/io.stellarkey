@@ -100,7 +100,16 @@ test("range switches keep the visible series labelled correctly and share the la
   assert.match(changeRange, /if \(request\.isCurrent\(\)\) setPriceRequestStatus\(outcome\)/);
   assert.match(changeRange, /isMarketObservationFresh\(cached\.observedAt\)/);
   assert.match(wallet, /cachedSeries && isMarketObservationFresh\(cachedSeries\.observedAt\)/);
-  assert.match(priceCard, /marketDataLabel/);
+  assert.doesNotMatch(priceCard, /marketDataLabel/);
+});
+
+test("the main balance and market chart omit rate timestamps and the chart refresh button", () => {
+  const dashboard = read("src/components/Dashboard.tsx");
+  const priceCard = dashboard.slice(dashboard.indexOf("function PriceCard()"));
+  assert.doesNotMatch(dashboard, /marketDataLabel/);
+  assert.doesNotMatch(priceCard, /Retry chart|IconRefresh|<Button/);
+  assert.match(priceCard, /Chart refresh unavailable/);
+  assert.match(priceCard, /aria-label="Chart range"/);
 });
 
 test("retained converter rates disclose their observation rather than claiming to be current", () => {

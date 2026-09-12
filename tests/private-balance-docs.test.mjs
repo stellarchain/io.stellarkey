@@ -190,6 +190,80 @@ test('the public private-payments page describes the live development Testnet de
   assert.doesNotMatch(page, /current key fails.*production availability is off/is);
 });
 
+test('the whitepaper distinguishes issued receive addresses, dummy lanes, and recipient recovery metadata', () => {
+  const paper = read('private-balance.md');
+  const storage = readSource('src/features/private-balance/runtime/storage.ts');
+  const issuanceBound = Number(storage.match(/MAX_ISSUED_PRIVATE_DIVERSIFIERS = ([\d_]+)/)?.[1].replaceAll('_', ''));
+  assert.equal(issuanceBound, 65_536);
+  assert.ok(paper.includes(formatNumber(issuanceBound)));
+  assert.match(paper, /First setup generates a random non-zero receive diversifier/);
+  assert.match(paper, /replaces a stored legacy zero-diversifier address once/);
+  assert.match(paper, /preserving an existing diversified address exactly/);
+  assert.match(paper, /records.*old diversifier.*before publishing/is);
+  assert.doesNotMatch(paper, /retains the current legacy address/i);
+  assert.match(paper, /Dummy lanes\s+share the same clear action diversifier/);
+  assert.match(paper, /Scalar-field elements.*below `Fr`.*proof coordinates.*`Fq`/s);
+  assert.match(paper, /wrong redundant asset index.*does not discard that note/is);
+  assert.match(paper, /canonical archive, registry, transcript, or tree\s+corruption.*fails closed/is);
+  assert.match(paper, /Neither a recipient-metadata failure nor\s+a canonical validation failure releases/is);
+});
+
+test('the whitepaper keeps contract restoration distinct from getters and the private action fee cap', () => {
+  const paper = read('private-balance.md');
+  const feePolicy = readSource('src/features/private-balance/runtime/fee-policy.ts');
+  const cap = BigInt(feePolicy.match(/MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS = ([\d_]+)n/)?.[1].replaceAll('_', ''));
+  assert.equal(cap, 10_000_000n);
+  assert.ok(paper.includes(`${formatNumber(cap)} stroops (1 XLM)`));
+  assert.match(paper, /separate from the reviewed classic inclusion fee/);
+  assert.match(paper, /unsigned review rejects fee-bump envelopes supplied by another party/);
+  assert.match(paper, /resource fee is charged once/);
+  assert.match(paper, /submitted outer hash together with the reviewed inner hash/);
+  assert.match(paper, /fee sponsorship does not hide either identity/);
+  assert.match(paper, /does not verify a Stellar Asset Contract\s+executable or attest token behavior/);
+  assert.match(paper, /does not extend its own code\/instance TTL/);
+  assert.match(paper, /`touch_root` extends only the\s+temporary known-root entry/);
+  assert.match(paper, /no automatic keepalive service or in-wallet shared-code\/instance\s+restoration workflow/);
+  assert.match(paper, /match fresh archived ledger data byte-for-byte/);
+  assert.match(paper, /does not sign, submit, pay for restoration/);
+  assert.match(paper, /readable getter is not\s+proof.*fee cap/is);
+  assert.match(paper, /resource fee above that cap is rejected before signing/);
+  assert.match(paper, /expired deposit\s+review.*does not submit it automatically/is);
+});
+
+test('the whitepaper describes competing held-input recovery and the scope of current evidence', () => {
+  const paper = read('private-balance.md');
+  const recovery = readSource('src/features/private-balance/runtime/spend-recovery.ts');
+  for (const outcome of ['recovered', 'original-confirmed', 'conflict-confirmed', 'pending']) {
+    assert.ok(recovery.includes(`'${outcome}'`));
+  }
+  assert.match(paper, /direct self-transfer of exactly its one or two reserved inputs/);
+  assert.match(paper, /one pending action,\s+no build reservation, and no active chained approval/);
+  assert.match(paper, /separately asks for proof-sharing and\s+signing consent/);
+  assert.match(paper, /competing spend, not cancellation or instant unlocking/);
+  assert.match(paper, /replacement does not revoke the original proof/);
+  assert.match(paper, /If neither spend\s+confirms, the balance can remain held/);
+  assert.match(paper, /exposed spend proof, absence alone is never sufficient/);
+  assert.match(paper, /Worker readiness is distinct from wallet\/session authority/);
+  assert.match(paper, /worker recovery does not automatically retry a payment/);
+  assert.match(paper, /missing address is\s+not itself evidence of loading/);
+  assert.match(paper, /historical browser run is not a new end-to-end validation/);
+  assert.match(paper, /does not establish a successful user payment or USDC\s+action/);
+  assert.match(paper, /does not renew those dated results or constitute a security audit/);
+  assert.match(paper, /outstanding detached-reconciliation publisher-ownership follow-up/);
+});
+
+test('every local whitepaper source and evidence link resolves to a file', () => {
+  const paperUrl = new URL('../docs/private-balance.md', import.meta.url);
+  const paper = read('private-balance.md');
+  const links = [...paper.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)]
+    .map(([, target]) => target)
+    .filter(target => !/^(?:https?:|#)/.test(target));
+  assert.ok(links.length > 10);
+  for (const target of links) {
+    assert.ok(statSync(new URL(target.split('#')[0], paperUrl)).isFile(), target);
+  }
+});
+
 test('consensus-affecting protocol review decisions are explicit and linked', () => {
   const spec = readSource('protocol/private-balance/docs/protocol-v1.md');
   const decisions = [

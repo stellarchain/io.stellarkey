@@ -33,6 +33,56 @@ export interface PrivatePortfolioEntry {
   pendingActions: PrivatePendingAction[];
 }
 
+/** Display-only unlocked-session data. Never retain notes, history or addresses here. */
+export type PrivatePortfolioBalance = Pick<PrivatePortfolioEntry, 'asset' | 'verifiedBalanceAtomicUnits'>;
+export type PrivateAccountPortfolioBalances = Record<string, readonly PrivatePortfolioBalance[] | null | undefined>;
+
+/** A scoped publisher: session revocation and later writes invalidate outstanding reads. */
+export function createPrivateAccountPortfolioStore(accountIds: readonly string[]) {
+  const allowed = new Set(accountIds);
+  const listeners = new Set<() => void>();
+  const versions = new Map<string, number>();
+  let generation = 0;
+  let running = false;
+  let snapshot: PrivateAccountPortfolioBalances = {};
+  const notify = () => { for (const listener of listeners) listener(); };
+  const publish = (accountId: string, entries: readonly PrivatePortfolioBalance[] | null) => {
+    if (!running || !allowed.has(accountId)) return false;
+    versions.set(accountId, (versions.get(accountId) ?? 0) + 1);
+    const previous = snapshot[accountId];
+    if (previous === entries || (previous && entries && previous.length === entries.length &&
+      previous.every((entry, index) => entry.asset === entries[index].asset &&
+        entry.verifiedBalanceAtomicUnits === entries[index].verifiedBalanceAtomicUnits))) return true;
+    snapshot = { ...snapshot, [accountId]: entries?.map(entry => ({
+      asset: entry.asset,
+      verifiedBalanceAtomicUnits: entry.verifiedBalanceAtomicUnits,
+    })) ?? null };
+    notify();
+    return true;
+  };
+  return {
+    getSnapshot: () => snapshot,
+    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    start() { generation++; running = true; },
+    stop() { generation++; running = false; snapshot = {}; versions.clear(); notify(); },
+    publish,
+    async load(accountId: string, read: (assertCurrent: () => void) => Promise<readonly PrivatePortfolioBalance[]>) {
+      if (!running || !allowed.has(accountId)) return;
+      const owner = generation;
+      const version = (versions.get(accountId) ?? 0) + 1;
+      versions.set(accountId, version);
+      const current = () => running && generation === owner && versions.get(accountId) === version;
+      const assertCurrent = () => { if (!current()) throw new Error('Private portfolio read cancelled.'); };
+      try {
+        const entries = await read(assertCurrent);
+        if (current()) publish(accountId, entries);
+      } catch {
+        if (current()) publish(accountId, null);
+      }
+    },
+  };
+}
+
 /**
  * Keep the dashboard cache current for both bootstrap-loaded assets and an
  * asset configured during this session. First-time setup must insert a row;
@@ -194,7 +244,7 @@ function decimalToAtomicUnits(value: string | number, decimals: number): bigint 
  */
 export function portfolioXlmWithPrivateAssets(
   publicXlm: string | number | null,
-  entries: readonly PrivatePortfolioEntry[],
+  entries: readonly PrivatePortfolioBalance[],
 ): string | null {
   const decimals = 7;
   const publicAtomicUnits = publicXlm === null
@@ -222,7 +272,7 @@ export function portfolioXlmWithPrivateAssets(
  * unavailable instead of borrowing a price from an untrusted asset code.
  */
 export function privatePortfolioRepresentativeUsd(
-  entries: readonly PrivatePortfolioEntry[],
+  entries: readonly PrivatePortfolioBalance[],
   xlmPriceUsd: number | null,
 ): number | null {
   let total = 0;

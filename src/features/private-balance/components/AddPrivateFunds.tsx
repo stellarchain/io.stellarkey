@@ -15,6 +15,7 @@ import { privateBalanceAssetMatchesPublicBalance } from '@/lib/private-balance-a
 import { PrivateActionError } from './PrivateActionError';
 import { PrivateActionReview } from './PrivateActionReview';
 import { PrivateAssetSelector } from './PrivateAssetSelector';
+import { PrivateFeeAccountSelector, usePrivateFeeAccount } from './PrivateFeeAccountSelector';
 import {
   PrivateAmountField,
   PrivateQuickAmounts,
@@ -118,6 +119,7 @@ function AddPrivateFundsFlow({
   onDirtyChange,
 }: AddPrivateFundsFlowProps) {
   const { asset, verifiedBalanceStroops, networkLabel } = usePrivateBalanceRuntimeData();
+  const feeAccount = usePrivateFeeAccount();
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
   const decimals = asset?.decimals ?? 7;
   const code = asset?.code ?? 'Asset';
@@ -145,12 +147,12 @@ function AddPrivateFundsFlow({
     if (!publicBalance.isNative) return trimAmountInput(spendableAssetBalance(publicBalance));
     if (minimumBalanceXlm === null) return null;
     const feeAllowance = stroopsToAmount(
-      BigInt(recommendedBaseFeeStroops) + MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS,
+      feeAccount.feePayer ? 0n : BigInt(recommendedBaseFeeStroops) + MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS,
     );
     return trimAmountInput(
       spendableAssetBalance(publicBalance, [minimumBalanceXlm, feeAllowance]),
     );
-  }, [minimumBalanceXlm, publicBalance, recommendedBaseFeeStroops]);
+  }, [minimumBalanceXlm, publicBalance, recommendedBaseFeeStroops, feeAccount.feePayer]);
 
   const amountCheck = useMemo<{ stroops: bigint | null; error: string | null }>(() => {
     const trimmed = amount.trim();
@@ -183,7 +185,7 @@ function AddPrivateFundsFlow({
     const shell = event.currentTarget.closest<HTMLElement>('[data-modal-shell]');
     if (shell && !shell.closest('[inert]')) shell.focus({ preventScroll: true });
     setStage('review');
-    void flow.prepare({ kind: 'deposit', amount: amount.trim() });
+    void flow.prepare({ kind: 'deposit', amount: amount.trim(), feePayerAccountId: feeAccount.feePayerAccountId || undefined });
   };
 
   // Back keeps the draft: it releases the preparation and returns to the form.
@@ -244,7 +246,7 @@ function AddPrivateFundsFlow({
         />
       ) : stage === 'review' ? (
         <PrivateActionReview
-          draft={{ kind: 'deposit', amount: amount.trim() }}
+          draft={{ kind: 'deposit', amount: amount.trim(), feePayer: feeAccount.feePayer }}
           review={flow.review}
           chained={flow.chained}
           chainProgress={flow.chainProgress}
@@ -314,6 +316,7 @@ function AddPrivateFundsFlow({
             {flow.errorCause ?? flow.error ? (
               <PrivateActionError cause={flow.errorCause ?? new Error(flow.error ?? '')} />
             ) : null}
+            <PrivateFeeAccountSelector value={feeAccount.feePayerAccountId} onChange={feeAccount.select} />
             <ModalFooter
               primary={
                 <Button type="submit" disabled={amountCheck.stroops === null || exitOnly}>

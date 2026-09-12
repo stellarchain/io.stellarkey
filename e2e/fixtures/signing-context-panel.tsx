@@ -6,6 +6,7 @@ import { UnlockedWalletShell } from '@/components/UnlockedWalletShell';
 import { Button } from '@/components/ui';
 import { useWallet } from '@/hooks/useWallet';
 import { NETWORKS } from '@/lib/stellar';
+import { seedSyntheticAccountValues } from './account-values';
 
 // The production shell, password prompt, provider and signing API stay real.
 // Only synthetic transport delivery is controlled; request bodies are not read.
@@ -20,7 +21,7 @@ export function SigningContextFixture() {
   const captured = useRef<(() => void) | null>(null);
   const [oldAuthority, setOldAuthority] = useState('unchecked');
   const [freshAuthority, setFreshAuthority] = useState('unchecked');
-  const control = useRef({ hold: false, confirmed: false, gates: [] as Array<() => void> });
+  const control = useRef({ hold: false, confirmed: false, portfolio: false, gates: [] as Array<() => void> });
   useEffect(() => {
     const state = control.current;
     const originalFetch = window.fetch;
@@ -29,6 +30,7 @@ export function SigningContextFixture() {
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
     window.fetch = async (input, init) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.href);
+      if (state.portfolio && url.hostname === 'api.coingecko.com' && url.pathname.endsWith('/simple/price')) return json({ stellar: { usd: 0.25 } });
       if (!Object.values(NETWORKS).some(network => new URL(network.horizonUrl).origin === url.origin)) return originalFetch(input, init);
       const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
       if (method === 'POST' && url.pathname === '/transactions') { setPosts(value => value + 1); return json({}); }
@@ -63,6 +65,19 @@ export function SigningContextFixture() {
   }, []);
   return <>
     {!ready && <Button onClick={() => { void (async () => {
+      control.current.portfolio = true;
+      const { account } = await wallet.createWallet('synthetic signing correct horse battery staple', {
+        secret: Keypair.random().secret(), label: 'Signing account',
+      });
+      const other = await wallet.addAccount({ secret: Keypair.random().secret(), label: 'Other account' });
+      await seedSyntheticAccountValues(account.id, '40000000');
+      await seedSyntheticAccountValues(other.id, '60000000');
+      wallet.changeFiatCurrency('USD');
+      wallet.selectAccount(account.id);
+      wallet.completeSetup();
+      setReady(true);
+    })().catch(() => setStage('fixture setup failed')); }}>Prepare account values</Button>}
+    {!ready && <Button onClick={() => { void (async () => {
       const { account } = await wallet.createWallet('synthetic signing correct horse battery staple', {
         secret: Keypair.random().secret(), label: 'Signing account', requirePasswordForSigning: true,
       });
@@ -73,6 +88,9 @@ export function SigningContextFixture() {
       setReady(true);
     })(); }}>Prepare signing context</Button>}
     <div hidden>
+      <Button onClick={() => { void seedSyntheticAccountValues(wallet.accounts[1].id, '90000000').then(() => setStage('private checkpoint updated')); }}>Update other private checkpoint</Button>
+      <Button onClick={() => wallet.switchNetwork('testnet')}>Restore account values network</Button>
+      <Button onClick={() => wallet.lock()}>Lock account values</Button>
       <Button onClick={() => { captured.current = wallet.captureSigningContext(); }}>Capture provider signing context</Button>
       <Button onClick={() => {
         wallet.selectAccount(wallet.accounts[1].id);

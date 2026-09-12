@@ -93,7 +93,7 @@ export function DirectPrivateFixture() {
       return review;
     }) satisfies typeof parent.prepareAction,
     cancelAction: async () => { setCancellations(value => value + 1); },
-    submitAction: async () => {
+    submitAction: async (review: PreparedPrivateActionReview) => {
       setSubmissionAttempts(value => value + 1);
       if (submissionBusy.current) {
         setBusyRejections(value => value + 1);
@@ -102,7 +102,8 @@ export function DirectPrivateFixture() {
       submissionBusy.current = true;
       setSubmissions(value => value + 1);
       try {
-        return await new Promise<'broadcast' | 'ambiguous'>(resolve => { submissionFinishes.current.push(resolve); });
+        const status = await new Promise<'broadcast' | 'ambiguous'>(resolve => { submissionFinishes.current.push(resolve); });
+        return { status, transactionHash: review.transaction.transactionHash };
       } finally { submissionBusy.current = false; }
     },
     prepareChainedSend: async () => ({ id: 'synthetic-direct-chain', steps: 2, perStepMaxFeeStroops: '1000',

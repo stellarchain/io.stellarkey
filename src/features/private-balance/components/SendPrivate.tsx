@@ -25,6 +25,7 @@ import type { PrivateRecentRecipient } from '../runtime/types';
 import { PrivateActionError } from './PrivateActionError';
 import { PrivateActionReview } from './PrivateActionReview';
 import { PrivateAssetSelector } from './PrivateAssetSelector';
+import { PrivateFeeAccountSelector, usePrivateFeeAccount } from './PrivateFeeAccountSelector';
 import {
   PrivateAmountField,
   PrivateQuickAmounts,
@@ -140,6 +141,7 @@ function SendPrivateFlow({
   onDirtyChange,
 }: SendPrivateFlowProps) {
   const runtime = usePrivateBalanceRuntimeData();
+  const feeAccount = usePrivateFeeAccount();
   const { asset, validateRecipient, verifiedBalanceStroops, networkLabel } = runtime;
   const recentRecipients: PrivateRecentRecipient[] = runtime.recentPrivateRecipients;
   const decimals = asset?.decimals ?? 7;
@@ -264,6 +266,7 @@ function SendPrivateFlow({
     void flow.prepare(
       {
         kind: 'transfer',
+        feePayerAccountId: feeAccount.feePayerAccountId || undefined,
         amount: amount.trim(),
         recipientAddress: trimmedRecipient,
         ...(memo.trim() ? { memo: memo.trim() } : {}),
@@ -361,6 +364,7 @@ function SendPrivateFlow({
         <PrivateActionReview
           draft={{
             kind: 'transfer',
+            feePayer: feeAccount.feePayer,
             amount: amount.trim(),
             fingerprint,
             recipientAddress: trimmedRecipient,
@@ -546,6 +550,7 @@ function SendPrivateFlow({
               <PrivateActionError cause={flow.errorCause ?? new Error(flow.error ?? '')} />
             ) : null}
 
+            <PrivateFeeAccountSelector value={feeAccount.feePayerAccountId} onChange={feeAccount.select} />
             <ModalFooter
               primary={
                 <Button type="submit" disabled={!canReview}>

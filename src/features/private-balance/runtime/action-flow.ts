@@ -38,7 +38,7 @@ import type {
   ShieldedNoteRecord,
 } from './types';
 import type { PrivateBalanceWorkerClient } from '../worker/client';
-import { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
+import { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS, privateActionClassicFeeStroops, type PrivateFeePayer } from './fee-policy';
 import { privateOutgoingHistoryMode, type PrivateOutgoingHistoryMode } from './outgoing-history';
 import { assertPrivateRecoveryReplacement, selectPrivateRecoveryInputs } from './spend-recovery';
 import { assertDirectPrivateSubmission } from './direct-submission';
@@ -47,11 +47,11 @@ export { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
 const MAX_RESOURCE_FEE_STROOPS = MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS;
 const HEX_PROOF_BYTES = (64 + 128 + 64) * 2;
 
-export type PrivateActionDraft =
+export type PrivateActionDraft = (
   | { kind: 'deposit'; amount: string }
   | { kind: 'transfer'; amount: string; recipientAddress: string; memo?: string }
   | { kind: 'withdraw'; amount: string; publicRecipient: string }
-  | { kind: 'consolidate' };
+  | { kind: 'consolidate' }) & { feePayerAccountId?: string };
 
 export type PrivateActionProgressStage =
   | 'checking-chain'
@@ -329,6 +329,7 @@ export async function preparePrivateBalanceActionFlow(input: {
   worker: PrivateBalanceWorkerClient;
   rpcUrl: string;
   classicFeeStroops: bigint;
+  feePayer?: PrivateFeePayer;
   depositSourceMinimumBalanceStroops?: bigint;
   assetContractId: string;
   assetIndex: number;
@@ -346,6 +347,8 @@ export async function preparePrivateBalanceActionFlow(input: {
 }): Promise<{ review: PreparedPrivateActionReview; state: PrivateBalanceDurableState }> {
   assertDirectPrivateSubmission(input);
   assertDirectPrivateSubmission(input.draft);
+  const feePayer = input.feePayer ? Object.freeze({ ...input.feePayer }) : undefined;
+  const classicFeeCap = privateActionClassicFeeStroops(input.classicFeeStroops, feePayer);
   const now = input.now ?? Date.now;
   const actionId = globalThis.crypto?.randomUUID?.() ?? `private-${now().toString(36)}`;
   const createdAt = now();
@@ -641,6 +644,7 @@ export async function preparePrivateBalanceActionFlow(input: {
       assetContractId: input.assetContractId,
       status: 'prepared',
       submissionMode: 'direct',
+      ...(feePayer ? { feePayer } : {}),
       proofExposure: 'shared',
       outgoingHistoryMode,
       ...(input.directChainApprovalId ? { directChainApprovalId: input.directChainApprovalId } : {}),
@@ -651,7 +655,7 @@ export async function preparePrivateBalanceActionFlow(input: {
       anchorRoot: hex(prepared.action.anchorRoot),
       anchorExpiresAtLedger: prepared.anchorExpiresAtLedger,
       proofHash,
-      classicFeeCapStroops: input.classicFeeStroops.toString(),
+      classicFeeCapStroops: classicFeeCap.toString(),
       resourceFeeCapStroops: MAX_RESOURCE_FEE_STROOPS.toString(),
       amountStroops: amount.toString(),
       changeValueStroops: prepared.changeValue,
@@ -670,10 +674,11 @@ export async function preparePrivateBalanceActionFlow(input: {
     const reviewKind = recovery ? 'transfer' : input.draft.kind;
     const transaction = await disclosePrivateProof({
       request: { kind: reviewKind, actionId, actionField: prepared.actionFieldHex, assetContractId: input.assetContractId,
+        feePayer,
         ...(recovery ? { recoveryOfActionId: recovery.pending.id } : {}),
         amountStroops: amount.toString(), recipientAddress,
         publicRecipient, memoHex: localMemoHex ?? null, privateFeeAtomic: '0',
-        maximumNetworkFeeStroops: (input.classicFeeStroops + MAX_RESOURCE_FEE_STROOPS).toString(), submissionMode: 'direct' },
+        maximumNetworkFeeStroops: (classicFeeCap + MAX_RESOURCE_FEE_STROOPS).toString(), submissionMode: 'direct' },
       signal: input.signal,
       authorize: input.authorizeDisclosure,
       assertContext: input.assertContext,
@@ -694,6 +699,11 @@ export async function preparePrivateBalanceActionFlow(input: {
           source: input.accountPublicKey, classicFeeStroops: input.classicFeeStroops, maximumResourceFeeStroops: MAX_RESOURCE_FEE_STROOPS });
       },
     });
+    const transactionReview: PrivateBalanceTransactionReview = {
+      ...transaction.review,
+      ...(feePayer ? { feePayer } : {}),
+      classicFeeStroops: privateActionClassicFeeStroops(transaction.review.classicFeeStroops, feePayer),
+    };
     durable = await transitionPrivatePendingAction(
       input.storageContext,
       input.storageKey,
@@ -703,7 +713,7 @@ export async function preparePrivateBalanceActionFlow(input: {
         from: 'prepared',
         to: 'reviewed',
         transactionHash: transaction.review.transactionHash,
-        classicFeeCapStroops: transaction.review.classicFeeStroops.toString(),
+        classicFeeCapStroops: transactionReview.classicFeeStroops.toString(),
         resourceFeeCapStroops: transaction.review.resourceFeeStroops.toString(),
         updatedAt: Math.max(updatedAt, now()),
       },
@@ -732,7 +742,7 @@ export async function preparePrivateBalanceActionFlow(input: {
         publicRecipient,
         anchorExpiresAtLedger,
         latestLedger: head.latestLedger,
-        transaction: transaction.review,
+        transaction: transactionReview,
       },
     };
   } catch (error) {

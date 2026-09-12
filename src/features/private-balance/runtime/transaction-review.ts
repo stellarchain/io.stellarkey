@@ -7,6 +7,7 @@ import {
   type xdr,
 } from '@stellar/stellar-sdk';
 import type { PrivateBalanceManifest } from '../../../lib/private-balance-manifest';
+import type { PrivateFeePayer } from './fee-policy';
 
 export type PrivateBalanceTransactionManifest = Pick<
   PrivateBalanceManifest,
@@ -28,6 +29,7 @@ export interface PrivateBalanceTransactionReviewRequest {
 }
 
 export interface PrivateBalanceTransactionReview {
+  feePayer?: PrivateFeePayer;
   envelopeXdr: string;
   transactionHash: string;
   method: 'deposit' | 'transfer' | 'withdraw';

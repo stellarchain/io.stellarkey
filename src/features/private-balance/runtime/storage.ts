@@ -6,6 +6,7 @@ import { decryptBytesWithKey, encryptBytesWithKey, type RawKeyEncryptedPayload }
 import { IndexedDbEncryptedRecordDriver } from '../../../lib/indexed-db';
 import { isLegacyPrivateRelayChainJournal, legacyPrivateRelayChainContextKey } from './legacy-relay-state';
 import { assertDirectPrivateSubmission } from './direct-submission';
+import { isPrivateFeePayer, assertSamePrivateFeePayer } from './fee-policy';
 import {
   privateBalanceSensitivePrefix,
   privateBalanceStateRecordKey,
@@ -259,6 +260,9 @@ function isPendingAction(value: unknown): value is PrivatePendingAction {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const action = value as Partial<PrivatePendingAction>;
   return (
+    (action.feePayer === undefined || (isPrivateFeePayer(action.feePayer) && action.submissionMode === 'direct')) &&
+    (action.feePayer && !['prepared', 'reviewed'].includes(action.status ?? '')
+      ? isHex(action.innerTransactionHash, 32) : action.innerTransactionHash === undefined) &&
     typeof action.id === 'string' &&
     /^[A-Za-z0-9._:-]{1,128}$/.test(action.id) &&
     ['deposit', 'transfer', 'withdraw'].includes(action.kind ?? '') &&
@@ -386,6 +390,7 @@ function pendingActionStatusFieldsAreValid(action: Partial<PrivatePendingAction>
 function isChainedApproval(value: unknown): value is PrivateChainedApproval {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const approval = value as Partial<PrivateChainedApproval>;
+  if (approval.feePayer !== undefined && !isPrivateFeePayer(approval.feePayer)) return false;
   const stroops = (candidate: unknown): candidate is string =>
     typeof candidate === 'string' && /^(?:0|[1-9][0-9]*)$/.test(candidate);
   return (
@@ -641,6 +646,7 @@ export async function commitPrivateBuildReservation(
   };
   if (pendingAction.proofExposure === 'shared' && pendingAction.directChainApprovalId) {
     const approval = current.chainedApproval;
+    assertSamePrivateFeePayer(approval?.feePayer, pendingAction.feePayer);
     const fee = BigInt(pendingAction.classicFeeCapStroops) + BigInt(pendingAction.resourceFeeCapStroops);
     if (!approval || approval.id !== pendingAction.directChainApprovalId || Math.floor(pendingAction.updatedAt / 1000) >= approval.expiresAtSeconds ||
       fee > BigInt(approval.perStepMaxFeeStroops) || BigInt(approval.accumulatedFeeStroops) + fee > BigInt(approval.cumulativeMaxFeeStroops)) throw new Error('Private chain disclosure exceeds its approved fee or lifetime.');
@@ -1028,6 +1034,8 @@ export type PrivatePendingActionTransition =
     from: 'reviewed';
     to: 'signed';
     signedEnvelopeXdr: string;
+    transactionHash?: string;
+    innerTransactionHash?: string;
     expiresAtSeconds: number;
     updatedAt: number;
   }
@@ -1047,6 +1055,7 @@ export async function transitionPrivatePendingAction(
   candidate?: PrivateRecordDriver,
 ): Promise<PrivateBalanceDurableState> {
   if ('outgoingHistoryMode' in transition) throw new Error('A prepared proof outgoing-history policy cannot be rewritten.');
+  if ('feePayer' in transition) throw new Error('A prepared proof fee payer cannot be rewritten.');
   const current = await loadPrivateBalanceState(context, key, candidate);
   if (!current || current.revision !== expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');
@@ -1074,6 +1083,11 @@ export async function transitionPrivatePendingAction(
       updatedAt: transition.updatedAt,
     };
   } else if (transition.to === 'signed') {
+    if (existing.feePayer
+      ? (!isHex(transition.transactionHash, 32) || transition.innerTransactionHash !== existing.transactionHash)
+      : (transition.innerTransactionHash !== undefined || (transition.transactionHash !== undefined && transition.transactionHash !== existing.transactionHash))) {
+      throw new Error('Private sponsored transaction hashes do not match the reviewed action.');
+    }
     if (!isSafeIndex(transition.expiresAtSeconds)) {
       throw new Error('Private Balance pending action expiry is invalid.');
     }
@@ -1081,6 +1095,7 @@ export async function transitionPrivatePendingAction(
       ...existing,
       status: transition.to,
       signedEnvelopeXdr: transition.signedEnvelopeXdr,
+      ...(existing.feePayer ? { transactionHash: transition.transactionHash, innerTransactionHash: transition.innerTransactionHash } : {}),
       expiresAtSeconds: transition.expiresAtSeconds,
       updatedAt: transition.updatedAt,
     };

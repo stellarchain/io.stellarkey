@@ -116,12 +116,15 @@ test('receive rotates to a fresh address in place while old addresses stay valid
 test('a configured account with a transiently missing address never sees setup copy', () => {
   const receive = read('src/features/private-balance/components/ReceivePrivate.tsx');
 
-  // Follower tab / leader not yet published: calm loading guidance.
+  // Only real progress loads; stopped and follower runtimes have recovery.
   assert.match(receive, /configured/);
-  assert.match(receive, /Your address is loading — one moment/);
+  assert.doesNotMatch(receive, /Your address is loading — one moment/);
+  assert.match(receive, /privateReceiveState/);
+  assert.match(receive, /Try Again/);
+  assert.match(receive, /Use in This Tab/);
   assert.match(receive, /active in another tab/i);
   // Setup copy stays reserved for genuinely unconfigured accounts.
-  assert.match(receive, /if \(configured\) \{[\s\S]*?\}[\s\S]*?Set up Private Payments to receive privately/);
+  assert.match(receive, /state === 'setup' \? 'Set up Private Payments to receive privately/);
 });
 
 test('receive is embeddable and available whenever the durable address exists', () => {

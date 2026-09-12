@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { StrKey } from '@stellar/stellar-sdk';
 import { useWalletIdentity, useWalletPhase } from '@/hooks/useWallet';
+import { usePrivateAccountPortfolio } from '@/hooks/usePrivateAccountPortfolio';
 import {
   PrivateBalancePortfolioProvider,
   PrivateBalanceRuntimeControlProvider,
@@ -663,9 +664,13 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
   const portfolioEntries = selectedRuntimeEntry
     ? upsertPrivatePortfolioEntry(bootstrappedPortfolioEntries, selectedRuntimeEntry)
     : bootstrappedPortfolioEntries;
+  const { accountBalances, refresh: refreshAccountBalances } = usePrivateAccountPortfolio(portfolioEntries, Boolean(
+    bootstrapKey && privatePortfolio.key === bootstrapKey &&
+    currentBootstrap.key === bootstrapKey && !currentBootstrap.checking && !currentBootstrap.reason,
+  ));
 
   return (
-    <PrivateBalancePortfolioProvider entries={portfolioEntries}>
+    <PrivateBalancePortfolioProvider entries={portfolioEntries} accountBalances={accountBalances} refreshAccountBalances={refreshAccountBalances}>
       <PrivateBalanceRuntimeDataProvider value={effectiveRuntime}>
         {runtimeKey && deployment && activeAccount && bootstrapKey ? (
           <DynamicPrivateBalanceProvider

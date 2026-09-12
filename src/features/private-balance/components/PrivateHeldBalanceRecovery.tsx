@@ -11,6 +11,7 @@ import { privateAddressFingerprint } from '../runtime/receive';
 import { progressLabel } from '../copy';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { PrivateActionReview } from './PrivateActionReview';
+import { PrivateFeeAccountSelector, usePrivateFeeAccount } from './PrivateFeeAccountSelector';
 import { getSessionSnapshot, subscribeSessionChanges, subscribeSessionRevocation } from '@/lib/vault';
 
 type Flow = { scope: string; heldActionField: string; stage: 'preparing' | 'consent' | 'review' | 'signing' | 'broadcast' | 'ambiguous' | 'error';
@@ -21,6 +22,7 @@ export function PrivateHeldBalanceRecovery({ scanWorking, onActivityChange }: {
   onActivityChange(activity: { busy: boolean; signing: boolean }): void;
 }) {
   const runtime = usePrivateBalanceRuntimeData();
+  const feeAccount = usePrivateFeeAccount();
   const { pendingActions, spendRecovery, asset, deployment, publicAddress, networkLabel, prepareSpendRecovery, submitAction } = runtime;
   const session = useSyncExternalStore(subscribeSessionChanges, getSessionSnapshot, () => null);
   const scope = `${publicAddress}:${networkLabel}:${deployment.networkId}:${deployment.realmId}:${deployment.poolContractId}:${deployment.manifestHash}:${asset?.contractId}:${session}`;
@@ -72,7 +74,7 @@ export function PrivateHeldBalanceRecovery({ scanWorking, onActivityChange }: {
         update({ stage: 'consent', disclosure });
         await waiting;
         if (current()) update({ stage: 'preparing' });
-      });
+      }, feeAccount.feePayerAccountId || undefined);
       if (current()) update({ stage: 'review', review });
     } catch (error) {
       if (current()) update({ stage: 'error', error });
@@ -87,8 +89,8 @@ export function PrivateHeldBalanceRecovery({ scanWorking, onActivityChange }: {
     retainFocus();
     setFlow({ scope, heldActionField, stage: 'signing', review });
     try {
-      const status = await submitAction(review);
-      if (!controller.signal.aborted && operation.current === controller && scopeRef.current === scope) setFlow({ scope, heldActionField, stage: status });
+      const submitted = await submitAction(review);
+      if (!controller.signal.aborted && operation.current === controller && scopeRef.current === scope) setFlow({ scope, heldActionField, stage: submitted.status });
     } catch (error) {
       if (!controller.signal.aborted && operation.current === controller && scopeRef.current === scope) setFlow({ scope, heldActionField, stage: 'error', error });
     }
@@ -107,7 +109,7 @@ export function PrivateHeldBalanceRecovery({ scanWorking, onActivityChange }: {
     <h3 ref={headingRef} tabIndex={-1} id="held-private-recovery-title" className="text-[15px] font-semibold text-white">Recover held balance</h3>
     <Notice tone="warn">
       The original payment can still confirm first. Recovery sends the same held inputs to a fresh private address owned by this wallet, with no private helper fee.
-      Your public account pays the network fee, and direct submission exposes the recovery proof to your selected RPC. For an old relayed payment, this differs from its original submission route.
+      The selected wallet account pays the public XLM network fee, and direct submission exposes the recovery proof to your selected RPC. For an old relayed payment, this differs from its original submission route.
       Inputs stay held until a canonical ledger check resolves the outcome. Cancelling after proof sharing cannot revoke either proof.
     </Notice>
     <p role="status" className="text-[13px] text-neutral-300">
@@ -123,10 +125,12 @@ export function PrivateHeldBalanceRecovery({ scanWorking, onActivityChange }: {
     {active?.stage === 'error' ? <HumanizedErrorNotice cause={active.error} /> : null}
     {showReview && shown ? <PrivateActionReview
       draft={{ purpose: 'recovery', kind: 'transfer', amount: formatPrivateBalanceAmount(BigInt(shown.amountStroops), asset?.decimals ?? 7),
+        feePayer: feeAccount.feePayer,
         recipientAddress: shown.recipientAddress, fingerprint: shown.recipientAddress ? privateAddressFingerprint(shown.recipientAddress) : null }}
       review={review} disclosure={disclosure} chained={null} chainProgress={null} progress={null} preparing={false} working={signing}
       error={null} errorCause={null} balanceBeforeStroops={BigInt(runtime.verifiedBalanceStroops)} confirmLabel="Sign Recovery"
       onConfirm={() => { if (disclosure) consent.current.approve(disclosure.actionId); else void sign(); }} onBack={cancel} /> : null}
+    {!showReview && target ? <PrivateFeeAccountSelector value={feeAccount.feePayerAccountId} onChange={feeAccount.select} disabled={(!!active && active.stage !== 'error') || scanWorking} /> : null}
     {!showReview && target ? <Button className="w-full" type="button" disabled={busy || scanWorking || !runtime.isLeader || runtime.phase !== 'current'}
       onClick={() => void prepare()}>Prepare Balance Recovery</Button> : null}
     {active?.stage === 'preparing' ? <Button type="button" variant="secondary" onClick={cancel}>Cancel Preparation</Button> : null}

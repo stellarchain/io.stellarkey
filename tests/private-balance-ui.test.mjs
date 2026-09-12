@@ -417,20 +417,21 @@ test('the account total includes configured private asset value in active and al
   );
   assert.match(
     dashboard,
-    /portfolioUsdWithPrivateAssets\(\s*allRepresentativePublicUsd,\s*privateRepresentativeUsd,?\s*\)/,
+    /portfolioUsdWithPrivateAssets\(\s*allRepresentativePublicUsd,\s*allPrivateBalances === null \? null : privatePortfolioRepresentativeUsd\(allPrivateBalances, xlmPriceUsd\),?\s*\)/,
   );
   assert.match(dashboard, /Total account/);
 });
 
-test('the XLM balance and active sidebar account include cached private XLM', () => {
+test('the XLM balance and every sidebar account include cached private XLM', () => {
   const dashboard = read('src/components/Dashboard.tsx');
 
   assert.match(dashboard, /portfolioXlmWithPrivateAssets/);
   assert.match(dashboard, /const activeAccountXlm = portfolioXlmWithPrivateAssets/);
-  assert.match(dashboard, /const allAccountsXlm = portfolioXlmWithPrivateAssets/);
-  assert.match(dashboard, /isActive\s*\? activeAccountXlm/);
-  assert.match(dashboard, /isActive && activeAccountTotalUsd !== null/);
-  assert.match(dashboard, /fmtFiat\(activeAccountTotalUsd, fiatCurrency, fiatRates\)/);
+  assert.match(dashboard, /const allAccountsXlm = allPrivateBalances === null \? null : portfolioXlmWithPrivateAssets/);
+  assert.match(dashboard, /const accountXlm = accountTotals\[acct.publicKey\]\?\.xlm/);
+  assert.match(dashboard, /const accountUsd = accountTotals\[acct.publicKey\]\?\.usd/);
+  assert.doesNotMatch(dashboard, /isActive\s*\? activeAccount(?:Xlm|TotalUsd)/);
+  assert.match(dashboard, /fmtFiat\(accountUsd, fiatCurrency, fiatRates\)/);
   assert.match(dashboard, />\s*Balance\s*</);
   assert.doesNotMatch(dashboard, /Public XLM balance|Public XLM across all accounts/);
 });

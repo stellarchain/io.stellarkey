@@ -262,6 +262,9 @@ test("market range changes retain chart geometry and never relabel stale points"
 
   const sevenDaySummary = page.getByLabel("7D market price summary");
   await expect(sevenDaySummary).toBeVisible();
+  await expect(page.getByText(/^Rate updated ·/)).toHaveCount(0);
+  const chart = page.locator("section").filter({ has: page.getByText("XLM Market", { exact: true }) });
+  await expect(chart.getByRole("button", { name: /refresh|retry/i })).toHaveCount(0);
   const startMetric = sevenDaySummary.getByText("Start", { exact: true });
   const before = await startMetric.boundingBox();
   expect(before).not.toBeNull();
@@ -341,12 +344,12 @@ test("expired chart ranges retain labelled data through failure, explicit retry,
   failSeven = true;
   await page.getByRole("button", { name: "7D", exact: true }).click();
   await expect(page.getByLabel("7D market price summary")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Retry chart" })).toBeVisible();
-  await expect(page.locator("[data-market-freshness]")).toContainText("Stale rate");
+  await expect(page.getByText("Chart refresh unavailable · Showing previous data", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry chart" })).toHaveCount(0);
   expect(sevenRequests).toBeGreaterThan(fetched);
   failSeven = false;
-  await page.getByRole("button", { name: "Retry chart" }).click();
-  await expect(page.getByRole("button", { name: "Retry chart" })).toBeHidden();
+  await page.getByRole("button", { name: "7D", exact: true }).click();
+  await expect(page.getByText("Chart refresh unavailable · Showing previous data", { exact: true })).toBeHidden();
   await expect(page.getByLabel("7D market price summary")).toBeVisible();
 
   holdMonth = true;

@@ -98,10 +98,14 @@ test("every wallet transaction signer passes through the shared authorization bo
 
   assert.equal((wallet.match(/withSigningSecret\(/g) ?? []).length, 1);
   assert.ok((wallet.match(/withAuthorizedSigningSecret\(/g) ?? []).length >= 12);
-  assert.match(
-    wallet,
-    /requestSigningAuthorization\("Sign private balance transaction"\)[\s\S]{0,300}signExactPrivateBalanceEnvelope/,
-  );
+  const privateSigning = wallet.split('const signPrivateBalanceEnvelope = useCallback')[1]?.split('const changePriceRange')[0] ?? '';
+  const approval = privateSigning.indexOf('await requestSigningAuthorization("Sign private balance transaction")');
+  assert.ok(approval >= 0);
+  assert.ok(privateSigning.indexOf('withSigningKeypair(activeAccount.id') > approval);
+  assert.ok(privateSigning.indexOf('withSigningKeypair(feePayer.accountId') > approval);
+  assert.equal((privateSigning.match(/requestSigningAuthorization\(/g) ?? []).length, 1);
+  assert.ok(privateSigning.indexOf('signExactPrivateBalanceEnvelope') > approval);
+  assert.match(privateSigning, /assertSamePrivateFeePayer\(feePayer, resolvePrivateBalanceFeePayer\(feePayer\?\.accountId\)\)/);
   assert.match(wallet, /cancelSigningAuthorization\("Wallet locked before signing\."\)/);
   assert.match(prompt, /setPassword\(""\)/);
   assert.match(prompt, /autoComplete="current-password"/);

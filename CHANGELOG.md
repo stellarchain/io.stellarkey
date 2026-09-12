@@ -9,248 +9,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added a multi-wallet Private Payments test network: three synthetic wallets exercise deposits, direct payments, withdrawals, consolidation, RPC and submission failures, held-proof self-recovery and reinstall-from-seed through the real runtime, checking value conservation and fresh archive scans.
-- Added explicit held-balance recovery for disclosed private payment proofs: self-transfer the held inputs through the selected RPC with no private helper fee, while keeping them reserved until canonical confirmation and reporting if the original payment confirms first.
-- Added an account- and deployment-scoped outgoing-recovery preference with separate consent to omit future sender-recoverable recipient and memo details. Recovery remains enabled by default, and earlier records and backups are unchanged.
-- Linked public Private Payments deposits and withdrawals to their exact Stellar explorer transactions while rejecting synthetic restored-history identifiers.
-- Added domain-separated outgoing viewing keys and fixed authenticated recovery envelopes for reconstructing sent Private Payments from seed and chain data.
-- Added an append-only Private Payments asset registry with administrator-only admission, `Active`/`ExitOnly` status, two-step administrator handoff, independently corroborated client reads, and in-wallet controls.
+- Choose another software account to pay Private Payments network fees; the selected wallet account remains the default. Watch-only and hardware fee payers are not supported.
+- Recover held private funds with a self-transfer, keeping them reserved until the recovery or original payment is confirmed.
+- Recover sent-payment history, recipient check codes and memos from seed. An optional setting disables this for future payments; existing records and backups are unchanged.
+- Manage private assets through an administrator-controlled registry with deposit restrictions and two-step administrator transfer.
 
 ### Changed
 
-- Private payments now submit directly from the user's public Stellar account through the selected RPC. Stale relayed reviews are rejected; encrypted legacy records and exposed-input recovery remain supported without resubmitting old relay routes.
-- Retire obsolete encrypted relay-chain consent atomically without releasing pending inputs or issued-address history. The published contract, circuit, proof, and three-output archive formats are unchanged.
-- Refreshed Private Payments toolchain provenance and authenticated manifest/catalogue pins after removing relay dependencies; proving artifacts and deployment bindings are unchanged.
-- Aligned shared native fields and asset selectors with their labels, hints, and validation messages across dialog sizes.
-- Kept Public/Private tabs available during unsigned payment review. Switching types clears the public draft; preparation, signing, and submission still block switching.
-- Kept held-balance recovery available inside the new Private Payments settings flow, with its existing proof-sharing, signing and ledger-confirmation safeguards.
-- Redesigned every dialog for iOS conventions: on phones dialogs present as bottom sheets with a grabber and swipe-to-dismiss that rest above the keyboard, confirmations present as centred alerts that must be answered, and desktop keeps the centred card. Sheets, cards, alerts, menus and toasts now animate out as well as in, Reduce Motion crossfades instead of removing feedback, and the panel and dim finish together.
-- Unified dialog chrome: one busy policy that keeps the close control visible and explains why it is disabled, one footer order (Cancel leading, primary trailing, primary on top when stacked), a leading Back chevron for multi-step flows with stage-aware titles, one body rhythm, one destructive style, and "Discard changes?" before unsaved edits are lost.
-- Reduced haptic and sound feedback to documented meanings: no vibration or sound on opening, closing, Back, tab changes or chips; outcome feedback fires once; sounds are off until turned on.
-- Dialogs now receive keyboard focus themselves on open so assistive technology announces their name before any control; entry-first sheets focus their field.
-- Raised touch targets inside dialogs to 44 px, replaced text-glyph icons with real icons, and added keyboard hints and input modes to dialog fields.
-- Made 44 px touch targets pointer-adaptive: they apply on touch screens only, so buttons, chips and links keep their compact macOS height with a mouse or trackpad; links and rows opt in through `tap` utilities.
-- Aligned every screen with Apple platform conventions across macOS, iPadOS and iOS: UI labels, chips and settings subtitles use the system sans face with tabular figures while addresses, hashes and amounts stay monospace; no interface text renders below 10 px; dialogs no longer draw a focus ring around their panel; long alert actions stack instead of wrapping; toasts sit below the header.
-- Fixed layout regressions at iPad widths: single-column Settings until the window is wide enough for two, a wrapping Activity filter row, a wider account pill, an Add Contact toolbar button on pointer layouts, and Send form labels that no longer shift on touch screens.
-- Fixed iPhone details: the Assets header keeps its actions on one row, field hints wrap beneath long labels, the multi-send sheet scrolls as one surface, asset availability rows stay on one line, and merchant stat strips scroll instead of truncating.
-- Unified form chrome across every dialog and page: one field label row (so Asset and Amount stay level in public and private Send, Add Funds and Multi-Send), one quick-amount chip set (Send, private Send, Add Funds, Currency Converter), one callout style with info, guidance, caution, success and blocked tones, one section-label style, and one monospace class and desktop size for inputs. Multi-Send keeps Add Recipient visible beneath its scrolling list.
-- Second platform audit across Mac, iPad and iPhone: dialog action rows now pin to the bottom of a scrolling dialog above the safe area; dialog headers are opaque; switches keep their iOS size on touch screens; back and close buttons share one size per pointer type; one button height (44 pt touch, 40 px pointer) and one chip height replace per-screen overrides; native checkboxes and date fields take the app chrome; a shared empty state and one callout family cover the remaining hand-rolled variants; dialog, button and form-label text uses Title Case throughout; toasts sit below the header on phones and at the bottom on desktop and no longer print full transaction hashes; text actions read as actions; the Point of Sale stacks in iPad portrait; compact Settings sub-pages drop the duplicate large title; command palette actions, placeholders, alert widths (270 pt) and several per-screen alignments were corrected.
-- Re-baselined the initial, unlocked-wallet and merchant JavaScript release budgets for the shared dialog shell and the static dialog shells that now ship with the wallet so a first open never waits for a chunk; dialog bodies stay lazily loaded and separately counted.
-
-- Corrected dependency-risk counts, zoom guidance, the current Testnet development catalogue, and the scope and safe-capture limits of automated release verification.
-- Made verified Private Payments commitment-cache appends read only new and overlapping records, with atomic checkpoint checks, full history validation during recovery, and compatible migration that preserves existing cache data.
-- Reduced merchant JavaScript by composing its existing context slices instead of duplicating aggregate context wiring.
-- Made Public/Private tabs use explicit keyboard activation: arrow keys move focus, while Enter, Space, or a pointer selects the panel without replacing the dialog shell.
-- Restored user-controlled page zoom while preserving mobile input sizing, corrected the Send form's MAX control contrast, and allowed recipient and memo captions to wrap on narrow screens.
-- Re-baselined the unlocked-wallet JavaScript release budget for authenticated Private Payments registry discovery while retaining separate limits for the private runtime, worker, proving artifacts, merchant, and hardware journeys.
-- Flattened the Private Payments setup progress into the modal shell with a clearer live status, prominent percentage, and transform-animated progress rail.
-- Unified public and private asset artwork: XLM now uses the Stellar mark on black, while private assets reuse their normal logo with a shield notch labelled "Private asset".
-- Displayed the selected local-currency equivalent beside numeric XLM network fees throughout public and Private Payments flows, retaining useful precision below one cent.
-- Displayed the canonical Stellar mark for native XLM in wallet asset rows and details, matching issued-asset logo treatment.
-- Shortened Private Payments addresses to checksummed Base58 using the `tskpay_` Testnet and `skpay_` Mainnet prefixes, with compact deployment binding and network-specific validation.
-- Replaced sparse Private Payments actions with fixed two-nullifier, three-output packages that include recipient and sender-recovery ciphertexts for every lane.
-- Replaced separate asset-pinned pools with one governed Testnet pool whose internal transfers hide the asset while deposits and withdrawals retain their public asset boundary.
-- Persisted authenticated incremental Merkle nodes so spends load only selected witness paths instead of rebuilding the tree from complete pool history.
-- Batched contiguous archived Private Payments records into the largest freshly simulated restoration footprint within an 80% resource-fee safety margin, saving progress after every confirmed batch.
-- Replaced the binary depth-32 Private Payments tree with a ternary depth-17 tree across the circuit, contract, Rust protocol, browser, authenticated incremental cache, manifests, and vectors.
-- Reduced the Private Payments circuit from the 23,437-constraint baseline to 15,114 constraints and 11 public inputs while adding a private action asset and a third output; development proving still fits the pinned `pot14` transcript.
-- Retired the incompatible Testnet Private Payments pools, regenerated every artifact binding, and published one unified XLM/USDC development pool with authenticated deployment and registry evidence.
-- Used RFC 8410 PKCS#8 imports for native X25519 shared-secret derivation while retaining the portable fallback.
-- Accelerated Private Payments recovery scans with RFC 9180-compatible WebCrypto key handles, view-tag-first owner hashing, and bounded 8-output parallel batches selected by paired nine-trial controls while retaining record-order state updates.
-- Reduced Private Payments contract cost with one public-input MSM, single-pass public-signal derivation, a precomputed immutable asset field, and fixed-width field arithmetic that removes runtime arbitrary-precision integers.
-- Re-pinned development proof generation to the PSE degree-14 Perpetual Powers of Tau transcript after its hash and complete contribution/beacon chain verified and the prior endpoint stopped serving its authenticated artifact.
-- Deferred merchant archive code until an explicit backup or restore action so merchant security hardening does not increase wallet startup JavaScript.
-- Updated the Next.js ESLint configuration to 16.3.4 and React DOM type declarations to 19.2.7.
-- Updated Next.js to 16.3.4 and refreshed its locked image-processing and build dependencies.
-- Refreshed development Private Payments provenance and authenticated manifest hashes after source-history and dependency updates; deployment bindings and contract, circuit, and proof artifacts are unchanged.
+- Private Payments submit directly through the selected RPC. The public transaction source and fee payer remain visible.
+- Replaced separate Testnet private pools with one XLM/USDC pool that hides the asset in internal transfers. This remains an unaudited Testnet preview, not a Mainnet feature.
+- Shorter checksummed private addresses and a simpler Receive screen with asset, address-type and QR choices.
+- Private Payments setup synchronizes available assets in one progress view, then closes automatically.
+- Standardized dialog controls, form labels and touch targets, with bottom sheets on phones and reduced-motion support.
+- Network fees show local-currency equivalents; public and private assets share consistent icons.
+- Removed rate timestamps from the main balance and XLM chart, and the chart refresh button. Prices and chart ranges share five-minute caches and in-flight requests.
+- Private-history and Merkle caches now update incrementally; recovery uses batched archive reads and native browser cryptography with a portable fallback.
+- Updated Next.js and its ESLint configuration to 16.3.4, and React DOM types to 19.2.7. Development, browser-test and production builds use separate caches.
 
 ### Removed
 
-- Removed peer-relayed private payments, Earn by Relaying, helper approvals, fee negotiation, relay settings, Waku/Nostr transports, and their relay-only dependencies and tooling.
-- Removed support for the previous `tks1` and `sks1` Private Payments address encodings; existing testnet private state must be recreated.
-- Removed compatibility with the previous binary-tree Private Payments state and deployment artifacts.
-- Removed retired archive-page constants from Private Payments constructors, deployment bindings, manifests, runtime validation, and generated clients now that every archive record occupies its own persistent entry.
+- Peer-relayed private payments, Earn by Relaying, helper settings, Waku/Nostr transports and their dependencies. Existing relay records are retained for recovery, not resubmitted through old routes.
+- Old private-pool formats and `tks1`/`sks1` addresses. State from the retired Testnet deployments must be recreated.
 
 ### Fixed
 
-- Expose backup-file reading as a busy Restore control with a separate accessible progress announcement; clear the feedback on completion, failure, or workflow changes without allowing obsolete reads to replace newer feedback.
-- Keep focus inside private dialogs when opening review and on confirmation controls during proof preparation and submission, publish submission busy state to dialog shells before paint, and ignore duplicate direct or chained confirmations without losing the first result.
-- Maintain readable contrast for private-send outflow amounts during animated review updates.
-- Generate diversified private receive addresses from first setup, replace legacy default receive addresses when the private session initializes, and exclude the default diversifier from rotation. Existing diversified addresses stay stable, older addresses remain recoverable, and delayed migration results cannot restore an address after session ownership changes.
-- Kept confirmation alerts within the available viewport so long warnings and wrapped approval details scroll without pushing actions off-screen, including when the on-screen keyboard reduces the viewport.
-- Preserved pinch zoom and nested-list scrolling in mobile sheets; cancelled or multi-touch drags reset without closing or replaying the entrance animation.
-- Cancelled abandoned sheet-handle presses when the mouse button is released outside, preventing later hover movement from dragging the sheet.
-- Restored focus to the actual tapped opener after nested sheets close in WebKit, while keeping later keyboard openings independent of earlier pointer activity.
-- Kept tooltips and menus aligned inside both plain mobile sheets and transformed dialog containers.
-- Closing a dialog now preserves its shell and exit geometry until the dim finishes fading, without retaining sensitive content or switching the sheet variant mid-exit.
-- The wallet background is now inert behind dialogs on the lock, onboarding and recovery screens, and the command palette and customer display use the shared dialog shell (focus containment, inert background, Escape).
-- The point-of-sale tip prompt can no longer be closed from a header control while declaring itself undismissable, and destructive actions that previously ran without confirmation (cancelling a live charge, voiding an adjustment, deleting a contact, removing a trustline) now confirm first.
-
-- Corrected merchant contact browser tests to verify retained dialog and action identity and focus after saving changes the dialog's accessible name.
-- Made merchant browser tests wait for settled row feedback and switch enablement before retrying, with controlled checks that early activations cannot duplicate write attempts.
-- Added validated failed-step source lines to wallet browser diagnostics without exposing error payloads or changing test results.
-- Kept synthetic merchant-feedback checks in their mandatory isolated runner so normal release browser checks do not require a removed fixture.
-- Preserve newer in-dialog focus during modal initialization and cancel obsolete initial-focus callbacks on close, unmount, or rapid reopening.
-- Preserve Send review state and keyboard focus across account changes and password approval, allow intentional fresh-review retry after cancellation, and keep receipt links on their originating network.
-- Recovered private notes using their commitment-authenticated registry asset even when redundant recipient metadata names a different asset, without weakening canonical archive checks or sender-recovery validation.
-- Kept merchant customer and counter-code failures beside their actions with retained drafts and explicit retries, preserved action focus, prevented duplicate actions, and ignored feedback from closed panels or revoked sessions.
-- Announced supplementary toasts politely without repeating retained messages, kept longer feedback readable, and cleaned up notification timers when their provider closes.
-- Dismissed hover-retained tooltip content when opening a dialog makes its source inert, while allowing fresh focus to reopen help after the dialog closes.
-- Restored modal opener focus after tapping an SVG icon inside a button, including browsers that do not focus buttons on pointer activation.
-- Kept tooltip help available while moving between its trigger and content, allowed Escape to dismiss help without closing its dialog, and prevented viewport-edge help from blocking its own trigger.
-- Connected Select triggers to their field labels, hints, and validation errors, and gave settings switches specific accessible names and a visible keyboard focus indicator.
-- Described account creation and secret-key import accurately without guessing a derivation path from the number of active accounts.
-- Kept account creation and claim review exits consistent during active operations, prevented old modal completions from changing a reopened dialog, and allowed closing a confirmed claim while balances refresh.
-
-- Preserved genuine observation times for retained asset, XLM, and fiat rates; rejected new Mainnet merchant quotes when required rates are stale or unavailable, with local price retries that preserve tickets and forms.
-- Revalidated expired chart ranges while retaining their correctly labelled series, with visible observation times and explicit retry after an unavailable refresh.
-- Run isolated private-component checks on Chromium and iPhone WebKit, all overlay and manifest checks on both browsers, and the nested browser-protocol tests through the shared CI and release gate. Verify fixture cleanup before and after the final static build.
-- Included native disclosure controls in modal keyboard focus containment and preserved non-sensitive closing geometry while clearing private panel content.
-- Distinguish a new action blocked by an earlier unresolved private payment from a newly shared spend proof; keep existing input reservations intact.
-
-- Kept Select choices bound to option identity during live reordering, preserved focus when options disappear or become disabled, and made Select and Dropdown keyboard navigation stay within their owning dialog.
-- Added consistent clipboard pending, success, and retryable error feedback, prevented overlapping copy writes, and kept sensitive clipboard clearing available after the copied announcement ends.
-- Removed stale receive QR images and download links immediately when public or private payment-request data changes, ignoring obsolete encoder results.
-- Made backup-file restore keyboard operable with local read progress and safe retryable errors, and prevented abandoned file reads from redirecting a newer workflow.
-- Kept older-activity requests scoped to the current wallet, account, network, and endpoint; preserved loaded history with explicit retry after failure and stable keyboard focus throughout retry feedback.
-- Made explicit Settings navigation start at the destination heading in the actual scroll container, preventing controls from inheriting an old scroll offset beneath the sticky header.
-- Kept private-asset shield badges inside their avatar bounds on narrow screens.
-- Deferred live Private Payments registry RPC corroboration until an explicit registry refresh, preserving continuous Send and Receive dialogs while ordinary wallet unlocks and first private intent use the authenticated deployment catalogue.
-- Kept verified Private Payments asset readiness stable across React bootstrap restarts and reused loaded contract specifications across corroborated reads, preventing lock/unlock from reverting ready balances while reducing setup RPC bursts.
-- Isolated local Next.js development output from production builds so verification cannot strand an open test session on stale UI chunks.
-- Kept Private Payments setup on the modal's neutral surface and automatically dismissed it after the completed progress state, removing the tinted panel and mandatory final acknowledgement.
-- Reduced first-time Private Payments setup latency by reading independent historical ledger timestamps with bounded RPC concurrency while preserving both authenticated head checks.
-- Shortened first-time Private Payments setup by preventing the underlying action gate from launching a duplicate sync, preparing the originally selected asset last, and moving shared proving-file warm-up out of the critical path while presenting XLM and USDC as one monotonic progress bar.
-- Kept the market chart geometry stable while switching periods, labelled retained data with its real range, and cancelled stale range requests before they could overwrite the latest selection.
-- Kept first-time Private Payments setup in progress while every verified asset synchronizes, restoring the originally selected asset before success so XLM and USDC never hand off to separate preparation screens.
-- Asked for Private Payments consent once per wallet, kept its success confirmation open until Done, and automatically prepared newly selected asset-pinned pools inside Send, Receive, and Add without replacing their modal shells.
-- Kept private-asset readiness and verified balances deployment-specific, and cleared private runtime controls immediately when the active account or network changes.
-- Treated issued-asset trustlines as spendable whenever Horizon reports full authorization, even when it also reports maintain-liabilities capability, and validated leading-zero Private Payment amounts with specific zero/value guidance instead of a generic error.
-- Retried one semantically read-only RPC `getNetwork` probe after a transient transport or malformed-body response, preventing Firefox from rejecting a healthy endpoint while preserving fail-closed network-identity checks.
-- Matched live Private Payments contracts against the binary verifier-key digest published in their manifests, retained initialized workers after first-time setup persistence, automatically resynchronized once when action preparation observes non-current chain state, selected a CORS-capable independent Testnet witness RPC, and kept witnessed checks live after old deployment ledgers age out of rolling RPC retention.
-- Corrected the Private Balance whitepaper and public security copy to match optional routine RPC witnessing, provider-diversity assumptions, deployment and ceremony evidence limits, envelope bindings, diversifier collision bounds, restoration fee margins, runtime failure behavior, and the live Testnet deployment boundary.
-- Kept Private Payments recovery lossless when a browser exposes partial or transiently failing native X25519 by dropping unusable handles and retrying envelope key agreement with the reviewed portable implementation.
-- Paper-wallet certificates now print an imported account's actual secret key, reserve the vault recovery phrase for mnemonic-derived accounts, bind the certificate identity to the revealed material, and state when other account types need separate backups.
-- Kept idle Private Payments pools withdrawable while deposits are paused by refreshing the current spend root atomically in every private send or withdrawal, with the refresh disclosed in review.
-- Matched returned Private Payments archive records to their requested ledger keys, treated zero-lifetime entries as archived, and bounded every restoration footprint by the canonical action count.
-- Funded reusable private-payment accounts for the full reviewed Private Balance fee cap and refused sweeps before signing when the one-time account cannot preserve both its minimum reserve and fee budget.
-- Removed Horizon transaction joins from reusable-payment discovery, retried oversized pages at smaller limits, and advanced its durable cursor only to paging tokens the payments response actually returned.
-- Made reusable private-payment recovery rescan retained chain history after seed import, and compacted terminal receipt history without dropping newly actionable payments at the encrypted cache limit.
-- Preserved transaction max-time evidence when upgrading durable submission records, bounded polling for legacy records without an expiry, and kept merchant payment reversals actionable until their refund is canonically confirmed.
-- Restored Private Payments records belonging to archived accounts, omitted records for genuinely unavailable accounts with a warning, and added account-scoped sensitive-record cleanup for new archival.
-- Accepted the wallet's canonical Private Payments activity keys in encrypted transaction-note backups, rejected invalid note writes, omitted malformed optional note entries with a restore warning, and verified fresh backup bytes before returning them.
-- Made merchant integrity manifests and wallet backup identities independent of browser locale, while transparently resealing authenticated stores created under legacy affected collations.
-- Prevented account-label writes from creating a vault that the wallet's own decoder refuses, and kept rename failures visible without reporting success.
-- Corrected the remaining Private Payments page copy that contradicted the hosted Testnet-only development preview policy.
-- Neutralized spreadsheet formulas in wallet activity CSV exports and applied the same shared encoding to merchant reports.
-- Enforced the same bounded, visible contact-name rules for JSON imports and direct persistence as the contact editor.
-- Merchant setting fields now wait for durable authorization and storage, restore the last saved value after rejection, and show the failure.
-- Merchant reconfiguration now updates the currently active owner in multi-owner stores.
-- New merchant orders retain an immutable shift identity, so a device-clock rollback cannot remove sales from shift reports.
-- Issued-asset balances now retain Horizon authorization and clawback flags, block locally known frozen sends, and disclose issuer clawback authority.
-- Copied recovery phrases and secret keys now offer an explicit clipboard-clear action and warn that clipboard managers may retain them.
-- Prevented merged mnemonic-derived accounts from being recreated at an archived HD index or appearing twice after account recovery; existing duplicate derived metadata is repaired on load while preserving the selected account.
-- Kept non-sensitive payment-received feedback visible when Merchant Mode locks the operator immediately after settlement.
-- Preserved the exact case of Stellar asset codes when adding and deduplicating trustlines.
-- Allowed the key-bearing wallet to unlock when non-signing contact or note records are corrupt, while preserving those records for recovery and surfacing contacts as unavailable.
-- Identified a key-authenticated account in the destructive backup-restore review, labeled watch-only and hardware identities honestly, and bound backup-health records to the exact exported or restored bytes.
-- Bounded and validated Horizon fee statistics before rendering or transaction fee selection so malformed endpoint data cannot crash the wallet.
-- Enforced SEP-29 memo-required destination checks for single and multi-recipient payments while exempting muxed addresses that carry their routing ID intrinsically.
-- Applied inactivity auto-lock while a newly created vault is still displaying its recovery phrase, and made idle timing monotonic across device-clock changes.
-- Required fresh wallet-password authorization before saving or resetting custom Stellar endpoints, and corrected public disclosures that wallet history uses SDF Horizon independently.
-- Made full reset clear wallet-owned IndexedDB, session storage, service workers, and executable caches before reloading, and stopped a new worker revision from serving lazy chunks from older caches.
-- Rejected payment amounts outside Stellar's signed 64-bit stroop range before rendering or submission.
-- Kept Next.js telemetry disabled for local development and production builds without tracking an environment file.
-- Loaded the offline password guessability dictionaries only when creating or changing a vault, keeping wallet startup within its existing JavaScript budget.
+- Account rows and the combined portfolio include public and saved private balances, with labelled Testnet reference values. Switching accounts no longer changes which funds are counted.
+- Dialogs retain their shell and keyboard focus during tab changes, menu selection and asynchronous actions; closing restores focus to the opener.
+- Late QR, file-read, pagination and dialog results cannot replace newer requests. Loading, copy and error feedback stays beside the relevant action.
+- Restored browser zoom and corrected narrow-screen overflow, keyboard positioning, footer spacing and Settings scroll/focus behavior.
+- Private Receive has explicit stopped and retry states. Worker and simulation errors no longer misreport an account switch or discard pending payment status.
+- Read-only private-contract queries accept storage-only restoration. Archived records are restored in reviewed, fee-capped batches.
+- Private sends and withdrawals remain available when deposits are paused, including after the pool has been idle.
+- Private recovery scans all retained history after seed import, preserves actionable receipts and archived-account records, and handles inconsistent recipient metadata and partial native X25519 support.
+- Corrected backup identities, imported-key paper wallets and derived-account recovery. Corrupt optional contacts or notes no longer prevent vault unlock.
+- Preserved asset-code case and issuer authorization/clawback flags; corrected spendable balances, required destination memos and Stellar amount limits.
+- Charts and exchange rates retain their real observation times. Stale merchant quotes require a fresh rate instead of silently using cached prices.
+- Merchant edits report success only after saving, retain drafts on failure, and update the active owner. Orders retain a fixed shift ID through device-clock changes.
 
 ### Security
 
-- Cleared imported keys, transaction drafts, account details and balance panels immediately on close while retaining only dialog exit geometry, and revoked cancelled confirmation actions during the exit animation.
-- Revalidated private proof preparation and transaction signing against the wallet session, account, network, RPC and private runtime, including changes while password approval is open. Cancelling local recovery does not release inputs exposed by an earlier proof.
-- Refreshed generated Private Payments development-manifest provenance and dependent pins after the dependency lockfile update, preserving deployment identity, development-only flags, and all proving artifacts.
-- Pinned TOML 4.2.0 for Trezor's nested Stellar SDK 14.2.0 resolvers to fix installed parser prototype pollution and unbounded recursion, with real adapter compatibility tests. Upstream browser prebundles and the remote Trezor popup are outside this override; the remaining elliptic advisory is documented.
-- Bind public payment review, signing, and pre-broadcast authorization to the originating account, network, and unlock session, including delayed approval, preparation, and hardware responses; preserve canonical tracking after broadcast.
-- Bound queued contact edits, encrypted storage writes, and contact-list updates to their originating unlock session, while preserving writes already committed before a lock.
-- Revoke pending merchant loads, queued edits, PIN actions, and UI publication on vault lock, reset, session replacement, or provider teardown while preserving completed encrypted commits for recovery.
-- Keep canonical refund recovery records until the authenticated merchant journal durably records a terminal result, including across lock, teardown, storage failure, and reload; erasing merchant records preserves unresolved transaction tracking.
-- Disable automatic wallet-test screenshots, traces, and video, use structural-only failure reports, and remove test output on normal completion. Block usable-wallet Testnet tests before funding or import while Playwright can still capture locator failure snapshots; browser fixtures remain synthetic.
-- Limit reusable-payment discovery to viewing keys: release spending roots before network reads, avoid deriving spending scalars/nonces when matching receipts, and clear owned viewing, storage-copy and temporary hash buffers after scoped work drains.
-- Revoke reusable-payment discovery and its cached UI at lock, session/account/network replacement, teardown and leadership loss. Cancel and drain old work before local-data removal, and atomically refuse removal if a checked payment journal changed.
-- Clear owned temporary key-expansion and private-output plaintext buffers on success and failure while preserving returned keys, witnesses and encrypted output bytes. This is best-effort application-memory cleanup, not guaranteed memory erasure.
-
-- Included outgoing viewing keys in best-effort private-worker session cleanup and blocked production builds that contain a leftover synthetic privacy-test route.
-- Required explicit spend authorization and durable input/chain-budget reservation before proof-bearing RPC preparation. Exposed spend proofs remain pending after cancellation, rejection or envelope expiry because they can be reused in a fresh transaction; unsigned exposed preparations show status unknown.
-- Prevented private receive-address rotation from reissuing a locally recorded diversifier, kept the bounded issuance history encrypted, and preserved it through full-verification rebuilds and failure rollback. Seed-only recovery cannot reconstruct previously unused addresses.
-- Removed the latent wallet-birthday ledger search from reusable private-payment discovery and normalized legacy cached bounds while preserving forward cursors; fresh recovery continues scanning all retained history.
-- Persisted the approved direct/relay route in encrypted private-action journals and blocked sender-RPC rebroadcast and transaction-hash lookup for relayed or unknown-route recovery. Envelope expiry cannot release an exposed spend proof; legacy records retain conservative recovery without guessing their route.
-- Selected Ankr as the independent Testnet witness after multi-engine CORS checks and repeated same-ledger contract-state corroboration, and limited contract-source provenance to production build inputs so test-only changes cannot replace deployment evidence.
-- Removed public Private Payments relayer and relayer-fee fields from the action, circuit, contract, and archive; historical helper payments remain ordinary encrypted, proof-bound same-asset notes.
-- Retained audited RFC 9180 note encryption and Soroban-native Poseidon2 hashing while recording the governed asset-private pool in explicit decision records.
-- Corrected the Private Payments Merkle-domain invariant: the Poseidon2 length IV separates arities only, while same-arity separation depends on explicit slot-zero domains and Poseidon2 preimage/collision resistance.
-- Bound the reduced eleven-signal Groth16 statement to the exact canonical action field and added a proof-mutation regression for that public input.
-- Recovered sender-authenticated external recipient fingerprints and memos from outgoing envelopes during seed-only scans without persisting full private recipient addresses.
-- Persisted one replay nullifier for deposits instead of two while keeping exact proof replay impossible; transfers and withdrawals continue to persist both.
-- Shared the canonical ternary Merkle hash and empty roots between the protocol crate and pool contract, with Poseidon2 length-IV separation documented as a consensus rule.
-- Published fresh Testnet deployment and registry evidence matching the replacement circuit, verifier, contract, and manifest hashes; Mainnet remains refused.
-
-- Replaced source-text merchant security assertions with executable boundaries covering charge voiding, retained-record access, owner reauthentication, and every Merchant-to-Wallet navigation decision.
-- Derived Private Payments manifest proving-key verification evidence from a successful pinned `snarkjs zkey verify` run instead of a literal claim.
-- Required complete generated-artifact toolchains and the locked Private Payments Rust workspace in CI and tagged releases, and scheduled the ignored 100,000-action recovery model as a separate Gate B workflow.
-- Made the shipped Private Payments manifest-tamper browser test unconditional and fixture-independent so CI and release verification cannot silently skip the fail-closed UI assertion.
-- Made wallet inactivity locking use the larger of monotonic and forward wall-clock elapsed time, with focus, visibility, and page-resume checks so device suspend cannot preserve an unlocked session.
-- Applied one current-receiving-account quarantine to charges, invoices, and counter codes; stale charges no longer settle or regenerate requests, and printed invoices replace stale, void, paid, draft, or incomplete payment instructions with a withdrawal notice.
-- Enforced customer-note and customer-erasure authority inside the merchant domain, limited irreversible erasure to active owners, and retained actor-attributed hashed-address audit events after deletion.
-- Centralized Merchant Mode exit authorization in the shared navigation transition, covering the mode switcher, mobile tabs, keyboard shortcuts, command actions, and in-flow redirects.
-- Required comp authority for discounts that reduce a ticket to zero, recorded those giveaways as comps, and retained payment and open-shift authorization for their automatic settlement.
-- Normalized muxed merchant payers to one base-account customer identity while preserving exact refund routes, made customer-history enrichment non-fatal, deduplicated settlement by transaction facts, and required staff review for reused invoice and counter-code routes.
-- Kept merchant break-glass recovery reachable across wallet locks and reloads, used wallet reauthentication when an unreadable store cannot prove its staff roster, and retained raw recovery export after erase failures.
-- Kept every merchant payment reconciliation actionable outside the 200-row presentation tray, derived the tray from durable records, and added owner-only bounded cleanup with an audit disposition for every row.
-- Bound Multi-Sig Studio edits to canonical signer state, required explicit in-session provenance for signer additions, rejected stale or conflicting authority, and displayed full changed signer keys before signing.
-- Added schema-validated BN254/BLS12-381 proving benchmarks with verified desktop smoke evidence, explicit pending phone and Soroban measurements, and no premature curve selection.
-- Corroborated Private Payments recovery checkpoints, overlapping ledger hashes, and contract heads across independent RPC providers; disagreement now preserves the last authenticated state as status unknown, with routine witness checks and their access-pattern tradeoff exposed in settings.
-- Hid Private Payments input/output lane roles behind private circuit selectors, secret-derived dummy nullifiers, randomized zero-value dummy notes, randomized lane ordering, and one common clear diversifier across all output lanes in an action.
-- Bound each Private Payments note and proof to an immutable on-chain asset-registry index and full asset field while omitting the asset from internal transfer records.
-- Bound the incremental Merkle cache to the deployment, archive cursor, transcript head, root, frontier, and commitment count, with verified recovery after corruption.
-- Removed private recipient and amount handoffs from browser storage, restored reusable-receipt discovery to the authenticated wallet birthday, terminated proof workers on cancellation, bound live contract circuit hashes to the manifest, and added Rust policy checks to tagged releases.
-- Prevented issuer-logo referrer leakage, fully redacted long witness values, and escaped paper-wallet QR attributes before constructing print HTML.
-- Revalidated wallet and merchant refund authority after durable transaction journaling, prevented settled charges from being voided, expired stale Mainnet issued-asset quotes, and cleared decrypted merchant snapshots on lock and unmount.
-- Re-read the persisted signing-password policy at every signing boundary, required the same authorization for reusable private-receipt sweeps, rejected malformed federation memos, and rejected backup exports if the vault changes after password verification.
-- Cleared transient mnemonic seed, SLIP-10 key, chain-code, and derivation buffers after constructing each Stellar account keypair.
-- Reserved Merchant Mode enablement for its password-gated lifecycle action, rejected invalid merchant state before persistence, and stopped retention controls from reporting success before a durable save.
-- Prevented a PIN verification started before a concurrent merchant lockout from activating an operator or unlocking the customer display after the lockout commits.
-- New and changed vault passwords now require a Good or Strong guessability rating and a stable NFC Unicode representation; existing password unlock remains compatible.
-- Public security and privacy guidance now accurately describes the production-hosted Testnet development fixture, its single-party setup risk, and the current private-address diversifier correlation limit.
-- Corrected Private Payments documentation to describe the production-hosted Testnet development fixture accurately, cleared locally owned HPKE secret/plaintext buffers, and required immutable attested release artifacts before deployment.
-- Bound public payment signing to an immutable account, network, destination, asset, amount, memo, fee, and signer-path review snapshot, and added exact on-device Trezor receive-address verification.
-- Required current staff authority for retained merchant views and exports, fresh owner authorization before leaving Merchant Mode, writer ownership before settlement polling, and active counter-code status before constructing printable payment artifacts.
-- Revoked password and passkey unlocks that finish after a lock, and serialized backup restore against an early, cross-tab reset epoch so erased credentials cannot be resurrected.
-- Bound transaction finality, merge recovery, expiry decisions, and merchant settlement reads to canonical SDF Horizon; configurable endpoints can still submit transactions but cannot fabricate confirmation or unlock retries.
-- Moved offline XDR signing into the vault's generation-revocable, key-wiping signer scope while retaining fresh password and live authority checks.
-- Rejected imported transaction envelopes with a zero maximum time so cosigner authorization cannot be retained indefinitely.
-- Closed secret-bearing paper-wallet print windows when their parent modal closes or the wallet locks, resets, or receives a peer-tab lock.
-- Preserved signed-transaction recovery records after untrusted Horizon 4xx responses and allowed only exact-hash canonical lookup results to resolve prepared submissions.
-- Enforced current staff or owner authorization for merchant lifecycle, recovery erasure, charge voiding, customer mutations, takings, and customer records, with latest-revision checks at persistence boundaries.
-- Kept the privacy shield above portal dialogs, stopped charge monitoring from synthesizing staff activity, quarantined counter codes after receiving-account rotation, and neutralized spreadsheet formulas in merchant CSV exports.
-- Bound multi-signature authority reads to SDF Horizon so a custom endpoint cannot hide retained signers, revoked hardware approvals completed after wallet lock, and made emergency reset revoke signing authority and erase the vault before fallible browser-storage cleanup.
-- Repaired Private Payments address and proving-key provenance across the browser, encrypted storage, contract, manifest, and deployment tooling; testnet continues to use explicitly disclosed single-party development proving material, while every non-development release still requires ceremony and audit evidence.
-- Pinned and hash-verified the phase-one transcript, added zkey-to-R1CS verification, checked browser distributables for drift, disabled npm lifecycle scripts by policy, and wired generated/reproducible artifact checks into CI and tagged releases.
-- Preserved every authenticated Private Payments note leaf with a distinct leaf-aware wallet identity, bound transfer review to the full canonical recipient address, and replaced the 32-bit check code with a 128-bit SHA-256 code.
-- Required the active merchant owner and a fresh wallet-password check for payment-routing changes and reconfiguration, rejected pure watch-only receiving accounts, enforced report permissions, and quarantined invoices after destination drift.
-- Made multi-signature configuration transactions explicitly write every retained signer so threshold safety cannot depend on endpoint-reported signer state.
-- Kept Private Payments receive-address rotation separate from the canonical self-output identity and rejected any self-output whose keys do not match its stamped diversifier.
-- Revoked in-flight software signers on lock, reset, or session replacement; bound transaction confirmation to the requested canonical hash; and erased Private Payments IndexedDB records during a full wallet reset.
-- Bound encrypted merchant metadata to the exact stored-record ciphertext set and required explicit, schema-valid successful Horizon operations before settling orders.
-- Enforced active-owner checks inside merchant settings writes, revalidated refund permissions at the signing boundary, and persisted cross-tab exponential PIN backoff in encrypted merchant storage.
-- Added monotonic vault revisions to reject stale cross-tab account writes and vault-bound exponential backoff for repeated password verification failures.
-- Bound backup-health status to the recoverable wallet credential set, deeply authenticated every nested credential and archive before restore, and enforced file, decoded-data, collection, and keystore identity limits on imports.
-- Bound one-time and reusable Private Payments addresses to the exact pool deployment and rejected legacy or cross-deployment recipients before proof or transaction construction.
-- Added password-authorized, fee-capped restoration for exact archived Private Payments records before canonical recovery resumes.
-- Required explicit per-session Private Payments activation, removed exact balances from cross-tab broadcasts, labeled ledger progress as selected-RPC data, and added dev proving-key risk to testnet opt-in.
-- Patched high and moderate circuit-tooling advisories, enforced nested npm and Rust dependency policy in CI, removed unsafe release-tag interpolation, ignored all environment files, and corrected the installed Stellar SDK script allowlist.
-- Rejected common and wallet-themed new vault passwords with a maintained offline guessability estimator while preserving existing vault compatibility.
-- Required Multi-Send to present and sign an immutable per-recipient review snapshot instead of broadcasting directly from the editable form.
-- Cleared backup authentication and revealed material at narrower lifecycle boundaries, required fresh authorization for nested encrypted exports, and moved paper-wallet printing out of CSP-blocked inline code.
-- Corrected Private Payments preview and ceremony provenance to the shipped artifact hashes and removed an unused per-nullifier RPC lookup that could weaken spend unlinkability if activated.
+- Payment signing uses the exact reviewed transaction and rechecks account, network, session and password policy. Multisig edits use canonical signer state; hardware approvals cannot survive a wallet lock.
+- Lock and session changes revoke pending unlocks, signing, discovery and queued edits. Inactivity locking covers recovery screens and device sleep; full reset clears wallet-owned browser storage.
+- New and changed passwords require a Good or Strong rating; existing passwords still unlock. Vault revisions and password/PIN backoff reject stale writes and throttle repeated guesses.
+- Private spend proofs require consent and durable input reservations before RPC preparation. Cancellation or transaction expiry cannot release funds exposed by a proof.
+- Private notes and proofs are bound to their deployment and asset, and receive addresses to their pool. Recovery verifies archive records, cache checkpoints and independent RPC evidence.
+- New private receive addresses use randomized diversifiers; rotation rejects locally recorded reuse. Unused address history is encrypted and requires a backup, not seed-only recovery.
+- Public transaction confirmation and merchant settlement use canonical Horizon results, not submission acknowledgements or custom-endpoint claims. Uncertain refunds remain tracked.
+- Merchant routing, refunds, customer erasure, reports and wallet exit recheck current staff or owner authority. Invoices and counter codes are quarantined after receiving-account changes.
+- Backup and import validation checks credential identities, schemas and size limits. CSV exports escape spreadsheet formulas; issuer logos omit referrers and paper-wallet output escapes QR attributes.
+- Private panels clear on close; secret print windows close on lock. Temporary key/plaintext buffers receive best-effort cleanup, and copied secrets offer an explicit clipboard-clear action.
+- Overrode Trezor's installed Stellar SDK parser with TOML 4.2.0. Embedded browser code and the remote Trezor popup are outside this override.
+- Release checks verify pinned proving artifacts and generated code, run Rust, protocol and browser checks, and reject leftover test fixtures. Wallet browser tests disable screenshots, video and traces and use synthetic data with restricted failure reports.
 
 ## [1.4.1] - 2026-09-01
 

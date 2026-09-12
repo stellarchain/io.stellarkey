@@ -1,11 +1,14 @@
 import { parsePrivateAmount } from './coin-selection';
 import { assertDirectPrivateSubmission } from './direct-submission';
 import type { PreparedPrivateActionReview, PrivateActionDraft } from './action-flow';
+import type { PrivateActionSubmission } from './submission';
+import { assertSamePrivateFeePayer, type PrivateFeePayer } from './fee-policy';
 
 export const PRIVATE_CHAINED_APPROVAL_WINDOW_SECONDS = 15 * 60;
 export const MAX_PRIVATE_CHAINED_STEPS = 64;
 
 export interface PrivateChainedSendDraft {
+  feePayerAccountId?: string;
   kind: 'transfer';
   amount: string;
   recipientAddress: string;
@@ -13,6 +16,7 @@ export interface PrivateChainedSendDraft {
 }
 
 export interface PrivateChainedSendApproval {
+  feePayer?: PrivateFeePayer;
   id: string;
   steps: number;
   perStepMaxFeeStroops: string;
@@ -65,6 +69,7 @@ export function planPrivateChainedSend(input: {
   consolidationActionCount: number;
   perStepMaxFeeStroops: bigint;
   publicXlmBalanceStroops: bigint;
+  feePayer?: PrivateFeePayer;
   nowSeconds?: number;
 }): PrivateChainedSendApproval {
   if (
@@ -89,6 +94,7 @@ export function planPrivateChainedSend(input: {
     throw new Error('Private chained approval time is invalid.');
   }
   return {
+    ...(input.feePayer ? { feePayer: Object.freeze({ ...input.feePayer }) } : {}),
     id: input.approvalId,
     steps,
     perStepMaxFeeStroops: perStep.toString(),
@@ -106,9 +112,9 @@ export interface RunPrivateChainedSendInput {
   submit(
     review: PreparedPrivateActionReview,
     options: { isFinal: boolean },
-  ): Promise<'broadcast' | 'ambiguous'>;
+  ): Promise<PrivateActionSubmission>;
   cancel(actionId: string): Promise<void>;
-  awaitConfirmation(review: PreparedPrivateActionReview): Promise<boolean>;
+  awaitConfirmation(review: PreparedPrivateActionReview, submission: PrivateActionSubmission): Promise<boolean>;
   advanceApprovedFee(stepFeeStroops: bigint): Promise<void>;
   onProgress?(progress: PrivateChainedSendProgress): void;
   now?: () => number;
@@ -161,10 +167,11 @@ export async function runPrivateChainedSend(
     }
     const isFinal = step === totalSteps;
     input.onProgress?.({ step, totalSteps, stage: 'preparing' });
-    const review = await input.prepare(isFinal ? { ...input.draft } : { kind: 'consolidate' });
+    const review = await input.prepare(isFinal ? { ...input.draft } : { kind: 'consolidate', ...(input.draft.feePayerAccountId ? { feePayerAccountId: input.draft.feePayerAccountId } : {}) });
     let stepFee: bigint;
     try {
       assertDirectPrivateSubmission(review);
+      assertSamePrivateFeePayer(input.approval.feePayer, review.transaction.feePayer);
       if (isFinal) {
         if (
           review.kind !== 'transfer' ||
@@ -212,17 +219,17 @@ export async function runPrivateChainedSend(
     }
     accumulated += stepFee;
     input.onProgress?.({ step, totalSteps, stage: 'confirming' });
-    const status = await input.submit(review, { isFinal });
+    const submission = await input.submit(review, { isFinal });
     if (isFinal) {
-      return { status, finalTransactionHash: review.transaction.transactionHash };
+      return { status: submission.status, finalTransactionHash: submission.transactionHash };
     }
-    if (status !== 'broadcast') {
+    if (submission.status !== 'broadcast') {
       throw new PrivateChainedStepRejectedError(
         "We couldn't confirm this payment yet. Your money is safe — we'll keep checking, and you can close this.",
       );
     }
     input.onProgress?.({ step, totalSteps, stage: 'waiting' });
-    if (!(await input.awaitConfirmation(review))) {
+    if (!(await input.awaitConfirmation(review, submission))) {
       throw new PrivateChainedStepRejectedError(
         "Your previous payment is still confirming. It'll be ready in a moment.",
       );

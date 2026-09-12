@@ -20,6 +20,7 @@
 # next.js
 /.next/
 /.next-dev/
+/.next-e2e/
 /out/
 /release-artifacts/
 
