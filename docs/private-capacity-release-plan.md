@@ -127,3 +127,22 @@ and zero skips: the corrected changelog assertion across Chromium, iPhone and
 iPad, plus wallet settings across light/dark Chromium, iPhone and iPad. The iPad
 settings failure did not recur; its original failed run remains recorded and is
 not reclassified as passing. The artifact budget remains unresolved.
+
+## Artifact-cache budget follow-up
+
+The loader and service worker now share one revisioned, hash-keyed cache of the
+actual point-compressed transport, witness Wasm and verification-key JSON. The
+expanded proving key is transient input, is checked against its original hash
+after every expansion, and is no longer stored in a second persistent cache.
+Warm loads therefore repeat point expansion; this is a storage saving, not a
+claim of lower proving latency or peak process memory.
+
+Only a complete, successfully stored replacement can retire the old public
+artifact caches. Failed downloads or quota-denied writes preserve old entries;
+superseded loads cannot prune newer revisions. Wallet records are outside these
+cache namespaces. Current and previous managed revisions occupy 35,977,416
+bytes; actual download files total 10,904,558 gzip bytes. The existing 50,000,000
+cache and 13,000,000 gzip limits are unchanged. Legacy migration can temporarily
+coexist with the new revision until that verified replacement is complete.
+The earlier failed complete runs remain historical evidence; a new clean full
+verification run is required for this change before integration.
