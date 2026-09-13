@@ -4,6 +4,21 @@ import { readFileSync } from 'node:fs';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
+test('public copy uses the current release identity and preserves Protocol V2 limits', () => {
+  const about = read('src/app/about/page.tsx');
+  const page = read('src/app/private/page.tsx');
+  const security = read('src/app/security/page.tsx');
+  for (const source of [about, page, security]) {
+    assert.doesNotMatch(source, /\b(?:Release|StellarKey)\s+1\.[2-5]\.\d+\b/i);
+    assert.match(source, /APPLICATION_VERSION/);
+  }
+  assert.match(about, /Protocol V2.*unaudited.*Testnet-only/i);
+  assert.match(about, /canonical archive.*encrypted backup/i);
+  assert.match(page, /current application release.*1\.0\.0 application baseline/i);
+  assert.doesNotMatch(page, /Peer relaying has been removed/i);
+  assert.match(security, /For release 1\.0\.1.*deferred.*VoiceOver.*NVDA.*not passed/is);
+});
+
 test('the public explainer matches the shipped V2 circuit and proving artifacts', () => {
   const page = read('src/app/private/page.tsx');
   const manifest = JSON.parse(read('public/protocol/private-balance/v1/manifest.json'));

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restore CI, scheduled recovery-model checks, dependency-update configuration, and verified-release deployment to Cloudflare Pages; workflow-run history cleanup does not remove automation.
 - Recover the development commit history while retaining its code changes and the 1.0.0 application baseline. Earlier release tags and release listings remain retired.
 - Verify and ship the point-compressed proving key without its redundant oversized raw copy or Finder metadata, and reject deployment assets above Cloudflare Pages' 25 MiB limit. Canonical source artifacts and Protocol V2 are unchanged.
+- Remove retired application release labels from development commit messages and public copy while preserving code history. Distinguish the current application release, the stable starting baseline, and the unaudited Testnet-only Protocol V2 feature; clarify recovery and network-request limits.
 
 ## [1.0.0] - 2026-09-13
 
