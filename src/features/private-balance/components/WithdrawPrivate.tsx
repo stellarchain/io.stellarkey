@@ -127,7 +127,7 @@ export function WithdrawPrivateFlow({
     const trimmed = amount.trim();
     if (!trimmed) return { stroops: null, error: null };
     try {
-      const stroops = parsePrivateAmount(trimmed, decimals);
+      const stroops = parsePrivateAmount(trimmed, decimals, { aggregateWithdrawal: true });
       if (stroops > BigInt(verifiedBalanceStroops)) {
         return {
           stroops: null,

@@ -103,7 +103,7 @@ interface InputWitness {
   diversifier: Uint8Array;
   value: bigint;
   rho: Uint8Array;
-  leafIndex: number;
+  leafIndex: bigint;
   siblings: [Uint8Array, Uint8Array][];
   positions: number[];
   nullifier: Uint8Array;
@@ -236,7 +236,7 @@ function dummyInput(contextField: Uint8Array): InputWitness {
     diversifier: ZERO_DIVERSIFIER.slice(),
     value: 0n,
     rho: ZERO_32.slice(),
-    leafIndex: 0,
+    leafIndex: 0n,
     siblings: Array.from(
       { length: TREE_DEPTH },
       () => [ZERO_32.slice(), ZERO_32.slice()] as [Uint8Array, Uint8Array],
@@ -305,7 +305,7 @@ async function createOutput(input: {
           input.priorCommitments.some(prior => equalBytes(prior, commitment))
         ) continue;
         noteBytes = encodeNotePlaintext({
-          protocolVersion: 1,
+          protocolVersion: 2,
           flags: input.real ? 0 : 1,
           value: input.value,
           diversifier: input.diversifier,
@@ -339,7 +339,7 @@ async function createOutput(input: {
           ephemeralPublicKey: output.recipientEnvelope.slice(5, 37),
           aad: outgoingAad,
           plaintext: () => encodeOutgoingPlaintext({
-            protocolVersion: 1, flags: input.real ? 0 : 1, value: input.value,
+            protocolVersion: 2, flags: input.real ? 0 : 1, value: input.value,
             diversifier: input.diversifier, ownerCommitment: input.recipientOwnerCommitment,
             recipientHpkePublicKey: input.recipientHpkePublicKey, memoLength: memo.length,
             memo: memo.bytes, assetIndex: input.assetIndex, reserved: new Uint8Array(11),
@@ -597,11 +597,11 @@ export async function preparePrivateAction(
       outputSpecs.push(await selfOutput(change));
     }
   } else {
-    kind = ActionKind.Withdraw;
     publicValue = parseValue(input.intent.publicValue, 'Withdrawal value');
     if (preparedInputs.total < publicValue) throw new Error('Private balance is insufficient');
     publicRecipient = input.intent.publicRecipient;
     const change = preparedInputs.total - publicValue;
+    kind = change === 0n ? ActionKind.FullInputExit : ActionKind.Withdraw;
     outputSpecs = change > 0n ? [await selfOutput(change)] : [];
   }
 
@@ -710,7 +710,7 @@ export async function preparePrivateAction(
     outputRho: outputs.map(output => fieldString(output.rho)),
   };
   if (selectedInputTotal + (kind === ActionKind.Deposit ? publicValue : 0n) !==
-      privateOutputTotal + (kind === ActionKind.Withdraw ? publicValue : 0n)) {
+      privateOutputTotal + ((kind === ActionKind.Withdraw || kind === ActionKind.FullInputExit) ? publicValue : 0n)) {
     throw new Error('Private action value conservation failed');
   }
 

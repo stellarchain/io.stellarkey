@@ -1,4 +1,4 @@
-# Threat Model and Security Invariants (V1)
+# Threat Model and Security Invariants (V2)
 
 ## 1. Assets and security objectives
 
@@ -33,8 +33,11 @@ to it. A fee-bump sponsor changes only the outer fee source. Direct submission i
 supported application path. Stale relayed reviews are rejected; historical pending records
 remain reconcile-only without signing or rebroadcast.
 
-RPC providers and network observers see IP address, timing, selected deployment, ledger ranges,
-simulations, restoration attempts, and submissions. Cross-checking different-origin providers
+RPC operators see the connecting IP address, timing, selected deployment, ledger ranges,
+simulations, restoration attempts, and submissions. With authenticated HTTPS and uncompromised
+endpoints, passive network observers see connection endpoints, timing, sizes, and volume, but
+cannot directly read encrypted RPC contents. Traffic analysis and public-ledger correlation
+remain possible. Cross-checking different-origin providers
 reduces the risk of accepting a fabricated ledger view when their operators are actually
 independent, but exposes access patterns to more endpoints. The shipped SDF-primary/Ankr-witness
 pair is operator-diverse; the runtime cannot prove the same for a custom primary.
@@ -60,6 +63,17 @@ sender can burn its own value into an undecryptable recipient output. Wallet-gen
 self-checked, but the protocol cannot recover value intentionally encrypted incorrectly by another
 sender.
 
+Recipient HPKE base mode does not authenticate the sender's identity. Memo authenticity is not
+proof of its author's identity or the truth of its contents. Recipient-key compromise can expose
+historical ciphertexts; diversified-address rotation does not provide forward secrecy against
+compromise of the seed or incoming viewing key.
+
+Note conservation assumes correct token-transfer behavior at the deposit/withdrawal boundary;
+the pool does not compare custody balances before and after a token call. Underlying token
+authorization revocation can block movement, and permitted clawback can remove pooled backing
+without canceling private notes. The pool registry administrator and underlying token
+administrator are separate roles. No automatic insolvency resolution is implemented.
+
 ## 4. Browser and local-state boundary
 
 The design assumes the application origin, loaded code, browser cryptography, dependency graph,
@@ -78,6 +92,13 @@ The protocol has no StellarKey backend, operated relayer, or indexer. Peer relay
 and helper earnings are removed. Availability depends on a usable Stellar RPC,
 retained or restorable ledger state, sufficient public XLM for direct submission,
 browser storage, and access to the proving artifacts. Different-origin RPC disagreement intentionally disables spending.
+
+The depth-64 commitment tree is finite, but full-input exits append no leaves and
+skip its capacity guard. Normal actions still require three free slots. A partial
+withdrawal that creates change can therefore fail at saturation, whereas fully
+consuming one or two owned notes can exit subject to proof, root, token, fee and
+ledger availability. Multiple independent exit steps are not an atomic aggregate.
+The u128 archive counter is finite and cold recovery/storage costs still grow.
 
 Archive records receive the configured maximum TTL when written but are not refreshed forever.
 After eviction, seed-only recovery requires paid restore-footprint transactions. The wallet batches

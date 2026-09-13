@@ -19,7 +19,7 @@ const context = {
   accountId: 'synthetic-discovery', deploymentBindingHash: '04'.repeat(32),
 };
 const vaultContext = {
-  protocolVersion: 1, networkId: context.networkId, realmId: context.realmId,
+  protocolVersion: 2, networkId: context.networkId, realmId: context.realmId,
   poolContractId: StrKey.encodeContract(bytes(3)), deploymentBindingHash: context.deploymentBindingHash,
 };
 const password = 'correct horse battery staple';

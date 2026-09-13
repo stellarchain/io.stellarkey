@@ -45,7 +45,7 @@ import {
 } from "@/lib/transaction-review";
 import { assertCanAddTransactionSignature } from "@/lib/multisig";
 import { loadSoundPref, saveSoundPref } from "@/lib/sounds";
-import { getStoredThemePreference, setThemePreference, subscribeThemePreference, type ThemePreference } from "@/lib/theme";
+import { DEFAULT_THEME_PREFERENCE, getStoredThemePreference, setThemePreference, subscribeThemePreference, type ThemePreference } from "@/lib/theme";
 import {
   BACKUP_HEALTH_CHANGED_EVENT,
   loadBackupHealth,
@@ -263,7 +263,7 @@ export function SettingsPage({
   }, [sub]);
 
   const [soundEnabled, setSoundEnabled] = useState(() => loadSoundPref());
-  const themePref = useSyncExternalStore(subscribeThemePreference, getStoredThemePreference, () => 'system' as const);
+  const themePref = useSyncExternalStore(subscribeThemePreference, getStoredThemePreference, () => DEFAULT_THEME_PREFERENCE);
   const [backupHealth, setBackupHealth] = useState<BackupHealth | null>(null);
   const [passkeyConfigured, setPasskeyConfigured] = useState(() => hasPasskeyUnlock());
   const [passkeyAvailable] = useState(() => canOfferPasskeyUnlock());

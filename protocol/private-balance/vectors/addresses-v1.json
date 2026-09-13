@@ -3,11 +3,11 @@
   "input": {
     "diversifier": "00000000",
     "deploymentBindingHash": "4242424242424242424242424242424242424242424242424242424242424242",
-    "ownerCommitment": "0c3adda7a6ed581c8b01f9ad683aa877d604294a020334655b408aadb295a01e",
-    "hpkePublicKey": "0de8adbe9513fd5036df1d3b5b83d93fc34225efc754700060744f5ff63f966c"
+    "ownerCommitment": "0bb0f4bf7faea0bec6891be5f5a8363045c67c7e3abb0ec4c7ef160046e21152",
+    "hpkePublicKey": "d64a5c0046638b99f392a90c4ef079e3c377523e96649c636e65a2181a3b4763"
   },
   "expected": {
-    "testnet": "tskpay_4g8Tt13VSvQHNipaxPx3SKxdMxFVuJDAzZxEJDXLSDxdNk9G6GGDaPGkBvwxLsNbiH2tE2fEvsC8p782h6f82uUdSYMMrQ4471u6ydNmBqnTs9ZMNykHTM5j4",
-    "mainnet": "skpay_4g8Tt13VSvQHNipaxPx3SKxdMxFVuJDAzZxEJDXLSDxdNk9G6GGDaPGkBvwxLsNbiH2tE2fEvsC8p782h6f82uUdSYMMrQ4471u6ydNmBqnTs9ZMNykKEp6Pc"
+    "testnet": "tskpay_4g8Tt13VSvQHNipaxPx3SKxdMxFVuE85mX45UQpP72XdWxQL5WWSVyTe6cBtfr5z2USM747gevvtoePZv1NbgQx4L4mbzrv2dvKnUd3YbN3Thf8BPrYTeH9p6",
+    "mainnet": "skpay_4g8Tt13VSvQHNipaxPx3SKxdMxFVuE85mX45UQpP72XdWxQL5WWSVyTe6cBtfr5z2USM747gevvtoePZv1NbgQx4L4mbzrv2dvKnUd3YbN3Thf8BPrYU7NKof"
   }
 }

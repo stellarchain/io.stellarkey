@@ -1,3 +1,4 @@
+import { isPrivateIndex } from './indices';
 import {
   ActionKind,
   appendFrontier,
@@ -10,6 +11,7 @@ import {
   deriveOutgoingAad,
   derivePrivateAddressDeploymentTag,
   encodePrivateAddress,
+  encodeU128Be,
   openOutgoingEnvelope,
   openRecipientEnvelope,
   refreshTreeRoot,
@@ -41,6 +43,7 @@ export interface ScanArchiveRecordsInput {
   viewingKey: FullViewingKey;
   context: ArchiveScanContext;
   expectedPriorRecordHash: Uint8Array;
+    expectedFirstActionIndex?: bigint;
   initialTree?: MerkleTree;
   existingNotes?: ShieldedNoteRecord[];
   ledgerClosedAt?: Readonly<Record<number, number>>;
@@ -59,14 +62,15 @@ function hex(bytes: Uint8Array): string {
   return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-const duplicateNoteIdDomain = new TextEncoder().encode('StellarKey private note v1');
+const duplicateNoteIdDomain = new TextEncoder().encode('StellarKey private note v2');
 
-function duplicateNoteId(commitment: Uint8Array, leafIndex: number): string {
-  if (!Number.isSafeInteger(leafIndex) || leafIndex < 0) {
+function duplicateNoteId(commitment: Uint8Array, leafIndex: bigint): string {
+  if (!isPrivateIndex(leafIndex)) {
     throw new Error('Private note leaf index is invalid');
   }
-  const leaf = new Uint8Array(8);
-  new DataView(leaf.buffer).setBigUint64(0, BigInt(leafIndex), false);
+  const leafBytes: number[] = [];
+  encodeU128Be(leafIndex, leafBytes);
+  const leaf = Uint8Array.from(leafBytes);
   const input = new Uint8Array(duplicateNoteIdDomain.length + commitment.length + leaf.length);
   input.set(duplicateNoteIdDomain, 0);
   input.set(commitment, duplicateNoteIdDomain.length);
@@ -148,7 +152,7 @@ function classifyActivity(
   }
 
   let actionKind: ShieldedActivityRecord['actionKind'];
-  if (record.actionKind === ActionKind.Withdraw) {
+  if (record.actionKind === ActionKind.Withdraw || record.actionKind === ActionKind.FullInputExit) {
     actionKind = 'withdraw';
   } else if (
     record.actionKind === ActionKind.Deposit &&
@@ -194,6 +198,8 @@ export async function scanArchiveRecords(
   }
 
   const tree = input.initialTree ? cloneTree(input.initialTree) : await createEmptyTree();
+  const expectedFirstActionIndex = input.expectedFirstActionIndex ?? (input.initialTree ? undefined : 0n);
+  if (!isPrivateIndex(expectedFirstActionIndex)) throw new Error('Expected archive action index is invalid');
   const notes = (input.existingNotes ?? []).map(cloneNote);
   const usedNoteIds = new Set(notes.map(note => note.id));
   const nullifiersByCommitment = new Map<string, string>();
@@ -238,11 +244,11 @@ export async function scanArchiveRecords(
   }
 
   for (const [recordOffset, record] of input.records.entries()) {
-    if (record.actionIndex * 3 !== record.startingLeafIndex) {
-      throw new Error('Archive action sequence mismatch');
-    }
     if (record.startingLeafIndex !== tree.nextIndex) {
       throw new Error('Archive leaf position mismatch');
+    }
+    if (record.actionIndex !== expectedFirstActionIndex + BigInt(recordOffset)) {
+      throw new Error('Archive action sequence mismatch');
     }
     const expectedActionField = computeActionField(
       actionFromRecord(record, input.context.protocolVersion),
@@ -276,6 +282,7 @@ export async function scanArchiveRecords(
       record.outputs,
       SCAN_ENVELOPE_BATCH_SIZE,
       async (output, outputIndex) => {
+        if (record.actionKind === ActionKind.FullInputExit) return { note: null, outgoingBytes: null, asset: null };
         for (const candidate of candidates) {
           const note = await openRecipientEnvelope(
             input.viewingKey.hpkePrivateKey,
@@ -348,7 +355,7 @@ export async function scanArchiveRecords(
         if (!asset) throw new Error('Recovered note is missing its registry asset');
         resolveActivityAsset(asset.index, asset.contractId);
         const commitment = hex(output.cm);
-        const leafIndex = record.startingLeafIndex + outputIndex;
+        const leafIndex = record.startingLeafIndex + BigInt(outputIndex);
         const noteId = usedNoteIds.has(commitment)
           ? duplicateNoteId(output.cm, leafIndex)
           : commitment;
@@ -419,7 +426,9 @@ export async function scanArchiveRecords(
       }
     }
 
-    for (const output of record.outputs) await appendFrontier(tree, output.cm);
+    if (record.actionKind !== ActionKind.FullInputExit) {
+      for (const output of record.outputs) await appendFrontier(tree, output.cm);
+    }
     expectedFinalTreeRoot = record.treeRootAfter;
     const recoveredOutgoingValue = recoveredRecipients.reduce(
       (total, recipient) => total + recipient.value,

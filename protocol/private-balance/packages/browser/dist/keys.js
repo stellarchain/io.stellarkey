@@ -26,7 +26,7 @@ function keyContext(protocolVersion, networkId, realmId, poolId, accountPublicKe
         if (value.length !== 32)
             throw new Error(`${name} must be 32 bytes`);
     }
-    if (protocolVersion !== 1)
+    if (protocolVersion !== 2)
         throw new Error('Unsupported protocol version');
     const version = Uint8Array.of((protocolVersion >>> 8) & 0xff, protocolVersion & 0xff);
     return concatBytes(version, networkId, realmId, poolId, accountPublicKeyBytes);

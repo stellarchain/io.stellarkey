@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Protocol V2 replaces the Testnet pool with exact 128-bit positions and a private 64-level commitment path.
+
 ### Changed
 
 - Default new sessions to Dark appearance while preserving saved Light, Dark and System preferences.
 
 ### Fixed
+
+- Permit full-input withdrawals without commitment appends, including at saturation, and batch multi-note withdrawals under explicit fee and confirmation limits.
+- Authenticate independent action and leaf cursors through archive replay and durable caches.
 
 - Improve small negative and error text contrast on raised and tinted dark review panels.
 

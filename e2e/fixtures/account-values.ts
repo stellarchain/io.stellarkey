@@ -16,15 +16,15 @@ export async function seedSyntheticAccountValues(accountId: string, native: stri
       poolId: Array.from(StrKey.decodeContract(manifest.poolContractId), byte => byte.toString(16).padStart(2, '0')).join(''),
       deploymentBindingHash: manifest.deploymentBindingHash };
     const state = createEmptyPrivateBalanceState(manifestHash, 1);
-    state.account = { setupState: 'ready', syncStatus: 'current', lastVerifiedActionIndex: 0, updatedAt: 2 };
+    state.account = { setupState: 'ready', syncStatus: 'current', lastVerifiedActionIndex: 0n, updatedAt: 2 };
     state.notes = assets.map(({ asset }, index) => ({
       id: (index + 10).toString(16).padStart(2, '0').repeat(32), commitment: (index + 10).toString(16).padStart(2, '0').repeat(32),
       value: asset.kind === 'native' ? native : '70000000', assetIndex: asset.index, assetContractId: asset.contractId,
-      diversifier: '00000001', ownerCommitment: '07'.repeat(32), leafIndex: index, actionIndex: 0,
+      diversifier: '00000001', ownerCommitment: '07'.repeat(32), leafIndex: BigInt(index), actionIndex: 0n,
       rho: '08'.repeat(32), memoHex: '', senderFingerprintHex: '', status: 'unspent', createdAt: 1,
     }));
-    state.checkpoint = { lastActionIndex: 0, lastRecordHash: '0a'.repeat(32), treeRoot: '0b'.repeat(32),
-      treeFrontier: Array.from({ length: 34 }, () => '00'.repeat(32)), deploymentBindingHash: manifest.deploymentBindingHash,
+    state.checkpoint = { lastActionIndex: 0n, nextLeafIndex: 3n, lastRecordHash: '0a'.repeat(32), treeRoot: '0b'.repeat(32),
+      treeFrontier: Array.from({ length: 128 }, () => '00'.repeat(32)), deploymentBindingHash: manifest.deploymentBindingHash,
       manifestHash, latestLedger: 100, updatedAt: 2 };
     await withPrivacySessionRoot(accountId, manifest, async (_root, storageKey) => {
       const driver = new IndexedDbEncryptedRecordDriver();

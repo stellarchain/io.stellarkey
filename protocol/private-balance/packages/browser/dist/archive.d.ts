@@ -3,9 +3,9 @@ import { MerkleTree } from './tree.js';
 export declare const DOMAIN_ARCHIVE_RECORD = "SKSB_ARCHIVE_RECORD_V1";
 export declare const DOMAIN_ARCHIVE_GENESIS = "SKSB_ARCHIVE_GENESIS_V1";
 export interface ArchiveRecordModel {
-    actionIndex: number;
+    actionIndex: bigint;
     ledgerSequence: number;
-    startingLeafIndex: number;
+    startingLeafIndex: bigint;
     actionKind: number;
     assetIndex?: number;
     asset?: {

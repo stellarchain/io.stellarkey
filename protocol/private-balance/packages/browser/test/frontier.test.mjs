@@ -16,7 +16,7 @@ const hex = value => Buffer.from(value).toString('hex');
 
 test('ternary empty roots match the canonical three-input Poseidon2 derivation', async () => {
   const roots = await getEmptyRoots();
-  assert.equal(TREE_DEPTH, 17);
+  assert.equal(TREE_DEPTH, 64);
   assert.equal(roots.length, TREE_DEPTH + 1);
   for (let level = 0; level < TREE_DEPTH; level += 1) {
     assert.deepEqual(
@@ -26,7 +26,7 @@ test('ternary empty roots match the canonical three-input Poseidon2 derivation',
   }
 });
 
-test('300 ternary frontier appends match full updates with 165 total hashes', async () => {
+test('300 ternary frontier appends match full updates with 212 total hashes', async () => {
   const leaves = Array.from({ length: 300 }, (_, index) => bigintTo32Bytes(BigInt(index + 1)));
   const legacy = await createEmptyTree();
   for (const leaf of leaves) await appendCommitment(legacy, leaf);
@@ -41,8 +41,8 @@ test('300 ternary frontier appends match full updates with 165 total hashes', as
   assert.equal(hashes, 148, 'frontier sweep should hash only completed ternary groups');
   const root = await refreshTreeRoot(frontier, countedHash);
 
-  assert.equal(hashes, 165, 'one final root fold adds exactly TREE_DEPTH hashes');
-  assert.equal(frontier.nextIndex, 300);
+  assert.equal(hashes, 212, 'one final root fold adds exactly TREE_DEPTH hashes');
+  assert.equal(frontier.nextIndex, 300n);
   assert.equal(frontier.frontier.length, TREE_FRONTIER_SIZE);
   assert.deepEqual(root, legacy.currentRoot);
   assert.deepEqual(frontier.currentRoot, legacy.currentRoot);

@@ -432,6 +432,7 @@ export class PrivateBalanceWorkerClient {
   public async scanPage(input: {
     records: ArchiveRecordModel[];
     expectedPriorRecordHash: Uint8Array;
+    expectedFirstActionIndex?: bigint;
     initialTree?: MerkleTree;
     existingNotes?: ShieldedNoteRecord[];
     ledgerClosedAt?: Readonly<Record<number, number>>;

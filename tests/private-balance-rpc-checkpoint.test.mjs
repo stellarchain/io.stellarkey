@@ -37,7 +37,7 @@ function head(actionCount, marker = actionCount) {
   return {
     latestLedger: 500,
     config: {
-      protocolVersion: 1,
+      protocolVersion: 2,
       networkId: bytes(1),
       realmId: bytes(2),
       guardian: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
@@ -45,16 +45,16 @@ function head(actionCount, marker = actionCount) {
       poseidon2ParameterHash: bytes(3),
       circuitHash: bytes(4),
       verificationKeyHash: bytes(5),
-      treeDepth: 17,
+      treeDepth: 64,
       rootWindowLedgers: 1_440,
       deploymentBindingHash: bytes(6),
       contextHash: bytes(7),
       contextField: bytes(8),
     },
-    meta: { actionCount, transcriptHead: bytes(marker) },
+    meta: { actionCount: BigInt(actionCount), transcriptHead: bytes(marker) },
     tree: {
-      nextIndex: actionCount * 3,
-      frontier: Array.from({ length: 34 }, () => bytes(marker)),
+      nextIndex: BigInt(actionCount) * 3n,
+      frontier: Array.from({ length: 128 }, () => bytes(marker)),
       currentRoot: bytes(marker),
     },
   };
@@ -102,7 +102,7 @@ test('two RPCs corroborate network, deployment ledger, overlapping ledger, and p
 
   assert.equal(result.commonLedger.sequence, 500);
   assert.equal(result.commonLedger.hash, '50'.repeat(32));
-  assert.equal(result.head.meta.actionCount, 2);
+  assert.equal(result.head.meta.actionCount, 2n);
   assert.equal(result.attempts, 1);
   assert.ok(Object.isFrozen(result));
 });
@@ -117,7 +117,7 @@ test('moving contract heads settle within a bounded retry', async () => {
   });
 
   assert.equal(result.attempts, 2);
-  assert.equal(result.head.meta.actionCount, 3);
+  assert.equal(result.head.meta.actionCount, 3n);
 });
 
 test('RPC corroboration rejects a wrong network before trusting ledger data', async () => {

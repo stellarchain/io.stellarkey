@@ -195,7 +195,7 @@ impl NativeTreeHashContext {
             let mut index = tree.next_leaf_index;
             let mut level = 0;
             loop {
-                match index % TREE_ARITY as u64 {
+                match index % TREE_ARITY as u128 {
                     0 => {
                         tree.frontier[level][0] = current;
                         break;
@@ -210,7 +210,7 @@ impl NativeTreeHashContext {
                             tree.frontier[level][1],
                             current,
                         ]);
-                        index /= TREE_ARITY as u64;
+                        index /= TREE_ARITY as u128;
                         level += 1;
                         if level == TREE_DEPTH {
                             tree.root = current;
@@ -226,7 +226,7 @@ impl NativeTreeHashContext {
         let mut current = self.empty_roots[0];
         let mut index = tree.next_leaf_index;
         for level in 0..TREE_DEPTH {
-            current = match index % TREE_ARITY as u64 {
+            current = match index % TREE_ARITY as u128 {
                 0 => native_poseidon2_hash(&[
                     current,
                     self.empty_roots[level],
@@ -244,7 +244,7 @@ impl NativeTreeHashContext {
                 ]),
                 _ => unreachable!(),
             };
-            index /= TREE_ARITY as u64;
+            index /= TREE_ARITY as u128;
         }
         tree.root = current;
         Ok(current)
@@ -263,7 +263,7 @@ impl NativeTreeHashContext {
             let mut index = tree.next_leaf_index;
             let mut level = 0;
             loop {
-                match index % TREE_ARITY as u64 {
+                match index % TREE_ARITY as u128 {
                     0 => {
                         tree.frontier[level][0] = current;
                         break;
@@ -278,7 +278,7 @@ impl NativeTreeHashContext {
                             tree.frontier[level][1],
                             current,
                         ]);
-                        index /= TREE_ARITY as u64;
+                        index /= TREE_ARITY as u128;
                         level += 1;
                         if level == TREE_DEPTH {
                             tree.root = current;
@@ -294,7 +294,7 @@ impl NativeTreeHashContext {
         let mut current = self.empty_roots[0];
         let mut index = tree.next_leaf_index;
         for level in 0..TREE_DEPTH {
-            current = match index % TREE_ARITY as u64 {
+            current = match index % TREE_ARITY as u128 {
                 0 => native_poseidon2_hash(&[
                     current,
                     self.empty_roots[level],
@@ -312,7 +312,7 @@ impl NativeTreeHashContext {
                 ]),
                 _ => unreachable!(),
             };
-            index /= TREE_ARITY as u64;
+            index /= TREE_ARITY as u128;
         }
         tree.root = current;
         Ok(current)

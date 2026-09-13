@@ -103,7 +103,7 @@ fn test_pool_initialization_and_deposit() {
     let out_cm2 = BytesN::from_array(&env, &out_cm2_bytes);
 
     let config = pool_client.config();
-    assert_eq!(config.protocol_version, 1);
+    assert_eq!(config.protocol_version, 2);
     assert_eq!(config.context_field, context_field);
     assert!(!pool_client.deposits_paused());
 

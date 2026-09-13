@@ -16,13 +16,13 @@ let wcHelper;
 let actionCalculator;
 const positionsFor = (leafIndex) => {
   let value = BigInt(leafIndex);
-  return Array.from({ length: 17 }, () => {
+  return Array.from({ length: 64 }, () => {
     const position = value % 3n;
     value /= 3n;
     return position.toString();
   });
 };
-const emptySiblings = () => Array.from({ length: 17 }, () => ['0', '0']);
+const emptySiblings = () => Array.from({ length: 64 }, () => ['0', '0']);
 const fieldBytes = value => Uint8Array.from(
   Buffer.from(BigInt(value).toString(16).padStart(64, '0'), 'hex'),
 );
@@ -437,6 +437,39 @@ test('action circuit rejects malformed input selectors and lane witnesses', asyn
   for (const malformed of cases) {
     await assert.rejects(calculator.calculateWitness(malformed), /Assert Failed|Error/);
   }
+});
+
+test('full-input exits reject value in every output lane even with balanced conservation', async () => {
+  const calculator = await getActionCalculator();
+  const witness = await normalizeActionInputs(await buildOneInputTransfer());
+  witness.actionKindField = '4';
+  witness.assetField = witness.actionAssetField;
+  witness.publicValueField = '10000000';
+  for (let lane = 0; lane < 3; lane++) {
+    const output = await evalGadgets({ contextField: witness.contextField,
+      ask: String(70001 + lane), nk: String(71001 + lane),
+      rho: String(72001 + lane), value: '0' });
+    witness.outputOwnerCommitment[lane] = output.ownerCommitment;
+    witness.outputRho[lane] = String(72001 + lane);
+    witness.outputCommitment[lane] = output.noteCommitment;
+    witness.outputValue[lane] = '0';
+  }
+  await calculator.calculateWitness(witness);
+  for (let lane = 0; lane < 3; lane++) {
+    const malformed = structuredClone(witness);
+    const output = await evalGadgets({ contextField: witness.contextField,
+      ask: String(70001 + lane), nk: String(71001 + lane),
+      rho: String(72001 + lane), value: '1' });
+    malformed.publicValueField = '9999999';
+    malformed.outputValue[lane] = '1';
+    malformed.outputCommitment[lane] = output.noteCommitment;
+    await assert.rejects(calculator.calculateWitness(malformed), /Assert Failed|Error/);
+    // The same balanced witness is valid for an ordinary change-producing withdrawal.
+    malformed.actionKindField = '3';
+    await calculator.calculateWitness(malformed);
+  }
+  await assert.rejects(calculator.calculateWitness({ ...witness, publicValueField: '9999999' }), /Assert Failed|Error/);
+  await assert.rejects(calculator.calculateWitness({ ...witness, actionKindField: '5' }), /Assert Failed|Error/);
 });
 
 test('action circuit: deposit proof generation and verification', async () => {

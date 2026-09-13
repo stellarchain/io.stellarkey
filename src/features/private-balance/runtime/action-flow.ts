@@ -1,3 +1,4 @@
+import { comparePrivateIndices } from './indices';
 import {
   StrKey,
   rpc as SorobanRpc,
@@ -50,7 +51,7 @@ const HEX_PROOF_BYTES = (64 + 128 + 64) * 2;
 export type PrivateActionDraft = (
   | { kind: 'deposit'; amount: string }
   | { kind: 'transfer'; amount: string; recipientAddress: string; memo?: string }
-  | { kind: 'withdraw'; amount: string; publicRecipient: string }
+  | { kind: 'withdraw'; amount: string; publicRecipient: string; selectedNoteIds?: string[]; requireFullInputExit?: boolean }
   | { kind: 'consolidate' }) & { feePayerAccountId?: string };
 
 export type PrivateActionProgressStage =
@@ -256,7 +257,7 @@ function consolidationSelection(notes: readonly ShieldedNoteRecord[]): {
   const available = unspentNotes(notes)
     .map(note => ({ note, value: BigInt(note.value) }))
     .sort((left, right) => left.value === right.value
-      ? left.note.leafIndex - right.note.leafIndex
+      ? comparePrivateIndices(left.note.leafIndex, right.note.leafIndex)
       : left.value > right.value ? -1 : 1);
   if (available.length < 2) {
     throw new Error('Private Balance does not need consolidation.');
@@ -482,11 +483,30 @@ export async function preparePrivateBalanceActionFlow(input: {
           anchorExpiresAtLedger,
         };
       } else {
-        amount = parsePrivateAmount(input.draft.amount, input.assetDecimals);
-        const selection = selectPrivateNotes(
-          state.notes.filter(note => note.assetContractId === input.assetContractId),
-          amount,
-        );
+        amount = parsePrivateAmount(input.draft.amount, input.assetDecimals, { aggregateWithdrawal: input.draft.kind === 'withdraw' });
+        if (amount > (1n << 63n) - 1n) {
+          const count = state.notes.filter(note => note.status === 'unspent' && note.assetContractId === input.assetContractId).length;
+          throw new PrivateConsolidationRequiredError(Math.max(1, count - 1), count);
+        }
+        const plannedIds = input.draft.kind === 'withdraw' ? input.draft.selectedNoteIds : undefined;
+        if (plannedIds && (plannedIds.length < 1 || plannedIds.length > 2 || new Set(plannedIds).size !== plannedIds.length)) {
+          throw new Error('Private withdrawal inputs are invalid.');
+        }
+        const plannedInputValue = plannedIds
+          ? privateActionNoteSnapshot(state.notes, plannedIds, input.assetContractId)
+            .reduce((sum, note) => sum + BigInt(note.value), 0n)
+          : null;
+        if (plannedInputValue !== null && (plannedInputValue < amount || plannedInputValue > (1n << 63n) - 1n ||
+          (input.draft.kind === 'withdraw' && input.draft.requireFullInputExit && plannedInputValue !== amount))) {
+          throw new Error('Private withdrawal inputs no longer match the approved amount.');
+        }
+        const selection = plannedIds && plannedInputValue !== null
+          ? { kind: 'selected' as const, noteIds: [...plannedIds], inputValue: plannedInputValue, changeValue: plannedInputValue - amount }
+          : selectPrivateNotes(
+            state.notes.filter(note => note.assetContractId === input.assetContractId),
+            amount,
+            { preferExact: input.draft.kind === 'withdraw' },
+          );
         if (selection.kind === 'insufficient') {
           throw new Error('Private Balance is insufficient for this amount.');
         }
@@ -548,9 +568,9 @@ export async function preparePrivateBalanceActionFlow(input: {
           input.storageContext,
           {
             deploymentBindingHash: checkpoint.deploymentBindingHash,
-            cursor: checkpoint.lastActionIndex + 1,
+            cursor: checkpoint.lastActionIndex + 1n,
             transcriptHead: checkpoint.lastRecordHash,
-            commitmentCount: (checkpoint.lastActionIndex + 1) * 3,
+            commitmentCount: checkpoint.nextLeafIndex,
             root: checkpoint.treeRoot,
             frontier: [...checkpoint.treeFrontier],
           },
@@ -599,6 +619,10 @@ export async function preparePrivateBalanceActionFlow(input: {
       !prepared.action.outputs.some(output => hex(output.cm) === prepared.recipientOutputCommitment))) {
       throw new Error('Private recovery worker returned a different self-transfer.');
     }
+    if (input.draft.kind === 'withdraw' && input.draft.requireFullInputExit &&
+      (prepared.action.kind !== 4 || prepared.changeValue !== '0' || prepared.inputValue !== amount.toString())) {
+      throw new Error('Private withdrawal worker did not prepare the approved full-input exit.');
+    }
     progress('loading-artifacts');
     const artifacts = await loadCircuitArtifacts(input.manifest);
     progress('proving-locally');
@@ -622,7 +646,9 @@ export async function preparePrivateBalanceActionFlow(input: {
           proof,
         })
       : input.draft.kind === 'withdraw'
-        ? builder.buildWithdrawOperation({
+        ? (prepared.action.kind === 4
+            ? builder.buildFullInputExitOperation.bind(builder)
+            : builder.buildWithdrawOperation.bind(builder))({
             action: {
               ...common,
               assetIndex: input.assetIndex,

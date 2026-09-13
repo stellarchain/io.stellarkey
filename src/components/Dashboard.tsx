@@ -305,7 +305,7 @@ type ActivityFilter = "all" | "in" | "out" | "swap" | "trust";
 
 function privateWithdrawOpeningLabel(
   phase: PrivateBalanceRuntimePhase,
-  syncProgress: { current: number; total: number } | null,
+  syncProgress: { current: bigint; total: bigint } | null,
 ): string {
   switch (phase) {
     case "loading-artifacts":
@@ -495,16 +495,8 @@ export function Dashboard() {
     privateBalanceRuntime.syncProgress,
   );
   const privateWithdrawScanPercent = privateBalanceRuntime.syncProgress
-    ? Math.min(
-        100,
-        Math.max(
-          0,
-          Math.round(
-            (privateBalanceRuntime.syncProgress.current /
-              Math.max(1, privateBalanceRuntime.syncProgress.total)) * 100,
-          ),
-        ),
-      )
+    ? Number((privateBalanceRuntime.syncProgress.current * 100n) /
+        (privateBalanceRuntime.syncProgress.total || 1n))
     : null;
 
   useEffect(() => {

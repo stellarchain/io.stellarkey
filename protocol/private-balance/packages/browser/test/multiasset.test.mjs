@@ -18,7 +18,7 @@ test('one pool context supports asset-bound notes and actions', async () => {
   const poolId = bytes(3);
   const xlm = { kind: 1, payload: bytes(4) };
   const usdc = { kind: 1, payload: bytes(5) };
-  const contextHash = computeContextHash(1, networkId, realmId, poolId);
+  const contextHash = computeContextHash(2, networkId, realmId, poolId);
   const contextField = computeContextField(contextHash);
   const owner = bigintTo32Bytes(6n);
   const rho = bigintTo32Bytes(7n);
@@ -34,7 +34,7 @@ test('one pool context supports asset-bound notes and actions', async () => {
   const zero = new Uint8Array(32);
   const commitment = computeCommitment(contextField, xlmField, owner, 10n, rho);
   const action = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     kind: ActionKind.Deposit,
     assetIndex: 0,
     asset: xlm,

@@ -40,11 +40,11 @@ test('1,000 seeded Rust and TypeScript key/address derivations agree byte-for-by
     const realmId = fromHex(item.realmId);
     const poolId = fromHex(item.poolId);
     const accountPublicKey = fromHex(item.accountPublicKey);
-    const contextHash = computeContextHash(1, networkId, realmId, poolId);
+    const contextHash = computeContextHash(2, networkId, realmId, poolId);
     const contextField = computeContextField(contextHash);
     const keys = await deriveKeysFromSeed(
       fromHex(item.rawSeed),
-      1,
+      2,
       networkId,
       realmId,
       poolId,

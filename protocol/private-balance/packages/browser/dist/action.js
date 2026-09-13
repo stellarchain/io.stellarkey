@@ -9,6 +9,7 @@ export var ActionKind;
     ActionKind[ActionKind["Deposit"] = 1] = "Deposit";
     ActionKind[ActionKind["PrivateTransfer"] = 2] = "PrivateTransfer";
     ActionKind[ActionKind["Withdraw"] = 3] = "Withdraw";
+    ActionKind[ActionKind["FullInputExit"] = 4] = "FullInputExit";
 })(ActionKind || (ActionKind = {}));
 function isZero(bytes) {
     return bytes.every((byte) => byte === 0);
@@ -53,9 +54,9 @@ function validateAssetBoundary(action) {
     }
 }
 function validateAction(action) {
-    if (action.protocolVersion !== 1)
+    if (action.protocolVersion !== 2)
         throw new Error('Unsupported action protocol version');
-    if (![ActionKind.Deposit, ActionKind.PrivateTransfer, ActionKind.Withdraw].includes(action.kind)) {
+    if (![ActionKind.Deposit, ActionKind.PrivateTransfer, ActionKind.Withdraw, ActionKind.FullInputExit].includes(action.kind)) {
         throw new Error('Invalid action kind');
     }
     validateAssetBoundary(action);

@@ -21,20 +21,20 @@ export interface ShieldedNoteRecord {
   assetContractId: string; // Canonical SAC contract address
   diversifier: string; // Lowercase hex (4 bytes)
   ownerCommitment: string; // Hex (32 bytes)
-  leafIndex: number;
-  actionIndex: number;
+  leafIndex: bigint;
+  actionIndex: bigint;
   rho: string; // Hex (32 bytes)
   memoHex: string;
   senderFingerprintHex: string;
   status: NoteStatus;
   reservedAt?: number;
-  spentInActionIndex?: number;
+  spentInActionIndex?: bigint;
   createdAt: number;
 }
 
 export interface ShieldedActivityRecord {
   id: string; // Hex of actionField
-  actionIndex: number;
+  actionIndex: bigint;
   actionKind: 'deposit' | 'transfer' | 'withdraw';
   assetIndex: number; // Recovered privately for transfers; public at boundaries
   assetContractId: string; // Canonical SAC contract address
@@ -50,7 +50,8 @@ export interface ShieldedActivityRecord {
 }
 
 export interface ShieldedCheckpoint {
-  lastActionIndex: number;
+  nextLeafIndex: bigint;
+  lastActionIndex: bigint;
   lastRecordHash: string;
   treeRoot: string;
   treeFrontier: string[];
@@ -70,7 +71,7 @@ export type PrivateSyncStatus =
 export interface PrivateAccountState {
   setupState: PrivateSetupState;
   syncStatus: PrivateSyncStatus;
-  lastVerifiedActionIndex: number | null;
+  lastVerifiedActionIndex: bigint | null;
   updatedAt: number;
 }
 

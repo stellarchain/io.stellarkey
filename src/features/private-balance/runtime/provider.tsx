@@ -81,7 +81,7 @@ import {
   type PrivateBalanceState,
 } from './reducer';
 import { formatPrivateBalanceAmount, selectTotalShieldedBalance } from './selectors';
-import { parsePrivateAmount, selectPrivateNotes } from './coin-selection';
+import { parsePrivateAmount, selectPrivateNotes, planPrivateWithdrawal } from './coin-selection';
 import {
   retireLegacyPrivateRelayConsent,
   beginPrivateChainedApproval,
@@ -195,11 +195,11 @@ interface RuntimeSnapshot {
   configured: boolean;
   isLeader: boolean;
   backgroundSyncing: boolean;
-  syncProgress: { current: number; total: number } | null;
+  syncProgress: { current: bigint; total: bigint } | null;
   verifiedBalanceStroops: string;
-  lastVerifiedActionIndex: number | null;
+  lastVerifiedActionIndex: bigint | null;
   error: string | null;
-  restoreRequiredActionIndex: number | null;
+  restoreRequiredActionIndex: bigint | null;
   deployment: PrivateBalanceDeploymentSummary;
 }
 
@@ -941,11 +941,8 @@ export function PrivateBalanceProvider({
               storageDriver: driver,
               publicCacheDriver: driver,
               onProgress: ({ actionIndex, actionCount, firstActionIndex }) => {
-                const total = Math.max(1, actionCount - firstActionIndex);
-                const currentRecord = Math.min(
-                  total,
-                  Math.max(1, actionIndex - firstActionIndex + 1),
-                );
+                const total = actionCount - firstActionIndex || 1n;
+                const currentRecord = actionIndex - firstActionIndex + 1n;
                 if (
                   quiet &&
                   !surfacedProgress &&
@@ -2181,8 +2178,12 @@ export function PrivateBalanceProvider({
     if (!leaderRef.current) {
       throw new Error('Sync Private Balance in this tab before creating an action.');
     }
-    const amount = parsePrivateAmount(draft.amount, asset.decimals);
-    const selection = selectPrivateNotes(state.notes, amount);
+    const amount = parsePrivateAmount(draft.amount, asset.decimals, { aggregateWithdrawal: draft.kind === 'withdraw' });
+    const eligible = state.notes.filter(note => note.assetContractId === asset.contractId);
+    const selection = draft.kind === 'withdraw' && amount > (1n << 63n) - 1n
+      ? { kind: 'consolidation-required' as const, actionCount: eligible.length - 1 }
+      : selectPrivateNotes(eligible, amount, { preferExact: draft.kind === 'withdraw' });
+    const withdrawalSteps = draft.kind === 'withdraw' ? planPrivateWithdrawal(eligible, amount) : undefined;
     if (selection.kind === 'insufficient') {
       throw new Error('Private Balance is insufficient for this amount.');
     }
@@ -2198,12 +2199,13 @@ export function PrivateBalanceProvider({
     return planPrivateChainedSend({
       feePayer,
       approvalId: ownerId(),
-      consolidationActionCount: selection.actionCount,
+      consolidationActionCount: withdrawalSteps ? withdrawalSteps.length - 1 : selection.actionCount,
+      withdrawalSteps,
       perStepMaxFeeStroops:
         privateActionClassicFeeStroops(BigInt(recommendedBaseFeeStroops), feePayer) + MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS,
       publicXlmBalanceStroops: available,
     });
-  }, [accountId, accountPublicKey, asset.decimals, capturePrivateActionContext, network, recommendedBaseFeeStroops, resolvePrivateBalanceFeePayer, state.notes]);
+  }, [accountId, accountPublicKey, asset.contractId, asset.decimals, capturePrivateActionContext, network, recommendedBaseFeeStroops, resolvePrivateBalanceFeePayer, state.notes]);
 
   const submitChainedSend = useCallback(async (
     approval: PrivateChainedSendApproval,
@@ -2270,12 +2272,25 @@ export function PrivateBalanceProvider({
             assertSamePrivateFeePayer(approval.feePayer, disclosure.feePayer);
             // Initial chain consent authorizes only this exact local self-merge
             // or the final draft. Reject a changed proof BEFORE it leaves us.
-            const final = stepDraft.kind === 'transfer';
-            const expectedMemo = Array.from(new TextEncoder().encode(draft.memo?.trim() ?? ''), byte => byte.toString(16).padStart(2, '0')).join('') || null;
-            if (disclosure.kind !== stepDraft.kind || disclosure.submissionMode !== 'direct' || disclosure.assetContractId !== asset.contractId || disclosure.privateFeeAtomic !== '0' ||
-              disclosure.recipientAddress !== (final ? draft.recipientAddress : privateAddress) ||
-              (final && (disclosure.amountStroops !== parsePrivateAmount(draft.amount, asset.decimals).toString() || disclosure.memoHex !== expectedMemo)) ||
-              BigInt(disclosure.maximumNetworkFeeStroops) > BigInt(approval.perStepMaxFeeStroops) || Date.now() >= approval.expiresAtSeconds * 1000) throw new Error('The private proof no longer matches the approved chain.');
+            const fresh = Date.now() < approval.expiresAtSeconds * 1000;
+            const commonMatches = disclosure.kind === stepDraft.kind && disclosure.submissionMode === 'direct' &&
+              disclosure.assetContractId === asset.contractId && disclosure.privateFeeAtomic === '0' &&
+              BigInt(disclosure.maximumNetworkFeeStroops) <= BigInt(approval.perStepMaxFeeStroops) && fresh;
+            if (!commonMatches) throw new Error('The private proof no longer matches the approved chain.');
+            if (draft.kind === 'withdraw') {
+              if (stepDraft.kind !== 'withdraw' || disclosure.publicRecipient !== draft.publicRecipient ||
+                disclosure.amountStroops !== parsePrivateAmount(stepDraft.amount, asset.decimals).toString() ||
+                disclosure.recipientAddress !== null || disclosure.memoHex !== null) {
+                throw new Error('The withdrawal proof no longer matches the approved recipient and amount.');
+              }
+            } else {
+              const final = stepDraft.kind === 'transfer';
+              const expectedMemo = Array.from(new TextEncoder().encode(draft.memo?.trim() ?? ''), byte => byte.toString(16).padStart(2, '0')).join('') || null;
+              if (disclosure.recipientAddress !== (final ? draft.recipientAddress : privateAddress) ||
+                (final && (disclosure.amountStroops !== parsePrivateAmount(draft.amount, asset.decimals).toString() || disclosure.memoHex !== expectedMemo))) {
+                throw new Error('The private proof no longer matches the approved chain.');
+              }
+            }
           }, approval.id),
           // Non-final steps await their canonical confirmation inside the
           // driver, so their fire-and-forget outcome watcher stays off; the

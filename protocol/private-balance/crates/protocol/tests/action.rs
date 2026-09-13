@@ -5,7 +5,7 @@ use private_balance_protocol::field::bytes_to_field;
 #[test]
 fn test_action_canonical_bytes_and_signals() {
     let action = Action {
-        protocol_version: 1,
+        protocol_version: 2,
         kind: ActionKind::PrivateTransfer,
         asset_index: None,
         asset: None,

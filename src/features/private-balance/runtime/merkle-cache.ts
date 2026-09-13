@@ -1,3 +1,4 @@
+import { isPrivateIndex, stringifyPrivateIndices, parsePrivateIndices } from './indices';
 import {
   EMPTY_ROOTS,
   TREE_ARITY,
@@ -24,19 +25,19 @@ export type PrivateBalanceMerkleCacheDriver = Pick<
 
 export interface ExpectedPrivateBalanceMerkleCheckpoint {
   deploymentBindingHash: string;
-  cursor: number;
+  cursor: bigint;
   transcriptHead: string;
-  commitmentCount: number;
+  commitmentCount: bigint;
   root: string;
   frontier: string[];
 }
 
 export interface VerifiedPrivateBalanceMerkleBatch {
   deploymentBindingHash: Uint8Array;
-  priorCursor: number;
-  cursor: number;
+  priorCursor: bigint;
+  cursor: bigint;
   transcriptHead: Uint8Array;
-  startIndex: number;
+  startIndex: bigint;
   commitments: readonly Uint8Array[];
   expectedRoot: Uint8Array;
   expectedFrontier: readonly Uint8Array[];
@@ -47,9 +48,9 @@ interface MerkleCheckpointRecord {
   version: typeof RECORD_VERSION;
   revision: number;
   deploymentBindingHash: string;
-  cursor: number;
+  cursor: bigint;
   transcriptHead: string;
-  commitmentCount: number;
+  commitmentCount: bigint;
   root: string;
   frontier: string[];
 }
@@ -59,7 +60,7 @@ interface MerkleNodeRecord {
   version: typeof RECORD_VERSION;
   revision: 0;
   level: number;
-  index: number;
+  index: bigint;
   value: string;
 }
 
@@ -109,8 +110,8 @@ function checkpointKey(context: PrivateBalancePublicCacheContext): string {
   return `${prefix(context)}checkpoint`;
 }
 
-function nodeKey(context: PrivateBalancePublicCacheContext, level: number, index: number): string {
-  return `${prefix(context)}node:${level.toString().padStart(2, '0')}:${index.toString().padStart(16, '0')}`;
+function nodeKey(context: PrivateBalancePublicCacheContext, level: number, index: bigint): string {
+  return `${prefix(context)}node:${level.toString().padStart(2, '0')}:${index.toString().padStart(39, '0')}`;
 }
 
 function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
@@ -123,7 +124,7 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
 function decodeCheckpoint(raw: string): MerkleCheckpointRecord {
   let value: unknown;
   try {
-    value = JSON.parse(raw);
+    value = parsePrivateIndices(raw, ['cursor', 'commitmentCount', 'index']);
   } catch {
     throw new Error('Private Balance Merkle checkpoint is invalid');
   }
@@ -135,8 +136,8 @@ function decodeCheckpoint(raw: string): MerkleCheckpointRecord {
     record.kind !== CHECKPOINT_KIND ||
     record.version !== RECORD_VERSION ||
     !safeInteger(record.revision) ||
-    !safeInteger(record.cursor) ||
-    !safeInteger(record.commitmentCount, TREE_CAPACITY) ||
+    !isPrivateIndex(record.cursor) ||
+    (!isPrivateIndex(record.commitmentCount) || record.commitmentCount > TREE_CAPACITY) ||
     !Array.isArray(record.frontier) ||
     record.frontier.length !== TREE_FRONTIER_SIZE
   ) {
@@ -150,10 +151,10 @@ function decodeCheckpoint(raw: string): MerkleCheckpointRecord {
   return record as MerkleCheckpointRecord;
 }
 
-function decodeNode(raw: string, level: number, index: number): Uint8Array {
+function decodeNode(raw: string, level: number, index: bigint): Uint8Array {
   let value: unknown;
   try {
-    value = JSON.parse(raw);
+    value = parsePrivateIndices(raw, ['cursor', 'commitmentCount', 'index']);
   } catch {
     throw new Error('Private Balance Merkle node is invalid');
   }
@@ -173,7 +174,7 @@ function decodeNode(raw: string, level: number, index: number): Uint8Array {
   return decodeHex32(record.value, 'Merkle node');
 }
 
-function serializeNode(level: number, index: number, value: Uint8Array): string {
+function serializeNode(level: number, index: bigint, value: Uint8Array): string {
   const record: MerkleNodeRecord = {
     kind: NODE_KIND,
     version: RECORD_VERSION,
@@ -182,7 +183,7 @@ function serializeNode(level: number, index: number, value: Uint8Array): string 
     index,
     value: hex32(value, 'Merkle node'),
   };
-  return JSON.stringify(record);
+  return stringifyPrivateIndices(record);
 }
 
 function checkpointMatches(
@@ -205,8 +206,8 @@ function validateExpectedCheckpoint(expected: ExpectedPrivateBalanceMerkleCheckp
   decodeHex32(expected.transcriptHead, 'Expected Merkle transcript head');
   decodeHex32(expected.root, 'Expected Merkle root');
   if (
-    !safeInteger(expected.cursor) ||
-    !safeInteger(expected.commitmentCount, TREE_CAPACITY) ||
+    !isPrivateIndex(expected.cursor) ||
+    (!isPrivateIndex(expected.commitmentCount) || expected.commitmentCount > TREE_CAPACITY) ||
     expected.frontier.length !== TREE_FRONTIER_SIZE
   ) {
     throw new Error('Expected Private Balance Merkle checkpoint is invalid');
@@ -221,12 +222,11 @@ export async function recordVerifiedPrivateBalanceMerkleBatch(
   candidate?: PrivateBalanceMerkleCacheDriver,
 ): Promise<void> {
   if (
-    !safeInteger(batch.priorCursor) ||
-    !safeInteger(batch.cursor) ||
+    !isPrivateIndex(batch.priorCursor) ||
+    !isPrivateIndex(batch.cursor) ||
     batch.cursor <= batch.priorCursor ||
-    !safeInteger(batch.startIndex, TREE_CAPACITY) ||
-    batch.commitments.length === 0 ||
-    batch.startIndex + batch.commitments.length > TREE_CAPACITY ||
+    (!isPrivateIndex(batch.startIndex) || batch.startIndex > TREE_CAPACITY) ||
+    batch.startIndex + BigInt(batch.commitments.length) > TREE_CAPACITY ||
     batch.expectedFrontier.length !== TREE_FRONTIER_SIZE
   ) {
     throw new Error('Verified Private Balance Merkle batch is invalid');
@@ -245,13 +245,13 @@ export async function recordVerifiedPrivateBalanceMerkleBatch(
     deploymentBindingHash,
     cursor: batch.cursor,
     transcriptHead,
-    commitmentCount: batch.startIndex + batch.commitments.length,
+    commitmentCount: batch.startIndex + BigInt(batch.commitments.length),
     root: expectedRoot,
     frontier: expectedFrontier,
   };
   if (current && checkpointMatches(current, completedExpectation)) return;
   if (
-    (current === null && (batch.startIndex !== 0 || batch.priorCursor !== 0)) ||
+    (current === null && (batch.startIndex !== 0n || batch.priorCursor !== 0n)) ||
     (current !== null && (
       current.deploymentBindingHash !== deploymentBindingHash ||
       current.cursor !== batch.priorCursor ||
@@ -268,7 +268,7 @@ export async function recordVerifiedPrivateBalanceMerkleBatch(
     ));
   const entries = new Map<string, string>();
   let count = batch.startIndex;
-  let root: Uint8Array = EMPTY_ROOTS[TREE_DEPTH].slice();
+  let root: Uint8Array = current ? decodeHex32(current.root, 'Merkle root') : EMPTY_ROOTS[TREE_DEPTH].slice();
 
   for (const commitment of batch.commitments) {
     hex32(commitment, 'Private Balance commitment');
@@ -278,7 +278,7 @@ export async function recordVerifiedPrivateBalanceMerkleBatch(
 
     let level = 0;
     for (;;) {
-      const position = nodeIndex % TREE_ARITY;
+      const position = Number(nodeIndex % 3n);
       const offset = level * (TREE_ARITY - 1);
       if (position < TREE_ARITY - 1) {
         frontier[offset + position] = currentNode.slice();
@@ -289,7 +289,7 @@ export async function recordVerifiedPrivateBalanceMerkleBatch(
         frontier[offset + 1],
         currentNode,
       ]);
-      nodeIndex = Math.floor(nodeIndex / TREE_ARITY);
+      nodeIndex = nodeIndex / 3n;
       level += 1;
       entries.set(
         nodeKey(context, level, nodeIndex),
@@ -297,13 +297,14 @@ export async function recordVerifiedPrivateBalanceMerkleBatch(
       );
       if (level === TREE_DEPTH) break;
     }
-    count += 1;
+    count += 1n;
+    if (count === TREE_CAPACITY) { root = currentNode; continue; }
 
     let folded: Uint8Array = EMPTY_ROOTS[0].slice();
     let width = count;
     let enteredPopulatedBranch = false;
     for (let foldLevel = 0; foldLevel < TREE_DEPTH; foldLevel += 1) {
-      const position = width % TREE_ARITY;
+      const position = Number(width % 3n);
       const offset = foldLevel * (TREE_ARITY - 1);
       if (position !== 0) {
         enteredPopulatedBranch = true;
@@ -318,13 +319,13 @@ export async function recordVerifiedPrivateBalanceMerkleBatch(
         ]);
       }
       if (enteredPopulatedBranch && foldLevel + 1 < TREE_DEPTH) {
-        const partialIndex = Math.floor((count - 1) / TREE_ARITY ** (foldLevel + 1));
+        const partialIndex = (count - 1n) / 3n ** BigInt(foldLevel + 1);
         entries.set(
           nodeKey(context, foldLevel + 1, partialIndex),
           serializeNode(foldLevel + 1, partialIndex, folded),
         );
       }
-      width = Math.floor(width / TREE_ARITY);
+      width = width / 3n;
     }
     root = folded;
   }
@@ -344,7 +345,7 @@ export async function recordVerifiedPrivateBalanceMerkleBatch(
     revision: (current?.revision ?? -1) + 1,
     ...completedExpectation,
   };
-  entries.set(key, JSON.stringify(next));
+  entries.set(key, stringifyPrivateIndices(next));
   const stored = await cache.compareAndSetMany(
     key,
     current?.revision ?? null,
@@ -358,7 +359,7 @@ export async function recordVerifiedPrivateBalanceMerkleBatch(
 export async function loadPrivateBalanceMerklePaths(
   context: PrivateBalancePublicCacheContext,
   expected: ExpectedPrivateBalanceMerkleCheckpoint,
-  leafIndices: readonly number[],
+  leafIndices: readonly bigint[],
   candidate?: Pick<EncryptedRecordDriver, 'read'>,
 ): Promise<MerklePathWitness[]> {
   validateExpectedCheckpoint(expected);
@@ -366,7 +367,7 @@ export async function loadPrivateBalanceMerklePaths(
     leafIndices.length < 1 ||
     leafIndices.length > 2 ||
     new Set(leafIndices).size !== leafIndices.length ||
-    leafIndices.some(index => !safeInteger(index) || index >= expected.commitmentCount)
+    leafIndices.some(index => !isPrivateIndex(index) || index >= expected.commitmentCount)
   ) {
     throw new Error('Private Balance Merkle path request is invalid');
   }
@@ -379,7 +380,7 @@ export async function loadPrivateBalanceMerklePaths(
   }
 
   const loadedNodes = new Map<string, Uint8Array>();
-  const readNode = async (level: number, index: number): Promise<Uint8Array> => {
+  const readNode = async (level: number, index: bigint): Promise<Uint8Array> => {
     const key = nodeKey(context, level, index);
     const cached = loadedNodes.get(key);
     if (cached) return cached.slice();
@@ -398,14 +399,14 @@ export async function loadPrivateBalanceMerklePaths(
     const positions: number[] = [];
     let current: Uint8Array = leaf.slice();
     for (let level = 0; level < TREE_DEPTH; level += 1) {
-      const currentIndex = Math.floor(leafIndex / TREE_ARITY ** level);
-      const position = currentIndex % TREE_ARITY;
-      const firstChildIndex = currentIndex - position;
+      const currentIndex = leafIndex / 3n ** BigInt(level);
+      const position = Number(currentIndex % 3n);
+      const firstChildIndex = currentIndex - BigInt(position);
       const resolvedChildren = await Promise.all([0, 1, 2].map(
         async childPosition => {
           if (childPosition === position) return current;
-          const childIndex = firstChildIndex + childPosition;
-          const childStart = childIndex * TREE_ARITY ** level;
+          const childIndex = firstChildIndex + BigInt(childPosition);
+          const childStart = childIndex * 3n ** BigInt(level);
           return childStart >= expected.commitmentCount
             ? EMPTY_ROOTS[level].slice()
             : readNode(level, childIndex);
@@ -452,7 +453,7 @@ export async function requirePrivateBalanceMerkleCheckpoint(
 ): Promise<void> {
   validateExpectedCheckpoint(expected);
   const current = await loadPrivateBalanceMerkleCheckpoint(context, candidate);
-  if (!current || JSON.stringify(current) !== JSON.stringify(expected)) {
+  if (!current || stringifyPrivateIndices(current) !== stringifyPrivateIndices(expected)) {
     throw new Error('Private Balance Merkle checkpoint does not match verified state');
   }
 }
@@ -464,7 +465,7 @@ export async function rebuildPrivateBalanceMerkleCache(
   candidate?: PrivateBalanceMerkleCacheDriver,
 ): Promise<void> {
   validateExpectedCheckpoint(expected);
-  if (commitments.length !== expected.commitmentCount || commitments.length === 0) {
+  if (BigInt(commitments.length) !== expected.commitmentCount) {
     throw new Error('Private Balance Merkle rebuild commitments do not match the checkpoint');
   }
   await clearPrivateBalanceMerkleCache(context, candidate);
@@ -473,10 +474,10 @@ export async function rebuildPrivateBalanceMerkleCache(
       expected.deploymentBindingHash,
       'Expected Merkle deployment binding hash',
     ),
-    priorCursor: 0,
+    priorCursor: 0n,
     cursor: expected.cursor,
     transcriptHead: decodeHex32(expected.transcriptHead, 'Expected Merkle transcript head'),
-    startIndex: 0,
+    startIndex: 0n,
     commitments,
     expectedRoot: decodeHex32(expected.root, 'Expected Merkle root'),
     expectedFrontier: expected.frontier.map((node, index) =>

@@ -1,3 +1,4 @@
+import { isPrivateIndex, parsePrivateIndices, stringifyPrivateIndices } from './indices';
 import { decodePrivateAddress, TREE_FRONTIER_SIZE } from '@stellarkey/private-balance';
 import { hasExposedPrivateSpend } from './proof-exposure';
 import { assertPrivateRecoveryReplacement, isPrivateSpendRecovery, MAX_PRIVATE_RECOVERY_ATTEMPTS, selectPrivateRecoveryInputs } from './spend-recovery';
@@ -140,7 +141,7 @@ async function encryptRecord(
   recordKey: string,
 ): Promise<string> {
   const crypto = await encryptBytesWithKey(
-    encoder.encode(JSON.stringify(value)),
+    encoder.encode(stringifyPrivateIndices(value)),
     key,
     aad(recordKey, value.revision),
   );
@@ -166,7 +167,7 @@ async function decryptRecord(
       aad(recordKey, parsed.revision),
     );
     try {
-      const decoded = JSON.parse(decoder.decode(plaintext)) as { revision?: unknown };
+      const decoded = parsePrivateIndices(decoder.decode(plaintext), ['leafIndex', 'actionIndex', 'spentInActionIndex', 'lastActionIndex', 'lastVerifiedActionIndex', 'nextLeafIndex']) as { revision?: unknown };
       if (decoded.revision !== parsed.revision) throw new Error('revision mismatch');
       return decoded;
     } finally {
@@ -185,7 +186,7 @@ function isNote(value: unknown): value is ShieldedNoteRecord {
     ? isTimestamp(note.reservedAt)
     : note.reservedAt === undefined;
   const spentValid = note.status === 'spent'
-    ? isSafeIndex(note.spentInActionIndex)
+    ? isPrivateIndex(note.spentInActionIndex)
     : note.spentInActionIndex === undefined;
   return (
     isHex(note.id, 32) &&
@@ -197,8 +198,8 @@ function isNote(value: unknown): value is ShieldedNoteRecord {
     isSafeIndex(note.assetIndex) &&
     isHex(note.diversifier, 4) &&
     isHex(note.ownerCommitment, 32) &&
-    isSafeIndex(note.leafIndex) &&
-    isSafeIndex(note.actionIndex) &&
+    isPrivateIndex(note.leafIndex) &&
+    isPrivateIndex(note.actionIndex) &&
     isHex(note.rho, 32) &&
     typeof note.memoHex === 'string' &&
     /^(?:[0-9a-f]{2})*$/.test(note.memoHex) &&
@@ -217,7 +218,7 @@ function isActivity(value: unknown): value is ShieldedActivityRecord {
   const activity = value as Partial<ShieldedActivityRecord>;
   return (
     isHex(activity.id, 32) &&
-    isSafeIndex(activity.actionIndex) &&
+    isPrivateIndex(activity.actionIndex) &&
     ['deposit', 'transfer', 'withdraw'].includes(activity.actionKind ?? '') &&
     typeof activity.assetContractId === 'string' &&
     /^C[A-Z2-7]{55}$/.test(activity.assetContractId) &&
@@ -243,7 +244,8 @@ function isCheckpoint(value: unknown): value is ShieldedCheckpoint {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const checkpoint = value as Partial<ShieldedCheckpoint>;
   return (
-    isSafeIndex(checkpoint.lastActionIndex) &&
+    isPrivateIndex(checkpoint.lastActionIndex) &&
+    isPrivateIndex(checkpoint.nextLeafIndex) &&
     isHex(checkpoint.lastRecordHash, 32) &&
     isHex(checkpoint.treeRoot, 32) &&
     Array.isArray(checkpoint.treeFrontier) &&
@@ -435,7 +437,7 @@ function isDurableState(
     !state.account ||
     !['not-configured', 'ready'].includes(state.account.setupState) ||
     !['never', 'syncing', 'current', 'safe-error'].includes(state.account.syncStatus) ||
-    !(state.account.lastVerifiedActionIndex === null || isSafeIndex(state.account.lastVerifiedActionIndex)) ||
+    !(state.account.lastVerifiedActionIndex === null || isPrivateIndex(state.account.lastVerifiedActionIndex)) ||
     !isTimestamp(state.account.updatedAt) ||
     !(state.privateAddress === undefined || PRIVATE_ADDRESS_PATTERN.test(state.privateAddress)) ||
     !isOutgoingHistoryMode(state.outgoingHistoryMode) ||

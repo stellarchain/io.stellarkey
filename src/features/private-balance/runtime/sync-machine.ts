@@ -1,3 +1,4 @@
+import { isPrivateIndex, comparePrivateIndices, privateBatchLength, stringifyPrivateIndices } from './indices';
 import { reconcilePrivateSpendRecovery } from './spend-recovery';
 import {
   computeGenesisRecordHash,
@@ -36,7 +37,7 @@ import { privateOutgoingHistoryMode } from './outgoing-history';
 
 interface ArchiveReader {
   readHead(): Promise<ArchiveHeadState>;
-  readRecords(startActionIndex: number, count: number): Promise<ArchiveRecordModel[]>;
+  readRecords(startActionIndex: bigint, count: number): Promise<ArchiveRecordModel[]>;
   readLedgerCloseTimes?(sequences: readonly number[]): Promise<Record<number, number>>;
 }
 
@@ -44,6 +45,7 @@ interface ScanWorker {
   scanPage(input: {
     records: ArchiveRecordModel[];
     expectedPriorRecordHash: Uint8Array;
+    expectedFirstActionIndex?: bigint;
     initialTree?: MerkleTree;
     existingNotes?: ShieldedNoteRecord[];
     ledgerClosedAt?: Readonly<Record<number, number>>;
@@ -58,9 +60,9 @@ interface ScanWorker {
 }
 
 export interface SyncPrivateBalanceProgress {
-  actionIndex: number;
-  actionCount: number;
-  firstActionIndex: number;
+  actionIndex: bigint;
+  actionCount: bigint;
+  firstActionIndex: bigint;
 }
 
 export interface SyncPrivateBalanceInput {
@@ -107,7 +109,7 @@ function reconstructTree(state: PrivateBalanceDurableState): MerkleTree | undefi
   const checkpoint = state.checkpoint;
   if (!checkpoint) return undefined;
   return {
-    nextIndex: (checkpoint.lastActionIndex + 1) * 3,
+    nextIndex: checkpoint.nextLeafIndex,
     frontier: checkpoint.treeFrontier.map((node, index) =>
       hex32(node, `Checkpoint tree frontier ${index}`)),
     currentRoot: hex32(checkpoint.treeRoot, 'Checkpoint tree root'),
@@ -120,9 +122,9 @@ function stateMerkleCheckpoint(
   if (!state.checkpoint) return null;
   return {
     deploymentBindingHash: state.checkpoint.deploymentBindingHash,
-    cursor: state.checkpoint.lastActionIndex + 1,
+    cursor: state.checkpoint.lastActionIndex + 1n,
     transcriptHead: state.checkpoint.lastRecordHash,
-    commitmentCount: (state.checkpoint.lastActionIndex + 1) * 3,
+    commitmentCount: state.checkpoint.nextLeafIndex,
     root: state.checkpoint.treeRoot,
     frontier: [...state.checkpoint.treeFrontier],
   };
@@ -132,7 +134,7 @@ function headMerkleCheckpoint(
   head: ArchiveHeadState,
   deploymentBindingHash: Uint8Array,
 ): ExpectedPrivateBalanceMerkleCheckpoint | null {
-  if (head.meta.actionCount === 0) return null;
+  if (head.meta.actionCount === 0n) return null;
   return {
     deploymentBindingHash: hex(deploymentBindingHash),
     cursor: head.meta.actionCount,
@@ -147,31 +149,35 @@ function sameMerkleCheckpoint(
   left: ExpectedPrivateBalanceMerkleCheckpoint | null,
   right: ExpectedPrivateBalanceMerkleCheckpoint | null,
 ): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return stringifyPrivateIndices(left) === stringifyPrivateIndices(right);
 }
 
 async function readAllArchiveCommitments(
   archive: ArchiveReader,
-  actionCount: number,
+  actionCount: bigint,
 ): Promise<Uint8Array[]> {
   const commitments: Uint8Array[] = [];
-  for (let cursor = 0; cursor < actionCount;) {
-    const count = Math.min(MAX_ARCHIVE_RECORD_BATCH, actionCount - cursor);
+  let nextLeafIndex = 0n;
+  for (let cursor = 0n; cursor < actionCount;) {
+    const count = privateBatchLength(actionCount - cursor, MAX_ARCHIVE_RECORD_BATCH);
     const records = await archive.readRecords(cursor, count);
     if (records.length !== count) {
       throw new Error('Private Balance archive returned an incomplete Merkle rebuild batch');
     }
     for (const [offset, record] of records.entries()) {
       if (
-        record.actionIndex !== cursor + offset ||
-        record.startingLeafIndex !== record.actionIndex * 3 ||
+        record.actionIndex !== cursor + BigInt(offset) ||
+        record.startingLeafIndex !== nextLeafIndex ||
         record.outputs.length !== 3
       ) {
         throw new Error('Private Balance archive Merkle rebuild records are not sequential');
       }
-      commitments.push(...record.outputs.map(output => output.cm));
+      if (record.actionKind !== 4) {
+        commitments.push(...record.outputs.map(output => output.cm));
+        nextLeafIndex += 3n;
+      }
     }
-    cursor += records.length;
+    cursor += BigInt(records.length);
   }
   return commitments;
 }
@@ -182,7 +188,7 @@ function mergeActivities(
 ): ShieldedActivityRecord[] {
   const byId = new Map(current.map(activity => [activity.id, activity]));
   for (const activity of additions) byId.set(activity.id, activity);
-  return [...byId.values()].sort((left, right) => left.actionIndex - right.actionIndex);
+  return [...byId.values()].sort((left, right) => comparePrivateIndices(left.actionIndex, right.actionIndex));
 }
 
 export function attachLocalActivityMetadata(
@@ -275,10 +281,10 @@ export interface IncomingPrivateTransferSummary {
  * deposits as 'deposit', so neither can appear here.
  */
 export function diffIncomingPrivateTransfers(
-  previousLastVerifiedActionIndex: number,
+  previousLastVerifiedActionIndex: bigint,
   activities: readonly ShieldedActivityRecord[],
 ): IncomingPrivateTransferSummary {
-  if (!Number.isSafeInteger(previousLastVerifiedActionIndex) || previousLastVerifiedActionIndex < 0) {
+  if (!isPrivateIndex(previousLastVerifiedActionIndex)) {
     throw new Error('Private Balance incoming diff index is invalid');
   }
   let count = 0;
@@ -351,7 +357,7 @@ async function syncPrivateBalanceOnce(
   ) {
     throw new Error('Private Balance checkpoint is ahead of the contract head');
   }
-  if (!state.checkpoint && initialHead.meta.actionCount === 0 && state.notes.length > 0) {
+  if (!state.checkpoint && initialHead.meta.actionCount === 0n && state.notes.length > 0) {
     throw new Error('Private Balance notes exist without a chain checkpoint');
   }
 
@@ -381,9 +387,9 @@ async function syncPrivateBalanceOnce(
     } catch {
       commitments = [];
     }
-    let rebuildTarget = expectedHeadMerkle && commitments.length >= expectedHeadMerkle.commitmentCount
+    let rebuildTarget = expectedHeadMerkle && BigInt(commitments.length) >= expectedHeadMerkle.commitmentCount
       ? expectedHeadMerkle
-      : expectedStateMerkle && commitments.length >= expectedStateMerkle.commitmentCount
+      : expectedStateMerkle && BigInt(commitments.length) >= expectedStateMerkle.commitmentCount
         ? expectedStateMerkle
         : null;
     if (!rebuildTarget && expectedHeadMerkle) {
@@ -398,7 +404,7 @@ async function syncPrivateBalanceOnce(
       );
       await recordVerifiedPrivateBalanceCommitments(
         input.storageContext,
-        0,
+        0n,
         commitments,
         input.publicCacheDriver,
       );
@@ -409,14 +415,14 @@ async function syncPrivateBalanceOnce(
     await rebuildPrivateBalanceMerkleCache(
       input.storageContext,
       rebuildTarget,
-      commitments.slice(0, rebuildTarget.commitmentCount),
+      commitments.slice(0, privateBatchLength(rebuildTarget.commitmentCount, commitments.length)),
       input.publicCacheDriver,
     );
     merkleCheckpoint = rebuildTarget;
   }
 
   let tree = reconstructTree(state);
-  let nextActionIndex = state.checkpoint ? state.checkpoint.lastActionIndex + 1 : 0;
+  let nextActionIndex = state.checkpoint ? state.checkpoint.lastActionIndex + 1n : 0n;
   let expectedPriorRecordHash = state.checkpoint
     ? hex32(state.checkpoint.lastRecordHash, 'Checkpoint record hash')
     : computeGenesisRecordHash(input.contextHash, input.deploymentBindingHash);
@@ -425,10 +431,7 @@ async function syncPrivateBalanceOnce(
   const firstActionIndex = nextActionIndex;
 
   while (nextActionIndex < initialHead.meta.actionCount) {
-    const batchCount = Math.min(
-      MAX_ARCHIVE_RECORD_BATCH,
-      initialHead.meta.actionCount - nextActionIndex,
-    );
+    const batchCount = privateBatchLength(initialHead.meta.actionCount - nextActionIndex, MAX_ARCHIVE_RECORD_BATCH);
     input.onProgress?.({
       actionIndex: nextActionIndex,
       actionCount: initialHead.meta.actionCount,
@@ -439,7 +442,7 @@ async function syncPrivateBalanceOnce(
       throw new Error('Private Balance archive returned an incomplete record batch');
     }
     for (let offset = 0; offset < records.length; offset += 1) {
-      if (records[offset].actionIndex !== nextActionIndex + offset) {
+      if (records[offset].actionIndex !== nextActionIndex + BigInt(offset)) {
         throw new Error('Private Balance archive records are not sequential');
       }
     }
@@ -465,6 +468,7 @@ async function syncPrivateBalanceOnce(
     const scanned = await input.worker.scanPage({
       records,
       expectedPriorRecordHash,
+      expectedFirstActionIndex: nextActionIndex,
       initialTree: tree,
       existingNotes: notes,
       ...(ledgerClosedAt ? { ledgerClosedAt } : {}),
@@ -476,16 +480,16 @@ async function syncPrivateBalanceOnce(
     await recordVerifiedPrivateBalanceCommitments(
       input.storageContext,
       records[0].startingLeafIndex,
-      records.flatMap(record => record.outputs.map(output => output.cm)),
+      records.flatMap(record => record.actionKind === 4 ? [] : record.outputs.map(output => output.cm)),
       input.publicCacheDriver,
     );
-    const batchCursor = lastRecord.actionIndex + 1;
-    if ((merkleCheckpoint?.cursor ?? 0) < batchCursor) {
+    const batchCursor = lastRecord.actionIndex + 1n;
+    if ((merkleCheckpoint?.cursor ?? 0n) < batchCursor) {
       const priorCursor = records[0].actionIndex;
-      if ((merkleCheckpoint?.cursor ?? 0) !== priorCursor) {
+      if ((merkleCheckpoint?.cursor ?? 0n) !== priorCursor) {
         throw new Error('Private Balance Merkle cache cursor is not contiguous with archive sync');
       }
-      const commitments = records.flatMap(record => record.outputs.map(output => output.cm));
+      const commitments = records.flatMap(record => record.actionKind === 4 ? [] : record.outputs.map(output => output.cm));
       await recordVerifiedPrivateBalanceMerkleBatch(input.storageContext, {
         deploymentBindingHash: input.deploymentBindingHash,
         priorCursor,
@@ -500,7 +504,7 @@ async function syncPrivateBalanceOnce(
         deploymentBindingHash: hex(input.deploymentBindingHash),
         cursor: batchCursor,
         transcriptHead: hex(scanned.lastRecordHash),
-        commitmentCount: records[0].startingLeafIndex + commitments.length,
+        commitmentCount: records[0].startingLeafIndex + BigInt(commitments.length),
         root: hex(scanned.tree.currentRoot),
         frontier: scanned.tree.frontier.map(hex),
       };
@@ -512,7 +516,7 @@ async function syncPrivateBalanceOnce(
       attachLocalActivityMetadata(scanned.activities, state.pendingActions),
     );
     expectedPriorRecordHash = scanned.lastRecordHash;
-    nextActionIndex = lastRecord.actionIndex + 1;
+    nextActionIndex = lastRecord.actionIndex + 1n;
 
     const reconciled = reconcilePendingActions(state.pendingActions, notes, activities);
     const pendingActions = reconciled.pendingActions;
@@ -532,6 +536,7 @@ async function syncPrivateBalanceOnce(
       notes,
       activities,
       checkpoint: {
+        nextLeafIndex: scanned.tree.nextIndex,
         lastActionIndex: lastRecord.actionIndex,
         lastRecordHash: hex(scanned.lastRecordHash),
         treeRoot: hex(scanned.tree.currentRoot),
@@ -559,10 +564,10 @@ async function syncPrivateBalanceOnce(
   if (!sameHead(initialHead, finalHead)) {
     throw new PrivateContractAdvancedDuringSyncError();
   }
-  if (initialHead.meta.actionCount > 0) {
+  if (initialHead.meta.actionCount > 0n) {
     if (
       !state.checkpoint ||
-      state.checkpoint.lastActionIndex !== initialHead.meta.actionCount - 1 ||
+      state.checkpoint.lastActionIndex !== initialHead.meta.actionCount - 1n ||
       !equalBytes(expectedPriorRecordHash, initialHead.meta.transcriptHead) ||
       !tree ||
       tree.nextIndex !== initialHead.tree.nextIndex ||
@@ -588,9 +593,9 @@ async function syncPrivateBalanceOnce(
     account: {
       setupState: 'ready',
       syncStatus: 'current',
-      lastVerifiedActionIndex: initialHead.meta.actionCount === 0
+      lastVerifiedActionIndex: initialHead.meta.actionCount === 0n
         ? null
-        : initialHead.meta.actionCount - 1,
+        : initialHead.meta.actionCount - 1n,
       updatedAt: completedAt,
     },
     checkpoint: state.checkpoint

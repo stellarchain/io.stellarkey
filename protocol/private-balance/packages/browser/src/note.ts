@@ -32,7 +32,7 @@ function requireU32(value: number, name: string): void {
 }
 
 function validateNote(note: NotePlaintext): void {
-  if (note.protocolVersion !== 1) throw new Error('Unsupported note protocol version');
+  if (note.protocolVersion !== 2) throw new Error('Unsupported note protocol version');
   if (note.flags !== 0 && note.flags !== 1) throw new Error('Unsupported note flags');
   if (
     note.value < 0n
@@ -130,7 +130,7 @@ export function computeNullifier(
   leafIndex: bigint,
   cm: Uint8Array,
 ): Uint8Array {
-  if (leafIndex < 0n || leafIndex > 0xffff_ffffn) throw new Error('Invalid leaf index');
+  if (typeof leafIndex !== 'bigint' || leafIndex < 0n || leafIndex >= 1n << 128n) throw new Error('Invalid leaf index');
   return p2(DOMAIN_NULLIFIER, [contextField, nk, rho, bigintTo32Bytes(leafIndex), cm]);
 }
 

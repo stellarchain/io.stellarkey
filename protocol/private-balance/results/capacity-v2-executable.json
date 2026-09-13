@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-09-13T01:01:01.051Z",
+  "network": "Testnet",
+  "poolContractId": "CAYCV26VCDNUEM6HHKQYHKDJ3O43CK5DCBT3TMMHFVEXE7CIFVWRY4R7",
+  "manifestSha256": "5731e386ead8a58d28434a345f5c91c6af3f29083ec62f5d6b811aece4ecf340",
+  "reads": [
+    {
+      "rpcUrl": "https://soroban-testnet.stellar.org",
+      "latestLedger": 4647534,
+      "lastModifiedLedger": 4647258,
+      "wasmSha256": "88547981e9fe10861ba0e152a2185efd94ce5679e81822949bc9e39eb71ac39c"
+    },
+    {
+      "rpcUrl": "https://rpc.ankr.com/stellar_testnet_soroban",
+      "latestLedger": 4647534,
+      "lastModifiedLedger": 4647258,
+      "wasmSha256": "88547981e9fe10861ba0e152a2185efd94ce5679e81822949bc9e39eb71ac39c"
+    }
+  ],
+  "passed": true,
+  "scope": "Public instance executable hash only; not a funded action or consensus proof."
+}

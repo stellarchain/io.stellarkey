@@ -1,3 +1,4 @@
+import { isPrivateIndex, stringifyPrivateIndices, parsePrivateIndices } from './indices';
 const LEASE_PREFIX = 'stellarkey.private.runtime-lease.v1';
 const CHANNEL_PREFIX = 'stellarkey.private.runtime-updates.v2';
 
@@ -36,7 +37,7 @@ export interface PrivateBalanceFollowerUpdate {
   nonce: string;
   phase: PrivateBalanceRuntimePhase;
   revision: number;
-  lastVerifiedActionIndex: number | null;
+  lastVerifiedActionIndex: bigint | null;
 }
 
 export interface PrivateBalanceFollowerChannel {
@@ -96,7 +97,7 @@ function readLease(storage: Pick<StorageLike, 'getItem'>, key: string): PrivateB
   const raw = storage.getItem(key);
   if (!raw) return null;
   try {
-    const value: unknown = JSON.parse(raw);
+    const value: unknown = parsePrivateIndices(raw, ['lastVerifiedActionIndex']);
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const lease = value as Partial<PrivateBalanceLease>;
     if (
@@ -125,7 +126,7 @@ export function claimPrivateBalanceLease(
   const desired: PrivateBalanceLease = { ownerId, expiresAt: now + ttlMs };
   if (!Number.isSafeInteger(desired.expiresAt)) return false;
   try {
-    storage.setItem(key, JSON.stringify(desired));
+    storage.setItem(key, stringifyPrivateIndices(desired));
     const confirmed = readLease(storage, key);
     return confirmed?.ownerId === ownerId && confirmed.expiresAt === desired.expiresAt;
   } catch {
@@ -170,7 +171,7 @@ export function forceClaimPrivateBalanceLease(
   const desired: PrivateBalanceLease = { ownerId, expiresAt: now + ttlMs };
   if (!Number.isSafeInteger(desired.expiresAt)) return false;
   try {
-    storage.setItem(key, JSON.stringify(desired));
+    storage.setItem(key, stringifyPrivateIndices(desired));
     const confirmed = readLease(storage, key);
     return confirmed?.ownerId === ownerId && confirmed.expiresAt === desired.expiresAt;
   } catch {
@@ -200,7 +201,7 @@ function exactKeys(value: object): boolean {
 
 export function decodePrivateBalanceFollowerUpdate(raw: string): PrivateBalanceFollowerUpdate | null {
   try {
-    const value: unknown = JSON.parse(raw);
+    const value: unknown = parsePrivateIndices(raw, ['lastVerifiedActionIndex']);
     if (!value || typeof value !== 'object' || Array.isArray(value) || !exactKeys(value)) return null;
     const update = value as Partial<PrivateBalanceFollowerUpdate>;
     if (
@@ -211,9 +212,7 @@ export function decodePrivateBalanceFollowerUpdate(raw: string): PrivateBalanceF
       typeof update.phase !== 'string' || !PHASES.has(update.phase as PrivateBalanceRuntimePhase) ||
       !Number.isSafeInteger(update.revision) || (update.revision as number) < 0 ||
       (update.lastVerifiedActionIndex !== null &&
-        (typeof update.lastVerifiedActionIndex !== 'number' ||
-          !Number.isSafeInteger(update.lastVerifiedActionIndex) ||
-          update.lastVerifiedActionIndex < 0))
+        !isPrivateIndex(update.lastVerifiedActionIndex))
     ) return null;
     return update as PrivateBalanceFollowerUpdate;
   } catch {
@@ -235,7 +234,7 @@ export function openPrivateBalanceFollowerChannel(
   const onMessage = (event: MessageEvent<unknown>) => {
     let raw: string;
     try {
-      raw = JSON.stringify(event.data);
+      raw = stringifyPrivateIndices(event.data);
     } catch {
       return;
     }
@@ -258,7 +257,7 @@ export function openPrivateBalanceFollowerChannel(
         nonce: globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
         ...update,
       };
-      if (!decodePrivateBalanceFollowerUpdate(JSON.stringify(message))) {
+      if (!decodePrivateBalanceFollowerUpdate(stringifyPrivateIndices(message))) {
         throw new Error('Private Balance follower update is invalid');
       }
       channel.postMessage(message);

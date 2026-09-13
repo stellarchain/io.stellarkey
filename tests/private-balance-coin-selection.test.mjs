@@ -11,8 +11,8 @@ const note = (id, value, status = 'unspent') => ({
   value: value.toString(),
   diversifier: '00000000',
   ownerCommitment: '01'.repeat(32),
-  leafIndex: id,
-  actionIndex: 0,
+  leafIndex: BigInt(id),
+  actionIndex: 0n,
   rho: '02'.repeat(32),
   memoHex: '',
   senderFingerprintHex: '',
@@ -61,4 +61,13 @@ test('coin selection distinguishes consolidation from insufficient balance', () 
     availableValue: 12n,
     missingValue: 1n,
   });
+});
+
+
+test('withdrawal selection prefers an exact pair to a larger single note', () => {
+  const notes = [note(1, 3), note(2, 4), note(3, 10)];
+  const selected = selectPrivateNotes(notes, 7n, { preferExact: true });
+  assert.equal(selected.kind, 'selected');
+  assert.deepEqual(selected.noteIds, [notes[0].id, notes[1].id]);
+  assert.equal(selected.changeValue, 0n);
 });

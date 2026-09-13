@@ -12,12 +12,12 @@ const zero = value => value.every(byte => byte === 0);
 const equal = (left, right) => left.length === right.length && left.every((byte, index) => byte === right[index]);
 
 async function fixture(outgoingHistory = 'recoverable') {
-  const context = { protocolVersion: 1, networkId: bytes(1), realmId: bytes(2), poolId: bytes(3), accountPublicKey: bytes(5) };
+  const context = { protocolVersion: 2, networkId: bytes(1), realmId: bytes(2), poolId: bytes(3), accountPublicKey: bytes(5) };
   const assetPayload = bytes(4);
-  const contextHash = computeContextHash(1, context.networkId, context.realmId, context.poolId);
+  const contextHash = computeContextHash(2, context.networkId, context.realmId, context.poolId);
   const keyContext = { ...context, contextField: computeContextField(contextHash),
     deploymentBindingHash: bytes(9), addressPrefix: 'tskpay_' };
-  const esk = await deriveExpandedSpendingKey(new Uint8Array(64).fill(6), 1,
+  const esk = await deriveExpandedSpendingKey(new Uint8Array(64).fill(6), 2,
     context.networkId, context.realmId, context.poolId, context.accountPublicKey, keyContext.contextField);
   const memo = Uint8Array.of(7, 8, 9);
   const borrowed = [...Object.values(esk), ...Object.values(keyContext).filter(value => value instanceof Uint8Array), memo]

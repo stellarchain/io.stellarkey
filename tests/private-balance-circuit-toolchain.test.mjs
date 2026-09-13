@@ -128,13 +128,13 @@ test('private action circuit safely binds eleven public signals', () => {
   assert.doesNotMatch(action, /include "action_binding\.circom"/u);
 });
 
-test('private action circuit uses a depth-17 ternary Merkle path', () => {
+test('private action circuit uses a private 17+47 ternary Merkle path', () => {
   const actionCircuit = readFileSync(join(circuitsDir, 'circom/action.circom'), 'utf8');
   const merkleCircuit = readFileSync(join(circuitsDir, 'circom/merkle.circom'), 'utf8');
 
-  assert.match(actionCircuit, /inputSiblings\[2\]\[17\]\[2\]/u);
-  assert.match(actionCircuit, /inputPositions\[2\]\[17\]/u);
-  assert.match(actionCircuit, /MerklePath\(17\)/u);
+  assert.match(actionCircuit, /inputSiblings\[2\]\[DEPTH\]\[2\]/u);
+  assert.match(actionCircuit, /inputPositions\[2\]\[DEPTH\]/u);
+  assert.match(actionCircuit, /HierarchyPath\(INNER, OUTER\)/u);
   assert.match(merkleCircuit, /component hasher = Poseidon2Hash\(3\);/u);
   assert.doesNotMatch(merkleCircuit, /DOMAIN_MERKLE_NODE/u);
 });
@@ -205,14 +205,14 @@ test('the governed registry precomputes immutable asset fields', () => {
   assert.match(contract, /compute_asset_field\(\(1, asset_payload\)\)/u);
 });
 
-test('private proving-key checks pin and authenticate the pot14 ceremony input', () => {
+test('private proving-key checks pin and authenticate the power-17 ceremony input', () => {
   const transcriptScript = readFileSync(join(circuitsDir, 'scripts/powers-of-tau.mjs'), 'utf8');
   const verifier = readFileSync(join(circuitsDir, 'scripts/verify-proving-key.mjs'), 'utf8');
 
-  assert.match(transcriptScript, /ppot_0080_14\.ptau/);
+  assert.match(transcriptScript, /ppot_0080_17\.ptau/);
   assert.match(
     transcriptScript,
-    /3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db/,
+    /f807e065fde53f72f4bf4d57140fab85b26daa6cc95bdfec7cce93622b3a367c/,
   );
   assert.match(transcriptScript, /assertPowersOfTau/);
   assert.match(transcriptScript, /rmSync\(path, \{ force: true \}\)/);

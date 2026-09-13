@@ -53,7 +53,7 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
     ([name, value]) => [name, fromHex(value)],
   ));
   const contextHash = computeContextHash(
-    1,
+    2,
     keyInput.networkId,
     keyInput.realmId,
     keyInput.poolId,
@@ -61,7 +61,7 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
   const contextField = computeContextField(contextHash);
   const sessionRoot = derivePrivacySessionRoot(
     keyInput.rawSeed,
-    1,
+    2,
     keyInput.networkId,
     keyInput.realmId,
     keyInput.poolId,
@@ -69,7 +69,7 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
   );
   const keys = await deriveKeysFromSeed(
     keyInput.rawSeed,
-    1,
+    2,
     keyInput.networkId,
     keyInput.realmId,
     keyInput.poolId,
@@ -108,7 +108,7 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
   const memo = new Uint8Array(32);
   memo.set(fromHex(noteInput.memo));
   const noteBytes = encodeNotePlaintext({
-    protocolVersion: 1,
+    protocolVersion: 2,
     flags: 0,
     value: BigInt(noteInput.value),
     diversifier: fromHex(noteInput.diversifier),
@@ -148,7 +148,7 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
     encryptionVector.input.outputIndex,
   )), encryptionVector.expected.aad);
   const outgoingPlaintext = encodeOutgoingPlaintext({
-    protocolVersion: 1,
+    protocolVersion: 2,
     flags: 0,
     value: BigInt(noteInput.value),
     diversifier: fromHex(noteInput.diversifier),
@@ -183,12 +183,12 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
   assert.equal(toHex(tree.currentRoot), treeVector.expected.emptyRoot);
   await appendCommitments(tree, treeVector.input.leaves.map(fromHex));
   assert.equal(toHex(tree.currentRoot), treeVector.expected.rootAfter);
-  assert.equal(tree.nextIndex, treeVector.expected.nextIndex);
+  assert.equal(tree.nextIndex, BigInt(treeVector.expected.nextIndex));
 
   const actionVector = load('actions');
   const zero = new Uint8Array(32);
   const action = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     kind: ActionKind.Deposit,
     assetIndex: actionVector.input.assetIndex,
     asset,
@@ -240,12 +240,12 @@ test('outgoing viewing key recovers fixed real and dummy envelopes and binds all
   const fill = (value, length = 32) => new Uint8Array(length).fill(value);
   const keys = await deriveKeysFromSeed(
     fill(0x11),
-    1,
+    2,
     fill(0x22),
     fill(0x33),
     fill(0x44),
     fill(0x66),
-    computeContextField(computeContextHash(1, fill(0x22), fill(0x33), fill(0x44))),
+    computeContextField(computeContextHash(2, fill(0x22), fill(0x33), fill(0x44))),
   );
   assert.notDeepEqual(keys.outgoingViewingKey, keys.ask);
   assert.notDeepEqual(keys.outgoingViewingKey, keys.nk);
@@ -254,7 +254,7 @@ test('outgoing viewing key recovers fixed real and dummy envelopes and binds all
   const memo = new Uint8Array(32);
   memo.set(new TextEncoder().encode('rent'));
   const real = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     flags: 0,
     value: 25n,
     diversifier: Uint8Array.of(1, 2, 3, 4),
@@ -374,7 +374,7 @@ test('outgoing viewing key recovers fixed real and dummy envelopes and binds all
   const recipientRho = Uint8Array.from([...new Uint8Array(31), 15]);
   const recipientContextField = computeContextField(context);
   const recipientNote = encodeNotePlaintext({
-    protocolVersion: 1,
+    protocolVersion: 2,
     flags: 0,
     value: 25n,
     diversifier: new Uint8Array(4),
@@ -430,9 +430,9 @@ test('archive: Rust and TypeScript record hashes match', () => {
   const vector = JSON.parse(readFileSync(vectorPath, 'utf8'));
   const fill = (value, length) => new Uint8Array(length).fill(value);
   const record = {
-    actionIndex: vector.record.actionIndex,
+    actionIndex: BigInt(vector.record.actionIndex),
     ledgerSequence: vector.record.ledgerSequence,
-    startingLeafIndex: vector.record.startingLeafIndex,
+    startingLeafIndex: BigInt(vector.record.startingLeafIndex),
     actionKind: vector.record.actionKind,
     assetIndex: vector.record.assetIndex,
     asset: {
@@ -475,10 +475,10 @@ test('archive: Rust and TypeScript record hashes match', () => {
   );
   assert.equal(Buffer.from(recordHash).toString('hex'), vector.expectedRecordHash);
   assert.notDeepEqual(
-    computeRecordHash({ ...record, actionIndex: 1 }, 1, priorRecordHash),
+    computeRecordHash({ ...record, actionIndex: 1n }, 2, priorRecordHash),
     recordHash,
   );
-  assert.notDeepEqual(computeRecordHash(record, 2, priorRecordHash), recordHash);
+  assert.notDeepEqual(computeRecordHash(record, 1, priorRecordHash), recordHash);
   assert.notDeepEqual(computeRecordHash(record, 1, fill(86, 32)), recordHash);
 });
 
@@ -522,7 +522,7 @@ test('address: encode and decode roundtrip', async () => {
 
 test('note: encode and decode plaintext', () => {
   const note = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     flags: 0,
     value: 5000000n,
     diversifier: Uint8Array.of(4, 3, 2, 1),
@@ -545,14 +545,14 @@ test('note: encode and decode plaintext', () => {
 
 test('tree: create empty tree and append leaves', async () => {
   const tree = await createEmptyTree();
-  assert.equal(tree.nextIndex, 0);
-  assert.equal(tree.frontier.length, 34);
+  assert.equal(tree.nextIndex, 0n);
+  assert.equal(tree.frontier.length, 128);
 
   const leaf0 = new Uint8Array(32).fill(0x01);
   const leaf1 = new Uint8Array(32).fill(0x02);
 
   const rootAfter = await appendCommitments(tree, [leaf0, leaf1]);
-  assert.equal(tree.nextIndex, 2);
+  assert.equal(tree.nextIndex, 2n);
   assert.equal(rootAfter.length, 32);
 });
 
@@ -567,14 +567,14 @@ test('tree: public node store rebuilds exact local witness paths', async () => {
   await appendCommitments(tree, leaves);
   const store = await MerkleNodeStore.fromCommitments(leaves);
   assert.deepEqual(store.currentRoot, tree.currentRoot);
-  assert.equal(store.nextIndex, leaves.length);
+  assert.equal(store.nextIndex, BigInt(leaves.length));
 
-  const path = await store.getPath(1);
+  const path = await store.getPath(1n);
   assert.deepEqual(path.leaf, leaves[1]);
   assert.deepEqual(path.siblings[0], [leaves[0], leaves[2]]);
   assert.deepEqual(path.positions.slice(0, 3), [1, 0, 0]);
   assert.deepEqual(path.root, tree.currentRoot);
-  await assert.rejects(() => store.getPath(4), /not present/i);
+  await assert.rejects(() => store.getPath(4n), /not present/i);
 });
 
 test('prover: verify proof vectors from proofs-v1.json locally', async () => {

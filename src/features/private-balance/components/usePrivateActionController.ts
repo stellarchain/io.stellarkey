@@ -136,19 +136,18 @@ export function usePrivateActionController(
       if (controller.signal.aborted) return;
       if (
         cause instanceof PrivateConsolidationRequiredError &&
-        draft.kind === 'transfer'
+        (draft.kind === 'transfer' || draft.kind === 'withdraw')
       ) {
         // The send needs the balance prepared first: fold it into one
         // approval that covers every step, preflighting the public XLM the
         // whole chain needs before anything is shown for approval.
         try {
-          const chainedDraft: PrivateChainedSendDraft = {
-            kind: 'transfer',
-            ...(draft.feePayerAccountId ? { feePayerAccountId: draft.feePayerAccountId } : {}),
-            amount: draft.amount,
-            recipientAddress: draft.recipientAddress,
-            ...(draft.memo ? { memo: draft.memo } : {}),
-          };
+          const chainedDraft: PrivateChainedSendDraft = draft.kind === 'withdraw'
+            ? { kind: 'withdraw', amount: draft.amount, publicRecipient: draft.publicRecipient,
+              ...(draft.feePayerAccountId ? { feePayerAccountId: draft.feePayerAccountId } : {}) }
+            : { kind: 'transfer', amount: draft.amount, recipientAddress: draft.recipientAddress,
+              ...(draft.feePayerAccountId ? { feePayerAccountId: draft.feePayerAccountId } : {}),
+              ...(draft.memo ? { memo: draft.memo } : {}) };
           const approval = await prepareChainedSend(chainedDraft);
           if (!controller.signal.aborted) setChained({ approval, draft: chainedDraft });
           return;

@@ -15,8 +15,8 @@ template GadgetsHelper() {
     signal input rho;
     signal input value;
     signal input leafIndex;
-    signal input siblings[17][2];
-    signal input positions[17];
+    signal input siblings[64][2];
+    signal input positions[64];
 
     signal output ownerCommitment;
     signal output noteCommitment;
@@ -48,10 +48,10 @@ template GadgetsHelper() {
     nf.cm <== nc.out;
     nullifier <== nf.out;
 
-    component mp = MerklePath(17);
+    component mp = MerklePath(64);
     mp.leaf <== nc.out;
     mp.leafIndex <== leafIndex;
-    for (var i = 0; i < 17; i++) {
+    for (var i = 0; i < 64; i++) {
         mp.siblings[i][0] <== siblings[i][0];
         mp.siblings[i][1] <== siblings[i][1];
         mp.positions[i] <== positions[i];

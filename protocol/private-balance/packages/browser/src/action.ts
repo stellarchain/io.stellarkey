@@ -10,6 +10,7 @@ export enum ActionKind {
   Deposit = 1,
   PrivateTransfer = 2,
   Withdraw = 3,
+  FullInputExit = 4,
 }
 
 export interface OutputPackageModel {
@@ -71,8 +72,8 @@ function validateAssetBoundary(action: ActionModel): void {
 }
 
 function validateAction(action: ActionModel): void {
-  if (action.protocolVersion !== 1) throw new Error('Unsupported action protocol version');
-  if (![ActionKind.Deposit, ActionKind.PrivateTransfer, ActionKind.Withdraw].includes(action.kind)) {
+  if (action.protocolVersion !== 2) throw new Error('Unsupported action protocol version');
+  if (![ActionKind.Deposit, ActionKind.PrivateTransfer, ActionKind.Withdraw, ActionKind.FullInputExit].includes(action.kind)) {
     throw new Error('Invalid action kind');
   }
   validateAssetBoundary(action);

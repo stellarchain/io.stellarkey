@@ -20,19 +20,20 @@ const {
   computeContextField,
   computeContextHash,
   computeDummyNullifier,
+  computeCommitment,
 } = await import(browserPackagePath);
 const fromHex = (value) => Uint8Array.from(value.match(/../g), (byte) => Number.parseInt(byte, 16));
 const fieldDecimal = (value) => BigInt(`0x${Buffer.from(value).toString('hex')}`).toString();
 const fieldBytes = (value) => fromHex(BigInt(value).toString(16).padStart(64, '0'));
 const positionsFor = (leafIndex) => {
   let value = BigInt(leafIndex);
-  return Array.from({ length: 17 }, () => {
+  return Array.from({ length: 64 }, () => {
     const position = value % 3n;
     value /= 3n;
     return position.toString();
   });
 };
-const emptySiblings = () => Array.from({ length: 17 }, () => ['0', '0']);
+const emptySiblings = () => Array.from({ length: 64 }, () => ['0', '0']);
 
 const helperWasm = readFileSync(helperWasmPath);
 const wcModule = await import(join(circuitsDir, 'node_modules/circom_runtime/js/witness_calculator.js'));
@@ -82,7 +83,7 @@ async function generateVectors() {
   const contextField = fieldDecimal(
     computeContextField(
       computeContextHash(
-        1,
+        2,
         networkId,
         realmId,
         poolId,
@@ -123,7 +124,7 @@ async function generateVectors() {
   });
   const depDummyNullifiers = [dummyNullifier('901'), dummyNullifier('902')];
   const depAction = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     kind: ActionKind.Deposit,
     assetIndex: 0,
     asset,
@@ -220,7 +221,7 @@ async function generateVectors() {
   });
   const trDummyNullifier = dummyNullifier('903');
   const trAction = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     kind: ActionKind.PrivateTransfer,
     actionNonce: new Uint8Array(32).fill(0x22),
     anchorRoot: fromHex(BigInt(in0Res.merkleRoot).toString(16).padStart(64, '0')),
@@ -308,7 +309,7 @@ async function generateVectors() {
   });
   const wdDummyNullifier = dummyNullifier('904');
   const wdAction = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     kind: ActionKind.Withdraw,
     assetIndex: 0,
     asset,
@@ -358,10 +359,32 @@ async function generateVectors() {
 
   const withdrawRes = await snarkjs.groth16.fullProve(wdInputs, wasmPath, zkeyPath);
 
+  // Same selected note/nullifier as the normal withdrawal: modes must share
+  // replay protection. All exit outputs are provably zero-valued dummies.
+  const exitCommitments = wdInputs.outputOwnerCommitment.map((owner, index) =>
+    computeCommitment(fieldBytes(contextField), fieldBytes(assetField), fieldBytes(owner), 0n, fieldBytes(wdInputs.outputRho[index])));
+  const exitAction = {
+    ...wdAction,
+    kind: ActionKind.FullInputExit,
+    actionNonce: new Uint8Array(32).fill(0x44),
+    publicValue: 10_000_000n,
+    outputs: wdAction.outputs.map((output, index) => ({ ...output, cm: exitCommitments[index] })),
+  };
+  const exitInputs = {
+    ...wdInputs,
+    actionKindField: '4',
+    publicValueField: '10000000',
+    actionField: actionFieldDecimal(exitAction),
+    outputValue: ['0', '0', '0'],
+    outputCommitment: exitCommitments.map(fieldDecimal),
+  };
+  const exitRes = await snarkjs.groth16.fullProve(exitInputs, wasmPath, zkeyPath);
+
   const vectors = {
     schemaVersion: 1,
-    protocolVersion: 1,
+    protocolVersion: 2,
     proofs: [
+      // Synthetic public test vectors; no wallet session is involved.
       {
         name: 'deposit_5000000',
         actionKind: 'Deposit',
@@ -379,6 +402,12 @@ async function generateVectors() {
         actionKind: 'Withdraw',
         publicSignals: withdrawRes.publicSignals,
         proof: withdrawRes.proof,
+      },
+      {
+        name: 'full_input_exit_10m_without_append',
+        actionKind: 'FullInputExit',
+        publicSignals: exitRes.publicSignals,
+        proof: exitRes.proof,
       },
     ],
   };
