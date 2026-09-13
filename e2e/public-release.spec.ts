@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { APPLICATION_VERSION, SOURCE_REPOSITORY_URL } from "../src/lib/brand";
 import { importTestWallet, installNetworkFixtures, installQuietEventSource } from "./fixtures";
+import privateManifest from "../public/protocol/private-balance/v1/manifest.json";
 
 const routes = [
   { path: "/", heading: "Your keys never leave this device.", title: "StellarKey: a Stellar wallet with a card machine in it" },
@@ -93,6 +94,28 @@ async function expectSourceAfterChangelog(page: Page, browserName: string) {
     .filter(({ impact }) => impact === "critical" || impact === "serious")
     .map(({ id, impact, nodes }) => ({ id, impact, nodes: nodes.length }))).toEqual([]);
 }
+
+test("the private explainer matches V2 artifacts and retains recovery limits", async ({ page }) => {
+  await page.goto("/private", { waitUntil: "domcontentloaded" });
+  const specs = page.locator("#private-how .spec");
+  const number = (value: number) => value.toLocaleString("en-GB");
+  await expect(specs).toContainText(`${number(privateManifest.artifacts.r1csConstraints)} constraints`);
+  await expect(specs).toContainText(`depth-${privateManifest.constants.treeDepth} tree`);
+  await expect(specs).toContainText(`${number(privateManifest.artifacts.zkeyTransport.byteLength)} bytes point-compressed`);
+  await expect(specs).toContainText(`${number(privateManifest.artifacts.zkeyByteLength)} bytes expanded`);
+  await expect(specs).toContainText(`${number(privateManifest.artifacts.wasmByteLength)}-byte`);
+  await expect(page.locator("#private-exits")).toContainText("without appending commitments");
+  await expect(page.locator("#private-exits")).toContainText("not one atomic aggregate withdrawal");
+  await expect(page.locator("#private-recovery")).toContainText("does not revoke the original proof");
+  await expect(page.locator("#private-what")).toContainText("not a browser-wallet or USDC test");
+  await expect(page.locator("#private-what")).toContainText("Mainnet is refused");
+  await expect(page.getByRole("link", { name: "public manifest", exact: true }))
+    .toHaveAttribute("href", "/protocol/private-balance/v1/manifest.json");
+  const audit = await new AxeBuilder({ page }).include("main").analyze();
+  expect(audit.violations
+    .filter(({ impact }) => impact === "critical" || impact === "serious")
+    .map(({ id, impact, nodes }) => ({ id, impact, nodes: nodes.length }))).toEqual([]);
+});
 
 test("the wallet entry page shows the same release identity", async ({ page, browserName }) => {
   await page.setViewportSize({ width: 320, height: 720 });
