@@ -1,3 +1,4 @@
+import { isPrivateIndex, privateBatchLength } from './indices';
 import {
   FeeBumpTransaction,
   Operation,
@@ -46,7 +47,7 @@ interface PrivateArchiveRestorationSubmissionRpc {
 }
 
 export interface PrivateArchiveRestorationReview {
-  actionIndices: readonly number[];
+  actionIndices: readonly bigint[];
   ledgerKeysXdr: readonly string[];
   envelopeXdr: string;
   transactionHash: string;
@@ -57,24 +58,24 @@ export interface PrivateArchiveRestorationReview {
 }
 
 export interface PreparedPrivateArchiveRestoration {
-  actionIndices: readonly number[];
+  actionIndices: readonly bigint[];
   review: PrivateArchiveRestorationReview;
   simulationLedger: number;
 }
 
 export interface PrivateArchiveRestorationProgress {
-  startActionIndex: number;
-  nextActionIndex: number;
-  endActionIndexExclusive: number;
-  restoredCount: number;
-  totalCount: number;
+  startActionIndex: bigint;
+  nextActionIndex: bigint;
+  endActionIndexExclusive: bigint;
+  restoredCount: bigint;
+  totalCount: bigint;
   confirmedBatchSize: number;
 }
 
 export interface PrivateArchiveRestorationRange {
-  startActionIndex: number;
-  endActionIndexExclusive: number;
-  probedEndActionIndexExclusive: number;
+  startActionIndex: bigint;
+  endActionIndexExclusive: bigint;
+  probedEndActionIndexExclusive: bigint;
   latestLedger: number;
 }
 
@@ -136,28 +137,23 @@ function assertExactRestoreFootprint(
 export async function findContiguousPrivateArchiveRestorationRange(input: {
   rpc: PrivateArchiveRestorationDiscoveryRpc;
   poolContractId: string;
-  startActionIndex: number;
-  endActionIndexExclusive: number;
+  startActionIndex: bigint;
+  endActionIndexExclusive: bigint;
   signal?: AbortSignal;
 }): Promise<PrivateArchiveRestorationRange> {
   if (
-    !Number.isInteger(input.startActionIndex) ||
-    !Number.isInteger(input.endActionIndexExclusive) ||
-    input.startActionIndex < 0 ||
-    input.endActionIndexExclusive <= input.startActionIndex ||
-    input.endActionIndexExclusive > 0x1_0000_0000
+    !isPrivateIndex(input.startActionIndex) ||
+    !isPrivateIndex(input.endActionIndexExclusive) ||
+    input.endActionIndexExclusive <= input.startActionIndex
   ) {
     throw new Error('Archive restoration discovery range is invalid.');
   }
-  const probedEndActionIndexExclusive = Math.min(
-    input.endActionIndexExclusive,
-    input.startActionIndex + MAX_ARCHIVE_RESTORATION_BATCH,
-  );
+  const probedEndActionIndexExclusive = input.startActionIndex + BigInt(privateBatchLength(input.endActionIndexExclusive - input.startActionIndex, MAX_ARCHIVE_RESTORATION_BATCH));
   const expectedKeys = Array.from(
-    { length: probedEndActionIndexExclusive - input.startActionIndex },
+    { length: privateBatchLength(probedEndActionIndexExclusive - input.startActionIndex, MAX_ARCHIVE_RESTORATION_BATCH) },
     (_, offset) => deriveArchiveRecordLedgerKey(
       input.poolContractId,
-      input.startActionIndex + offset,
+      input.startActionIndex + BigInt(offset),
     ),
   );
   const expectedKeySet = new Set(expectedKeys.map(key => key.toXDR('base64')));
@@ -194,9 +190,9 @@ export async function findContiguousPrivateArchiveRestorationRange(input: {
   let endActionIndexExclusive = input.startActionIndex;
   while (
     endActionIndexExclusive < probedEndActionIndexExclusive &&
-    !liveKeys.has(expectedKeys[endActionIndexExclusive - input.startActionIndex].toXDR('base64'))
+    !liveKeys.has(expectedKeys[privateBatchLength(endActionIndexExclusive - input.startActionIndex, MAX_ARCHIVE_RESTORATION_BATCH)].toXDR('base64'))
   ) {
-    endActionIndexExclusive += 1;
+    endActionIndexExclusive += 1n;
   }
   return Object.freeze({
     startActionIndex: input.startActionIndex,
@@ -209,7 +205,7 @@ export async function findContiguousPrivateArchiveRestorationRange(input: {
 function reviewRestoration(input: {
   transaction: Transaction;
   source: string;
-  actionIndices: readonly number[];
+  actionIndices: readonly bigint[];
   expectedKeys: readonly ReturnType<typeof deriveArchiveRecordLedgerKey>[];
   maximumClassicFeeStroops: bigint;
   maximumResourceFeeStroops: bigint;
@@ -268,8 +264,8 @@ export async function preparePrivateArchiveRestoration(input: {
   rpc: PrivateArchiveRestorationRpc;
   manifest: Pick<PrivateBalanceManifest, 'networkPassphrase' | 'poolContractId'>;
   source: string;
-  startActionIndex: number;
-  actionCount: number;
+  startActionIndex: bigint;
+  actionCount: bigint;
   maximumActionCount: number;
   classicFeeStroops: bigint;
   maximumResourceFeeStroops: bigint;
@@ -277,16 +273,13 @@ export async function preparePrivateArchiveRestoration(input: {
   signal?: AbortSignal;
 }): Promise<PreparedPrivateArchiveRestoration> {
   if (
-    !Number.isInteger(input.startActionIndex) ||
-    input.startActionIndex < 0 ||
-    input.startActionIndex > 0xffff_ffff
+    !isPrivateIndex(input.startActionIndex)
   ) {
     throw new Error('Archive restoration start action index is invalid.');
   }
   if (
-    !Number.isInteger(input.actionCount) ||
-    input.actionCount < 1 ||
-    input.actionCount > 0x1_0000_0000 ||
+    !isPrivateIndex(input.actionCount) ||
+    input.actionCount < 1n ||
     input.startActionIndex >= input.actionCount
   ) {
     throw new Error('Archive restoration start is outside the canonical action count.');
@@ -294,7 +287,7 @@ export async function preparePrivateArchiveRestoration(input: {
   if (
     !Number.isInteger(input.maximumActionCount) ||
     input.maximumActionCount < 1 ||
-    input.startActionIndex + input.maximumActionCount > input.actionCount
+    input.startActionIndex + BigInt(input.maximumActionCount) > input.actionCount
   ) {
     throw new Error('Archive restoration range exceeds the canonical action count.');
   }
@@ -319,10 +312,10 @@ export async function preparePrivateArchiveRestoration(input: {
   const account = await input.rpc.getAccount(input.source);
   throwIfAborted(input.signal);
 
-  const actionIndices = (count: number): readonly number[] => Object.freeze(
-    Array.from({ length: count }, (_, offset) => input.startActionIndex + offset),
+  const actionIndices = (count: number): readonly bigint[] => Object.freeze(
+    Array.from({ length: count }, (_, offset) => input.startActionIndex + BigInt(offset)),
   );
-  const keysFor = (indices: readonly number[]) => indices.map(actionIndex =>
+  const keysFor = (indices: readonly bigint[]) => indices.map(actionIndex =>
     deriveArchiveRecordLedgerKey(input.manifest.poolContractId, actionIndex));
   const buildRaw = (expectedKeys: readonly ReturnType<typeof deriveArchiveRecordLedgerKey>[]) =>
     new TransactionBuilder(account, {
@@ -442,23 +435,21 @@ export async function preparePrivateArchiveRestoration(input: {
 }
 
 export async function restorePrivateArchiveRange<Review>(input: {
-  startActionIndex: number;
-  endActionIndexExclusive: number;
+  startActionIndex: bigint;
+  endActionIndexExclusive: bigint;
   prepare(request: {
-    startActionIndex: number;
+    startActionIndex: bigint;
     maximumActionCount: number;
     signal?: AbortSignal;
-  }): Promise<{ actionIndices: readonly number[]; review: Review }>;
+  }): Promise<{ actionIndices: readonly bigint[]; review: Review }>;
   submit(review: Review, signal?: AbortSignal): Promise<unknown>;
   onProgress?(progress: PrivateArchiveRestorationProgress): void;
   signal?: AbortSignal;
-}): Promise<{ nextActionIndex: number }> {
+}): Promise<{ nextActionIndex: bigint }> {
   if (
-    !Number.isInteger(input.startActionIndex) ||
-    !Number.isInteger(input.endActionIndexExclusive) ||
-    input.startActionIndex < 0 ||
-    input.endActionIndexExclusive <= input.startActionIndex ||
-    input.endActionIndexExclusive > 0x1_0000_0000
+    !isPrivateIndex(input.startActionIndex) ||
+    !isPrivateIndex(input.endActionIndexExclusive) ||
+    input.endActionIndexExclusive <= input.startActionIndex
   ) {
     throw new Error('Archive restoration range is invalid.');
   }
@@ -468,23 +459,23 @@ export async function restorePrivateArchiveRange<Review>(input: {
     throwIfAborted(input.signal);
     const prepared = await input.prepare({
       startActionIndex: nextActionIndex,
-      maximumActionCount: input.endActionIndexExclusive - nextActionIndex,
+      maximumActionCount: privateBatchLength(input.endActionIndexExclusive - nextActionIndex, MAX_ARCHIVE_RESTORATION_BATCH),
       signal: input.signal,
     });
     throwIfAborted(input.signal);
     if (
       prepared.actionIndices.length < 1 ||
       prepared.actionIndices.some(
-        (actionIndex, offset) => actionIndex !== nextActionIndex + offset,
+        (actionIndex, offset) => actionIndex !== nextActionIndex + BigInt(offset),
       ) ||
-      nextActionIndex + prepared.actionIndices.length > input.endActionIndexExclusive
+      nextActionIndex + BigInt(prepared.actionIndices.length) > input.endActionIndexExclusive
     ) {
       throw new Error('Prepared archive restoration batch is not the requested contiguous prefix.');
     }
     await input.submit(prepared.review, input.signal);
     throwIfAborted(input.signal);
     const confirmedBatchSize = prepared.actionIndices.length;
-    nextActionIndex += confirmedBatchSize;
+    nextActionIndex += BigInt(confirmedBatchSize);
     input.onProgress?.(Object.freeze({
       startActionIndex: input.startActionIndex,
       nextActionIndex,

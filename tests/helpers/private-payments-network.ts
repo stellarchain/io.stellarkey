@@ -89,10 +89,10 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
   manifest.artifacts.wasmSha256 = await computeSha256(artifacts.get('circuit.wasm')!.slice().buffer);
   manifest.artifacts.zkeySha256 = await computeSha256(artifacts.get('circuit.zkey')!.slice().buffer);
   manifest.artifacts.vkJsonSha256 = await computeSha256(artifacts.get('verification-key.json')!.slice().buffer);
-  const base = { protocolVersion: 1, networkId: decode(manifest.networkId), realmId: decode(manifest.realmId),
+  const base = { protocolVersion: 2, networkId: decode(manifest.networkId), realmId: decode(manifest.realmId),
     poolId: new Uint8Array(StrKey.decodeContract(manifest.poolContractId)), deploymentBindingHash: decode(manifest.deploymentBindingHash),
     addressPrefix: 'tskpay_' as const, assets: manifest.assets.map(({ index, contractId }) => ({ index, contractId })) };
-  const contextHash = computeContextHash(1, base.networkId, base.realmId, base.poolId);
+  const contextHash = computeContextHash(2, base.networkId, base.realmId, base.poolId);
   const contextField = computeContextField(contextHash);
   const assetContractId = manifest.assets[0].contractId;
   const initialPublic = parsePrivateAmount(options.publicBalance ?? '1000', 7);
@@ -101,7 +101,7 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
     const signer = Keypair.fromRawEd25519Seed(bytes(61 + index));
     const accountPublicKey = new Uint8Array(signer.rawPublicKey());
     const keyContext = { ...base, accountPublicKey, contextField };
-    const esk = await deriveExpandedSpendingKey(new Uint8Array(64).fill(71 + index), 1, base.networkId, base.realmId, base.poolId, accountPublicKey, contextField);
+    const esk = await deriveExpandedSpendingKey(new Uint8Array(64).fill(71 + index), 2, base.networkId, base.realmId, base.poolId, accountPublicKey, contextField);
     const diversifier = Uint8Array.of(0, 0, 0, index + 1);
     const identity = await deriveDiversifiedAddressKeys(esk.baseOwnerCommitment, esk.hpkePrivateKey, diversifier);
     const address = encodePrivateAddress({ deploymentTag: derivePrivateAddressDeploymentTag(base.deploymentBindingHash), diversifier,
@@ -126,21 +126,22 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
   const tree = await createEmptyTree();
   let transcriptHead = computeGenesisRecordHash(contextHash, base.deploymentBindingHash);
   const append = async (action: ActionModel) => {
-    const actionIndex = records.length;
-    const record = { ...action, actionKind: action.kind, actionIndex, ledgerSequence: 100 + actionIndex,
-      startingLeafIndex: actionIndex * 3, treeRootAfter: (await appendCommitments(tree, action.outputs.map(output => output.cm))).slice() };
-    transcriptHead = computeRecordHash(record, 1, transcriptHead);
+    const actionIndex = BigInt(records.length);
+    const startingLeafIndex = tree.nextIndex;
+    const record = { ...action, actionKind: action.kind, actionIndex, ledgerSequence: 100 + records.length,
+      startingLeafIndex, treeRootAfter: (action.kind === 4 ? tree.currentRoot : await appendCommitments(tree, action.outputs.map(output => output.cm))).slice() };
+    transcriptHead = computeRecordHash(record, 2, transcriptHead);
     records.push(record);
     closeTimes.set(record.ledgerSequence, seconds(Date.now()));
     return actionIndex;
   };
   const head = (): ArchiveHeadState => ({ latestLedger: 100 + records.length,
-    config: { protocolVersion: 1, networkId: base.networkId, realmId: base.realmId, guardian: manifest.guardianAddress,
+    config: { protocolVersion: 2, networkId: base.networkId, realmId: base.realmId, guardian: manifest.guardianAddress,
       initialAssetAdmin: manifest.assetAdminAddress, poseidon2ParameterHash: bytes(1), circuitHash: bytes(2), verificationKeyHash: bytes(3),
       treeDepth: manifest.constants.treeDepth, rootWindowLedgers: manifest.constants.rootWindowLedgers,
       deploymentBindingHash: base.deploymentBindingHash, contextHash, contextField },
-    meta: { actionCount: records.length, transcriptHead }, tree });
-  const archive = { readHead: async () => head(), readRecords: async (start: number, count: number) => records.slice(start, start + count),
+    meta: { actionCount: BigInt(records.length), transcriptHead }, tree });
+  const archive = { readHead: async () => head(), readRecords: async (start: bigint, count: number) => records.slice(Number(start), Number(start) + count),
     readLedgerCloseTimes: async (sequences: readonly number[]) => Object.fromEntries(sequences.map(sequence => [sequence, closeTimes.get(sequence) ?? seconds(Date.now())])) };
 
   // ---- controlled transports, installed for the network's lifetime ----

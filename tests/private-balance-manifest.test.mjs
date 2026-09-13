@@ -32,7 +32,7 @@ test('manifest: proving-key verification succeeds only after the pinned verifier
 
   assert.equal(verified, true);
   assert.equal(transcripts.length, 1);
-  assert.match(transcripts[0], /build\/pot14_final\.ptau$/);
+  assert.match(transcripts[0], /build\/ppot_0080_17\.ptau$/);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].command, 'npx');
   assert.deepEqual(calls[0].args.slice(0, 4), [
@@ -44,7 +44,7 @@ test('manifest: proving-key verification succeeds only after the pinned verifier
   assert.equal(calls[0].options.stdio, 'pipe');
   assert.match(calls[0].options.cwd, /protocol\/private-balance\/circuits$/);
   assert.match(calls[0].args[4], /build\/action\.r1cs$/);
-  assert.match(calls[0].args[5], /build\/pot14_final\.ptau$/);
+  assert.match(calls[0].args[5], /build\/ppot_0080_17\.ptau$/);
   assert.match(calls[0].args[6], /build\/action_dev\.zkey$/);
 });
 
@@ -68,9 +68,9 @@ test('manifest: validates real manifest.json successfully', () => {
 
   const manifest = validateManifest(raw);
   assert.equal(manifest.schemaVersion, 1);
-  assert.equal(manifest.protocolVersion, 1);
+  assert.equal(manifest.protocolVersion, 2);
   assert.equal(manifest.status, 'development');
-  assert.equal(manifest.constants.treeDepth, 17);
+  assert.equal(manifest.constants.treeDepth, 64);
   assert.equal(manifest.constants.treeArity, 3);
   assert.equal(manifest.constants.publicInputs, 11);
   assert.equal(manifest.constants.outputsPerAction, 3);
@@ -88,7 +88,7 @@ test('manifest: validates real manifest.json successfully', () => {
   assert.match(manifest.release.contractWasmSha256, /^[0-9a-f]{64}$/);
   assert.equal(
     manifest.release.powersOfTauSha256,
-    '3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db',
+    'f807e065fde53f72f4bf4d57140fab85b26daa6cc95bdfec7cce93622b3a367c',
   );
   assert.equal(manifest.release.zkeyVerified, true);
   assert.equal(manifest.release.allowedEnvironment, 'testnet');
@@ -135,8 +135,8 @@ test('manifest: rejects incomplete or oversized proving-key transport metadata',
 test('manifest: rejects malformed manifest', () => {
   assert.throws(() => validateManifest(null), /Manifest must be a non-null object/);
   assert.throws(() => validateManifest({ schemaVersion: 2 }), /Unsupported schemaVersion/);
-  assert.throws(() => validateManifest({ schemaVersion: 1, protocolVersion: 2 }), /Unsupported protocolVersion/);
-  assert.throws(() => validateManifest({ schemaVersion: 1, protocolVersion: 1, status: 'invalid' }), /Invalid manifest status/);
+  assert.throws(() => validateManifest({ schemaVersion: 1, protocolVersion: 1 }), /Unsupported protocolVersion/);
+  assert.throws(() => validateManifest({ schemaVersion: 1, protocolVersion: 2, status: 'invalid' }), /Invalid manifest status/);
 });
 
 test('manifest: requires one administrator and contiguous asset registry metadata', () => {

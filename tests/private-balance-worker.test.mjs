@@ -17,7 +17,7 @@ const TEST_PRIVATE_ADDRESS = encodePrivateAddress({
 
 const manifest = {
   schemaVersion: 1,
-  protocolVersion: 1,
+  protocolVersion: 2,
   artifactVersion: '1.0.0-dev',
   status: 'development',
   minimumStellarProtocol: 25,
@@ -53,7 +53,7 @@ const manifest = {
     vkBinSha256: 'a5'.repeat(32),
   },
   constants: {
-    treeDepth: 17,
+    treeDepth: 64,
     treeArity: 3,
     rootWindowLedgers: 1440,
     publicInputs: 11,
@@ -262,7 +262,7 @@ test('worker lifecycle: a completed request never trips its watchdog later', asy
     type: 'SCAN_OK',
     notes: [],
     activities: [],
-    tree: { nextIndex: 0, frontier: [], currentRoot: new Uint8Array(32) },
+    tree: { nextIndex: 0n, frontier: [], currentRoot: new Uint8Array(32) },
     lastRecordHash: new Uint8Array(32),
     spentNullifierHexes: [],
     nullifiersByCommitment: [],

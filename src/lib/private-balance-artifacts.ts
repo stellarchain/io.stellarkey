@@ -1,5 +1,8 @@
 import { type PrivateBalanceManifest, validateManifest } from './private-balance-manifest';
 import { expandPointCompressedZkeyTransport } from './private-balance-zkey-transport';
+import {
+  PRIVATE_ARTIFACT_CACHE_PREFIX, privateArtifactEntries, privateArtifactRevisionSource,
+} from './private-balance-artifact-policy.mjs';
 
 export interface LoadedCircuitArtifacts {
   wasmBuffer: ArrayBuffer;
@@ -8,7 +11,10 @@ export interface LoadedCircuitArtifacts {
 }
 
 const MAX_VERIFICATION_KEY_BYTES = 1024 * 1024;
-const ARTIFACT_CACHE_NAME = 'stellarkey-private-balance-artifacts-v1';
+// One public proving key in RAM avoids repeating expensive point expansion.
+// It contains no wallet secrets and is never persisted or handed to callers.
+let warmProvingKey: { key: string; buffer: ArrayBuffer } | null = null;
+let warmProvingKeyGeneration = 0;
 
 /**
  * Content-addressed artifact store: entries are keyed by their expected
@@ -18,30 +24,75 @@ const ARTIFACT_CACHE_NAME = 'stellarkey-private-balance-artifacts-v1';
 export interface CircuitArtifactCache {
   read(sha256: string): Promise<ArrayBuffer | null>;
   write(sha256: string, buffer: ArrayBuffer): Promise<void>;
+  complete?(): Promise<void>;
 }
 
-function cacheEntryUrl(sha256: string): string {
-  return `/private-balance-artifact/sha256/${sha256.toLowerCase()}`;
-}
-
-function defaultArtifactCache(): CircuitArtifactCache | null {
+async function defaultArtifactCache(
+  manifest: PrivateBalanceManifest, basePath: string,
+): Promise<CircuitArtifactCache | null> {
   if (typeof caches === 'undefined') return null;
-  return {
-    async read(sha256) {
-      const cache = await caches.open(ARTIFACT_CACHE_NAME);
-      const response = await cache.match(cacheEntryUrl(sha256));
-      return response ? response.arrayBuffer() : null;
-    },
-    async write(sha256, buffer) {
-      const cache = await caches.open(ARTIFACT_CACHE_NAME);
-      await cache.put(
-        cacheEntryUrl(sha256),
-        new Response(buffer.slice(0), {
-          headers: { 'content-type': 'application/octet-stream' },
-        }),
-      );
-    },
-  };
+  try {
+    const storage = caches;
+    const entries = privateArtifactEntries(manifest, basePath);
+    const revisionBytes = new TextEncoder().encode(privateArtifactRevisionSource(manifest, entries));
+    const revision = (await computeSha256(revisionBytes.buffer)).slice(0, 20);
+    const name = `${PRIVATE_ARTIFACT_CACHE_PREFIX}${revision}`;
+    const cache = await storage.open(name);
+    const urls = new Map<string, string>(entries.map(([url, hash]) =>
+      [hash, contentAddressedArtifactUrl(url, hash)]));
+    const limits = new Map([
+      [manifest.artifacts.wasmSha256, manifest.artifacts.wasmByteLength],
+      [manifest.artifacts.zkeyTransport?.sha256 ?? manifest.artifacts.zkeySha256,
+        manifest.artifacts.zkeyTransport?.byteLength ?? manifest.artifacts.zkeyByteLength],
+      [manifest.artifacts.vkJsonSha256, MAX_VERIFICATION_KEY_BYTES],
+    ]);
+    const written = new Set<string>();
+    return {
+      async read(sha256) {
+        const url = urls.get(sha256);
+        if (!url) return null;
+        // Reuse the exact hash-keyed transport from another current-format revision.
+        // The caller verifies it before copying it into the current revision.
+        const names = [name, ...(await storage.keys()).filter(candidate =>
+          candidate !== name && candidate.startsWith(PRIVATE_ARTIFACT_CACHE_PREFIX)).reverse()];
+        for (const candidate of names) {
+          const source = candidate === name ? cache : await storage.open(candidate);
+          const response = await source.match(url);
+          if (response?.ok) return readArtifactResponse(response, url, limits.get(sha256)!);
+        }
+        return null;
+      },
+      async write(sha256, buffer) {
+        const url = urls.get(sha256);
+        if (!url) throw new Error('Unexpected artifact cache key.');
+        await cache.put(url, new Response(buffer.slice(0), {
+          headers: { 'content-type': 'application/octet-stream', 'content-length': String(buffer.byteLength) },
+        }));
+        written.add(sha256);
+      },
+      async complete() {
+        // Never discard the old offline set after an incomplete or quota-failed
+        // replacement. Only these disposable public-artifact namespaces qualify.
+        if (written.size !== urls.size) return;
+        const names = await storage.keys();
+        // A retired or superseded load has no authority over newer revisions.
+        if (names.filter(candidate => candidate.startsWith(PRIVATE_ARTIFACT_CACHE_PREFIX)).at(-1) !== name) return;
+        const previous = names.filter(candidate =>
+          candidate.startsWith(PRIVATE_ARTIFACT_CACHE_PREFIX) && candidate !== name).at(-1);
+        await Promise.all(names.filter(candidate =>
+          candidate.startsWith(PRIVATE_ARTIFACT_CACHE_PREFIX) && candidate !== name && candidate !== previous
+        ).map(candidate => storage.delete(candidate)));
+      },
+    };
+  } catch {
+    return null; // Storage permissions must not block verified downloads.
+  }
+}
+
+async function persistVerifiedArtifact(cache: CircuitArtifactCache | null, hash: string, buffer: ArrayBuffer) {
+  try { await cache?.write(hash, buffer); } catch {
+    // Cache writes are best-effort; the verified buffer is already in hand.
+  }
 }
 
 async function loadCachedOrFetchArtifact(
@@ -49,14 +100,19 @@ async function loadCachedOrFetchArtifact(
   url: string,
   expectedSha256: string,
   expectedByteLength?: number,
-  maximumByteLength?: number,
+  maximumByteLength = expectedByteLength ?? MAX_VERIFICATION_KEY_BYTES,
+  persist = true,
 ): Promise<ArrayBuffer> {
   if (cache) {
     try {
       const cached = await cache.read(expectedSha256);
-      if (cached) {
+      if (cached && cached.byteLength <= maximumByteLength &&
+          (expectedByteLength === undefined || cached.byteLength === expectedByteLength)) {
         const hash = await computeSha256(cached);
-        if (hash.toLowerCase() === expectedSha256.toLowerCase()) return cached;
+        if (hash.toLowerCase() === expectedSha256.toLowerCase()) {
+          if (persist) await persistVerifiedArtifact(cache, expectedSha256, cached);
+          return cached;
+        }
       }
     } catch {
       // A defective cache never blocks the verified network path.
@@ -68,13 +124,7 @@ async function loadCachedOrFetchArtifact(
     expectedByteLength,
     maximumByteLength,
   );
-  if (cache) {
-    try {
-      await cache.write(expectedSha256, buffer);
-    } catch {
-      // Cache writes are best-effort; the verified buffer is already in hand.
-    }
-  }
+  if (persist) await persistVerifiedArtifact(cache, expectedSha256, buffer);
   return buffer;
 }
 
@@ -86,40 +136,33 @@ async function loadCachedOrFetchPointCompressedArtifact(
   expectedSha256: string,
   expectedByteLength: number,
 ): Promise<ArrayBuffer> {
-  if (cache) {
-    try {
-      const cached = await cache.read(expectedSha256);
-      if (cached) {
-        const hash = await computeSha256(cached);
-        if (
-          cached.byteLength === expectedByteLength &&
-          hash.toLowerCase() === expectedSha256.toLowerCase()
-        ) return cached;
-      }
-    } catch {
-      // A defective cache never blocks the verified network path.
-    }
-  }
-  const transport = await fetchAndVerifyArtifact(
+  const generation = ++warmProvingKeyGeneration;
+  const transport = await loadCachedOrFetchArtifact(
+    cache,
     url,
     transportSha256,
     transportByteLength,
     transportByteLength,
+    false,
   );
-  const buffer = await expandPointCompressedZkeyTransport(transport, expectedByteLength);
+  const key = `${transportSha256}|${expectedSha256}|${expectedByteLength}`;
+  const cached = warmProvingKey;
+  const warm = cached?.key === key && cached.buffer.byteLength === expectedByteLength &&
+    (await computeSha256(cached.buffer)).toLowerCase() === expectedSha256.toLowerCase();
+  const buffer = warm ? cached.buffer.slice(0)
+    : await expandPointCompressedZkeyTransport(transport, expectedByteLength);
   const hash = await computeSha256(buffer);
   if (hash.toLowerCase() !== expectedSha256.toLowerCase()) {
     throw new Error(
       `Artifact hash mismatch after point expansion for ${url}: expected ${expectedSha256}, got ${hash}`,
     );
   }
-  if (cache) {
-    try {
-      await cache.write(expectedSha256, buffer);
-    } catch {
-      // Cache writes are best-effort; the verified buffer is already in hand.
-    }
+  if (!warm && generation === warmProvingKeyGeneration) {
+    warmProvingKey = { key, buffer: buffer.slice(0) };
   }
+  // Persist only the compressed transport, and only after its expansion also
+  // matches the canonical proving-key hash. Callers own independent copies.
+  await persistVerifiedArtifact(cache, transportSha256, transport);
   return buffer;
 }
 
@@ -147,11 +190,23 @@ export async function fetchAndVerifyArtifact(
   expectedByteLength?: number,
   maximumByteLength = expectedByteLength ?? MAX_VERIFICATION_KEY_BYTES,
 ): Promise<ArrayBuffer> {
-  const res = await fetch(url);
+  const res = await fetch(url, { cache: 'reload' });
   if (!res.ok) {
     throw new Error(`Failed to fetch artifact from ${url}: HTTP ${res.status}`);
   }
 
+  const buffer = await readArtifactResponse(res, url, maximumByteLength);
+  if (expectedByteLength !== undefined && buffer.byteLength !== expectedByteLength) {
+    throw new Error(`Artifact size mismatch for ${url}: expected ${expectedByteLength}, got ${buffer.byteLength}`);
+  }
+  const hash = await computeSha256(buffer);
+  if (hash.toLowerCase() !== expectedSha256.toLowerCase()) {
+    throw new Error(`Artifact hash mismatch for ${url}: expected ${expectedSha256}, got ${hash}`);
+  }
+  return buffer;
+}
+
+async function readArtifactResponse(res: Response, url: string, maximumByteLength: number): Promise<ArrayBuffer> {
   const declaredLength = res.headers.get('content-length');
   if (declaredLength !== null) {
     const parsedLength = Number(declaredLength);
@@ -189,19 +244,6 @@ export async function fetchAndVerifyArtifact(
     buffer = combined.buffer;
   }
 
-  if (expectedByteLength && buffer.byteLength !== expectedByteLength) {
-    throw new Error(
-      `Artifact size mismatch for ${url}: expected ${expectedByteLength}, got ${buffer.byteLength}`
-    );
-  }
-
-  const hash = await computeSha256(buffer);
-  if (hash.toLowerCase() !== expectedSha256.toLowerCase()) {
-    throw new Error(
-      `Artifact hash mismatch for ${url}: expected ${expectedSha256}, got ${hash}`
-    );
-  }
-
   return buffer;
 }
 
@@ -237,7 +279,7 @@ let inFlightLoad: { key: string; promise: Promise<LoadedCircuitArtifacts> } | nu
 export async function loadCircuitArtifacts(
   manifest: PrivateBalanceManifest,
   basePath: string = '/protocol/private-balance/v1',
-  cache: CircuitArtifactCache | null = defaultArtifactCache(),
+  cache?: CircuitArtifactCache | null,
 ): Promise<LoadedCircuitArtifacts> {
   const parsed = validateManifest(manifest);
   const key = [
@@ -250,6 +292,7 @@ export async function loadCircuitArtifacts(
   if (inFlightLoad?.key === key) return inFlightLoad.promise;
 
   const promise = (async () => {
+    const artifactCache = cache === undefined ? await defaultArtifactCache(parsed, basePath) : cache;
     const wasmUrl = contentAddressedArtifactUrl(
       `${basePath}/circuit.wasm`,
       parsed.artifacts.wasmSha256,
@@ -268,14 +311,14 @@ export async function loadCircuitArtifacts(
 
     const [wasmBuffer, zkeyBuffer, verificationKeyBuffer] = await Promise.all([
       loadCachedOrFetchArtifact(
-        cache,
+        artifactCache,
         wasmUrl,
         parsed.artifacts.wasmSha256,
         parsed.artifacts.wasmByteLength,
       ),
       useTransport
         ? loadCachedOrFetchPointCompressedArtifact(
-            cache,
+            artifactCache,
             zkeyUrl,
             parsed.artifacts.zkeyTransport!.sha256,
             parsed.artifacts.zkeyTransport!.byteLength,
@@ -283,13 +326,13 @@ export async function loadCircuitArtifacts(
             parsed.artifacts.zkeyByteLength,
           )
         : loadCachedOrFetchArtifact(
-            cache,
+            artifactCache,
             zkeyUrl,
             parsed.artifacts.zkeySha256,
             parsed.artifacts.zkeyByteLength,
           ),
       loadCachedOrFetchArtifact(
-        cache,
+        artifactCache,
         verificationKeyUrl,
         parsed.artifacts.vkJsonSha256,
         undefined,
@@ -297,13 +340,14 @@ export async function loadCircuitArtifacts(
       ),
     ]);
 
+    const verificationKey = parseVerificationKey(verificationKeyBuffer, parsed.constants.publicInputs);
+    try { await artifactCache?.complete?.(); } catch {
+      // Cleanup is best-effort and must never invalidate verified artifacts.
+    }
     return {
       wasmBuffer,
       zkeyBuffer,
-      verificationKey: parseVerificationKey(
-        verificationKeyBuffer,
-        parsed.constants.publicInputs,
-      ),
+      verificationKey,
     };
   })();
   inFlightLoad = { key, promise };
@@ -321,7 +365,7 @@ export async function loadCircuitArtifacts(
 export function prefetchCircuitArtifacts(
   manifest: PrivateBalanceManifest,
   basePath?: string,
-  cache: CircuitArtifactCache | null = defaultArtifactCache(),
+  cache?: CircuitArtifactCache | null,
 ): void {
   void loadCircuitArtifacts(manifest, basePath, cache).catch(() => {
     // Prefetch is opportunistic; the action flow retries with full errors.

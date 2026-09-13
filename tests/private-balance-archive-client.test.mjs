@@ -16,7 +16,7 @@ const poolContractId = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4
 const assetContractId = 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF';
 const deploymentBindingHash = '03'.repeat(32);
 const contextHash = computeContextHash(
-  1,
+  2,
   Buffer.from(networkId, 'hex'),
   Buffer.from(realmId, 'hex'),
   StrKey.decodeContract(poolContractId),
@@ -71,7 +71,7 @@ test('live contract reads reuse one loaded contract client per contract and netw
 });
 
 const manifest = {
-  protocolVersion: 1,
+  protocolVersion: 2,
   networkPassphrase: 'Test SDF Network ; September 2015',
   networkId,
   realmId,
@@ -83,13 +83,13 @@ const manifest = {
     vkJsonSha256: '0e'.repeat(32),
     vkBinSha256: '0f'.repeat(32),
   },
-  constants: { treeDepth: 17 },
+  constants: { treeDepth: 64 },
 };
 
 const recordNative = {
-    action_index: 0,
+    action_index: 0n,
     ledger_sequence: 123,
-    starting_leaf_index: 0,
+    starting_leaf_index: 0n,
     action_kind: 1,
     asset_index: 0,
     asset: assetContractId,
@@ -130,7 +130,7 @@ const outputScVal = output => mapScVal({
   recipient_envelope: nativeToScVal(output.recipient_envelope),
 });
 const recordScVal = record => mapScVal({
-  action_index: xdr.ScVal.scvU32(record.action_index),
+  action_index: nativeToScVal(record.action_index, { type: 'u128' }),
   action_kind: xdr.ScVal.scvU32(record.action_kind),
   asset_index: xdr.ScVal.scvU32(record.asset_index),
   asset: Address.fromString(record.asset).toScVal(),
@@ -145,7 +145,7 @@ const recordScVal = record => mapScVal({
   output_2: outputScVal(record.output_2),
   public_recipient: xdr.ScVal.scvVoid(),
   public_value: xdr.ScVal.scvU64(record.public_value),
-  starting_leaf_index: xdr.ScVal.scvU32(record.starting_leaf_index),
+  starting_leaf_index: nativeToScVal(record.starting_leaf_index, { type: 'u128' }),
   tree_root_after: nativeToScVal(record.tree_root_after),
 });
 
@@ -317,7 +317,7 @@ test('archive client reads manifest-bound state and canonical record storage key
       };
       const results = {
         config: {
-          protocol_version: 1,
+          protocol_version: 2,
           network_id: Buffer.from(networkId, 'hex'),
           realm_id: Buffer.from(realmId, 'hex'),
           guardian: account,
@@ -325,19 +325,19 @@ test('archive client reads manifest-bound state and canonical record storage key
           poseidon2_parameter_hash: bytes(12),
           circuit_hash: bytes(13),
           verification_key_hash: bytes(15),
-          tree_depth: 17,
+          tree_depth: 64,
           root_window_ledgers: 1_440,
           deployment_binding_hash: Buffer.from(deploymentBindingHash, 'hex'),
           context_hash: contextHash,
           context_field: computeContextField(contextHash),
         },
         archive_meta: {
-          action_count: 1,
+          action_count: 1n,
           transcript_head: bytes(10),
         },
         tree_state: {
           next_index: 3n,
-          frontier: Array.from({ length: 34 }, () => bytes(0)),
+          frontier: Array.from({ length: 128 }, () => bytes(0)),
           current_root: bytes(5),
         },
         deposits_paused: pauseResult,
@@ -387,8 +387,8 @@ test('archive client reads manifest-bound state and canonical record storage key
 
   const snapshot = await client.readHead();
   assert.equal(snapshot.latestLedger, 500);
-  assert.equal(snapshot.meta.actionCount, 1);
-  assert.equal(snapshot.tree.nextIndex, 3);
+  assert.equal(snapshot.meta.actionCount, 1n);
+  assert.equal(snapshot.tree.nextIndex, 3n);
   assert.equal(await client.readDepositsPaused(), false);
   assert.deepEqual(await client.readAssetRegistry(), {
     adminAddress: account,
@@ -412,8 +412,8 @@ test('archive client reads manifest-bound state and canonical record storage key
   await assert.rejects(() => client.readHead(), /configuration does not match the manifest/i);
   manifest.artifacts.r1csSha256 = '0d'.repeat(32);
 
-  const records = await client.readRecords(0, 1);
-  assert.equal(records[0].actionIndex, 0);
+  const records = await client.readRecords(0n, 1);
+  assert.equal(records[0].actionIndex, 0n);
   assert.equal(records[0].publicValue, 5_000_000n);
   assert.equal(records[0].outputs.length, 3);
   assert.deepEqual(records[0].outputs.map(output => output.cm), [
@@ -427,7 +427,7 @@ test('archive client reads manifest-bound state and canonical record storage key
   });
   assert.deepEqual(
     scValToNative(requestedKeys[0].contractData.key),
-    ['ArchiveRecord', 0],
+    ['ArchiveRecord', 0n],
   );
 
   returnKnownRoot = true;
@@ -445,8 +445,8 @@ test('archive client reads manifest-bound state and canonical record storage key
   returnKnownRoot = false;
   includeRecord = false;
   await assert.rejects(
-    () => client.readRecords(0, 1),
-    error => error instanceof ArchiveRecordUnavailableError && error.actionIndex === 0,
+    () => client.readRecords(0n, 1),
+    error => error instanceof ArchiveRecordUnavailableError && error.actionIndex === 0n,
   );
 });
 
@@ -475,7 +475,7 @@ test('archive client reports the lowest missing requested record by ledger key',
   const client = new PrivateBalanceArchiveClient('https://rpc.example', manifest, server);
 
   await assert.rejects(
-    () => client.readRecords(10, 3),
-    error => error instanceof ArchiveRecordUnavailableError && error.actionIndex === 10,
+    () => client.readRecords(10n, 3),
+    error => error instanceof ArchiveRecordUnavailableError && error.actionIndex === 10n,
   );
 });

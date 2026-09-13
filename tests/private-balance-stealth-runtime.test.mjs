@@ -54,7 +54,7 @@ async function preparedFixture(t) {
   });
   const { account } = await vault.initializeVault('correct horse battery staple', { secret: Keypair.random().secret() });
   return { accountId: account.id, network: 'testnet', deploymentContext: {
-    protocolVersion: 1, networkId: context.networkId, realmId: context.realmId,
+    protocolVersion: 2, networkId: context.networkId, realmId: context.realmId,
     poolContractId: StrKey.encodeContract(bytes(3)), deploymentBindingHash: context.deploymentBindingHash,
   } };
 }

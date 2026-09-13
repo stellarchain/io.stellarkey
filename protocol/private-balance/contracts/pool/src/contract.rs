@@ -45,7 +45,7 @@ fn append_leaf_to_frontier(
 
     let mut level = 0usize;
     loop {
-        match node_index % TREE_ARITY as u64 {
+        match node_index % TREE_ARITY as u128 {
             0 => {
                 next_frontier.set(frontier_offset(level, 0), BytesN::from_array(env, &cur));
                 break;
@@ -64,7 +64,7 @@ fn append_leaf_to_frontier(
                     .unwrap()
                     .to_array();
                 cur = hash_merkle_node(&[first, second, cur]);
-                node_index /= TREE_ARITY as u64;
+                node_index /= TREE_ARITY as u128;
                 level += 1;
                 if level == TREE_DEPTH {
                     tree.current_root = BytesN::from_array(env, &cur);
@@ -87,7 +87,7 @@ fn compute_tree_root(env: &Env, tree: &TreeStorage) -> BytesN<32> {
     let mut current = EMPTY_ROOTS[0];
     let mut node_index = tree.next_index;
     for (level, empty_root) in EMPTY_ROOTS.iter().enumerate().take(TREE_DEPTH) {
-        current = match node_index % TREE_ARITY as u64 {
+        current = match node_index % TREE_ARITY as u128 {
             0 => hash_merkle_node(&[current, *empty_root, *empty_root]),
             1 => {
                 let first = tree
@@ -112,7 +112,7 @@ fn compute_tree_root(env: &Env, tree: &TreeStorage) -> BytesN<32> {
             }
             _ => unreachable!(),
         };
-        node_index /= TREE_ARITY as u64;
+        node_index /= TREE_ARITY as u128;
     }
     BytesN::from_array(env, &current)
 }
@@ -124,7 +124,7 @@ fn execute_action(
     proof: &Proof,
     public_address: Option<&Address>,
     asset: Option<&AssetConfig>,
-) -> Result<u32, PoolError> {
+) -> Result<u128, PoolError> {
     if action.kind == ActionKind::Deposit && deposits_paused(env) {
         return Err(PoolError::DepositsPaused);
     }
@@ -151,7 +151,7 @@ fn execute_action(
         nullifier::require_unspent(env, &BytesN::from_array(env, nullifier))?;
     }
 
-    if tree_before.next_index > TREE_CAPACITY - 3 {
+    if action.kind != ActionKind::FullInputExit && tree_before.next_index > TREE_CAPACITY - 3 {
         return Err(PoolError::TreeFull);
     }
 
@@ -168,10 +168,12 @@ fn execute_action(
 
     let mut tree = tree_before;
     let starting_leaf_index = tree.next_index;
-    for output in &action.outputs {
-        append_leaf_to_frontier(env, &mut tree, &BytesN::from_array(env, &output.cm))?;
+    if action.kind != ActionKind::FullInputExit {
+        for output in &action.outputs {
+            append_leaf_to_frontier(env, &mut tree, &BytesN::from_array(env, &output.cm))?;
+        }
+        tree.current_root = compute_tree_root(env, &tree);
     }
-    tree.current_root = compute_tree_root(env, &tree);
     add_known_root(env, &tree.current_root, config.root_window_ledgers)?;
     set_tree(env, &tree);
 
@@ -197,7 +199,7 @@ fn execute_action(
                 return Err(PoolError::InvalidActionShape);
             }
         }
-        ActionKind::Withdraw => {
+        ActionKind::Withdraw | ActionKind::FullInputExit => {
             let recipient = public_address.ok_or(PoolError::InvalidActionShape)?;
             let boundary_asset = asset.ok_or(PoolError::InvalidActionShape)?;
             token::withdraw(env, &boundary_asset.asset, recipient, action.public_value);
@@ -296,7 +298,7 @@ impl PrivateBalancePool {
         }
 
         let tree = TreeStorage {
-            next_index: 0_u64,
+            next_index: 0_u128,
             frontier: frontier_vec,
             current_root: current_root.clone(),
         };
@@ -332,7 +334,7 @@ impl PrivateBalancePool {
         }
     }
 
-    pub fn deposit(env: Env, action: DepositAction, proof: Proof) -> Result<u32, PoolError> {
+    pub fn deposit(env: Env, action: DepositAction, proof: Proof) -> Result<u128, PoolError> {
         let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
         if deposits_paused(&env) {
             return Err(PoolError::DepositsPaused);
@@ -347,18 +349,36 @@ impl PrivateBalancePool {
         execute_action(&env, &config, &action, &proof, Some(&source), Some(&asset))
     }
 
-    pub fn transfer(env: Env, action: TransferAction, proof: Proof) -> Result<u32, PoolError> {
+    pub fn transfer(env: Env, action: TransferAction, proof: Proof) -> Result<u128, PoolError> {
         let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
         let action = from_transfer(&action)?;
         execute_action(&env, &config, &action, &proof, None, None)
     }
 
-    pub fn withdraw(env: Env, action: WithdrawAction, proof: Proof) -> Result<u32, PoolError> {
+    pub fn withdraw(env: Env, action: WithdrawAction, proof: Proof) -> Result<u128, PoolError> {
         let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
         let recipient = action.public_recipient.clone();
         let asset =
             get_registered_asset(&env, action.asset_index).ok_or(PoolError::UnknownAsset)?;
         let action = from_withdraw(&action, &asset)?;
+        execute_action(
+            &env,
+            &config,
+            &action,
+            &proof,
+            Some(&recipient),
+            Some(&asset),
+        )
+    }
+
+    /// Consumes selected inputs completely, without reserving output capacity.
+    pub fn full_input_exit(env: Env, action: WithdrawAction, proof: Proof) -> Result<u128, PoolError> {
+        let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
+        let recipient = action.public_recipient.clone();
+        let asset =
+            get_registered_asset(&env, action.asset_index).ok_or(PoolError::UnknownAsset)?;
+        let mut action = from_withdraw(&action, &asset)?;
+        action.kind = ActionKind::FullInputExit;
         execute_action(
             &env,
             &config,

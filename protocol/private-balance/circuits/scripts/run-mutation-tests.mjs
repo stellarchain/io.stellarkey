@@ -13,6 +13,12 @@ const env = { ...process.env, PATH: `${process.env.HOME}/.cargo/bin:${process.en
 
 const mutations = [
   {
+    name: 'full-input exit zero-output binding',
+    testName: 'full-input exits reject value in every output lane',
+    needle: '        exitKind.out * outputValue[j] === 0;',
+    replacement: '        exitKind.out * outputValue[j] * 0 === 0;',
+  },
+  {
     name: 'deposit zero-root binding',
     testName: 'deposit bound to a nonzero anchor root',
     needle: '    isDeposit * anchorRoot === 0;',

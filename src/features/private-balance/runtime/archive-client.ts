@@ -1,9 +1,11 @@
+import { isPrivateIndex, MAX_PRIVATE_INDEX } from './indices';
 import {
   Address,
   StrKey,
   contract,
   rpc as SorobanRpc,
   scValToNative,
+  nativeToScVal,
   xdr,
 } from '@stellar/stellar-sdk';
 import {
@@ -11,6 +13,7 @@ import {
   computeContextField,
   computeContextHash,
   TREE_FRONTIER_SIZE,
+  TREE_CAPACITY,
   type ArchiveRecordModel,
 } from '@stellarkey/private-balance';
 import type { PrivateBalanceManifest } from '../../../lib/private-balance-manifest';
@@ -220,12 +223,12 @@ interface PoolConfigState {
 }
 
 export interface ArchiveMetaState {
-  actionCount: number;
+  actionCount: bigint;
   transcriptHead: Uint8Array;
 }
 
 export interface ArchiveTreeState {
-  nextIndex: number;
+  nextIndex: bigint;
   frontier: Uint8Array[];
   currentRoot: Uint8Array;
 }
@@ -267,10 +270,10 @@ export interface PrivateAssetTokenMetadata {
 const MAX_PRIVATE_ASSET_REGISTRY_ENTRIES = 256;
 
 export class ArchiveRecordUnavailableError extends Error {
-  public readonly actionIndex: number;
+  public readonly actionIndex: bigint;
   public readonly latestLedger: number;
 
-  constructor(actionIndex: number, latestLedger: number) {
+  constructor(actionIndex: bigint, latestLedger: number) {
     super(`Private Balance archive record ${actionIndex} is unavailable.`);
     this.name = 'ArchiveRecordUnavailableError';
     this.actionIndex = actionIndex;
@@ -290,6 +293,11 @@ function u32(value: unknown, name: string): number {
     throw new Error(`${name} must be a u32`);
   }
   return value as number;
+}
+
+function u128(value: unknown, name: string): bigint {
+  if (!isPrivateIndex(value)) throw new Error(`${name} must be a u128`);
+  return value;
 }
 
 function u64(value: unknown, name: string): bigint {
@@ -360,7 +368,7 @@ function decodeOutput(value: unknown, name: string): ArchiveRecordModel['outputs
 function decodeRecord(value: unknown, name: string): ArchiveRecordModel {
   const record = object(value, name);
   const actionKind = u32(record.action_kind, `${name}.action_kind`);
-  if (actionKind < 1 || actionKind > 3) throw new Error(`${name}.action_kind is invalid`);
+  if (actionKind < 1 || actionKind > 4) throw new Error(`${name}.action_kind is invalid`);
   const asset = addressPayload(record.asset, `${name}.asset`);
   const assetIndex = record.asset_index === null || record.asset_index === undefined
     ? undefined
@@ -371,9 +379,9 @@ function decodeRecord(value: unknown, name: string): ArchiveRecordModel {
   }
   if (asset && asset.kind !== 1) throw new Error(`${name}.asset must be a contract address`);
   return {
-    actionIndex: u32(record.action_index, `${name}.action_index`),
+    actionIndex: u128(record.action_index, `${name}.action_index`),
     ledgerSequence: u32(record.ledger_sequence, `${name}.ledger_sequence`),
-    startingLeafIndex: u32(record.starting_leaf_index, `${name}.starting_leaf_index`),
+    startingLeafIndex: u128(record.starting_leaf_index, `${name}.starting_leaf_index`),
     actionKind,
     assetIndex,
     asset,
@@ -417,20 +425,20 @@ function decodeConfig(value: unknown): PoolConfigState {
 function decodeMeta(value: unknown): ArchiveMetaState {
   const meta = object(value, 'Archive meta');
   return {
-    actionCount: u32(meta.action_count, 'Archive meta action_count'),
+    actionCount: u128(meta.action_count, 'Archive meta action_count'),
     transcriptHead: bytes(meta.transcript_head, 32, 'Archive meta transcript_head'),
   };
 }
 
 function decodeTree(value: unknown): ArchiveTreeState {
   const tree = object(value, 'Archive tree');
-  const nextIndex = u64(tree.next_index, 'Archive tree next_index');
-  if (nextIndex > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('Archive tree next_index is too large');
+  const nextIndex = u128(tree.next_index, 'Archive tree next_index');
+  if (nextIndex > TREE_CAPACITY) throw new Error('Archive tree next_index exceeds capacity');
   if (!Array.isArray(tree.frontier) || tree.frontier.length !== TREE_FRONTIER_SIZE) {
     throw new Error('Archive tree frontier is invalid');
   }
   return {
-    nextIndex: Number(nextIndex),
+    nextIndex,
     frontier: tree.frontier.map((node, index) => bytes(node, 32, `Archive tree frontier ${index}`)),
     currentRoot: bytes(tree.current_root, 32, 'Archive tree current_root'),
   };
@@ -469,14 +477,14 @@ function decodeAssetConfig(value: unknown, expectedIndex: number): PrivateAssetR
 
 export function deriveArchiveRecordLedgerKey(
   contractId: string,
-  actionIndex: number,
+  actionIndex: bigint,
 ): xdr.LedgerKey {
   return xdr.LedgerKey.contractData(
     new xdr.LedgerKeyContractData({
       contract: Address.fromString(contractId).toScAddress(),
       key: xdr.ScVal.scvVec([
         xdr.ScVal.scvSymbol('ArchiveRecord'),
-        xdr.ScVal.scvU32(actionIndex),
+        nativeToScVal(u128(actionIndex, 'Archive action index'), { type: 'u128' }),
       ]),
       durability: xdr.ContractDataDurability.persistent,
     }),
@@ -806,26 +814,26 @@ export class PrivateBalanceArchiveClient {
   }
 
   public async readRecords(
-    startActionIndex: number,
+    startActionIndex: bigint,
     count: number,
   ): Promise<ArchiveRecordModel[]> {
-    const start = u32(startActionIndex, 'Archive start action index');
+    const start = u128(startActionIndex, 'Archive start action index');
     const validCount = u32(count, 'Archive record count');
     if (validCount < 1 || validCount > MAX_ARCHIVE_RECORD_BATCH) {
       throw new Error(`Archive record count must be between 1 and ${MAX_ARCHIVE_RECORD_BATCH}`);
     }
-    if (start + validCount - 1 > 0xffff_ffff) {
-      throw new Error('Archive record range exceeds u32');
+    if (start + BigInt(validCount) - 1n > MAX_PRIVATE_INDEX) {
+      throw new Error('Archive record range exceeds u128');
     }
     const expectedKeys = Array.from({ length: validCount }, (_, offset) =>
-      deriveArchiveRecordLedgerKey(this.manifest.poolContractId, start + offset));
+      deriveArchiveRecordLedgerKey(this.manifest.poolContractId, start + BigInt(offset)));
     const expectedIndices = new Map(expectedKeys.map((key, offset) => [
       key.toXDR('base64'),
-      start + offset,
+      start + BigInt(offset),
     ]));
     const response = await this.server.getLedgerEntries(...expectedKeys);
     const latestLedger = u32(response.latestLedger, 'Archive response latest ledger');
-    const entriesByIndex = new Map<number, (typeof response.entries)[number]>();
+    const entriesByIndex = new Map<bigint, (typeof response.entries)[number]>();
     for (const entry of response.entries) {
       const actionIndex = expectedIndices.get(entry.key.toXDR('base64'));
       if (actionIndex === undefined || entriesByIndex.has(actionIndex)) {
@@ -841,13 +849,13 @@ export class PrivateBalanceArchiveClient {
       entriesByIndex.set(actionIndex, entry);
     }
     const missingActionIndex = expectedKeys.findIndex(
-      (_key, offset) => !entriesByIndex.has(start + offset),
+      (_key, offset) => !entriesByIndex.has(start + BigInt(offset)),
     );
     if (missingActionIndex !== -1) {
-      throw new ArchiveRecordUnavailableError(start + missingActionIndex, latestLedger);
+      throw new ArchiveRecordUnavailableError(start + BigInt(missingActionIndex), latestLedger);
     }
     return expectedKeys.map((_key, offset) => {
-      const actionIndex = start + offset;
+      const actionIndex = start + BigInt(offset);
       const entry = entriesByIndex.get(actionIndex);
       if (!entry) {
         throw new ArchiveRecordUnavailableError(actionIndex, latestLedger);
@@ -903,7 +911,7 @@ export class PrivateBalanceArchiveClient {
     ) {
       throw new Error('Private Balance contract configuration does not match the manifest');
     }
-    if (tree.nextIndex !== meta.actionCount * 3) {
+    if (tree.nextIndex > meta.actionCount * 3n || tree.nextIndex % 3n !== 0n) {
       throw new Error('Private Balance contract head is internally inconsistent');
     }
   }

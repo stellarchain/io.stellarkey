@@ -7,7 +7,7 @@ const zero = bytes => bytes.every(byte => byte === 0);
 const equal = (left, right) => left.length === right.length && left.every((byte, index) => byte === right[index]);
 const protocolCaller = () => new Error().stack.split('\n').find(line => line.includes('/dist/')) ?? '';
 function fixture() {
-  const inputs = [new Uint8Array(64).fill(6), 1, ...[1, 2, 3, 5, 7].map(value => new Uint8Array(32).fill(value))];
+  const inputs = [new Uint8Array(64).fill(6), 2, ...[1, 2, 3, 5, 7].map(value => new Uint8Array(32).fill(value))];
   const borrowed = inputs.filter(value => value instanceof Uint8Array).map(bytes => [bytes, bytes.slice()]);
   return { inputs, assertBorrowed: () => borrowed.forEach(([bytes, before]) => assert.ok(equal(bytes, before), 'borrowed input is unchanged')) };
 }

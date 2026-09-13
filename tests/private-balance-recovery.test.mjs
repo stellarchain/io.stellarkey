@@ -205,14 +205,14 @@ test('two-input recovery preserves the entire held value and leaves unrelated no
   assert.deepEqual(await scenario.balances(), expected('45'));
 });
 
-test('legacy exposed hold can recover without inferring its old submission route', async () => {
+test('a recovery cannot persist a hold with missing route or exposure', async () => {
   const scenario = await createPrivateRecoveryScenario(manifest, new SyntheticRecordDriver());
   await assert.rejects(scenario.prepare('rpc-reject'));
-  await scenario.changeState(state => {
+  await assert.rejects(scenario.changeState(state => {
     delete state.pendingActions[0].proofExposure;
     delete state.pendingActions[0].submissionMode;
     return state;
-  });
+  }), /schema/i);
   await scenario.prepare('approve', undefined, true);
   assert.equal((await scenario.state()).pendingActions[0].submissionMode, 'direct');
   await scenario.confirm(true);

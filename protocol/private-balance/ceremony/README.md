@@ -15,15 +15,22 @@ The current development candidate is:
 | --- | --- |
 | Circuit | `circuits/circom/action.circom` |
 | Circom | `2.2.3` |
-| R1CS constraints | 15,114 (machine value: `15114`) |
+| R1CS constraints | 40,594 (machine value: `40594`) |
 | Public inputs | 11 |
-| R1CS SHA-256 | `e8e9566deeaabd745b9c4306f9b222e5f8dc3b224c5e1fd4741da729785fc2d3` |
-| Development zkey SHA-256 | `fd04e9225485bbdfcca999b5f46be3735c6435ca6a3c98a1346b5952e9672273` |
-| Development verifying-key JSON SHA-256 | `8a1fdbb8e21a688c5279edd43e4deafbed788604f518209c5cee27499ea996e7` |
-| Embedded verifying-key binary SHA-256 | `6af84a98f2e9bddc7fbcfdf08160c10b2d627e2aab19fa612290b1feaf09e0f7` |
+| R1CS SHA-256 | `b59eaddeb2ec6eac403d2c2adee693ea2446abb094edcdd6f309456e1d77ae2f` |
+| Development zkey SHA-256 | `6082d74328d861e5a2247083ec9e83f642b61fa89aef8b297f235d43ec1f07f0` |
+| Development verifying-key JSON SHA-256 | `960b480dd4a10580e9e55e284eabdae072a359623b7530dd3bf40a399d64accf` |
+| Embedded verifying-key binary SHA-256 | `4c39e247db8e932695e881041e94337d28858208f04b477b32d51604bb3c03bc` |
 
 These values identify the hash-pinned local candidate; they do not make its zkey suitable
 for a beta. Regenerate this table from the shipped manifest and artifacts whenever the circuit changes.
+
+The protocol-v2 circuit uses a 17+47 private membership path and proof-bound
+full-input exits. Its Phase 1 input is the published PSE transcript
+`ppot_0080_17.ptau` (151,088,274 bytes), SHA-256
+`f807e065fde53f72f4bf4d57140fab85b26daa6cc95bdfec7cce93622b3a367c`.
+Full `snarkjs powersoftau verify` succeeded on 2026-09-13. The freshly generated
+Phase 2 remains a single-party development setup with no public ceremony.
 
 ## Invalidation rule
 

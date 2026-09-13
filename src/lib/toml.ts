@@ -134,7 +134,7 @@ export function normalizeIssuerHomeDomain(value: unknown): string | null {
     !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label)
   ))) return null;
 
-  // WHATWG URL parsing accepts legacy numeric IPv4 forms (for example
+  // WHATWG URL parsing accepts non-canonical numeric IPv4 forms (for example
   // `127.1` or `0x7f.1`) and silently rewrites them to an address literal.
   if (new URL(`https://${hostname}/`).hostname !== hostname) return null;
   // A stellar.toml origin must be a hostname, not an IPv4 address literal.

@@ -1,3 +1,4 @@
+import { parsePrivateIndices, stringifyPrivateIndices } from '../src/features/private-balance/runtime/indices.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as storage from '../src/features/private-balance/runtime/storage.ts';
@@ -65,8 +66,8 @@ const note = {
   assetContractId: ASSET_CONTRACT_ID,
   diversifier: '00000000',
   ownerCommitment: '07'.repeat(32),
-  leafIndex: 0,
-  actionIndex: 0,
+  leafIndex: 0n,
+  actionIndex: 0n,
   rho: '08'.repeat(32),
   memoHex: '',
   senderFingerprintHex: '',
@@ -74,10 +75,10 @@ const note = {
   createdAt: 1,
 };
 const checkpoint = {
-  lastActionIndex: 0,
+  lastActionIndex: 0n, nextLeafIndex: 3n,
   lastRecordHash: '0a'.repeat(32),
   treeRoot: '0b'.repeat(32),
-  treeFrontier: Array.from({ length: 34 }, () => '00'.repeat(32)),
+  treeFrontier: Array.from({ length: 128 }, () => '00'.repeat(32)),
   deploymentBindingHash: context.deploymentBindingHash,
   manifestHash,
   latestLedger: 100,
@@ -92,7 +93,7 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
     account: {
       setupState: 'ready',
       syncStatus: 'current',
-      lastVerifiedActionIndex: 0,
+      lastVerifiedActionIndex: 0n,
       updatedAt: 2,
     },
     notes: [note],
@@ -116,7 +117,7 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
     /decrypt|authenticate/i,
   );
 
-  const pendingAction = {
+  const pendingAction = { outgoingHistoryMode: 'recoverable',
     id: 'action-1',
     proofExposure: 'local',
     kind: 'transfer',
@@ -139,7 +140,7 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
     createdAt: 3,
     updatedAt: 3,
   };
-  await reservePrivateBuildReservation(context, key, 0, {
+  await reservePrivateBuildReservation(context, key, 0, { outgoingHistoryMode: 'recoverable',proofExposure: 'local',
     id: pendingAction.id,
     kind: pendingAction.kind,
     assetContractId: pendingAction.assetContractId,
@@ -246,7 +247,7 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
   assert.equal(released.notes[0].status, 'unspent');
   assert.equal(released.notes[0].reservedAt, undefined);
 
-  await reservePrivateBuildReservation(context, key, 6, {
+  await reservePrivateBuildReservation(context, key, 6, { outgoingHistoryMode: 'recoverable',proofExposure: 'local',
     id: 'deposit-1',
     kind: 'deposit',
     assetContractId: ASSET_CONTRACT_ID,
@@ -254,7 +255,7 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
     createdAt: 8,
     updatedAt: 8,
   }, driver);
-  const deposit = await commitPrivateBuildReservation(context, key, 7, 'deposit-1', {
+  const deposit = await commitPrivateBuildReservation(context, key, 7, 'deposit-1', { outgoingHistoryMode: 'recoverable',proofExposure: 'local',
     ...pendingAction,
     submissionMode: 'direct',
     id: 'deposit-1',
@@ -278,7 +279,7 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
   );
 
   await assert.rejects(
-    () => reservePrivateBuildReservation(context, key, 0, {
+    () => reservePrivateBuildReservation(context, key, 0, { outgoingHistoryMode: 'recoverable',proofExposure: 'local',
       id: 'action-2',
       kind: 'transfer',
       assetContractId: ASSET_CONTRACT_ID,
@@ -307,7 +308,7 @@ test('private notes reserve before witness creation and promote atomically', asy
     null,
     driver,
   );
-  const reservation = {
+  const reservation = { outgoingHistoryMode: 'recoverable',
     proofExposure: 'local',
     id: 'build-1',
     kind: 'transfer',
@@ -327,7 +328,7 @@ test('private notes reserve before witness creation and promote atomically', asy
   assert.deepEqual(reserved.buildReservations, [reservation]);
   assert.deepEqual(reserved.pendingActions, []);
 
-  const pendingAction = {
+  const pendingAction = { outgoingHistoryMode: 'recoverable',submissionMode: 'direct',
     id: reservation.id,
     proofExposure: 'local',
     kind: reservation.kind,
@@ -397,7 +398,7 @@ test('build reservations past the TTL release their notes in one commit', async 
     null,
     driver,
   );
-  const reservation = {
+  const reservation = { outgoingHistoryMode: 'recoverable',
     id: 'stale-build',
     proofExposure: 'local',
     kind: 'transfer',
@@ -431,7 +432,7 @@ test('build reservations past the TTL release their notes in one commit', async 
   assert.equal(released.notes[0].reservedAt, undefined);
   assert.deepEqual(
     await loadPrivateBalanceState(context, key, driver),
-    JSON.parse(JSON.stringify(released)),
+    parsePrivateIndices(stringifyPrivateIndices(released), ['leafIndex', 'actionIndex', 'spentInActionIndex', 'lastVerifiedActionIndex', 'lastActionIndex', 'nextLeafIndex']),
   );
 });
 
@@ -452,6 +453,9 @@ test('stale pre-broadcast pending actions release their notes, broadcasts never 
   const broadcastNote = makeNote('17'.repeat(32), 1_000);
   const freshNote = makeNote('18'.repeat(32), 5_000);
   const base = {
+    submissionMode: 'direct',
+    proofExposure: 'shared',
+    outgoingHistoryMode: 'recoverable',
     kind: 'transfer',
     assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
@@ -540,7 +544,7 @@ test('stale pre-broadcast pending actions release their notes, broadcasts never 
   assert.equal(statuses.get(freshNote.id), 'reserved');
   assert.deepEqual(
     await loadPrivateBalanceState(context, key, driver),
-    JSON.parse(JSON.stringify(swept)),
+    parsePrivateIndices(stringifyPrivateIndices(swept), ['leafIndex', 'actionIndex', 'spentInActionIndex', 'lastVerifiedActionIndex', 'lastActionIndex', 'nextLeafIndex']),
   );
 });
 
@@ -668,7 +672,7 @@ test('the private address and recent recipients persist under schema validation'
       context,
       key,
       state.revision,
-      { address: address(index), fingerprint: 'ABCD EF01', lastUsedAt: 2 + index },
+      { address: address(index), fingerprint: 'ABCD EF01 2345 6789 ABCD EF01 2345 6789', lastUsedAt: 2 + index },
       driver,
     );
   }
@@ -683,13 +687,13 @@ test('the private address and recent recipients persist under schema validation'
     context,
     key,
     state.revision,
-    { address: address(2), fingerprint: 'ABCD EF01', lastUsedAt: 99 },
+    { address: address(2), fingerprint: 'ABCD EF01 2345 6789 ABCD EF01 2345 6789', lastUsedAt: 99 },
     driver,
   );
   assert.equal(repeated.recentPrivateRecipients.length, MAX_RECENT_PRIVATE_RECIPIENTS);
   assert.deepEqual(repeated.recentPrivateRecipients[0], {
     address: address(2),
-    fingerprint: 'ABCD EF01',
+    fingerprint: 'ABCD EF01 2345 6789 ABCD EF01 2345 6789',
     lastUsedAt: 99,
   });
   assert.deepEqual(await loadPrivateBalanceState(context, key, driver), repeated);
@@ -708,30 +712,29 @@ test('the private address and recent recipients persist under schema validation'
   assert.deepEqual(reset.notes, []);
   await commitPrivateBalanceState(context, key, reset, twice.revision, driver);
   await assert.rejects(recordPrivateBalanceAddress(context, key, reset.revision, address(0), driver), /already issued/i);
-  // A legacy record remembers at least its current address when first rotated.
-  const legacy = { ...reset };
-  delete legacy.issuedAddressDiversifiers;
-  await commitPrivateBalanceState(context, key, { ...legacy, revision: reset.revision + 1 }, reset.revision, driver);
-  const afterLegacy = await recordPrivateBalanceAddress(context, key, reset.revision + 1, address(3), driver);
-  await assert.rejects(recordPrivateBalanceAddress(context, key, afterLegacy.revision, address(2), driver), /already issued/i);
-  const rollback = storage.createPrivateBalanceVerificationRollback(reset, afterLegacy);
+  const missingHistory = { ...reset };
+  delete missingHistory.issuedAddressDiversifiers;
+  await assert.rejects(commitPrivateBalanceState(context, key, { ...missingHistory, revision: reset.revision + 1 }, reset.revision, driver), /schema/i);
+  const afterRotation = await recordPrivateBalanceAddress(context, key, reset.revision, address(3), driver);
+  await assert.rejects(recordPrivateBalanceAddress(context, key, afterRotation.revision, address(2), driver), /already issued/i);
+  const rollback = storage.createPrivateBalanceVerificationRollback(reset, afterRotation);
   assert.equal(rollback.privateAddress, address(3));
   assert.deepEqual(rollback.issuedAddressDiversifiers, ['00000000', '00000001', '00000002', '00000003']);
-  assert.equal(rollback.revision, afterLegacy.revision + 1);
+  assert.equal(rollback.revision, afterRotation.revision + 1);
   assert.throws(() => storage.createPrivateBalanceVerificationRollback(reset, {
-    ...afterLegacy, buildReservations: [{ id: 'in-flight' }],
+    ...afterRotation, buildReservations: [{ id: 'in-flight' }],
   }), /pending/i);
   for (const issuedAddressDiversifiers of [['bad'], ['00000000', '00000000'],
     Array.from({ length: storage.MAX_ISSUED_PRIVATE_DIVERSIFIERS + 1 }, (_, index) => index.toString(16).padStart(8, '0'))]) {
     await assert.rejects(commitPrivateBalanceState(context, key, {
-      ...afterLegacy, revision: afterLegacy.revision + 1, issuedAddressDiversifiers,
-    }, afterLegacy.revision, driver), /schema/i);
+      ...afterRotation, revision: afterRotation.revision + 1, issuedAddressDiversifiers,
+    }, afterRotation.revision, driver), /schema/i);
   }
   const atLimit = {
-    ...afterLegacy, revision: afterLegacy.revision + 1,
+    ...afterRotation, revision: afterRotation.revision + 1,
     issuedAddressDiversifiers: Array.from({ length: storage.MAX_ISSUED_PRIVATE_DIVERSIFIERS }, (_, index) => index.toString(16).padStart(8, '0')),
   };
-  await commitPrivateBalanceState(context, key, atLimit, afterLegacy.revision, driver);
+  await commitPrivateBalanceState(context, key, atLimit, afterRotation.revision, driver);
   await assert.rejects(recordPrivateBalanceAddress(context, key, atLimit.revision, address(65_536), driver), /safety limit/i);
   assert.equal((await loadPrivateBalanceState(context, key, driver)).privateAddress, address(3));
 });

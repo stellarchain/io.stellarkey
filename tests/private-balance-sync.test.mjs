@@ -1,3 +1,4 @@
+import { parsePrivateIndices, stringifyPrivateIndices } from '../src/features/private-balance/runtime/indices.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { StrKey } from '@stellar/stellar-sdk';
@@ -74,7 +75,7 @@ class MemoryDriver {
 test('verified activity keeps encrypted local recipient and memo metadata only when its action matches', () => {
   const activity = {
     id: '09'.repeat(32),
-    actionIndex: 4,
+    actionIndex: 4n,
     actionKind: 'transfer',
     assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
@@ -104,7 +105,7 @@ test('verified activity keeps encrypted local recipient and memo metadata only w
   }]), [activity]);
 });
 
-for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spent', 'legacy-held']) test(`sync commits verified progress and reconciles only canonical spends of ${holdCase} inputs`, async () => {
+for (const holdCase of ['pending', 'local-transfer-spent', 'local-withdraw-spent', 'local-held']) test(`sync commits verified progress and reconciles only canonical spends of ${holdCase} inputs`, async () => {
   const contextHash = bytes(1);
   const deploymentBindingHash = bytes(2);
   const manifestHash = hex(bytes(3));
@@ -115,9 +116,9 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
   await appendFrontier(verifiedTree, bytes(8));
   await refreshTreeRoot(verifiedTree);
   const record = {
-    actionIndex: 0,
+    actionIndex: 0n,
     ledgerSequence: 123,
-    startingLeafIndex: 0,
+    startingLeafIndex: 0n,
     actionKind: 1,
     assetIndex: 0,
     asset: ASSET,
@@ -133,17 +134,17 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
     publicValue: 5_000_000n,
     depositSource: { kind: 0, payload: bytes(8) },
   };
-  const recordHash = computeRecordHash(record, 1, priorRecordHash);
+  const recordHash = computeRecordHash(record, 2, priorRecordHash);
   const actionField = bytes(9);
   const head = {
     latestLedger: 500,
     config: {},
     meta: {
-      actionCount: 1,
+      actionCount: 1n,
       transcriptHead: recordHash,
     },
     tree: {
-      nextIndex: 3,
+      nextIndex: 3n,
       frontier: verifiedTree.frontier,
       currentRoot: record.treeRootAfter,
     },
@@ -158,7 +159,7 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
     },
     async readRecords(startActionIndex, count) {
       archiveReads += 1;
-      assert.equal(startActionIndex, 0);
+      assert.equal(startActionIndex, 0n);
       assert.equal(count, 1);
       return [record];
     },
@@ -176,8 +177,8 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
     assetContractId: ASSET_CONTRACT_ID,
     diversifier: '00000000',
     ownerCommitment: hex(bytes(10)),
-    leafIndex: 0,
-    actionIndex: 0,
+    leafIndex: 0n,
+    actionIndex: 0n,
     rho: hex(bytes(11)),
     memoHex: '',
     senderFingerprintHex: '',
@@ -208,12 +209,12 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
       return {
         notes: [
           note,
-          holdCase === 'legacy-held' ? spentInput : { ...spentInput, status: 'spent', reservedAt: undefined, spentInActionIndex: 0 },
+          holdCase === 'local-held' ? spentInput : { ...spentInput, status: 'spent', reservedAt: undefined, spentInActionIndex: 0n },
           survivingInput,
         ],
         activities: [{
           id: hex(actionField),
-          actionIndex: 0,
+          actionIndex: 0n,
           actionKind: 'deposit',
           assetIndex: 0,
           assetContractId: ASSET_CONTRACT_ID,
@@ -242,7 +243,7 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
   const initial = {
     ...createEmptyPrivateBalanceState(manifestHash, 1),
     notes: [spentInput, survivingInput],
-    pendingActions: [{
+    pendingActions: [{ outgoingHistoryMode: 'recoverable',proofExposure: 'shared',submissionMode: 'direct',
       id: 'deposit-1',
       kind: 'deposit',
       assetIndex: 0,
@@ -260,7 +261,7 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
       broadcastAttempts: 0,
       createdAt: 1,
       updatedAt: 1,
-    }, {
+    }, { outgoingHistoryMode: 'recoverable',proofExposure: 'shared',submissionMode: 'direct',
       // A foreign action consumed one of the two reserved inputs, so this
       // transfer can never land and its surviving input must be released.
       id: 'foreign-loser',
@@ -284,7 +285,7 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
   };
   if (holdCase !== 'pending') {
     initial.pendingActions.pop();
-    initial.buildReservations = [{ id: 'legacy-build', kind: holdCase === 'legacy-withdraw-spent' ? 'withdraw' : 'transfer',
+    initial.buildReservations = [{ outgoingHistoryMode: 'recoverable',proofExposure: 'local', id: 'local-build', kind: holdCase === 'local-withdraw-spent' ? 'withdraw' : 'transfer',
       assetContractId: ASSET_CONTRACT_ID, reservedNoteIds: [spentInput.id, survivingInput.id], createdAt: 1, updatedAt: 1 }];
   }
   await commitPrivateBalanceState(
@@ -311,21 +312,21 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
   });
 
   assert.equal(headReads, 2);
-  assert.deepEqual(progressUpdates, [{ actionIndex: 0, actionCount: 1, firstActionIndex: 0 }]);
+  assert.deepEqual(progressUpdates, [{ actionIndex: 0n, actionCount: 1n, firstActionIndex: 0n }]);
   assert.deepEqual(closeTimeRequests, [[123]]);
   assert.equal(result.account.syncStatus, 'current');
-  assert.equal(result.account.lastVerifiedActionIndex, 0);
+  assert.equal(result.account.lastVerifiedActionIndex, 0n);
   assert.equal(result.checkpoint.lastRecordHash, hex(recordHash));
   assert.equal(result.checkpoint.latestLedger, 500);
   assert.deepEqual(result.pendingActions, []);
-  assert.equal(result.buildReservations.length, holdCase === 'legacy-held' ? 1 : 0);
+  assert.equal(result.buildReservations.length, holdCase === 'local-held' ? 1 : 0);
   const notesById = new Map(result.notes.map(item => [item.id, item]));
-  assert.equal(notesById.get(spentInput.id).status, holdCase === 'legacy-held' ? 'reserved' : 'spent');
-  assert.equal(notesById.get(survivingInput.id).status, holdCase === 'legacy-held' ? 'reserved' : 'unspent');
-  assert.equal(notesById.get(survivingInput.id).reservedAt, holdCase === 'legacy-held' ? 1 : undefined);
+  assert.equal(notesById.get(spentInput.id).status, holdCase === 'local-held' ? 'reserved' : 'spent');
+  assert.equal(notesById.get(survivingInput.id).status, holdCase === 'local-held' ? 'reserved' : 'unspent');
+  assert.equal(notesById.get(survivingInput.id).reservedAt, holdCase === 'local-held' ? 1 : undefined);
   assert.deepEqual(
     await loadPrivateBalanceState(storageContext, storageKey, driver),
-    JSON.parse(JSON.stringify(result)),
+    parsePrivateIndices(stringifyPrivateIndices(result), ['leafIndex', 'actionIndex', 'spentInActionIndex', 'lastVerifiedActionIndex', 'lastActionIndex', 'nextLeafIndex']),
   );
   assert.deepEqual(
     (await loadPrivateBalanceCommitments(storageContext, driver)).map(hex),
@@ -370,11 +371,11 @@ test('sync resumes a bounded number of times when the contract advances mid-scan
     latestLedger: 100,
     config: {},
     meta: {
-      actionCount: 0,
+      actionCount: 0n,
       transcriptHead: bytes(transcriptByte),
     },
     tree: {
-      nextIndex: 0,
+      nextIndex: 0n,
       frontier: Array.from({ length: 34 }, () => bytes(0)),
       currentRoot: bytes(0),
     },
@@ -474,9 +475,9 @@ test('sync uses the injected corroborated head for both boundary checks', async 
   const emptyHead = {
     latestLedger: 700,
     config: {},
-    meta: { actionCount: 0, transcriptHead: bytes(0) },
+    meta: { actionCount: 0n, transcriptHead: bytes(0) },
     tree: {
-      nextIndex: 0,
+      nextIndex: 0n,
       frontier: Array.from({ length: 34 }, () => bytes(0)),
       currentRoot: bytes(0),
     },
@@ -569,11 +570,11 @@ test('incoming diffs collapse only new inbound transfers into one event', () => 
     activity(4, 'transfer', 'outflow', '4000'),
     activity(5, 'transfer', 'inflow', '5000'),
   ];
-  assert.deepEqual(diffIncomingPrivateTransfers(1, activities), {
+  assert.deepEqual(diffIncomingPrivateTransfers(1n, activities), {
     count: 2,
     totalAmountStroops: '8000',
   });
-  assert.deepEqual(diffIncomingPrivateTransfers(5, activities), {
+  assert.deepEqual(diffIncomingPrivateTransfers(5n, activities), {
     count: 0,
     totalAmountStroops: '0',
   });

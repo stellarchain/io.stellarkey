@@ -140,6 +140,18 @@ export function decodeVaultFile(value: unknown): VaultFile | null {
   if (!isRawKeyEncryptedPayloadValue(value.wrappedMerchantKey)) {
     return null;
   }
+  // A current wallet never stores two records for the same derived identity.
+  // Reject ambiguous metadata in both local loads and backup imports.
+  if (value.mnemonic !== undefined) {
+    const identities = new Set<string>();
+    const accounts = [...value.accounts, ...((value.archivedAccounts ?? []) as StoredAccount[])];
+    for (const account of accounts) {
+      if (account.secret || account.watchOnly || account.hardware || !Number.isInteger(account.index)) continue;
+      const identity = `${account.index}:${account.publicKey}`;
+      if (identities.has(identity)) return null;
+      identities.add(identity);
+    }
+  }
   if (
     value.requirePasswordForSigning !== undefined &&
     typeof value.requirePasswordForSigning !== "boolean"

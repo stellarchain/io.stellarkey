@@ -1,5 +1,7 @@
 'use client';
 
+import { comparePrivateIndices } from '../runtime/indices';
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { IconArrowDownLeft, IconArrowUpRight, IconRefresh, IconShieldStellar } from '@/components/icons';
 import { Modal, ModalBody, ModalHeader } from '@/components/ui';
@@ -41,7 +43,7 @@ export function PrivateActivityList({
   const amount = (atomicUnits: string) =>
     `${fmtAmount(formatPrivateBalanceAmount(BigInt(atomicUnits), asset?.decimals ?? 7))} ${asset?.code ?? 'Asset'}`;
   const ordered = useMemo(
-    () => [...activities].sort((left, right) => right.actionIndex - left.actionIndex),
+    () => [...activities].sort((left, right) => comparePrivateIndices(right.actionIndex, left.actionIndex)),
     [activities],
   );
   // Unsigned shared spend proofs can execute in a different envelope too.

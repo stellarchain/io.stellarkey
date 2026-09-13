@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "record": {
-    "protocolVersion": 1,
-    "actionIndex": 0,
+    "protocolVersion": 2,
+    "actionIndex": "0",
     "ledgerSequence": 100,
-    "startingLeafIndex": 0,
+    "startingLeafIndex": "0",
     "actionKind": 1,
     "assetIndex": 0,
     "assetKind": 1,
@@ -28,5 +28,5 @@
     "depositSourcePayloadFill": 170,
     "priorRecordHashFill": 85
   },
-  "expectedRecordHash": "3067686e1b72c42760b582864cab6f413f8887560aa6514cee78916310363b95"
+  "expectedRecordHash": "f85a4f5f87d67b4b4bb1a61fb379d052cafba10a386fcd9f85e80a7baf48d59d"
 }

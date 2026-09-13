@@ -196,8 +196,8 @@ export interface InventoryException {
 
 export interface Order {
   id: string;
-  /** Immutable till-shift identity. Absent only on legacy stored orders. */
-  shiftId?: string | null;
+  /** Immutable till-shift identity; null when created outside a shift. */
+  shiftId: string | null;
   /** Human sequence, e.g. 2092. Unique per device. */
   number: number;
   /** The immutable typed memo carried by this order's charges, e.g. "MC-O-2092". */

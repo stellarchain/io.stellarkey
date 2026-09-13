@@ -152,7 +152,7 @@ function loadTestnetDeploymentEvidence(baseManifest) {
   if (!Array.isArray(evidence.assets) || evidence.assets.length < 1) {
     throw new Error('Testnet deployment evidence must record the on-chain asset registry.');
   }
-  if (evidence.depositsPaused !== false || evidence.treeState?.next_index !== 0) {
+  if (evidence.depositsPaused !== false || evidence.treeState?.next_index !== '0' || evidence.archiveMeta?.action_count !== '0') {
     throw new Error('Testnet deployment evidence must record a fresh, deposit-enabled pool.');
   }
   }
@@ -227,8 +227,8 @@ chmodSync(publicContractWasmPath, 0o644);
 
 const baseManifest = {
   schemaVersion: 1,
-  protocolVersion: 1,
-  artifactVersion: '1.0.2-dev',
+  protocolVersion: 2,
+  artifactVersion: '2.0.0-dev',
   status: 'development',
   minimumStellarProtocol: 25,
   networkPassphrase: TESTNET_PASSPHRASE,
@@ -288,7 +288,7 @@ const baseManifest = {
     vkBinSha256: sha256(vkBinBytes),
   },
   constants: {
-    treeDepth: 17,
+    treeDepth: 64,
     treeArity: 3,
     rootWindowLedgers: 1440,
     publicInputs: 11,

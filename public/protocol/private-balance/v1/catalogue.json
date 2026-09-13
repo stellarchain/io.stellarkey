@@ -5,7 +5,7 @@
       "id": "testnet-private-pool",
       "network": "testnet",
       "manifestUrl": "/protocol/private-balance/v1/manifest.json",
-      "manifestSha256": "e3a72a38907a1f9f02818aa7d3b799279df244029fbd5ee52a747ea076b8b8fc"
+      "manifestSha256": "319e757b1721ac8fd04c21a662bc8c0bc858c13254ef2e741c82bd8c225e0a68"
     }
   ]
 }

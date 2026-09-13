@@ -230,7 +230,7 @@ export function BackupWizardModalBody({
         const json = await readBoundedTextFile(file, MAX_BACKUP_FILE_BYTES, "Backup file");
         if (!isEncryptedBackup(json)) {
           throw new Error(
-            "This file is not an encrypted Wallet backup — it may be an outdated legacy export.",
+            "This file is not a supported encrypted StellarKey wallet backup.",
           );
         }
         setRestoreFile(json);

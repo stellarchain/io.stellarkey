@@ -921,8 +921,8 @@ test("post-response persistence merges with the prepared recovery record", () =>
   assert.deepEqual(submission.loadDurablePendingTransactions(storage, "pending"), [merged]);
 });
 
-test("legacy pending records stop automatic polling and expose manual checking", () => {
-  assert.equal(typeof submission.LEGACY_PENDING_AUTO_POLL_MS, "number");
+test("envelopes without a maximum expiry stop automatic polling and expose manual checking", () => {
+  assert.equal(typeof submission.PENDING_AUTO_POLL_MS, "number");
   assert.equal(typeof submission.pendingTransactionNeedsManualCheck, "function");
   const now = 2_000_000;
   const record = {
@@ -930,14 +930,14 @@ test("legacy pending records stop automatic polling and expose manual checking",
     network: "testnet",
     label: "Payment",
     status: "status_unknown",
-    createdAt: now - submission.LEGACY_PENDING_AUTO_POLL_MS,
+    createdAt: now - submission.PENDING_AUTO_POLL_MS,
   };
 
   assert.equal(submission.pendingTransactionNeedsManualCheck(record, now - 1), false);
   assert.equal(submission.pendingTransactionNeedsManualCheck(record, now), true);
   const presentation = submission.pendingTransactionPresentation(record, now);
   assert.equal(presentation.manualCheck, true);
-  assert.match(presentation.detail, /legacy recovery record|Check Status/i);
+  assert.match(presentation.detail, /no maximum expiry|Check Status/i);
 });
 
 test("different tabs persist pending recovery records without replacing each other", () => {

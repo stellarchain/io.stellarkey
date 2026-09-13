@@ -39,7 +39,7 @@ const POSEIDON_PARAMETERS_PATH = path.join(
 );
 const RESULTS_ROOT = path.join(PROJECT_ROOT, 'protocol/private-balance/results/fixtures');
 const DOMAIN_DEPLOYMENT_BINDING = 'SKSB_DEPLOYMENT_BINDING_V1';
-const TREE_DEPTH = 17;
+const TREE_DEPTH = 64;
 const ROOT_WINDOW_LEDGERS = 1_440;
 const PRIVATE_ADDRESS_PAYLOAD_BYTES = 84;
 const PRIVATE_ADDRESS_ASCII_BYTES = 128;
@@ -141,7 +141,7 @@ export function computeDeploymentBindingHash(input) {
 function fixtureBinding({ realmId, poolContractId, guardianAddress, assetAdminAddress }) {
   const artifacts = protocolArtifactHashes();
   return {
-    protocolVersion: 1,
+    protocolVersion: 2,
     networkId: TESTNET_NETWORK_ID,
     realmId,
     poolContractId,
@@ -157,7 +157,7 @@ export function buildConstructorArguments(input) {
   const binding = fixtureBinding(input);
   const deploymentBindingHash = computeDeploymentBindingHash(binding);
   return [
-    '--protocol_version', '1',
+    '--protocol_version', '2',
     '--network_id', TESTNET_NETWORK_ID,
     '--realm_id', input.realmId,
     '--guardian', input.guardianAddress,

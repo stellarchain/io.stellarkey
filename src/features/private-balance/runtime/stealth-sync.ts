@@ -196,9 +196,6 @@ export async function syncStealthAnnouncements(
   assertStealthDiscoveryActive(input);
   let expectedRevision = persisted?.revision ?? null;
   let state = persisted ?? createEmptyStealthDiscoveryCache(now, input.lowerBoundCreatedAt);
-  // Legacy birthday bounds must neither shape requests nor reject older
-  // retained announcements. Keep the authenticated forward cursor unchanged.
-  if (state.lowerBoundCreatedAt !== 0) state = { ...state, lowerBoundCreatedAt: 0 };
   const existing = new Set(
     state.payments.map(payment => `${payment.transactionHash}:${payment.destinationPublicKey}`),
   );

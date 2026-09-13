@@ -1,10 +1,10 @@
-# Threat Model and Security Invariants (V1)
+# Threat Model and Security Invariants (V2)
 
 ## 1. Assets and security objectives
 
 - Conservation of value: private inputs plus a public deposit equal three private outputs plus a
-  public withdrawal, using exact bounded integers. Historical peer fees used an ordinary output;
-  the current application does not construct peer-fee outputs.
+  public withdrawal, using exact bounded integers. The application constructs recipient,
+  change and dummy outputs, without private peer fees.
 - Double-spend and replay prevention: accepted real nullifiers are persistent and unique; a deposit
   retains one durable dummy nullifier so the same proof cannot be replayed.
 - Spend authorization: only a valid note witness and the required spending/nullifier secrets can
@@ -30,11 +30,14 @@ whole actions through its clear four-byte diversifier.
 
 Direct submission uses the user's Stellar account as the transaction source and links the action
 to it. A fee-bump sponsor changes only the outer fee source. Direct submission is the only
-supported application path. Stale relayed reviews are rejected; historical pending records
-remain reconcile-only without signing or rebroadcast.
+supported application path. Unsupported pending records fail validation without
+signing, rebroadcast, hash lookup or a compatibility recovery path.
 
-RPC providers and network observers see IP address, timing, selected deployment, ledger ranges,
-simulations, restoration attempts, and submissions. Cross-checking different-origin providers
+RPC operators see the connecting IP address, timing, selected deployment, ledger ranges,
+simulations, restoration attempts, and submissions. With authenticated HTTPS and uncompromised
+endpoints, passive network observers see connection endpoints, timing, sizes, and volume, but
+cannot directly read encrypted RPC contents. Traffic analysis and public-ledger correlation
+remain possible. Cross-checking different-origin providers
 reduces the risk of accepting a fabricated ledger view when their operators are actually
 independent, but exposes access patterns to more endpoints. The shipped SDF-primary/Ankr-witness
 pair is operator-diverse; the runtime cannot prove the same for a custom primary.
@@ -60,6 +63,17 @@ sender can burn its own value into an undecryptable recipient output. Wallet-gen
 self-checked, but the protocol cannot recover value intentionally encrypted incorrectly by another
 sender.
 
+Recipient HPKE base mode does not authenticate the sender's identity. Memo authenticity is not
+proof of its author's identity or the truth of its contents. Recipient-key compromise can expose
+historical ciphertexts; diversified-address rotation does not provide forward secrecy against
+compromise of the seed or incoming viewing key.
+
+Note conservation assumes correct token-transfer behavior at the deposit/withdrawal boundary;
+the pool does not compare custody balances before and after a token call. Underlying token
+authorization revocation can block movement, and permitted clawback can remove pooled backing
+without canceling private notes. The pool registry administrator and underlying token
+administrator are separate roles. No automatic insolvency resolution is implemented.
+
 ## 4. Browser and local-state boundary
 
 The design assumes the application origin, loaded code, browser cryptography, dependency graph,
@@ -69,8 +83,9 @@ intent-gated worker/vault boundaries, but JavaScript cannot guarantee physical m
 
 Sensitive notes, viewing state, outgoing metadata, checkpoints, and pending actions are encrypted
 and deployment-bound in IndexedDB. The Merkle node cache contains public data but is authenticated
-against the encrypted checkpoint and canonical chain. Corruption fails closed. No backward state
-migration exists for this replacement protocol.
+against the encrypted checkpoint and canonical chain. Corruption fails closed.
+StellarKey 1.5.1 accepts only the current deployment-bound record formats;
+unsupported encrypted state is rejected without mutation.
 
 ## 5. Availability and recovery boundary
 
@@ -78,6 +93,13 @@ The protocol has no StellarKey backend, operated relayer, or indexer. Peer relay
 and helper earnings are removed. Availability depends on a usable Stellar RPC,
 retained or restorable ledger state, sufficient public XLM for direct submission,
 browser storage, and access to the proving artifacts. Different-origin RPC disagreement intentionally disables spending.
+
+The depth-64 commitment tree is finite, but full-input exits append no leaves and
+skip its capacity guard. Normal actions still require three free slots. A partial
+withdrawal that creates change can therefore fail at saturation, whereas fully
+consuming one or two owned notes can exit subject to proof, root, token, fee and
+ledger availability. Multiple independent exit steps are not an atomic aggregate.
+The u128 archive counter is finite and cold recovery/storage costs still grow.
 
 Archive records receive the configured maximum TTL when written but are not refreshed forever.
 After eviction, seed-only recovery requires paid restore-footprint transactions. The wallet batches

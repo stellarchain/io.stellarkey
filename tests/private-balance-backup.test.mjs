@@ -1,3 +1,4 @@
+import { stringifyPrivateIndices } from '../src/features/private-balance/runtime/indices.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { encryptBytesWithKey } from '../src/lib/crypto.ts';
@@ -55,13 +56,13 @@ test('private backup restores only staged validated sensitive state and requires
     account: {
       setupState: 'ready',
       syncStatus: 'current',
-      lastVerifiedActionIndex: 0,
+      lastVerifiedActionIndex: 0n,
       updatedAt: 1,
     },
     privateAddress: `tskpay_${'2'.repeat(121)}`,
     recentPrivateRecipients: [{
       address: `tskpay_${'3'.repeat(121)}`,
-      fingerprint: 'ABCD EF01',
+      fingerprint: 'ABCD EF01 2345 6789 ABCD EF01 2345 6789',
       lastUsedAt: 1,
     }],
     notes: [{
@@ -72,8 +73,8 @@ test('private backup restores only staged validated sensitive state and requires
       assetContractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
       diversifier: '00000000',
       ownerCommitment: '0a'.repeat(32),
-      leafIndex: 0,
-      actionIndex: 0,
+      leafIndex: 0n,
+      actionIndex: 0n,
       rho: '0b'.repeat(32),
       memoHex: '',
       senderFingerprintHex: '',
@@ -82,7 +83,7 @@ test('private backup restores only staged validated sensitive state and requires
     }],
     activities: [{
       id: '0c'.repeat(32),
-      actionIndex: 0,
+      actionIndex: 0n,
       actionKind: 'transfer',
       assetIndex: 0,
       assetContractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
@@ -91,7 +92,7 @@ test('private backup restores only staged validated sensitive state and requires
       timestamp: 1,
       nullifiers: ['0d'.repeat(32)],
       outputCommitments: ['0e'.repeat(32)],
-      recipientFingerprint: 'ABCD EF01',
+      recipientFingerprint: 'ABCD EF01 2345 6789 ABCD EF01 2345 6789',
       memoHex: Buffer.from('rent').toString('hex'),
     }],
   };
@@ -100,7 +101,7 @@ test('private backup restores only staged validated sensitive state and requires
     context,
     key,
     0,
-    {
+    { outgoingHistoryMode: 'recoverable',
       id: 'build-1',
       kind: 'transfer',
       proofExposure: 'local',
@@ -114,7 +115,7 @@ test('private backup restores only staged validated sensitive state and requires
   source.records.set('private:cache:v1:public', 'must-not-export');
   const archive = await exportPrivateBalanceBackupArchive(source);
   assert.equal(archive.records.length, 1);
-  assert.equal(JSON.stringify(archive).includes('private:cache:v1'), false);
+  assert.equal(stringifyPrivateIndices(archive).includes('private:cache:v1'), false);
 
   const target = new MemoryDriver();
   target.records.set('private:sensitive:v1:old', 'preserve-on-failure');
@@ -160,33 +161,32 @@ test('private backup restores only staged validated sensitive state and requires
   assert.deepEqual(target.records, before);
 });
 
-test('encrypted backup restore preserves legacy possibly exposed build holds but releases explicitly local work', async () => {
+test('encrypted backup restore releases explicitly local unfinished builds', async () => {
   const assetContractId = 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF';
-  for (const kind of ['transfer', 'withdraw']) for (const proofExposure of [undefined, 'local']) {
+  for (const kind of ['transfer', 'withdraw']) for (const proofExposure of ['local']) {
     const source = new MemoryDriver();
     const note = { id: '09'.repeat(32), commitment: '09'.repeat(32), value: '100', assetIndex: 0, assetContractId,
-      diversifier: '00000000', ownerCommitment: '0a'.repeat(32), leafIndex: 0, actionIndex: 0, rho: '0b'.repeat(32), memoHex: '', senderFingerprintHex: '', status: 'unspent', createdAt: 1 };
+      diversifier: '00000000', ownerCommitment: '0a'.repeat(32), leafIndex: 0n, actionIndex: 0n, rho: '0b'.repeat(32), memoHex: '', senderFingerprintHex: '', status: 'unspent', createdAt: 1 };
     await commitPrivateBalanceState(context, key, { ...createEmptyPrivateBalanceState('07'.repeat(32), 1), notes: [note] }, null, source);
-    await reservePrivateBuildReservation(context, key, 0, { id: 'build-held', kind, proofExposure, assetContractId, reservedNoteIds: [note.id], createdAt: 2, updatedAt: 2 }, source);
+    await reservePrivateBuildReservation(context, key, 0, { outgoingHistoryMode: 'recoverable', id: 'build-held', kind, proofExposure, assetContractId, reservedNoteIds: [note.id], createdAt: 2, updatedAt: 2 }, source);
     const archive = await exportPrivateBalanceBackupArchive(source);
     const target = new MemoryDriver();
     await restorePrivateBalanceBackupArchive({ archive, driver: target, resolveStorageKey: async () => key.slice(), validateContext: async () => {}, now: () => 10_000_000 });
     const restored = await loadPrivateBalanceState(context, key, target);
-    assert.equal(restored.buildReservations.length, proofExposure === 'local' ? 0 : 1);
-    assert.equal(restored.notes[0].status, proofExposure === 'local' ? 'unspent' : 'reserved');
-    if (proofExposure === undefined) assert.equal(restored.notes[0].reservedAt, 2);
+    assert.equal(restored.buildReservations.length, 0);
+    assert.equal(restored.notes[0].status, 'unspent');
   }
 });
 
 test('backup preparation validates persisted proof-exposure and route markers and preserves unsigned shared holds', async () => {
   const assetContractId = 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF';
-  const pending = { id: 'shared-proof', kind: 'transfer', assetIndex: 0, assetContractId, status: 'prepared', submissionMode: 'relay', proofExposure: 'shared',
+  const pending = { outgoingHistoryMode: 'recoverable', id: 'shared-proof', kind: 'transfer', assetIndex: 0, assetContractId, status: 'prepared', submissionMode: 'direct', proofExposure: 'shared',
     reservedNoteIds: ['09'.repeat(32)], actionField: '10'.repeat(32), nullifiers: ['11'.repeat(32), '00'.repeat(32)], outputCommitments: ['12'.repeat(32), '13'.repeat(32), '14'.repeat(32)],
     anchorRoot: '15'.repeat(32), anchorExpiresAtLedger: 100, proofHash: '16'.repeat(32), classicFeeCapStroops: '100', resourceFeeCapStroops: '1000', broadcastAttempts: 0, createdAt: 2, updatedAt: 2 };
   const source = new MemoryDriver();
   const state = { ...createEmptyPrivateBalanceState('07'.repeat(32), 1), pendingActions: [pending], notes: [{
     id: '09'.repeat(32), commitment: '09'.repeat(32), value: '100', assetIndex: 0, assetContractId, diversifier: '00000000', ownerCommitment: '0a'.repeat(32),
-    leafIndex: 0, actionIndex: 0, rho: '0b'.repeat(32), memoHex: '', senderFingerprintHex: '', status: 'reserved', reservedAt: 2, createdAt: 1,
+    leafIndex: 0n, actionIndex: 0n, rho: '0b'.repeat(32), memoHex: '', senderFingerprintHex: '', status: 'reserved', reservedAt: 2, createdAt: 1,
   }] };
   await commitPrivateBalanceState(context, key, state, null, source);
   const archive = await exportPrivateBalanceBackupArchive(source);
@@ -199,9 +199,9 @@ test('backup preparation validates persisted proof-exposure and route markers an
     const malformed = structuredClone(archive);
     const record = malformed.records[0];
     const envelope = JSON.parse(record.value);
-    envelope.crypto = await encryptBytesWithKey(new TextEncoder().encode(JSON.stringify({ ...state, pendingActions: [{ ...pending, ...invalid }] })), key,
+    envelope.crypto = await encryptBytesWithKey(new TextEncoder().encode(stringifyPrivateIndices({ ...state, pendingActions: [{ ...pending, ...invalid }] })), key,
       new TextEncoder().encode(`stellarkey-private-balance-state|2|${state.revision}|${record.key}`));
-    record.value = JSON.stringify(envelope);
+    record.value = stringifyPrivateIndices(envelope);
     await assert.rejects(preparePrivateBalanceBackupArchive({ archive: malformed, resolveStorageKey: async () => key.slice(), validateContext: async () => assert.fail('Invalid state must fail before context acceptance') }), /schema/);
   }
 });

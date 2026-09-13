@@ -12,7 +12,7 @@ import { PrivateBalanceWorkerClient } from '../src/features/private-balance/work
 
 const manifest = {
     schemaVersion: 1,
-    protocolVersion: 1,
+    protocolVersion: 2,
     artifactVersion: '1.0.0-dev',
     status: 'development',
     minimumStellarProtocol: 25,
@@ -48,7 +48,7 @@ const manifest = {
       vkBinSha256: 'a5'.repeat(32),
     },
     constants: {
-      treeDepth: 17,
+      treeDepth: 64,
       treeArity: 3,
       rootWindowLedgers: 1440,
       publicInputs: 11,
@@ -116,7 +116,7 @@ test('worker client: transfers the exact standalone root with public derivation 
           notes: [],
           activities: [],
           tree: {
-            nextIndex: 0,
+            nextIndex: 0n,
             frontier: Array.from({ length: 34 }, () => new Uint8Array(32)),
             currentRoot: new Uint8Array(32),
           },
@@ -153,7 +153,7 @@ test('worker client: transfers the exact standalone root with public derivation 
     StrKey.decodeEd25519PublicKey(account.publicKey()),
   );
   const contextHash = computeContextHash(
-    1,
+    2,
     message.keyContext.networkId,
     message.keyContext.realmId,
     message.keyContext.poolId,
@@ -327,7 +327,7 @@ test('worker client proves an opaque prepared action without exposing witness in
           reservationId: message.reservationId,
           preparedActionId,
           action: {
-            protocolVersion: 1,
+            protocolVersion: 2,
             kind: 1,
             actionNonce: zero,
             anchorRoot: zero,
@@ -368,8 +368,8 @@ test('worker client proves an opaque prepared action without exposing witness in
     value: '1',
     diversifier: '00000000',
     ownerCommitment: '06'.repeat(32),
-    leafIndex: 0,
-    actionIndex: 0,
+    leafIndex: 0n,
+    actionIndex: 0n,
     rho: '07'.repeat(32),
     memoHex: '',
     senderFingerprintHex: '',

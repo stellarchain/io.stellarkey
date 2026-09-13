@@ -1,4 +1,4 @@
-import { encodeDomain, encodeU16Be, encodeU32Be, encodeU64Be } from './encoding.js';
+import { encodeDomain, encodeU16Be, encodeU32Be, encodeU64Be, encodeU128Be } from './encoding.js';
 import { equalBytes, sha256Bytes } from './hash.js';
 import { OutputPackageModel } from './action.js';
 import { MerkleTree, appendFrontier, refreshTreeRoot } from './tree.js';
@@ -7,9 +7,9 @@ export const DOMAIN_ARCHIVE_RECORD = 'SKSB_ARCHIVE_RECORD_V1';
 export const DOMAIN_ARCHIVE_GENESIS = 'SKSB_ARCHIVE_GENESIS_V1';
 
 export interface ArchiveRecordModel {
-  actionIndex: number;
+  actionIndex: bigint;
   ledgerSequence: number;
-  startingLeafIndex: number;
+  startingLeafIndex: bigint;
   actionKind: number;
   assetIndex?: number;
   asset?: { kind: number; payload: Uint8Array };
@@ -43,7 +43,8 @@ function requireLength(name: string, bytes: Uint8Array, length: number): void {
 }
 
 function requireRecordWidths(record: ArchiveRecordModel): void {
-  const boundary = record.actionKind === 1 || record.actionKind === 3;
+  if (![1, 2, 3, 4].includes(record.actionKind)) throw new Error('Invalid archive action kind');
+  const boundary = record.actionKind === 1 || record.actionKind === 3 || record.actionKind === 4;
   if (boundary !== (record.asset !== undefined && record.assetIndex !== undefined)) {
     throw new Error('Archive boundary asset shape is invalid');
   }
@@ -87,9 +88,9 @@ export function computeRecordHash(
   const bytes: number[] = [];
   encodeDomain(DOMAIN_ARCHIVE_RECORD, bytes);
   encodeU16Be(protocolVersion, bytes);
-  encodeU32Be(record.actionIndex, bytes);
+  encodeU128Be(record.actionIndex, bytes);
   encodeU32Be(record.ledgerSequence, bytes);
-  encodeU32Be(record.startingLeafIndex, bytes);
+  encodeU128Be(record.startingLeafIndex, bytes);
   bytes.push(record.actionKind);
   encodeOptionalAddress(record.asset, bytes);
   encodeU32Be(record.assetIndex ?? 0, bytes);
@@ -130,14 +131,17 @@ export async function applyArchiveRecord(
   tree: MerkleTree,
   record: ArchiveRecordModel,
 ): Promise<Uint8Array> {
+  requireRecordWidths(record);
   if (record.startingLeafIndex !== tree.nextIndex) throw new Error('Archive leaf position mismatch');
   const nextTree: MerkleTree = {
     nextIndex: tree.nextIndex,
     frontier: tree.frontier.map(node => node.slice()),
     currentRoot: tree.currentRoot.slice(),
   };
-  for (const output of record.outputs) await appendFrontier(nextTree, output.cm);
-  const root = await refreshTreeRoot(nextTree);
+  if (record.actionKind !== 4) {
+    for (const output of record.outputs) await appendFrontier(nextTree, output.cm);
+  }
+  const root = record.actionKind === 4 ? nextTree.currentRoot.slice() : await refreshTreeRoot(nextTree);
   if (!equalBytes(root, record.treeRootAfter)) throw new Error('Archive tree root mismatch');
   tree.nextIndex = nextTree.nextIndex;
   tree.frontier = nextTree.frontier;

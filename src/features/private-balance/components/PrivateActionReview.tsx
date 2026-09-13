@@ -116,11 +116,11 @@ export function PrivateActionReview({
 
   const amountStroops = useMemo(() => {
     try {
-      return parsePrivateAmount(draft.amount, decimals);
+      return parsePrivateAmount(draft.amount, decimals, { aggregateWithdrawal: draft.kind === 'withdraw' });
     } catch {
       return null;
     }
-  }, [decimals, draft.amount]);
+  }, [decimals, draft.amount, draft.kind]);
 
   // Render-integrity: a prepared review may only enable confirm when it
   // byte-matches the draft the person is looking at.
@@ -138,6 +138,12 @@ export function PrivateActionReview({
         assertDirectPrivateSubmission(chained.approval);
         assertDirectPrivateSubmission(chained.draft);
         assertSamePrivateFeePayer(draft.feePayer, chained.approval.feePayer);
+        if (chained.draft.kind !== draft.kind || parsePrivateAmount(chained.draft.amount, decimals, { aggregateWithdrawal: chained.draft.kind === 'withdraw' }) !== amountStroops ||
+          (chained.draft.kind === 'withdraw' && chained.draft.publicRecipient !== draft.publicRecipient) ||
+          (chained.draft.kind === 'transfer' && (chained.draft.recipientAddress !== draft.recipientAddress ||
+            (chained.draft.memo?.trim() ?? '') !== (draft.memo?.trim() ?? '')))) {
+          return new PrivateReviewMismatchError('multi-step amount or recipient changed');
+        }
       }
     } catch {
       return new PrivateReviewMismatchError('direct submission requires a new review');
@@ -175,7 +181,7 @@ export function PrivateActionReview({
       return new PrivateReviewMismatchError('public recipient changed');
     }
     return null;
-  }, [amountStroops, asset?.contractId, chained, disclosure, draft, feeAccount, review]);
+  }, [amountStroops, asset?.contractId, chained, decimals, disclosure, draft, feeAccount, review]);
 
   const maximumFeeStroops = review
     ? review.transaction.classicFeeStroops + review.transaction.resourceFeeStroops
@@ -397,7 +403,7 @@ export function PrivateActionReview({
           {chained ? (
             <p className="leading-relaxed text-neutral-400">
               This runs as {chained.approval.steps} public transactions on Stellar, one after
-              another — their timing is visible, the amounts moving privately are not.
+              another. {draft.kind === 'withdraw' ? 'Each withdrawn amount and the public recipient are visible.' : 'Their timing is visible; the amounts moving privately are not.'}
               {' Confirming authorizes sharing a spend proof for each approved step. A shared proof can execute even after cancellation or transaction expiry; unresolved inputs remain reserved.'}
             </p>
           ) : null}

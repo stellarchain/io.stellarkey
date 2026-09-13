@@ -16,7 +16,7 @@ function requireU32(value, name) {
     }
 }
 function validateNote(note) {
-    if (note.protocolVersion !== 1)
+    if (note.protocolVersion !== 2)
         throw new Error('Unsupported note protocol version');
     if (note.flags !== 0 && note.flags !== 1)
         throw new Error('Unsupported note flags');
@@ -98,7 +98,7 @@ export function computeCommitment(contextField, assetField, ownerCommitment, val
     return p2(DOMAIN_NOTE, [contextField, assetField, ownerCommitment, bigintTo32Bytes(value), rho]);
 }
 export function computeNullifier(contextField, nk, rho, leafIndex, cm) {
-    if (leafIndex < 0n || leafIndex > 0xffffffffn)
+    if (typeof leafIndex !== 'bigint' || leafIndex < 0n || leafIndex >= 1n << 128n)
         throw new Error('Invalid leaf index');
     return p2(DOMAIN_NULLIFIER, [contextField, nk, rho, bigintTo32Bytes(leafIndex), cm]);
 }

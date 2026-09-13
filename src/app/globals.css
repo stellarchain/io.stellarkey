@@ -12,7 +12,7 @@
   --color-line-strong: rgba(255, 255, 255, 0.32);
   --color-ink: #ffffff;
   --color-muted: rgba(235, 235, 245, 0.66);
-  --color-faint: rgba(235, 235, 245, 0.55);
+  --color-faint: rgba(235, 235, 245, 0.66);
   --color-accent: #0a84ff;
   --color-accent-2: #64d2ff;
   --color-pos: #30d158;
@@ -107,7 +107,20 @@
   color: #409cff;
 }
 
-/* Legacy foreground utilities share the semantic light-theme contrast values.
+/* Small secondary labels need contrast on translucent raised review surfaces. */
+:root:not([data-theme="light"]) .text-neutral-400 {
+  color: #b0b0b6;
+}
+
+/* Small negative text also appears on tinted and raised dark review panels. */
+:root:not([data-theme="light"]) .text-\[\#FF453A\],
+:root:not([data-theme="light"]) .text-\[\#FF6961\],
+:root:not([data-theme="light"]) .text-neg,
+:root:not([data-theme="light"]) .btn-danger {
+  color: #ff8a80;
+}
+
+/* Foreground utilities share the semantic light-theme contrast values.
    Filled accents keep their existing fill and explicit on-colour foreground. */
 :root[data-theme="light"] .text-\[\#0A84FF\],
 :root[data-theme="light"] .text-\[\#007AFF\],
@@ -158,7 +171,7 @@
   --color-line-strong: rgba(255, 255, 255, 0.32);
   --color-ink: #ffffff;
   --color-muted: rgba(235, 235, 245, 0.66);
-  --color-faint: rgba(235, 235, 245, 0.55);
+  --color-faint: rgba(235, 235, 245, 0.66);
   --color-accent: #0a84ff;
   --color-accent-2: #64d2ff;
   --color-pos: #30d158;

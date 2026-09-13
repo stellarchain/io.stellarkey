@@ -493,6 +493,7 @@ for (const motion of ['reduce', 'no-preference'] as const) {
 
     for (const appearance of ['light', 'dark'] as const) {
       test(`${appearance} account modes and claim views preserve the shell through rapid pointer and keyboard changes`, async ({ page }) => {
+        await page.evaluate(() => { localStorage.setItem('stellarkey.theme', 'system'); window.dispatchEvent(new StorageEvent('storage', { key: 'stellarkey.theme', newValue: 'system', storageArea: localStorage })); });
         await page.emulateMedia({ colorScheme: appearance });
         await expect(page.locator('html')).toHaveAttribute('data-theme', appearance);
         await page.getByRole('button', { name: 'Open account modal', exact: true }).click();

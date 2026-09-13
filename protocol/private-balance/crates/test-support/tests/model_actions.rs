@@ -54,7 +54,7 @@ fn one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption() {
         let public_value = match kind {
             ActionKind::Deposit => rng.gen_range(1..=100u64),
             ActionKind::PrivateTransfer => 0,
-            ActionKind::Withdraw => rng.gen_range(1..=model.total_public_balance.min(100)),
+            ActionKind::Withdraw | ActionKind::FullInputExit => rng.gen_range(1..=model.total_public_balance.min(100)),
         };
         action_counts[kind as usize - 1] += 1;
         let repeated_commitment = index > 0 && index % 997 == 0;

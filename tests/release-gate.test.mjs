@@ -296,7 +296,7 @@ test("private proving artifacts are provenance-checked in local, CI, and release
   assert.match(circuits.scripts["verify:zkey"], /verify-proving-key\.mjs/);
   assert.match(circuits.scripts["gate:a"], /verify:zkey/);
   assert.match(setup, /ensurePowersOfTau/);
-  assert.match(transcript, /3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db/);
+  assert.match(transcript, /f807e065fde53f72f4bf4d57140fab85b26daa6cc95bdfec7cce93622b3a367c/);
   assert.match(verify, /zkey["',\s]+verify/);
   assert.match(manifestValidator, /parsed\.status !== 'development'/);
   assert.match(manifestValidator, /parsed\.release\.zkeyVerified !== true/);
@@ -397,8 +397,9 @@ test("manual browser, hardware, and backend-free boundaries have a release check
   assert.match(checklist, /Trezor/);
   assert.match(checklist, /foreground-only/i);
   assert.match(checklist, /pinch zoom.*200%/i);
-  assert.match(checklist, /backup envelope version 2/i);
-  assert.match(checklist, /legacy plaintext version 1[^\n]*not supported/i);
+  assert.match(checklist, /backups use the current encrypted version 2 envelope/i);
+  assert.match(checklist, /current encrypted version 2 envelope and current-format records/i);
+  assert.match(checklist, /Unsupported formats must be rejected without migration or data deletion/i);
 });
 
 test("settings do not navigate into unimplemented product surfaces", () => {

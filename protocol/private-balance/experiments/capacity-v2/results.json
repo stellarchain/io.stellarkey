@@ -1,0 +1,356 @@
+{
+  "startedAt": "2026-09-12T23:34:31.895Z",
+  "finishedAt": "2026-09-12T23:37:56.923Z",
+  "status": "prototype local gate passed; not a production security or release gate",
+  "head": "561f716627debab6e72c72c57b1966e572fc3456",
+  "dirtyPaths": [
+    "M CHANGELOG.md",
+    " M README.md",
+    " M docs/private-balance.md",
+    " M protocol/private-balance/docs/protocol-v1.md",
+    " M protocol/private-balance/docs/threat-model.md",
+    " M tests/private-balance-docs.test.mjs",
+    "?? docs/whitepaper/",
+    "?? protocol/private-balance/contracts/pool/tests/capacity_v2.rs",
+    "?? protocol/private-balance/experiments/"
+  ],
+  "host": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M3 Max"
+  },
+  "versions": {
+    "node": "v26.7.0",
+    "circom": "circom compiler 2.2.3",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "snarkjs": "0.7.5"
+  },
+  "sourceSha256": {
+    "protocol/private-balance/experiments/capacity-v2/browser-bench.mjs": "2be21f1d2bf50a7e692a096225eb976f2017901097bc079aa7eac1943a48e3e9",
+    "protocol/private-balance/experiments/capacity-v2/circuit.test.mjs": "07db6adc6f512c2bf587f7d6e10ae31ddb2ccb8f978361443af9917b6299fa19",
+    "protocol/private-balance/experiments/capacity-v2/compile.mjs": "9f78891246c4bb01ac5d1a9bdafcc4da3d2c8ead67aa5dea1620679d73a78245",
+    "protocol/private-balance/experiments/capacity-v2/contract.test.rs": "1beca04be3624483bbb93baab067ae1d74a3533792a2aadc495e4b7c5be2d580",
+    "protocol/private-balance/experiments/capacity-v2/fixtures.mjs": "6d2b549c4b9ab74f905faa3057f40ed892356e5f466cdcf1bbcf416ae440cad0",
+    "protocol/private-balance/experiments/capacity-v2/model.mjs": "ca3fb54ca173632aea78ed7546c33136ce5d641d067c49df0d5de481cf975109",
+    "protocol/private-balance/experiments/capacity-v2/prove.mjs": "b3212a9d49ed379778b7821dd9f93409d5b0349d904a475774263b8f7eabb3f9",
+    "protocol/private-balance/experiments/capacity-v2/recovery.test.mjs": "e84ab998b5a3f3232d14f84918fa1e1ace56d622fc1644171b1de0a37f787d8a",
+    "protocol/private-balance/experiments/capacity-v2/tree.test.mjs": "1f446d2123e7e3871e36e0654f78417fcc31e1d9983e8aa7973745f664a3484b",
+    "protocol/private-balance/experiments/capacity-v2/verify.mjs": "1184d7525950928983f2bfbfc47128b0f7ffe4d9e0ef2167b2d8162acbb7cad8",
+    "protocol/private-balance/experiments/capacity-v2/circom/action.circom": "39bb40d9b60c63b859d298c520a1db96cf14d2f0a687ac4f09d764266a757d9c",
+    "protocol/private-balance/experiments/capacity-v2/circom/hierarchy.circom": "de843e20c7ee28a91f95f2b921ed8e54417d1c3909a94bdc0dd3427096d4f76a",
+    "protocol/private-balance/circuits/circom/action.circom": "0f9ecfec126385d1f165426844671974fb138c74d979313f7c33950ea46ea95a",
+    "protocol/private-balance/circuits/circom/gadgets_helper.circom": "bb3633d95214f62222c64a2cb54efb4af8200130bd103fa570e29052372d57f7",
+    "protocol/private-balance/circuits/circom/merkle.circom": "766d05cb4e60653ed874553268230f7b07212c21c0b46b3ab209eba46e6dcf99",
+    "protocol/private-balance/circuits/circom/note.circom": "3b696016046909438b81939fa074a1139671a6b03bfeb0bd631b5ba5f2998d51",
+    "protocol/private-balance/circuits/circom/nullifier.circom": "5468cc946b26d3553c10a602e64c438f01836e1f70f1e51cfffb920b9bf676ba",
+    "protocol/private-balance/circuits/circom/owner.circom": "12bd0fe9a7184a695d13a94644dd13aa9adcb462eaa39205bd23edba5bdc95d3",
+    "protocol/private-balance/circuits/circom/poseidon2.circom": "51d747d427851b1a3f2124def4a83e2cdb7cdb51d3c3a0289a4be9c92935f3e8",
+    "protocol/private-balance/circuits/circom/test_binding.circom": "6c6298513c1b716b2752654fed9cb0a6eb4abff5b8164410491780057d1295d1",
+    "protocol/private-balance/Cargo.lock": "f5cfe431356711e9e1f4fada4188563d57c8c4d740892ee3ae260c077aa16802",
+    "protocol/private-balance/contracts/pool/Cargo.toml": "137ffde49ed0eb2e1c516883377ab02e62a93cbb0fe51857dbad116fcd9598e3",
+    "protocol/private-balance/crates/verifier/src/verify.rs": "08e92eb06c44ad45bac12846f8a18a0952401dcdac6c736ad4a8a18b786328f6",
+    "protocol/private-balance/crates/verifier/src/types.rs": "f4fa453e1d3264a3d0c0bfca06e77fc9867ef5dd3fda52754434bc996c2aa6f7"
+  },
+  "compilation": [
+    {
+      "name": "small",
+      "inner": 1,
+      "outer": 1,
+      "constraints": 6990,
+      "r1csSha256": "b2cf33bd4f5c1d90fe24bcc26b195375f90fc7e73ab30be048d1f0e5a2ba437d",
+      "wasmSha256": "a46ae006879d63968d623b2cf6585308f2e6d4134a0a943913087992987355a5"
+    },
+    {
+      "name": "full",
+      "inner": 17,
+      "outer": 47,
+      "constraints": 40594,
+      "r1csSha256": "b59eaddeb2ec6eac403d2c2adee693ea2446abb094edcdd6f309456e1d77ae2f",
+      "wasmSha256": "814e9ec129147e2bb9b25a76de2e0679050803cc98578f917a4948ea5a30cf55"
+    }
+  ],
+  "proving": [
+    {
+      "name": "small",
+      "samples": [
+        {
+          "name": "deposit-a",
+          "fullProveMs": 294.1785830000008
+        },
+        {
+          "name": "deposit-b-rollover",
+          "fullProveMs": 286.43104200000016
+        },
+        {
+          "name": "cross-subtree-transfer",
+          "fullProveMs": 298.9936659999985
+        },
+        {
+          "name": "full-input-exit",
+          "fullProveMs": 282.57545799999934
+        }
+      ],
+      "verified": true,
+      "publicSignalMutationsRejected": 11,
+      "setup": "local development only; not a production ceremony",
+      "ptauSha256": "3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db",
+      "zkeySha256": "03362ef0625b8b76d5322912ced1e18d402970237633a8256a8bc0c24a1bb9f0",
+      "zkeyBytes": 4307212,
+      "wasmBytes": 123990
+    },
+    {
+      "name": "full",
+      "samples": [
+        {
+          "name": "deposit-a",
+          "fullProveMs": 1568.658166000001
+        },
+        {
+          "name": "deposit-b-rollover",
+          "fullProveMs": 1508.4459169999973
+        },
+        {
+          "name": "cross-subtree-transfer",
+          "fullProveMs": 1521.2286250000034
+        },
+        {
+          "name": "full-input-exit",
+          "fullProveMs": 1499.5457499999975
+        }
+      ],
+      "verified": true,
+      "publicSignalMutationsRejected": 11,
+      "setup": "local development only; not a production ceremony",
+      "ptauSha256": "6b662a324867139fb1a20a324d90b6ff61856dfb23f59326909f14b0e2483ae0",
+      "zkeySha256": "c9a3014a8df991e7ab281d70c95fe609896766dd98201822ecae3b310ab641fe",
+      "zkeyBytes": 26308892,
+      "wasmBytes": 261558
+    }
+  ],
+  "browser": [
+    {
+      "name": "chromium-default-workers",
+      "engineVersion": "151.0.7922.34",
+      "physicalPhone": false,
+      "host": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpu": "Apple M3 Max"
+      },
+      "samples": [
+        {
+          "fullProveMs": 1529.7000000476837,
+          "verifyMs": 8.600000023841858
+        },
+        {
+          "fullProveMs": 1466.2999999523163,
+          "verifyMs": 8.5
+        },
+        {
+          "fullProveMs": 1467,
+          "verifyMs": 7.899999976158142
+        }
+      ],
+      "artifactFetchMs": 16.5,
+      "observedJsHeapMaxBytes": 29400000,
+      "memoryCaveat": "Sampled JS heap only, not total or peak process/Wasm memory; main-thread work can delay sampling.",
+      "crossOriginIsolated": false,
+      "hardwareConcurrency": 16,
+      "proverSingleThread": false,
+      "verified": true
+    },
+    {
+      "name": "webkit-iphone-emulation-default-workers",
+      "engineVersion": "26.5",
+      "physicalPhone": false,
+      "host": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpu": "Apple M3 Max"
+      },
+      "samples": [
+        {
+          "fullProveMs": 2147,
+          "verifyMs": 13
+        },
+        {
+          "fullProveMs": 2015,
+          "verifyMs": 11
+        },
+        {
+          "fullProveMs": 2054,
+          "verifyMs": 10
+        }
+      ],
+      "artifactFetchMs": 22,
+      "observedJsHeapMaxBytes": null,
+      "memoryCaveat": "Sampled JS heap only, not total or peak process/Wasm memory; main-thread work can delay sampling.",
+      "crossOriginIsolated": false,
+      "hardwareConcurrency": 8,
+      "proverSingleThread": false,
+      "verified": true
+    },
+    {
+      "name": "chromium-single-thread",
+      "engineVersion": "151.0.7922.34",
+      "physicalPhone": false,
+      "host": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpu": "Apple M3 Max"
+      },
+      "samples": [
+        {
+          "fullProveMs": 11000.800000071526,
+          "verifyMs": 47.299999952316284
+        },
+        {
+          "fullProveMs": 11040.600000023842,
+          "verifyMs": 8.200000047683716
+        },
+        {
+          "fullProveMs": 11050.899999976158,
+          "verifyMs": 8
+        }
+      ],
+      "artifactFetchMs": 14.5,
+      "observedJsHeapMaxBytes": 29400000,
+      "memoryCaveat": "Sampled JS heap only, not total or peak process/Wasm memory; main-thread work can delay sampling.",
+      "crossOriginIsolated": false,
+      "hardwareConcurrency": 16,
+      "proverSingleThread": true,
+      "verified": true
+    },
+    {
+      "name": "webkit-iphone-emulation-single-thread",
+      "engineVersion": "26.5",
+      "physicalPhone": false,
+      "host": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpu": "Apple M3 Max"
+      },
+      "samples": [
+        {
+          "fullProveMs": 12293,
+          "verifyMs": 64
+        },
+        {
+          "fullProveMs": 12438,
+          "verifyMs": 22
+        },
+        {
+          "fullProveMs": 12007,
+          "verifyMs": 11
+        }
+      ],
+      "artifactFetchMs": 21,
+      "observedJsHeapMaxBytes": null,
+      "memoryCaveat": "Sampled JS heap only, not total or peak process/Wasm memory; main-thread work can delay sampling.",
+      "crossOriginIsolated": false,
+      "hardwareConcurrency": 8,
+      "proverSingleThread": true,
+      "verified": true
+    }
+  ],
+  "contract": [
+    {
+      "action": "deposit-a",
+      "diskReadBytes": 92,
+      "excludes": "Wasm execution/instantiation, network fees, full encrypted archive and transaction bytes",
+      "instructions": 38359231,
+      "memoryBytes": 718066,
+      "nativeHostOnly": true,
+      "tree": "small",
+      "writeBytes": 3776,
+      "writeEntries": 8
+    },
+    {
+      "action": "deposit-b-rollover",
+      "diskReadBytes": 0,
+      "excludes": "Wasm execution/instantiation, network fees, full encrypted archive and transaction bytes",
+      "instructions": 38386310,
+      "memoryBytes": 723632,
+      "nativeHostOnly": true,
+      "tree": "small",
+      "writeBytes": 3776,
+      "writeEntries": 8
+    },
+    {
+      "action": "cross-subtree-transfer",
+      "diskReadBytes": 0,
+      "excludes": "Wasm execution/instantiation, network fees, full encrypted archive and transaction bytes",
+      "instructions": 36775703,
+      "memoryBytes": 627492,
+      "nativeHostOnly": true,
+      "tree": "small",
+      "writeBytes": 3256,
+      "writeEntries": 5
+    },
+    {
+      "action": "full-input-exit",
+      "diskReadBytes": 92,
+      "excludes": "Wasm execution/instantiation, network fees, full encrypted archive and transaction bytes",
+      "instructions": 34122895,
+      "memoryBytes": 516808,
+      "nativeHostOnly": true,
+      "tree": "small",
+      "writeBytes": 3704,
+      "writeEntries": 7
+    },
+    {
+      "action": "deposit-a",
+      "diskReadBytes": 92,
+      "excludes": "Wasm execution/instantiation, network fees, full encrypted archive and transaction bytes",
+      "instructions": 127454161,
+      "memoryBytes": 5282754,
+      "nativeHostOnly": true,
+      "tree": "full",
+      "writeBytes": 11216,
+      "writeEntries": 8
+    },
+    {
+      "action": "deposit-b-rollover",
+      "diskReadBytes": 0,
+      "excludes": "Wasm execution/instantiation, network fees, full encrypted archive and transaction bytes",
+      "instructions": 127481640,
+      "memoryBytes": 5288320,
+      "nativeHostOnly": true,
+      "tree": "full",
+      "writeBytes": 11216,
+      "writeEntries": 8
+    },
+    {
+      "action": "cross-subtree-transfer",
+      "diskReadBytes": 0,
+      "excludes": "Wasm execution/instantiation, network fees, full encrypted archive and transaction bytes",
+      "instructions": 128724016,
+      "memoryBytes": 5335476,
+      "nativeHostOnly": true,
+      "tree": "full",
+      "writeBytes": 10696,
+      "writeEntries": 5
+    },
+    {
+      "action": "full-input-exit",
+      "diskReadBytes": 92,
+      "excludes": "Wasm execution/instantiation, network fees, full encrypted archive and transaction bytes",
+      "instructions": 34697113,
+      "memoryBytes": 625432,
+      "nativeHostOnly": true,
+      "tree": "full",
+      "writeBytes": 11144,
+      "writeEntries": 7
+    }
+  ],
+  "v1PublishedArtifactsUnchanged": true,
+  "exclusions": [
+    "physical phone timing and peak memory",
+    "funded network/Wasm transaction cost",
+    "independent security audit",
+    "production circuit ceremony",
+    "deployment-bound v2 context and arbitrary recipients",
+    "production scanner/codec/storage-restoration integration",
+    "migration"
+  ]
+}

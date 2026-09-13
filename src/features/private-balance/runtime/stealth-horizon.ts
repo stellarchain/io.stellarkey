@@ -267,7 +267,7 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
       throw new Error('Horizon returned an invalid retained ledger range for stealth discovery');
     }
     // Wallet creation is not a key birthday. Every fresh scan uses the same
-    // retained-history boundary, including callers with legacy birthday data.
+    // retained-history boundary; installation time never excludes receipts.
     return highWaterCursor(Math.max(0, earliest.sequence - 1));
   }
 

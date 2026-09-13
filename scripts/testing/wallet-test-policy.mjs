@@ -6,7 +6,7 @@ const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const safeReporter = fileURLToPath(new URL('./safe-wallet-reporter.mjs', import.meta.url));
 
 export function assertLiveWalletTestingSafe() {
-  // Playwright 1.62: coreBundle.js Frame.expect captures matcher ARIA trees;
+  // Playwright 1.63: coreBundle.js Frame.expect captures matcher ARIA trees;
   // lib/index.js ArtifactsRecorder writes them via buildErrorContext even when
   // PLAYWRIGHT_NO_COPY_PROMPT=1 and screenshot/trace/video are off. There is no
   // supported suppression option. Deleting output afterwards is not prevention.

@@ -95,11 +95,11 @@ const context = {
 const commitment = value => new Uint8Array(32).fill(value);
 const namespace = (version = 2) => `private:cache:v${version}:${context.networkId}:${context.realmId}:${context.poolId}:`;
 const checkpointKey = () => `${namespace()}checkpoint`;
-const leafKey = index => `${namespace()}commitments:${index.toString().padStart(16, '0')}`;
-const legacyKey = () => `${namespace(1)}commitments:0000000000000000`;
-const legacyRaw = () => JSON.stringify({ kind: 'public-commitment-chunk', version: 1, revision: 0, startIndex: 0,
+const leafKey = index => `${namespace()}commitments:${index.toString().padStart(39, '0')}`;
+const legacyKey = () => `${namespace(1)}commitments:${'0'.repeat(39)}`;
+const legacyRaw = () => JSON.stringify({ kind: 'public-commitment-chunk', version: 1, revision: 0, startIndex: '0',
   commitments: [Buffer.from(commitment(1)).toString('hex')] });
-const append = (driver, index, values) => publicCache.recordVerifiedPrivateBalanceCommitments(context, index, values.map(commitment), driver);
+const append = (driver, index, values) => publicCache.recordVerifiedPrivateBalanceCommitments(context, BigInt(index), values.map(commitment), driver);
 const sameRecords = (left, right) => left.size === right.size && [...left].every(([key, raw]) => right.get(key) === raw);
 
 function pauseBefore(driver, method) {
@@ -120,7 +120,7 @@ test('routine verified appends use linear record reads and serialized bytes', as
   for (const count of [10, 20, 40]) {
     const driver = new MemoryDriver();
     for (let index = 0; index < count; index += 1) {
-      await publicCache.recordVerifiedPrivateBalanceCommitments(context, index, [commitment(index + 1)], driver);
+      await publicCache.recordVerifiedPrivateBalanceCommitments(context, BigInt(index), [commitment(index + 1)], driver);
     }
     samples.push({ count, ...driver.work });
   }
@@ -175,7 +175,7 @@ test('verified overlap is checked, duplicate ranges are idempotent, and gaps fai
 test('append snapshots caller-owned bytes before awaiting storage', async () => {
   const driver = new MemoryDriver();
   const values = [commitment(1)];
-  const pending = publicCache.recordVerifiedPrivateBalanceCommitments(context, 0, values, driver);
+  const pending = publicCache.recordVerifiedPrivateBalanceCommitments(context, BigInt(0), values, driver);
   values[0].fill(9); values.push(commitment(10));
   await pending;
   assert.deepEqual((await loadPrivateBalanceCommitments(context, driver)).map(value => value[0]), [1]);
@@ -185,10 +185,10 @@ test('append, load and reset keep the context captured before their first await'
   for (const operation of ['append', 'load', 'reset']) {
     const driver = new MemoryDriver();
     const mutable = { ...context };
-    driver.records.set(legacyKey(), legacyRaw());
+    await append(driver, 0, [1]);
     const deferred = pauseBefore(driver, operation === 'load' ? 'readPrefix' : 'read');
     const pending = operation === 'append'
-      ? publicCache.recordVerifiedPrivateBalanceCommitments(mutable, 1, [commitment(2)], driver)
+      ? publicCache.recordVerifiedPrivateBalanceCommitments(mutable, BigInt(1), [commitment(2)], driver)
       : operation === 'load'
         ? loadPrivateBalanceCommitments(mutable, driver)
         : publicCache.clearPrivateBalanceCommitmentCache(mutable, driver);
@@ -205,12 +205,12 @@ test('append, load and reset keep the context captured before their first await'
   }
 });
 
-test('legacy chunks migrate once without deleting legacy or encrypted discovery records', async () => {
+test('unsupported chunks are ignored without migration or deletion of stored records', async () => {
   const driver = new MemoryDriver();
   driver.records.set(legacyKey(), legacyRaw());
   driver.records.set(`${namespace(1)}stealth-discovery`, 'synthetic-encrypted-discovery');
-  assert.equal((await loadPrivateBalanceCommitments(context, driver)).length, 1);
-  await append(driver, 1, [2]);
+  assert.equal((await loadPrivateBalanceCommitments(context, driver)).length, 0);
+  await append(driver, 0, [2]);
   assert.ok(driver.records.has(checkpointKey()), 'append must create a v2 checkpoint');
   assert.equal(driver.records.get(legacyKey()), legacyRaw());
   await publicCache.clearPrivateBalanceCommitmentCache(context, driver);
@@ -221,14 +221,13 @@ test('legacy chunks migrate once without deleting legacy or encrypted discovery 
   assert.deepEqual((await loadPrivateBalanceCommitments(context, driver)).map(value => value[0]), [3]);
 });
 
-test('a legacy import atomically rejects changes to its original raw prefix', async () => {
+test('a new cache atomically rejects concurrent records in its current namespace', async () => {
   const driver = new MemoryDriver();
-  driver.records.set(legacyKey(), legacyRaw());
   const deferred = pauseBefore(driver, 'compareAndSetMany');
-  const pending = append(driver, 1, [2]);
+  const pending = append(driver, 0, [2]);
   const rejected = assert.rejects(pending, /changed|conflict/i);
   await deferred.waiting;
-  driver.records.set(`${namespace(1)}commitments:0000000000000001`, legacyRaw());
+  driver.records.set(leafKey(1), 'unexpected-current-record');
   deferred.release(); await rejected;
   assert.equal(driver.records.has(checkpointKey()), false);
 });
@@ -236,7 +235,7 @@ test('a legacy import atomically rejects changes to its original raw prefix', as
 for (const target of ['checkpoint', 'chunk']) test(`cold rebuild rejects corrupt ${target} and never falls back to legacy`, async () => {
   const driver = new MemoryDriver();
   driver.records.set(legacyKey(), legacyRaw());
-  await append(driver, 1, [2, 3]);
+  await append(driver, 0, [1, 2, 3]);
   const key = target === 'checkpoint' ? checkpointKey() : leafKey(1);
   driver.records.set(key, '{"revision":0,"invalid":true}');
   const cold = new MemoryDriver(); cold.records = driver.records;
@@ -265,7 +264,7 @@ for (const target of ['leaf', 'count-smaller', 'count-larger', 'digest']) test(`
   } else {
     const checkpoint = JSON.parse(driver.records.get(checkpointKey()));
     if (target === 'digest') checkpoint.digest = 'ff'.repeat(32);
-    else checkpoint.count += target === 'count-smaller' ? -1 : 1;
+    else checkpoint.count = (BigInt(checkpoint.count) + (target === 'count-smaller' ? -1n : 1n)).toString();
     driver.records.set(checkpointKey(), JSON.stringify(checkpoint));
   }
   const cold = new MemoryDriver(); cold.records = driver.records;
@@ -314,7 +313,7 @@ test('full retained validation detects an old changed leaf outside routine appen
 for (const missing of ['checkpoint', 'leaf']) test(`v2 ${missing} deletion cannot load a partial or legacy history`, async () => {
   const driver = new MemoryDriver();
   driver.records.set(legacyKey(), legacyRaw());
-  await append(driver, 1, [2, 3]);
+  await append(driver, 0, [1, 2, 3]);
   driver.records.delete(missing === 'checkpoint' ? checkpointKey() : leafKey(1));
   const cold = new MemoryDriver(); cold.records = driver.records;
   await assert.rejects(loadPrivateBalanceCommitments(context, cold), /invalid|contiguous/i);
@@ -374,8 +373,8 @@ test('reset is fenced against an append that wins after its read', async () => {
 
 test('public cache retains only contiguous verified commitment chunks', async () => {
   const driver = new MemoryDriver();
-  await storePrivateBalanceCommitmentChunk(context, 0, [commitment(1), commitment(2)], driver);
-  await storePrivateBalanceCommitmentChunk(context, 2, [commitment(3), commitment(4)], driver);
+  await storePrivateBalanceCommitmentChunk(context, 0n, [commitment(1), commitment(2)], driver);
+  await storePrivateBalanceCommitmentChunk(context, 2n, [commitment(3), commitment(4)], driver);
 
   assert.deepEqual(
     (await loadPrivateBalanceCommitments(context, driver)).map(value => value[0]),
@@ -392,7 +391,7 @@ test('public cache retains only contiguous verified commitment chunks', async ()
   const rebuilt = await MerkleNodeStore.fromCommitments(
     await loadPrivateBalanceCommitments(context, driver),
   );
-  assert.equal(rebuilt.nextIndex, 4);
+  assert.equal(rebuilt.nextIndex, 4n);
   assert.deepEqual(rebuilt.currentRoot, expected.currentRoot);
 });
 
@@ -403,16 +402,16 @@ test('the unused verified Merkle store loader stays deleted', () => {
 test('public cache fails closed on gaps, overlaps, malformed bytes, or tampering', async () => {
   const driver = new MemoryDriver();
   await assert.rejects(
-    () => storePrivateBalanceCommitmentChunk(context, 1, [commitment(1)], driver),
+    () => storePrivateBalanceCommitmentChunk(context, 1n, [commitment(1)], driver),
     /contiguous/i,
   );
-  await storePrivateBalanceCommitmentChunk(context, 0, [commitment(1)], driver);
+  await storePrivateBalanceCommitmentChunk(context, 0n, [commitment(1)], driver);
   await assert.rejects(
-    () => storePrivateBalanceCommitmentChunk(context, 0, [commitment(2)], driver),
+    () => storePrivateBalanceCommitmentChunk(context, 0n, [commitment(2)], driver),
     /contiguous/i,
   );
   await assert.rejects(
-    () => storePrivateBalanceCommitmentChunk(context, 1, [new Uint8Array(31)], driver),
+    () => storePrivateBalanceCommitmentChunk(context, 1n, [new Uint8Array(31)], driver),
     /32 bytes/i,
   );
   const [key] = driver.records.keys();
@@ -423,8 +422,8 @@ test('public cache fails closed on gaps, overlaps, malformed bytes, or tampering
 test('public cache reset removes only the selected pool namespace', async () => {
   const driver = new MemoryDriver();
   const other = { ...context, poolId: '04'.repeat(32) };
-  await storePrivateBalanceCommitmentChunk(context, 0, [commitment(1)], driver);
-  await storePrivateBalanceCommitmentChunk(other, 0, [commitment(2)], driver);
+  await storePrivateBalanceCommitmentChunk(context, 0n, [commitment(1)], driver);
+  await storePrivateBalanceCommitmentChunk(other, 0n, [commitment(2)], driver);
   const merkleKey = `private:merkle:v2:${context.networkId}:${context.realmId}:${context.poolId}:checkpoint`;
   driver.records.set(merkleKey, '{"revision":0}');
 

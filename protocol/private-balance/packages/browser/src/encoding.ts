@@ -30,7 +30,7 @@ function requireUnsignedInteger(value: number, maximum: number, name: string): v
 }
 
 function requireUnsignedBigInt(value: bigint, bits: number, name: string): void {
-  if (value < 0n || value >= 1n << BigInt(bits)) {
+  if (typeof value !== 'bigint' || value < 0n || value >= 1n << BigInt(bits)) {
     throw new Error(`${name} must fit in ${bits} unsigned bits`);
   }
 }
@@ -162,7 +162,7 @@ export function deriveHpkeAad(
 }
 
 function validateOutgoingPlaintext(plaintext: OutgoingPlaintext): void {
-  if (plaintext.protocolVersion !== 1) throw new Error('Unsupported outgoing plaintext version');
+  if (plaintext.protocolVersion !== 2) throw new Error('Unsupported outgoing plaintext version');
   if (plaintext.flags !== 0 && plaintext.flags !== OUTGOING_DUMMY_FLAG) {
     throw new Error('Unsupported outgoing plaintext flags');
   }

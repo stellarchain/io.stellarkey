@@ -1,8 +1,49 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import test from 'node:test';
+import { measurePrivateBalanceAssets, assertPrivateBalanceBudgets,
+  PRIVATE_ARTIFACT_GZIP_BUDGET, PRIVATE_PEAK_CACHE_BUDGET } from '../scripts/check-bundle-budget.mjs';
 
 const source = readFileSync(new URL('../scripts/check-bundle-budget.mjs', import.meta.url), 'utf8');
+
+test('artifact budgets measure the actual compressed download and shared two-revision cache', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'stellarkey-artifact-budget-'));
+  try {
+    const artifactRoot = join(fixture, 'protocol/private-balance/v1');
+    const chunks = join(fixture, '_next/static/chunks');
+    mkdirSync(artifactRoot, { recursive: true });
+    mkdirSync(chunks, { recursive: true });
+    writeFileSync(join(chunks, 'feature.js'), 'PrivateBalanceProvider');
+    writeFileSync(join(chunks, 'turbopack-worker.js'), 'generateProof');
+    for (const file of ['manifest.json', 'circuit.wasm', 'circuit.zkey', 'circuit.zkey.pc', 'verification-key.json']) {
+      copyFileSync(new URL(`../public/protocol/private-balance/v1/${file}`, import.meta.url), join(artifactRoot, file));
+    }
+    const files = ['circuit.wasm', 'circuit.zkey.pc', 'verification-key.json'];
+    const bytes = files.map(file => readFileSync(join(artifactRoot, file)));
+    const measurement = measurePrivateBalanceAssets(fixture);
+    assert.deepEqual(measurement.artifacts.paths, files.map(file => `protocol/private-balance/v1/${file}`));
+    assert.equal(measurement.artifacts.rawBytes, bytes.reduce((sum, value) => sum + value.byteLength, 0));
+    assert.equal(measurement.artifacts.gzipBytes,
+      bytes.reduce((sum, value) => sum + gzipSync(value, { level: 9 }).byteLength, 0));
+    assert.equal(measurement.peakCacheBytes, measurement.artifacts.rawBytes * 2);
+    assert.equal(PRIVATE_ARTIFACT_GZIP_BUDGET, 13_000_000);
+    assert.equal(PRIVATE_PEAK_CACHE_BUDGET, 50_000_000);
+    assert.doesNotThrow(() => assertPrivateBalanceBudgets(measurement));
+    assert.throws(() => assertPrivateBalanceBudgets({ ...measurement, peakCacheBytes: 50_000_001 }), /cache:/);
+    assert.throws(() => assertPrivateBalanceBudgets({ ...measurement,
+      artifacts: { ...measurement.artifacts, gzipBytes: 13_000_001 } }), /artifacts:/);
+
+    const manifest = JSON.parse(readFileSync(join(artifactRoot, 'manifest.json'), 'utf8'));
+    manifest.artifacts.zkeyTransport.sha256 = '00'.repeat(32);
+    writeFileSync(join(artifactRoot, 'manifest.json'), JSON.stringify(manifest));
+    assert.throws(() => measurePrivateBalanceAssets(fixture), /hash mismatch/i);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
 
 test('release budgets cover private feature, worker, artifacts, and two-version cache peak', () => {
   for (const name of [

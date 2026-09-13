@@ -106,8 +106,13 @@ export function DirectPrivateFixture() {
         return { status, transactionHash: review.transaction.transactionHash };
       } finally { submissionBusy.current = false; }
     },
-    prepareChainedSend: async () => ({ id: 'synthetic-direct-chain', steps: 2, perStepMaxFeeStroops: '1000',
-      cumulativeMaxFeeStroops: '2000', expiresAtSeconds: 4_000_000_000 }),
+    prepareChainedSend: (async draft => ({ id: 'synthetic-direct-chain', steps: 2, perStepMaxFeeStroops: '1000',
+      cumulativeMaxFeeStroops: '2000', expiresAtSeconds: 4_000_000_000,
+      ...(draft.kind === 'withdraw' ? { withdrawalSteps: [
+        { noteIds: ['11'.repeat(32), '22'.repeat(32)], amountStroops: '6000000', inputValueStroops: '6000000', fullInputExit: true },
+        { noteIds: ['33'.repeat(32)], amountStroops: '4000000', inputValueStroops: '4000000', fullInputExit: true },
+      ] } : {}),
+    })) satisfies typeof parent.prepareChainedSend,
     submitChainedSend: (async (_approval, _draft, onProgress) => {
       setSubmissionAttempts(value => value + 1);
       if (submissionBusy.current) {

@@ -275,8 +275,7 @@ export function loadVaultResult(): StorageLoadResult<VaultFile> {
         message: `This wallet was created by a newer app version (${parsed.version}).`,
       };
     }
-    const decodedVault = decodeVaultFile(parsed);
-    const vault = decodedVault ? repairDuplicateDerivedAccounts(decodedVault) : null;
+    const vault = decodeVaultFile(parsed);
     return vault
       ? { kind: "ready", value: vault }
       : {
@@ -302,47 +301,6 @@ function derivedAccountIdentity(vault: VaultFile, account: StoredAccount): strin
   return `${account.index}:${account.publicKey}`;
 }
 
-/**
- * Collapse legacy duplicate metadata for the same mnemonic-derived identity.
- * The selected active record wins, followed by the first active record, so an
- * archived copy can never displace the account the user is currently using.
- */
-function repairDuplicateDerivedAccounts(vault: VaultFile): VaultFile {
-  if (!vault.mnemonic) return vault;
-  const records = [
-    ...vault.accounts.map((account) => ({ account, active: true })),
-    ...(vault.archivedAccounts ?? []).map((account) => ({ account, active: false })),
-  ];
-  const groups = new Map<string, typeof records>();
-  for (const record of records) {
-    const identity = derivedAccountIdentity(vault, record.account);
-    if (!identity) continue;
-    const group = groups.get(identity) ?? [];
-    group.push(record);
-    groups.set(identity, group);
-  }
-
-  const discarded = new Set<StoredAccount>();
-  for (const group of groups.values()) {
-    if (group.length < 2) continue;
-    const selected = group.find(
-      (record) => record.active && record.account.id === vault.activeAccountId,
-    );
-    const canonical = selected ?? group.find((record) => record.active) ?? group[0];
-    for (const record of group) {
-      if (record !== canonical) discarded.add(record.account);
-    }
-  }
-  if (discarded.size === 0) return vault;
-
-  return {
-    ...vault,
-    accounts: vault.accounts.filter((account) => !discarded.has(account)),
-    ...(vault.archivedAccounts
-      ? { archivedAccounts: vault.archivedAccounts.filter((account) => !discarded.has(account)) }
-      : {}),
-  };
-}
 
 function readVault(): VaultFile | null {
   const result = loadVaultResult();
@@ -1319,7 +1277,7 @@ export interface KeystoreFile {
 /* ------------------------------------------------------------------ */
 /* Full wallet backup. Envelope v2 encrypts the ENTIRE payload — vault, */
 /* contacts, settings, tx notes, and merchant archive — with the wallet */
-/* password; only the envelope marker stays plaintext. Legacy plaintext */
+/* password; only the envelope marker stays plaintext. Plaintext        */
 /* envelope v1 files are deliberately rejected.                         */
 /* ------------------------------------------------------------------ */
 
@@ -1607,7 +1565,7 @@ async function decodeBackup(
   }
   if (parsed.version !== 2 || !isEncryptedPayloadValue(parsed.crypto)) {
     throw new Error(
-      "This backup uses the legacy plaintext format, which is no longer supported. Create a fresh encrypted backup from the source wallet.",
+      "This backup format is unsupported. A current encrypted StellarKey wallet backup is required.",
     );
   }
   if (!password) {
@@ -1704,7 +1662,7 @@ async function prepareDecodedBackup(
             );
             sessionRoot = derivePrivacySessionRoot(
               rawSeed,
-              1,
+              2, // Protocol V2 deployment-bound storage key domain.
               decodePrivacyContextHex(context.networkId, "Network ID"),
               decodePrivacyContextHex(context.realmId, "Realm ID"),
               decodePrivacyContextHex(context.poolId, "Pool ID"),

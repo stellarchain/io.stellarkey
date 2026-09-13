@@ -126,7 +126,7 @@ function DiscoveryProviderChecks() {
     const originalFetch = window.fetch;
     const decode = (value: string) => Uint8Array.from(value.match(/../g)!, byte => Number.parseInt(byte, 16));
     const marker = () => new Uint8Array(32).fill(1);
-    const contextHash = computeContextHash(1, decode(developmentManifest.networkId), decode(developmentManifest.realmId), new Uint8Array(StrKey.decodeContract(developmentManifest.poolContractId)));
+    const contextHash = computeContextHash(2, decode(developmentManifest.networkId), decode(developmentManifest.realmId), new Uint8Array(StrKey.decodeContract(developmentManifest.poolContractId)));
     const pause = async (stage: 'init' | 'prefix' | 'address-cas') => {
       if (!gate.armed || gate.mode !== stage) return;
       gate.armed = false;
@@ -150,12 +150,12 @@ function DiscoveryProviderChecks() {
       : { sequence, hash: developmentManifest.deploymentCheckpoint.hash }; };
     archive.readHead = async function () {
       if (gate.mode === 'off') return originals.readHead.call(this);
-      return { latestLedger: 1, config: { protocolVersion: 1, networkId: decode(developmentManifest.networkId),
+      return { latestLedger: 1, config: { protocolVersion: 2, networkId: decode(developmentManifest.networkId),
         realmId: decode(developmentManifest.realmId), guardian: developmentManifest.guardianAddress,
         initialAssetAdmin: developmentManifest.assetAdminAddress, poseidon2ParameterHash: marker(), circuitHash: marker(),
         verificationKeyHash: marker(), treeDepth: 17, rootWindowLedgers: 1440,
         deploymentBindingHash: decode(developmentManifest.deploymentBindingHash), contextHash, contextField: computeContextField(contextHash) },
-      meta: { actionCount: 0, transcriptHead: computeGenesisRecordHash(contextHash, decode(developmentManifest.deploymentBindingHash)) },
+      meta: { actionCount: 0n, transcriptHead: computeGenesisRecordHash(contextHash, decode(developmentManifest.deploymentBindingHash)) },
       tree: await createEmptyTree() };
     };
     PrivateBalanceWorkerClient.prototype.initSession = async function (...args) {
@@ -211,24 +211,20 @@ function DiscoveryProviderChecks() {
     }}>Take discovery lease elsewhere</Button>
     <Button onClick={() => forceClaimPrivateBalanceLease(localStorage, privateBalanceLeaseKey(scope), 'synthetic-other-owner', Date.now(), 60_000)}>
       Take discovery lease silently</Button>
-    {(['proof', 'build', 'empty', 'legacy'] as const).map(kind => <Button key={kind} onClick={() => {
+    {(['proof', 'build', 'empty'] as const).map(kind => <Button key={kind} onClick={() => {
       if (!account) return;
       setSeeded('waiting');
       void withPrivacySessionRoot(account.id, manifest, async (_root, storageKey) => {
         const state = createEmptyPrivateBalanceState('01'.repeat(32));
-        if (kind === 'legacy') state.privateAddress = encodePrivateAddress({
-          deploymentTag: derivePrivateAddressDeploymentTag(Uint8Array.from(binding.match(/../g)!, byte => Number.parseInt(byte, 16))),
-          diversifier: new Uint8Array(4), ownerCommitment: new Uint8Array(32).fill(1), hpkePublicKey: new Uint8Array(32).fill(2),
-        }, 'tskpay_');
-        else if (kind === 'build') state.buildReservations.push({ id: 'synthetic-build', kind: 'deposit', proofExposure: 'local',
+        if (kind === 'build') state.buildReservations.push({ id: 'synthetic-build', kind: 'deposit', proofExposure: 'local', outgoingHistoryMode: 'recoverable',
           assetContractId: discoveryAsset.contractId, reservedNoteIds: [], createdAt: 1, updatedAt: 1 });
         else if (kind === 'proof') {
           state.notes.push({ id: '09'.repeat(32), commitment: '09'.repeat(32), value: '1', assetIndex: 0,
             assetContractId: discoveryAsset.contractId, diversifier: '00000000', ownerCommitment: '0a'.repeat(32),
-            leafIndex: 0, actionIndex: 0, rho: '0b'.repeat(32), memoHex: '', senderFingerprintHex: '',
+            leafIndex: 0n, actionIndex: 0n, rho: '0b'.repeat(32), memoHex: '', senderFingerprintHex: '',
             status: 'reserved', reservedAt: 1, createdAt: 1 });
           state.pendingActions.push({ id: 'synthetic-proof', kind: 'transfer', assetIndex: 0, assetContractId: discoveryAsset.contractId,
-          status: 'prepared', proofExposure: 'shared', submissionMode: 'relay', reservedNoteIds: ['09'.repeat(32)], actionField: '01'.repeat(32),
+          status: 'prepared', proofExposure: 'shared', submissionMode: 'direct', outgoingHistoryMode: 'recoverable', reservedNoteIds: ['09'.repeat(32)], actionField: '01'.repeat(32),
           nullifiers: ['02'.repeat(32), '03'.repeat(32)], outputCommitments: ['04'.repeat(32), '05'.repeat(32), '06'.repeat(32)],
           anchorRoot: '07'.repeat(32), anchorExpiresAtLedger: 1, proofHash: '08'.repeat(32), classicFeeCapStroops: '100',
           resourceFeeCapStroops: '100', broadcastAttempts: 0, createdAt: 1, updatedAt: 1 });
@@ -248,10 +244,10 @@ function DiscoveryProviderChecks() {
       if (!account) return;
       void withPrivacySessionRoot(account.id, manifest, async (_root, storageKey) => {
         const state = await loadPrivateBalanceState(scope, storageKey, new IndexedDbEncryptedRecordDriver());
-        setAddressStored(state?.privateAddress && state.issuedAddressDiversifiers?.includes('00000000') &&
-          state.issuedAddressDiversifiers.includes('00000001') ? 'recorded' : 'missing');
+        setAddressStored(state?.privateAddress && state.issuedAddressDiversifiers.length === 1 &&
+          state.issuedAddressDiversifiers[0] === '00000001' ? 'recorded' : 'missing');
       }).catch(() => setAddressStored('unavailable'));
-    }}>Inspect synthetic address migration</Button>
+    }}>Inspect synthetic address publication</Button>
     <p data-testid="discovery-reads">{reads}</p>
     <p data-testid="discovery-aborts">{aborts}</p>
     <p data-testid="discovery-stored">{stored}</p>
@@ -478,21 +474,24 @@ async function checkPublicCacheIntegration(): Promise<void> {
   const scope = `${context.networkId}:${context.realmId}:${context.poolId}:`;
   const legacyPrefix = `private:cache:v1:${scope}`;
   const currentPrefix = `private:cache:v2:${scope}`;
-  const legacyKey = `${legacyPrefix}commitments:0000000000000000`;
+  const legacyKey = `${legacyPrefix}commitments:${'0'.repeat(39)}`;
   const marker = (value: number) => new Uint8Array(32).fill(value);
-  const legacyRaw = JSON.stringify({ kind: 'public-commitment-chunk', version: 1, revision: 0, startIndex: 0, commitments: ['01'.repeat(32)] });
+  const legacyRaw = JSON.stringify({ kind: 'public-commitment-chunk', version: 1, revision: 0, startIndex: '0', commitments: ['01'.repeat(32)] });
   try {
     await first.putManyVerified(new Map([[legacyKey, legacyRaw], [`${legacyPrefix}synthetic-discovery`, 'synthetic-encrypted']]));
-    if ((await loadPrivateBalanceCommitments(context, first)).length !== 1) throw new Error('Synthetic legacy load failed');
-    await recordVerifiedPrivateBalanceCommitments(context, 1, [marker(2)], first);
-    await recordVerifiedPrivateBalanceCommitments(context, 1, [marker(2), marker(3)], second);
-    await recordVerifiedPrivateBalanceCommitments(context, 3, [marker(4)], first);
+    if ((await loadPrivateBalanceCommitments(context, first)).length !== 0 || await first.read(legacyKey) !== legacyRaw) {
+      throw new Error('Unsupported cache data must be ignored without mutation');
+    }
+    await recordVerifiedPrivateBalanceCommitments(context, 0n, [marker(1)], first);
+    await recordVerifiedPrivateBalanceCommitments(context, 1n, [marker(2)], first);
+    await recordVerifiedPrivateBalanceCommitments(context, 1n, [marker(2), marker(3)], second);
+    await recordVerifiedPrivateBalanceCommitments(context, 3n, [marker(4)], first);
     const loaded = await loadPrivateBalanceCommitments(context, second);
     if (loaded.length !== 4 || loaded.some((value, index) => value.some(byte => byte !== index + 1))) {
       throw new Error('Synthetic incremental records differ');
     }
     const before = await first.readPrefix(currentPrefix);
-    const rejected = await recordVerifiedPrivateBalanceCommitments(context, 0, [marker(9)], second)
+    const rejected = await recordVerifiedPrivateBalanceCommitments(context, 0n, [marker(9)], second)
       .then(() => false, () => true);
     const after = await first.readPrefix(currentPrefix);
     if (!rejected || before.size !== after.size || [...before].some(([key, raw]) => after.get(key) !== raw)) {
@@ -503,7 +502,7 @@ async function checkPublicCacheIntegration(): Promise<void> {
       await first.read(legacyKey) !== legacyRaw || await first.read(`${legacyPrefix}synthetic-discovery`) !== 'synthetic-encrypted') {
       throw new Error('Synthetic reset did not preserve its namespace boundary');
     }
-    await recordVerifiedPrivateBalanceCommitments(context, 0, [marker(5)], second);
+    await recordVerifiedPrivateBalanceCommitments(context, 0n, [marker(5)], second);
     if ((await loadPrivateBalanceCommitments(context, first)).length !== 1) throw new Error('Synthetic reset reimported legacy records');
   } finally {
     await first.removePrefix(currentPrefix);

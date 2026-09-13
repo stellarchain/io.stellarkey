@@ -1,3 +1,4 @@
+import { stringifyPrivateIndices } from '../src/features/private-balance/runtime/indices.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -43,9 +44,9 @@ test('private follower updates accept only a redacted exact schema', () => {
     nonce: 'nonce-a',
     phase: 'current',
     revision: 7,
-    lastVerifiedActionIndex: 12,
+    lastVerifiedActionIndex: 12n,
   };
-  assert.deepEqual(decodePrivateBalanceFollowerUpdate(JSON.stringify(update)), update);
+  assert.deepEqual(decodePrivateBalanceFollowerUpdate(stringifyPrivateIndices(update)), update);
   for (const extra of [
     { privateAddress: `tskpay_${'2'.repeat(121)}` },
     { notes: [] },
@@ -55,16 +56,16 @@ test('private follower updates accept only a redacted exact schema', () => {
     { verifiedBalanceStroops: '5000000' },
   ]) {
     assert.equal(
-      decodePrivateBalanceFollowerUpdate(JSON.stringify({ ...update, ...extra })),
+      decodePrivateBalanceFollowerUpdate(stringifyPrivateIndices({ ...update, ...extra })),
       null,
     );
   }
   assert.equal(
-    decodePrivateBalanceFollowerUpdate(JSON.stringify({ ...update, phase: 'proving-secret' })),
+    decodePrivateBalanceFollowerUpdate(stringifyPrivateIndices({ ...update, phase: 'proving-secret' })),
     null,
   );
   assert.equal(
-    decodePrivateBalanceFollowerUpdate(JSON.stringify({ ...update, phase: 'status-unknown' }))?.phase,
+    decodePrivateBalanceFollowerUpdate(stringifyPrivateIndices({ ...update, phase: 'status-unknown' }))?.phase,
     'status-unknown',
   );
 });

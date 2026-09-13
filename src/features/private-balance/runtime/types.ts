@@ -1,4 +1,3 @@
-import type { LegacyPrivateRelayChainJournal } from './legacy-relay-state';
 import type { PrivateOutgoingHistoryMode } from './outgoing-history';
 import type { PrivateFeePayer } from './fee-policy';
 
@@ -21,20 +20,20 @@ export interface ShieldedNoteRecord {
   assetContractId: string; // Canonical SAC contract address
   diversifier: string; // Lowercase hex (4 bytes)
   ownerCommitment: string; // Hex (32 bytes)
-  leafIndex: number;
-  actionIndex: number;
+  leafIndex: bigint;
+  actionIndex: bigint;
   rho: string; // Hex (32 bytes)
   memoHex: string;
   senderFingerprintHex: string;
   status: NoteStatus;
   reservedAt?: number;
-  spentInActionIndex?: number;
+  spentInActionIndex?: bigint;
   createdAt: number;
 }
 
 export interface ShieldedActivityRecord {
   id: string; // Hex of actionField
-  actionIndex: number;
+  actionIndex: bigint;
   actionKind: 'deposit' | 'transfer' | 'withdraw';
   assetIndex: number; // Recovered privately for transfers; public at boundaries
   assetContractId: string; // Canonical SAC contract address
@@ -50,7 +49,8 @@ export interface ShieldedActivityRecord {
 }
 
 export interface ShieldedCheckpoint {
-  lastActionIndex: number;
+  nextLeafIndex: bigint;
+  lastActionIndex: bigint;
   lastRecordHash: string;
   treeRoot: string;
   treeFrontier: string[];
@@ -70,7 +70,7 @@ export type PrivateSyncStatus =
 export interface PrivateAccountState {
   setupState: PrivateSetupState;
   syncStatus: PrivateSyncStatus;
-  lastVerifiedActionIndex: number | null;
+  lastVerifiedActionIndex: bigint | null;
   updatedAt: number;
 }
 
@@ -90,12 +90,11 @@ export interface PrivatePendingAction {
   assetIndex: number; // Immutable index in the pool's on-chain registry
   assetContractId: string; // Canonical SAC contract address
   status: PendingActionStatus;
-  /** Missing on legacy records: reconcile only; never infer a direct route. */
-  submissionMode?: 'direct' | 'relay';
-  /** Persisted before any proof-bearing network call. Missing legacy spends are shared. */
-  proofExposure?: 'local' | 'shared';
+  submissionMode: 'direct';
+  /** Persisted before any proof-bearing network call. */
+  proofExposure: 'local' | 'shared';
   /** Immutable policy selected before building this proof. */
-  outgoingHistoryMode?: PrivateOutgoingHistoryMode;
+  outgoingHistoryMode: PrivateOutgoingHistoryMode;
   directChainApprovalId?: string;
   reservedNoteIds: string[];
   actionField: string;
@@ -125,18 +124,6 @@ export interface PrivatePendingAction {
   journalId?: string;
   recipientFingerprint?: string;
   memoHex?: string;
-  /** Archived relay metadata; never authorizes a new submission. */
-  relayChain?: {
-    approvalId: string;
-    step: number;
-    feeAtomic: string;
-    quoteId: string;
-    requestId: string;
-    sourceAccount: string;
-    recipientAddress: string;
-    recipientOutputCommitment: string;
-    expiresAtSeconds: number;
-  };
   createdAt: number;
   updatedAt: number;
 }
@@ -144,9 +131,9 @@ export interface PrivatePendingAction {
 export interface PrivateBuildReservation {
   id: string;
   kind: 'deposit' | 'transfer' | 'withdraw';
-  /** New reservations never leave the device; legacy reservations are uncertain. */
-  proofExposure?: 'local';
-  outgoingHistoryMode?: PrivateOutgoingHistoryMode;
+  /** Build reservations never leave the device. Disclosure requires a pending action. */
+  proofExposure: 'local';
+  outgoingHistoryMode: PrivateOutgoingHistoryMode;
   assetContractId: string; // Canonical SAC contract address
   reservedNoteIds: string[];
   createdAt: number;
@@ -177,10 +164,10 @@ export interface PrivateBalanceDurableState {
   lastValidatedManifestHash: string;
   account: PrivateAccountState;
   privateAddress?: string; // Derived at opt-in so Receive works without a sync
-  /** Account+deployment scoped; missing legacy and seed-only state is recoverable. */
-  outgoingHistoryMode?: PrivateOutgoingHistoryMode;
+  /** Account+deployment scoped; initialized explicitly for a fresh wallet. */
+  outgoingHistoryMode: PrivateOutgoingHistoryMode;
   /** Encrypted local issuance history; never sent to discovery or the worker. */
-  issuedAddressDiversifiers?: string[];
+  issuedAddressDiversifiers: string[];
   notes: ShieldedNoteRecord[];
   activities: ShieldedActivityRecord[];
   checkpoint: ShieldedCheckpoint | null;
@@ -190,7 +177,6 @@ export interface PrivateBalanceDurableState {
   spendRecovery?: PrivateSpendRecovery;
   recentPrivateRecipients?: PrivateRecentRecipient[];
   chainedApproval?: PrivateChainedApproval; // One-shot multi-step send consent
-  relayChainedApproval?: LegacyPrivateRelayChainJournal;
 }
 
 export interface PrivateSpendRecovery {

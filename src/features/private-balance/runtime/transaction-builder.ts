@@ -132,5 +132,16 @@ export class PrivateBalanceTransactionBuilder {
     ]);
     return this.contract.call('withdraw', action, encodeProof(params.proof));
   }
+  public buildFullInputExitOperation(params: {
+    action: WithdrawContractAction;
+    proof: ContractProof;
+  }): xdr.Operation {
+    const action = scMap([
+      ...commonActionEntries(params.action),
+      ['asset_index', nativeToScVal(params.action.assetIndex, { type: 'u32' })],
+      ['public_recipient', Address.fromString(params.action.publicRecipient).toScVal()],
+    ]);
+    return this.contract.call('full_input_exit', action, encodeProof(params.proof));
+  }
 
 }

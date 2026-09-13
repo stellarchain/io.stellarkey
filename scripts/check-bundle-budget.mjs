@@ -2,6 +2,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
+import { createHash } from "node:crypto";
+import { privateArtifactEntries } from "../src/lib/private-balance-artifact-policy.mjs";
 
 export const INITIAL_JS_RAW_BUDGET = 1_350_000;
 export const INITIAL_JS_GZIP_BUDGET = 360_000;
@@ -11,11 +13,8 @@ export const PRIVATE_WORKER_JS_RAW_BUDGET = 1_300_000;
 export const PRIVATE_ARTIFACT_GZIP_BUDGET = 13_000_000;
 export const PRIVATE_PEAK_CACHE_BUDGET = 50_000_000;
 
-const PRIVATE_ARTIFACT_PATHS = Object.freeze([
-  "protocol/private-balance/v1/circuit.wasm",
-  "protocol/private-balance/v1/circuit.zkey",
-  "protocol/private-balance/v1/verification-key.json",
-]);
+// The manifest selects circuit.wasm, circuit.zkey.pc (or raw circuit.zkey),
+// and verification-key.json, exactly as the loader and service worker do.
 
 /* The landing page is the public entry; the wallet shell lives at /app. Each
    is budgeted against the route that actually serves it. */
@@ -272,8 +271,14 @@ export function measurePrivateBalanceAssets(outputDirectory = "out") {
 
   let artifactRawBytes = 0;
   let artifactGzipBytes = 0;
-  for (const artifactPath of PRIVATE_ARTIFACT_PATHS) {
+  const manifest = JSON.parse(readFileSync(resolve(root, "protocol/private-balance/v1/manifest.json"), "utf8"));
+  const artifactEntries = privateArtifactEntries(manifest);
+  const artifactPaths = artifactEntries.map(([pathname]) => pathname.slice(1));
+  for (const [index, artifactPath] of artifactPaths.entries()) {
     const bytes = readFileSync(resolve(root, artifactPath));
+    if (createHash("sha256").update(bytes).digest("hex") !== artifactEntries[index][1]) {
+      throw new Error(`Artifact hash mismatch for ${artifactPath}.`);
+    }
     artifactRawBytes += bytes.byteLength;
     artifactGzipBytes += gzipSync(bytes, { level: 9 }).byteLength;
   }
@@ -282,11 +287,13 @@ export function measurePrivateBalanceAssets(outputDirectory = "out") {
     feature: measureSources(root, feature),
     worker: measureSources(root, worker),
     artifacts: {
-      fileCount: PRIVATE_ARTIFACT_PATHS.length,
+      fileCount: artifactPaths.length,
       rawBytes: artifactRawBytes,
       gzipBytes: artifactGzipBytes,
-      paths: [...PRIVATE_ARTIFACT_PATHS],
+      paths: artifactPaths,
     },
+    // One shared persistent copy per revision. The loader's one-entry RAM warm
+    // key and caller-owned proving buffers are not persistent storage.
     peakCacheBytes: artifactRawBytes * 2,
   };
 }

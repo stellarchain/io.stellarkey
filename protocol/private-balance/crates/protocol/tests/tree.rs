@@ -6,7 +6,7 @@ use private_balance_protocol::{
 #[test]
 fn test_tree_empty_and_append() {
     assert_eq!(TREE_ARITY, 3);
-    assert_eq!(TREE_DEPTH, 17);
+    assert_eq!(TREE_DEPTH, 64);
     let mut tree = TreeState::new();
     let empty_root = tree.root;
     assert_ne!(empty_root, [0u8; 32]);

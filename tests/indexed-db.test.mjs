@@ -206,7 +206,7 @@ test("a commit revoked while loading its basis never starts a storage write", as
   assert.equal((await repository.load(KEY)).value.revision, 1);
 });
 
-test("revocation during a legacy reseal keeps the durable seal without restoring plaintext", async () => {
+test("unsupported merchant metadata is rejected without a read-time upgrade", async () => {
   const { decryptMerchantRecord, encryptMerchantRecord } = await import("../src/lib/merchant/record-crypto.ts");
   const { driver, repository } = await seededRepository();
   const envelope = JSON.parse(driver.records.get(repository.recordKey));
@@ -215,16 +215,11 @@ test("revocation during a legacy reseal keeps the durable seal without restoring
   delete metadata.recordSetDigest;
   driver.records.set(repository.recordKey, JSON.stringify(encryptMerchantRecord(metadata, KEY, repository.recordKey, envelope)));
   repository.clearDecryptedSnapshot();
-  const deferred = deferDriverResult(driver, "compareAndSetMany");
-  const pending = repository.load(KEY);
-  const rejected = assert.rejects(pending, { name: "MerchantRepositoryRevokedError" });
-  await deferred.waiting;
-  repository.clearDecryptedSnapshot();
-  deferred.release();
-  await rejected;
+  const before = new Map(driver.records);
+  assert.equal((await repository.load(KEY)).kind, "corrupt");
+  assert.deepEqual(driver.records, before);
   assert.equal((await repository.loadCommitBasis(new Uint8Array(32).fill(18))).kind, "corrupt");
-  assert.equal(decryptMerchantRecord(JSON.parse(driver.records.get(repository.recordKey)), KEY, repository.recordKey).schema, 2);
-  assert.equal((await repository.load(KEY)).kind, "ready");
+  assert.equal(decryptMerchantRecord(JSON.parse(driver.records.get(repository.recordKey)), KEY, repository.recordKey).schema, 1);
 });
 
 test("archive authentication does not retain a decrypted repository snapshot", async () => {
@@ -317,7 +312,7 @@ test("merchant repository commits revisions transactionally and rejects stale wr
   assert.equal((await repository.load(KEY)).value.revision, 2);
 });
 
-test("merchant integrity seals survive legacy locale ordering and are resealed canonically", async () => {
+test("unsupported merchant integrity ordering is rejected without resealing records", async () => {
   const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
   const { decryptMerchantRecord, encryptMerchantRecord } = await import(
     "../src/lib/merchant/record-crypto.ts"
@@ -326,7 +321,7 @@ test("merchant integrity seals survive legacy locale ordering and are resealed c
   globalThis.window = { localStorage: memoryStorage() };
   const driver = new MemoryRecordDriver();
   const repository = new MerchantRepository(driver);
-  const order = (index) => ({
+  const order = (index) => ({ shiftId: null,
     id: `locale-order-${index}`,
     number: 10_000 + index,
     reference: `LOCALE${index}`,
@@ -389,14 +384,14 @@ test("merchant integrity seals survive legacy locale ordering and are resealed c
 
   const loaded = await new MerchantRepository(driver).load(KEY);
 
-  assert.equal(loaded.kind, "ready");
-  assert.equal(loaded.value.orders.length, 256);
-  assert.notEqual(
+  assert.equal(loaded.kind, "corrupt");
+  assert.equal(
     driver.records.get(repository.recordKey),
     legacyMetaRaw,
-    "authenticated legacy metadata should be resealed with canonical ordering",
+    "unsupported metadata must remain unchanged",
   );
-  assert.equal((await new MerchantRepository(driver).load(KEY)).kind, "ready");
+  assert.equal((await new MerchantRepository(driver).load(KEY)).kind, "corrupt");
+  assert.deepEqual(await driver.readPrefix(repository.dataPrefix), dataRecords);
 });
 
 test("IndexedDB commits preserve unlimited merchant retention", async () => {
@@ -405,7 +400,7 @@ test("IndexedDB commits preserve unlimited merchant retention", async () => {
   const driver = new MemoryRecordDriver();
   const repository = new MerchantRepository(driver);
   const old = Date.now() - 900 * 86_400_000;
-  const oldOrder = {
+  const oldOrder = { shiftId: null,
     id: "old-order",
     number: 1001,
     reference: "OLD1001",
@@ -453,7 +448,7 @@ test("record-level commits rewrite only metadata and the changed history record"
   globalThis.window = { localStorage: memoryStorage() };
   const driver = new MemoryRecordDriver();
   const repository = new MerchantRepository(driver);
-  const order = (index) => ({
+  const order = (index) => ({ shiftId: null,
     id: `order-${index}`,
     number: 1000 + index,
     reference: `ORDER${index}`,

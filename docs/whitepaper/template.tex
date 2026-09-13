@@ -1,0 +1,49 @@
+% Generated from docs/private-balance.md by build.py with Pandoc 3.11.
+% Markdown SHA-256: @@MARKDOWN_SHA256@@
+% Edit the maintained Markdown or this template, then regenerate the manuscript.
+\documentclass[11pt,letterpaper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{array,booktabs,longtable,calc}
+\usepackage{enumitem}
+\usepackage{etoolbox}
+\usepackage{microtype}
+\usepackage{seqsplit}
+\usepackage{xurl}
+\usepackage[hidelinks,breaklinks]{hyperref}
+\hypersetup{pdftitle={StellarKey Private Balance Whitepaper},pdfauthor={StellarKey},pdfsubject={StellarKey @@VERSION@@; Protocol V2; revision @@REVISION@@}}
+\setlength{\emergencystretch}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\parindent}{0pt}
+\setcounter{tocdepth}{2}
+\setlist{itemsep=0.2em,topsep=0.4em}
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\AtBeginEnvironment{longtable}{\small}
+\title{\textbf{Private Payments on Stellar:}\\[3pt]
+A Client-Proved Multi-Asset Shielded Note Pool\\
+with On-Chain Recovery}
+\author{StellarKey\\\small\href{mailto:support@stellarkey.io}{\texttt{support@stellarkey.io}}}
+\date{@@REVISION@@\\[5pt]
+\small StellarKey @@VERSION@@ baseline \textperiodcentered{} Protocol V2\\
+\small Development Testnet implementation; not for real value}
+\begin{document}
+\maketitle
+\begin{abstract}
+@@ABSTRACT@@
+\end{abstract}
+\vspace{0.5em}
+{\small\textbf{Implementation baseline:}
+\href{https://github.com/stellarchain/io.stellarkey/tree/@@BASELINE@@}{\texttt{@@SHORT_BASELINE@@}}.
+The source revision and artifact identities define the implementation described here. Dated deployment,
+benchmark, and test evidence retains the scope and limitations in Sections 16--17.}
+\clearpage
+\begingroup
+\small
+\setlength{\parskip}{0pt}
+\tableofcontents
+\endgroup
+\clearpage
+@@BODY@@
+\end{document}

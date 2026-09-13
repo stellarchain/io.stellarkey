@@ -19,6 +19,7 @@ pub enum ActionKind {
     Deposit = 1,
     PrivateTransfer = 2,
     Withdraw = 3,
+    FullInputExit = 4,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -118,7 +119,7 @@ impl Action {
                     return Err(ActionError::InvalidSlots);
                 }
             }
-            ActionKind::Withdraw => {
+            ActionKind::Withdraw | ActionKind::FullInputExit => {
                 if self.anchor_root == ZERO
                     || self.public_value == 0
                     || self.asset.is_none()

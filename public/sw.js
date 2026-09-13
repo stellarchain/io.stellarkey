@@ -1,7 +1,7 @@
 const CACHE_PREFIX = "stellarkey-shell-";
 const BUILD_REVISION = "development"; // @generated-revision
 const PRECACHE_PATHS = new Set(["/", "/about", "/privacy", "/terms", "/security", "/support", "/changelog", "/favicon.ico", "/manifest.webmanifest", "/icon.svg", "/icon-192.png?v=2", "/icon-512.png?v=2", "/icon-maskable-192.png?v=2", "/icon-maskable-512.png?v=2", "/icon-maskable-1024.png?v=2", "/apple-icon.png", "/apple-icon1.png", "/apple-icon2.png", "/apple-touch-icon.png"]); // @generated-precache
-const PRIVATE_ARTIFACT_CACHE_PREFIX = "stellarkey-private-artifacts-";
+const PRIVATE_ARTIFACT_CACHE_PREFIX = "stellarkey-private-artifacts-v2-";
 const PRIVATE_ARTIFACT_REVISION = "development"; // @generated-private-artifact-revision
 const PRIVATE_ARTIFACT_HASHES = new Map([]); // @generated-private-artifacts
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_REVISION}`;
@@ -96,21 +96,25 @@ self.addEventListener("fetch", (event) => {
 
   if (isPrivateArtifact(url)) {
     event.respondWith((async () => {
-      const names = await caches.keys();
-      for (const name of cacheSearchOrder(
-        names,
-        PRIVATE_ARTIFACT_CACHE_PREFIX,
-        PRIVATE_ARTIFACT_CACHE_NAME,
-      )) {
-        const cached = await caches.open(name).then((cache) => cache.match(request));
-        if (cached) return cached;
+      // The loader alone writes verified artifacts, using these same URLs and
+      // cache names. Never retain a second, unverified network copy here.
+      // A loader retry must bypass a poisoned cached response.
+      if (request.cache !== "reload") {
+        try {
+          const names = await caches.keys();
+          for (const name of cacheSearchOrder(
+            names,
+            PRIVATE_ARTIFACT_CACHE_PREFIX,
+            PRIVATE_ARTIFACT_CACHE_NAME,
+          )) {
+            const cached = await caches.open(name).then((cache) => cache.match(request));
+            if (cached) return cached;
+          }
+        } catch {
+          // Unavailable browser storage must not block the network path.
+        }
       }
-      const response = await fetch(request, { cache: "no-store" });
-      if (response.ok) {
-        const cache = await caches.open(PRIVATE_ARTIFACT_CACHE_NAME);
-        await cache.put(request, response.clone());
-      }
-      return response;
+      return fetch(request, { cache: "no-store" });
     })());
     return;
   }

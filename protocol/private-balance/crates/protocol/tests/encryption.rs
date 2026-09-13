@@ -35,7 +35,7 @@ fn outgoing_plaintext(dummy: bool) -> OutgoingPlaintext {
         memo[..4].copy_from_slice(b"rent");
     }
     OutgoingPlaintext {
-        protocol_version: 1,
+        protocol_version: 2,
         flags: u16::from(dummy),
         value: if dummy { 0 } else { 25 },
         diversifier: [1, 2, 3, 4],

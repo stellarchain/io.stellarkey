@@ -32,7 +32,7 @@ const hex = value => Buffer.from(value).toString('hex');
 
 async function fixture() {
   const context = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     networkId: bytes(1),
     realmId: bytes(2),
     poolId: bytes(3),
@@ -92,8 +92,8 @@ test('action flow snapshots selected durable notes for a fresh worker session', 
     assetContractId: StrKey.encodeContract(bytes(4)),
     diversifier: '00000000',
     ownerCommitment: '06'.repeat(32),
-    leafIndex: 0,
-    actionIndex: 0,
+    leafIndex: 0n,
+    actionIndex: 0n,
     rho: '07'.repeat(32),
     memoHex: '',
     senderFingerprintHex: '',
@@ -282,7 +282,7 @@ test('minimized outgoing history replaces every lane before action hashing witho
   const prepared = await preparePrivateAction({ esk: owner, keyContext, availableNotes: [], merklePaths: [],
     intent: { kind: 'deposit', assetIndex: 0, assetContractId, publicValue: '50',
       depositSource: { kind: 0, payload: keyContext.accountPublicKey }, outgoingHistory: 'minimized' } });
-  const contextHash = computeContextHash(1, keyContext.networkId, keyContext.realmId, keyContext.poolId);
+  const contextHash = computeContextHash(2, keyContext.networkId, keyContext.realmId, keyContext.poolId);
   let recoveredValue = 0n;
   for (const [lane, output] of prepared.action.outputs.entries()) {
     assert.equal(output.outgoingEnvelope.length, 157);
@@ -304,7 +304,7 @@ test('minimized outgoing history replaces every lane before action hashing witho
 
 test('full seed scans preserve balances and spends when future outgoing details are omitted', async t => {
   const { keyContext, owner, recipientAddress, assetContractId } = await fixture();
-  const contextHash = computeContextHash(1, keyContext.networkId, keyContext.realmId, keyContext.poolId);
+  const contextHash = computeContextHash(2, keyContext.networkId, keyContext.realmId, keyContext.poolId);
   const context = { ...keyContext, contextHash, accountAddress: { kind: 0, payload: keyContext.accountPublicKey } };
   const ownAddress = encodePrivateAddress({ deploymentTag: derivePrivateAddressDeploymentTag(keyContext.deploymentBindingHash),
     diversifier: new Uint8Array(4), ownerCommitment: owner.ownerCommitment, hpkePublicKey: owner.hpkePublicKey }, 'tskpay_');
@@ -318,8 +318,8 @@ test('full seed scans preserve balances and spends when future outgoing details 
       const fields = { ...action };
       delete fields.protocolVersion;
       delete fields.kind;
-      records.push({ ...fields, actionKind: action.kind, actionIndex: index, ledgerSequence: 100 + index,
-        startingLeafIndex: index * 3, treeRootAfter: await appendCommitments(tree, action.outputs.map(output => output.cm)) });
+      records.push({ ...fields, actionKind: action.kind, actionIndex: BigInt(index), ledgerSequence: 100 + index,
+        startingLeafIndex: BigInt(index * 3), treeRootAfter: await appendCommitments(tree, action.outputs.map(output => output.cm)) });
     }
     return records;
   };
@@ -396,8 +396,8 @@ test('action builder creates an exact one-note transfer witness with self change
     assetContractId,
     diversifier: '00000000',
     ownerCommitment: hex(owner.ownerCommitment),
-    leafIndex: 0,
-    actionIndex: 0,
+    leafIndex: 0n,
+    actionIndex: 0n,
     rho: hex(rho),
     memoHex: '',
     senderFingerprintHex: '',
@@ -406,7 +406,7 @@ test('action builder creates an exact one-note transfer witness with self change
   };
   const tree = await import('@stellarkey/private-balance')
     .then(({ MerkleNodeStore }) => MerkleNodeStore.fromCommitments([commitment]));
-  const merklePath = await tree.getPath(0);
+  const merklePath = await tree.getPath(0n);
 
   const prepared = await preparePrivateAction({
     esk: owner,
@@ -438,8 +438,8 @@ test('action builder creates an exact one-note transfer witness with self change
   assert.equal(prepared.circuitInputs.actionAssetField, BigInt(`0x${hex(assetField)}`).toString());
   const realInputLane = prepared.circuitInputs.inputReal.indexOf('1');
   assert.equal(prepared.circuitInputs.inputLeafIndex[realInputLane], '0');
-  assert.equal(prepared.circuitInputs.inputSiblings[realInputLane].length, 17);
-  assert.equal(prepared.circuitInputs.inputPositions[realInputLane].length, 17);
+  assert.equal(prepared.circuitInputs.inputSiblings[realInputLane].length, 64);
+  assert.equal(prepared.circuitInputs.inputPositions[realInputLane].length, 64);
   assert.equal(prepared.action.outputs[0].cm.some(byte => byte !== 0), true);
   assert.equal(prepared.action.outputs[1].cm.some(byte => byte !== 0), true);
   assert.equal(prepared.action.outputs.every(output => output.outgoingEnvelope.length === 157), true);

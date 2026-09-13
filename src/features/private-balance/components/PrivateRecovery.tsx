@@ -73,7 +73,7 @@ export function PrivateRecoveryContent({
       ? `Restored ${restorationProgress.restoredCount} of ${restorationProgress.totalCount} records…`
       : 'Preparing private history restoration…'
     : working && syncProgress && syncProgress.total > 1
-    ? `Checking ${Math.min(syncProgress.current, syncProgress.total)} of ${syncProgress.total}…`
+    ? `Checking ${(syncProgress.current < syncProgress.total ? syncProgress.current : syncProgress.total)} of ${syncProgress.total}…`
     : 'Checking…';
 
   return (

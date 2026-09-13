@@ -153,7 +153,7 @@ function isCache(value: unknown): value is StealthDiscoveryCache {
     cache.schemaVersion !== 1 ||
     !safeIndex(cache.revision) ||
     !(cache.cursor === null || (typeof cache.cursor === 'string' && DECIMAL.test(cache.cursor))) ||
-    !timestamp(lowerBoundCreatedAt) ||
+    lowerBoundCreatedAt !== 0 ||
     !safeIndex(cache.latestLedger) ||
     !Array.isArray(cache.payments) ||
     cache.payments.length > MAX_STEALTH_DISCOVERY_PAYMENTS ||

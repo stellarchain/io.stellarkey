@@ -327,26 +327,8 @@ export async function recoverPrivateBalanceAction(input: {
   ) {
     throw new Error('Private Balance canonical recovery transcript is invalid');
   }
-  if (action.submissionMode !== 'direct' && transcript.headCloseTimeSeconds !== undefined) {
-    // NOT_FOUND here denotes non-inclusion in the verified common transcript,
-    // not a private transaction lookup. Expiry is still required for release.
-    rpcStatus = 'NOT_FOUND';
-    headCloseTimeSeconds = transcript.headCloseTimeSeconds;
-  }
-  let expiresAtSeconds = action.expiresAtSeconds;
-  if (expiresAtSeconds === undefined && action.signedEnvelopeXdr && input.networkPassphrase) {
-    const signed = validateSignedPrivateBalanceEnvelope({
-      signedEnvelopeXdr: action.signedEnvelopeXdr,
-      networkPassphrase: input.networkPassphrase,
-      expectedTransactionHash: action.transactionHash!,
-      ...pendingPrivateFeeBumpLimits(action),
-    });
-    const inner = signed.transaction instanceof FeeBumpTransaction ? signed.transaction.innerTransaction : signed.transaction;
-    const maxTime = Number(inner.timeBounds?.maxTime);
-    if (Number.isSafeInteger(maxTime) && maxTime > 0) expiresAtSeconds = maxTime;
-  }
   const decision = classifyPrivateActionRecovery(
-    { ...action, expiresAtSeconds },
+    action,
     rpcStatus,
     transcript.actionFields,
     transcript.nullifiers,
@@ -504,8 +486,8 @@ export async function broadcastPrivateBalanceAction(input: {
  * Re-drives explicitly direct 'signed' actions through broadcast at leader sync
  * start. A crash between the sign and broadcast commits leaves 'signed' with
  * zero recorded attempts even though the RPC send may already have fired, so
- * a direct resend is safe for that route. Relayed and legacy actions retain
- * their reservations until canonical inclusion or expiry proves the outcome.
+ * resending the exact same signed envelope is idempotent. Exposed spend inputs
+ * remain held until canonical reconciliation proves the outcome.
  */
 export async function resumeSignedPrivateBalanceActions(input: {
   context: PrivateStorageContext;

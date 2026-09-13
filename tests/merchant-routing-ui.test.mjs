@@ -23,12 +23,12 @@ test("merchant request surfaces expose consistent Standard and compatibility tra
   }
 });
 
-test("charge request labels the MEMO_ID transport as Legacy", () => {
+test("charge request labels the supported MEMO_ID transport by its Stellar standard", () => {
   const charge = source("src/components/merchant/ChargeSheet.tsx");
 
-  assert.match(charge, /label: "Legacy", value: "memo-id"/);
+  assert.match(charge, /label: "Memo ID", value: "memo-id"/);
   assert.doesNotMatch(charge, /label: "Trezor", value: "memo-id"/);
-  assert.match(charge, /Legacy MEMO_ID/);
+  assert.doesNotMatch(charge, /Legacy MEMO_ID/);
   assert.match(charge, /including Trezor/);
 });
 

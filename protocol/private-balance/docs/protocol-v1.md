@@ -1,14 +1,14 @@
-# StellarKey Shielded Balance Protocol Specification (V1)
+# StellarKey Shielded Balance Protocol Specification (V2)
 
 ## 1. Status and deployment boundary
 
-Shielded Balance V1 is an opt-in note pool implemented by a Soroban contract, a Groth16 circuit,
+Shielded Balance V2 is an opt-in note pool implemented by a Soroban contract, a Groth16 circuit,
 and a local browser wallet. One deployment owns one shielded tree and an append-only,
 administrator-curated asset registry. The network, realm, initial asset administrator, guardian,
-circuit hash, verification-key hash, and Poseidon2 parameter hash are deployment-bound. The
-replacement protocol described here has no backward-compatible state migration. Its prior Testnet
-deployments are retired; the authenticated catalogue publishes one development pool with XLM at
-registry index 0 and USDC at index 1, and fresh local state is required.
+circuit hash, verification-key hash, and Poseidon2 parameter hash are deployment-bound.
+StellarKey 1.5.1 is the application baseline. The authenticated catalogue publishes one
+development pool with XLM at registry index 0 and USDC at index 1. Only the current
+deployment-bound state, address, proof and backup encodings are supported.
 
 The committed proving material is development-only. It is suitable for reproducible Testnet work,
 not real value or Mainnet.
@@ -17,12 +17,12 @@ not real value or Mainnet.
 
 - Field: BN254 scalar field `Fr`, modulus
   `21888242871839275222246405745257275088548364400416034343698204186575808495617`.
-- Proof: Groth16 with 11 public inputs. The current `--O2` circuit has 15,114 constraints and fits
-  a `2^14` Powers-of-Tau transcript.
+- Proof: Groth16 with 11 public inputs. The current `--O2` circuit has 40,594 constraints and uses
+  the pinned power-17 Powers-of-Tau transcript.
 - Hash: Poseidon2 over BN254 `Fr`, width 4, rate 3, capacity 1, `x^5` S-box, 8 full rounds, 56
   partial rounds, and the implementation's length IV `N * 2^64`.
 - Encryption: RFC 9180 base mode DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM.
-- Tree: incremental ternary Merkle tree of depth 17 with capacity `3^17 = 129,140,163` leaves.
+- Tree: incremental ternary Merkle tree of depth 64 (private 17+47 hierarchy) with capacity `3^64` leaves.
 - Action shape: two input lanes and three output lanes for every action.
 
 All byte encodings, field conversions, Poseidon2 parameters, envelope lengths, and deployment
@@ -32,8 +32,7 @@ Consensus and operational review decisions are recorded in
 [`0002-private-note-key-agreement.md`](decisions/0002-private-note-key-agreement.md),
 [`0008-governed-asset-private-pool.md`](decisions/0008-governed-asset-private-pool.md), and
 [`0004-poseidon2-capacity-domain.md`](decisions/0004-poseidon2-capacity-domain.md),
-with the historical relayer, association-set, and stealth-subsystem boundaries in
-[`0009-browser-peer-relay.md`](decisions/0009-browser-peer-relay.md),
+with association-set and stealth-subsystem boundaries in
 [`0006-association-sets.md`](decisions/0006-association-sets.md), and
 [`0007-stealth-subsystem.md`](decisions/0007-stealth-subsystem.md).
 
@@ -45,14 +44,14 @@ commitment, randomness `rho`, optional memo, immutable asset-registry index, and
 `rho` under its explicit domain. The diversified owner commitment binds the address diversifier.
 The memo and asset index are authenticated by the envelopes, while the circuit binds the full asset
 field rather than the compact index. A commitment is always a non-zero field element and every
-action appends exactly three commitments.
+normal action appends exactly three commitments; a FullInputExit binds but does not append its three dummy commitments.
 
 A zero-value output is a dummy note, not an absent slot. Its commitment, randomness, keys,
 diversifier, recipient envelope, and outgoing envelope are freshly constructed in the same format
 as a real output. The private `outputReal` selector is derived in-circuit as `value != 0`; it is not
-independent witness data. The wallet randomizes recipient, change, and dummy lane ordering. Historical fee-note lanes remain readable.
+independent witness data. The wallet randomizes recipient, change, and dummy lane ordering.
 All three recipient envelopes in an action carry the same clear four-byte action diversifier. This
-removes the prior clear-diversifier lane-role fingerprint, but it does not hide that diversifier or
+prevents a clear-diversifier lane-role fingerprint, but it does not hide that diversifier or
 make repeated use of one receive address unlinkable across actions.
 
 ## 4. Merkle tree
@@ -66,14 +65,33 @@ and collision resistance: making a valid note commitment or parent equal one of 
 constants must remain computationally infeasible. This is a protocol decision; changing arity,
 child order, depth, IV, domain-slot convention, or empty roots changes consensus.
 
-Each input witness carries 17 pairs of sibling nodes and one position trit per level. Position must
+Each input witness carries 64 pairs of sibling nodes and one position trit per level. Position must
 be 0, 1, or 2 and selects the leaf/node's ordered place among the two siblings. The leaf index is
 decomposed in base 3. Only real input lanes must reconstruct the public anchor root; dummy lanes use
 private dummy secrets and remain independent of the tree.
 
-The contract and browser maintain a 34-node frontier, two slots per level. Clients persist an
+The contract and browser maintain a 128-node frontier, two slots per level. Clients persist an
 authenticated incremental node store keyed by deployment and verified transcript checkpoint, so an
 ordinary spend reads the selected logarithmic paths instead of reconstructing all pool history.
+
+The parent hash applies the width-four permutation to the ordered three children and a capacity
+cell initialized to `3 * 2^64`, returning the first state element. It is a three-input hash, not a
+three-wide permutation.
+
+Deposit, Transfer and Withdraw append three leaves and return `TreeFull` when fewer
+than three remain. FullInputExit (kind 4, entrypoint `full_input_exit`) proves that
+all output values are zero and the selected input total equals public withdrawal.
+It skips the append guard, preserves root/frontier/leaf count, and remains usable
+at saturation subject to normal proof, nullifier, token and ledger conditions.
+Both modes share real nullifiers; changing action kind cannot replay a spent note.
+
+Positions and archive counters use u128 and 16-byte big-endian canonical encoding.
+The browser uses BigInt and strict decimal strings in storage. A record binds its
+independent action index and starting leaf position. Exits advance only the former;
+clients must never infer the leaf count as three times the archive action count.
+Both the finite `3^64` leaf bound and u128 archive bound remain explicit. Multi-note
+full-balance withdrawals use consecutive <=2-input exits, not consolidation; the
+wallet's one-approval 64-step/15-minute bound and fee caps remain in effect.
 
 ## 5. Nullifiers and fixed arity
 
@@ -102,6 +120,8 @@ selects these external flows:
   are zero. The full action asset field is private.
 - Withdraw: a public destination, registry index, asset, and amount leave the pool; one or two
   private inputs may be real.
+- FullInputExit: the same boundary fields as Withdraw, but all three output values
+  are zero and public value equals the full selected input value. No leaves append.
 
 The eleven public signals, in verifier order, are the deployment context field, boundary asset
 field, action kind, anchor root, public value, canonical action field, two nullifiers, and three
@@ -114,10 +134,9 @@ relayer or relayer-fee field. Its explicit non-zero circuit constraint gives it 
 input coefficient; mutating it invalidates a proof. The contract derives that field itself and
 independently validates canonical non-zero, distinct slots before accepting the proof.
 
-Historical relayed transfers or withdrawals used one ordinary encrypted same-asset
-output note for a peer fee, included in `sum(outputs)` rather than a public value leg.
-The application no longer constructs peer-fee outputs. Direct submission uses a
-zero-value dummy in the otherwise available lane; the consensus format is unchanged.
+The application constructs recipient, change and zero-value dummy outputs;
+it does not construct private peer-fee outputs. Every action has three output
+lanes, with FullInputExit binding but not appending its dummy commitments.
 
 ## 7. Encryption and recovery transcript
 
@@ -180,14 +199,13 @@ access pattern; that privacy tradeoff is explicit.
 
 The application prepares transfers, withdrawals, and deposits for direct submission
 from the user's Stellar account through the selected RPC. The public source and
-network fee remain visible. Relay discovery, quotes, helper approval, private fee
-construction, and Waku/Nostr transports have been removed; stale relayed reviews
-are rejected, never silently converted to direct payments.
+network fee remain visible. There is no peer submission or private helper-fee route.
 
-Historical encrypted records retain route and proof-exposure metadata for
-conservative canonical recovery. Legacy relayed or unknown-route actions cannot
-be signed or rebroadcast. Retiring obsolete chain consent never releases held
-inputs. The contract, proof, action, and archive formats are unchanged.
+Current encrypted records explicitly bind the direct route, proof exposure,
+outgoing-history policy and issued-address history. Unsupported records are
+rejected before signing, network recovery or storage updates. Current exposed
+inputs remain held until canonical reconciliation; a timeout or envelope failure
+does not revoke a reusable spend proof. Encrypted backups use the same validation.
 
 ## 11. Replacement and ceremony rule
 

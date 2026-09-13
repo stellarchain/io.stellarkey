@@ -101,7 +101,7 @@ export interface ActivityItem {
   /** Local provenance for a verified private action normalized into wallet activity. */
   private?: {
     deploymentId: string;
-    actionIndex?: number;
+    actionIndex?: bigint;
     actionKind: "deposit" | "transfer" | "withdraw";
     /** UTF-8 memo decrypted from the private note while the wallet is unlocked. */
     memoHex?: string;

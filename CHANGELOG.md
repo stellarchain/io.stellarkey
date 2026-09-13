@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-09-13
+
+### Added
+
+- Restore the maintained Private Payments whitepaper, standalone LaTeX source and PDF, with implementation-bound security arguments, reproducible evidence and contemporary related work.
+
+### Changed
+
+- Establish 1.5.1 as the stable starting application baseline, with current-format state only; Private Payments remains unaudited and Testnet-only.
+- Update React and React DOM to 19.3.0 with matching React type definitions.
+- Update Playwright to 1.63.0 and Node.js type definitions to 22.20.2.
+- Refresh dependency-lock provenance and authenticated Private Payments manifest hashes without changing cryptographic artifacts or the Testnet deployment.
+- Default to Dark appearance when no valid preference is saved, including when browser storage is unavailable; preserve saved System, Light and Dark choices.
+- Replace the development Testnet pool with protocol version 2, using private 64-level membership paths and exact 128-bit positions and archive counters. The new XLM/USDC deployment has fresh state; this remains an unaudited Testnet preview.
+
+### Removed
+
+- Remove obsolete relay decision records, the superseded protocol review and feasibility report, and older-circuit measurements from release-facing documentation; describe only current-format recovery in the whitepaper and current-baseline behavior in public screens.
+- Remove pre-baseline private-payment journals, consent retirement, implicit storage fields, receive-address upgrades, short check codes, birthday-cache upgrades and duplicate-account repair. Unsupported encrypted state and backups are rejected without rewriting their data; merchant orders require an explicit shift identity.
+- Remove pre-baseline public cache imports and merchant metadata upgrades; unsupported encrypted merchant records remain unchanged and fail authentication.
+- Remove internal implementation plans, obsolete task histories and raw UX evidence logs from the release source tree; retain public protocol, security, recovery and contributor documentation.
+
+### Fixed
+
+- Mark up the public Private Payments glossary as a definition list so assistive technology can associate terms with their descriptions.
+- Align the public Private Payments explainer with Protocol V2, current artifact sizes, dated Testnet evidence, withdrawal behavior, and recovery and metadata limits.
+- Share compressed proving artifacts between the application and service worker, retaining two current-format cache revisions without persisting an expanded proving key.
+- Keep one verified public proving key in memory for warm actions, with independent caller-owned buffers and no extra persistent copy.
+- Measure actual proving-artifact downloads and persistent storage in release budgets without increasing their limits; allow categorized unreleased changelog notes while protecting published entries.
+- Wait for menu entrance animations before running static accessibility contrast checks.
+- Validate encrypted Private Payments backups with the Protocol V2 key domain, including archived wallet accounts.
+- Cover multi-note withdrawal approval, repeated confirmation and progress with real controls in Chromium and iPhone WebKit.
+- Improve small negative, error and secondary text contrast on raised, tinted and translucent dark review panels.
+- Allow full-input private withdrawals without appending commitments, including at tree saturation. Multi-note withdrawals use explicitly reviewed batches of up to two inputs and preserve fee limits and confirmation between steps.
+- Track archive actions independently of commitment count so withdrawals that append no leaves remain recoverable and cache checkpoints stay authenticated.
+
 ## [1.5.0] - 2026-09-12
 
 ### Added

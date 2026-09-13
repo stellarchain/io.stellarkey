@@ -77,10 +77,10 @@ test('an opaque X25519 handle imports one private key for repeated derivations',
 
 test('X25519 native and portable scan paths derive the same secret', async () => {
   const sender = await deriveKeysFromSeed(
-    bytes(1), 1, bytes(2), bytes(3), bytes(4), bytes(5), bytes(6), bytes(7),
+    bytes(1), 2, bytes(2), bytes(3), bytes(4), bytes(5), bytes(6), bytes(7),
   );
   const recipient = await deriveKeysFromSeed(
-    bytes(8), 1, bytes(2), bytes(3), bytes(4), bytes(5), bytes(9), bytes(7),
+    bytes(8), 2, bytes(2), bytes(3), bytes(4), bytes(5), bytes(9), bytes(7),
   );
 
   const portable = await deriveX25519SharedSecret(
@@ -118,7 +118,7 @@ test('diversified scanning drops an unusable native handle and keeps portable ke
 
 test('recipient opening retries portable X25519 after a native deriveBits failure', async () => {
   const keys = await deriveKeysFromSeed(
-    bytes(40), 1, bytes(41), bytes(42), bytes(43), bytes(44), bytes(45), bytes(46),
+    bytes(40), 2, bytes(41), bytes(42), bytes(43), bytes(44), bytes(45), bytes(46),
   );
   const contextHash = bytes(47);
   const contextField = computeContextField(contextHash);
@@ -127,7 +127,7 @@ test('recipient opening retries portable X25519 after a native deriveBits failur
   const diversifier = new Uint8Array(4);
   const rho = Uint8Array.from([...new Uint8Array(31), 1]);
   const plaintext = encodeNotePlaintext({
-    protocolVersion: 1,
+    protocolVersion: 2,
     flags: 0,
     value: 25n,
     diversifier,
@@ -215,7 +215,7 @@ test('recipient misses reject on the view tag before hashing the owner commitmen
 
 test('output packages carry a secret-derived view tag and reject non-matches early', async () => {
   const keys = await deriveKeysFromSeed(
-    bytes(10), 1, bytes(11), bytes(12), bytes(13), bytes(14), bytes(15), bytes(16),
+    bytes(10), 2, bytes(11), bytes(12), bytes(13), bytes(14), bytes(15), bytes(16),
   );
   const note = bytes(17, 128);
   const contextHash = bytes(18);

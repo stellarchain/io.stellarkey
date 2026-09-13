@@ -112,13 +112,13 @@ export const PoolError = {
 
 
 export interface ArchiveMeta {
-  action_count: u32;
+  action_count: u128;
   transcript_head: Buffer;
 }
 
 
 export interface ArchiveRecord {
-  action_index: u32;
+  action_index: u128;
   action_kind: u32;
   action_nonce: Buffer;
   anchor_root: Buffer;
@@ -133,11 +133,11 @@ export interface ArchiveRecord {
   output_2: OutputPackage;
   public_recipient: Option<string>;
   public_value: u64;
-  starting_leaf_index: u32;
+  starting_leaf_index: u128;
   tree_root_after: Buffer;
 }
 
-export type DataKey = {tag: "Config", values: void} | {tag: "AssetAdmin", values: void} | {tag: "PendingAssetAdmin", values: void} | {tag: "AssetCount", values: void} | {tag: "RegisteredAsset", values: readonly [u32]} | {tag: "RegisteredAssetIndex", values: readonly [string]} | {tag: "DepositPause", values: void} | {tag: "Tree", values: void} | {tag: "Meta", values: void} | {tag: "Nullifier", values: readonly [Buffer]} | {tag: "KnownRoot", values: readonly [Buffer]} | {tag: "ArchiveRecord", values: readonly [u32]};
+export type DataKey = {tag: "Config", values: void} | {tag: "AssetAdmin", values: void} | {tag: "PendingAssetAdmin", values: void} | {tag: "AssetCount", values: void} | {tag: "RegisteredAsset", values: readonly [u32]} | {tag: "RegisteredAssetIndex", values: readonly [string]} | {tag: "DepositPause", values: void} | {tag: "Tree", values: void} | {tag: "Meta", values: void} | {tag: "Nullifier", values: readonly [Buffer]} | {tag: "KnownRoot", values: readonly [Buffer]} | {tag: "ArchiveRecord", values: readonly [u128]};
 
 
 export interface KnownRoot {
@@ -176,12 +176,12 @@ export type AssetStatus = {tag: "Active", values: void} | {tag: "ExitOnly", valu
 export interface TreeStorage {
   current_root: Buffer;
   frontier: Array<Buffer>;
-  next_index: u64;
+  next_index: u128;
 }
 
 
 export interface SpentNullifier {
-  spent_at_action: u32;
+  spent_at_action: u128;
   spent_at_ledger: u32;
 }
 
@@ -206,17 +206,17 @@ export interface Client {
   /**
    * Construct and simulate a deposit transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
-  deposit: ({action, proof}: {action: DepositAction, proof: Proof}, options?: MethodOptions) => Promise<AssembledTransaction<Result<u32>>>
+  deposit: ({action, proof}: {action: DepositAction, proof: Proof}, options?: MethodOptions) => Promise<AssembledTransaction<Result<u128>>>
 
   /**
    * Construct and simulate a transfer transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
-  transfer: ({action, proof}: {action: TransferAction, proof: Proof}, options?: MethodOptions) => Promise<AssembledTransaction<Result<u32>>>
+  transfer: ({action, proof}: {action: TransferAction, proof: Proof}, options?: MethodOptions) => Promise<AssembledTransaction<Result<u128>>>
 
   /**
    * Construct and simulate a withdraw transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
-  withdraw: ({action, proof}: {action: WithdrawAction, proof: Proof}, options?: MethodOptions) => Promise<AssembledTransaction<Result<u32>>>
+  withdraw: ({action, proof}: {action: WithdrawAction, proof: Proof}, options?: MethodOptions) => Promise<AssembledTransaction<Result<u128>>>
 
   /**
    * Construct and simulate a add_asset transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -260,6 +260,12 @@ export interface Client {
    * Construct and simulate a deposits_paused transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
   deposits_paused: (options?: MethodOptions) => Promise<AssembledTransaction<boolean>>
+
+  /**
+   * Construct and simulate a full_input_exit transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Consumes selected inputs completely, without reserving output capacity.
+   */
+  full_input_exit: ({action, proof}: {action: WithdrawAction, proof: Proof}, options?: MethodOptions) => Promise<AssembledTransaction<Result<u128>>>
 
   /**
    * Construct and simulate a set_asset_status transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -317,20 +323,20 @@ export class Client extends ContractClient {
         "AAAABQAAAAAAAAAAAAAAEUFzc2V0QWRtaW5DaGFuZ2VkAAAAAAAAAQAAABNhc3NldF9hZG1pbl9jaGFuZ2VkAAAAAAIAAAAAAAAACHByZXZpb3VzAAAAEwAAAAAAAAAAAAAAB2N1cnJlbnQAAAAAEwAAAAAAAAAC",
         "AAAABQAAAAAAAAAAAAAAEkFzc2V0QWRtaW5Qcm9wb3NlZAAAAAAAAQAAABRhc3NldF9hZG1pbl9wcm9wb3NlZAAAAAEAAAAAAAAABG5leHQAAAATAAAAAAAAAAA=",
         "AAAABQAAAAAAAAAAAAAAEkFzc2V0U3RhdHVzQ2hhbmdlZAAAAAAAAQAAAAxhc3NldF9zdGF0dXMAAAACAAAAAAAAAAVpbmRleAAAAAAAAAQAAAAAAAAAAAAAAAZzdGF0dXMAAAAAB9AAAAALQXNzZXRTdGF0dXMAAAAAAAAAAAI=",
-        "AAAAAQAAAAAAAAAAAAAAC0FyY2hpdmVNZXRhAAAAAAIAAAAAAAAADGFjdGlvbl9jb3VudAAAAAQAAAAAAAAAD3RyYW5zY3JpcHRfaGVhZAAAAAPuAAAAIA==",
-        "AAAAAQAAAAAAAAAAAAAADUFyY2hpdmVSZWNvcmQAAAAAAAARAAAAAAAAAAxhY3Rpb25faW5kZXgAAAAEAAAAAAAAAAthY3Rpb25fa2luZAAAAAAEAAAAAAAAAAxhY3Rpb25fbm9uY2UAAAPuAAAAIAAAAAAAAAALYW5jaG9yX3Jvb3QAAAAD7gAAACAAAAAAAAAABWFzc2V0AAAAAAAD6AAAABMAAAAAAAAAC2Fzc2V0X2luZGV4AAAAA+gAAAAEAAAAAAAAAA5kZXBvc2l0X3NvdXJjZQAAAAAD6AAAABMAAAAAAAAAD2xlZGdlcl9zZXF1ZW5jZQAAAAAEAAAAAAAAAAtudWxsaWZpZXJfMAAAAAPuAAAAIAAAAAAAAAALbnVsbGlmaWVyXzEAAAAD7gAAACAAAAAAAAAACG91dHB1dF8wAAAH0AAAAA1PdXRwdXRQYWNrYWdlAAAAAAAAAAAAAAhvdXRwdXRfMQAAB9AAAAANT3V0cHV0UGFja2FnZQAAAAAAAAAAAAAIb3V0cHV0XzIAAAfQAAAADU91dHB1dFBhY2thZ2UAAAAAAAAAAAAAEHB1YmxpY19yZWNpcGllbnQAAAPoAAAAEwAAAAAAAAAMcHVibGljX3ZhbHVlAAAABgAAAAAAAAATc3RhcnRpbmdfbGVhZl9pbmRleAAAAAAEAAAAAAAAAA90cmVlX3Jvb3RfYWZ0ZXIAAAAD7gAAACA=",
-        "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAADAAAAAAAAAAAAAAABkNvbmZpZwAAAAAAAAAAAAAAAAAKQXNzZXRBZG1pbgAAAAAAAAAAAAAAAAARUGVuZGluZ0Fzc2V0QWRtaW4AAAAAAAAAAAAAAAAAAApBc3NldENvdW50AAAAAAABAAAAAAAAAA9SZWdpc3RlcmVkQXNzZXQAAAAAAQAAAAQAAAABAAAAAAAAABRSZWdpc3RlcmVkQXNzZXRJbmRleAAAAAEAAAATAAAAAAAAAAAAAAAMRGVwb3NpdFBhdXNlAAAAAAAAAAAAAAAEVHJlZQAAAAAAAAAAAAAABE1ldGEAAAABAAAAAAAAAAlOdWxsaWZpZXIAAAAAAAABAAAD7gAAACAAAAABAAAAAAAAAAlLbm93blJvb3QAAAAAAAABAAAD7gAAACAAAAABAAAAAAAAAA1BcmNoaXZlUmVjb3JkAAAAAAAAAQAAAAQ=",
+        "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",
         "AAAAAQAAAAAAAAAAAAAAC0Fzc2V0Q29uZmlnAAAAAAQAAAAAAAAABWFzc2V0AAAAAAAAEwAAAAAAAAALYXNzZXRfZmllbGQAAAAD7gAAACAAAAAAAAAABWluZGV4AAAAAAAABAAAAAAAAAAGc3RhdHVzAAAAAAfQAAAAC0Fzc2V0U3RhdHVzAA==",
         "AAAAAgAAAAAAAAAAAAAAC0Fzc2V0U3RhdHVzAAAAAAIAAAAAAAAAAAAAAAZBY3RpdmUAAAAAAAAAAAAAAAAACEV4aXRPbmx5",
-        "AAAAAQAAAAAAAAAAAAAAC1RyZWVTdG9yYWdlAAAAAAMAAAAAAAAADGN1cnJlbnRfcm9vdAAAA+4AAAAgAAAAAAAAAAhmcm9udGllcgAAA+oAAAPuAAAAIAAAAAAAAAAKbmV4dF9pbmRleAAAAAAABg==",
-        "AAAAAQAAAAAAAAAAAAAADlNwZW50TnVsbGlmaWVyAAAAAAACAAAAAAAAAA9zcGVudF9hdF9hY3Rpb24AAAAABAAAAAAAAAAPc3BlbnRfYXRfbGVkZ2VyAAAAAAQ=",
+        "AAAAAQAAAAAAAAAAAAAAC1RyZWVTdG9yYWdlAAAAAAMAAAAAAAAADGN1cnJlbnRfcm9vdAAAA+4AAAAgAAAAAAAAAAhmcm9udGllcgAAA+oAAAPuAAAAIAAAAAAAAAAKbmV4dF9pbmRleAAAAAAACg==",
+        "AAAAAQAAAAAAAAAAAAAADlNwZW50TnVsbGlmaWVyAAAAAAACAAAAAAAAAA9zcGVudF9hdF9hY3Rpb24AAAAACgAAAAAAAAAPc3BlbnRfYXRfbGVkZ2VyAAAAAAQ=",
         "AAAAAAAAAAAAAAAFYXNzZXQAAAAAAAABAAAAAAAAAAVpbmRleAAAAAAAAAQAAAABAAAD6QAAB9AAAAALQXNzZXRDb25maWcAAAAH0AAAAAlQb29sRXJyb3IAAAA=",
         "AAAAAAAAAAAAAAAGY29uZmlnAAAAAAAAAAAAAQAAB9AAAAAKUG9vbENvbmZpZwAA",
-        "AAAAAAAAAAAAAAAHZGVwb3NpdAAAAAACAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAANRGVwb3NpdEFjdGlvbgAAAAAAAAAAAAAFcHJvb2YAAAAAAAfQAAAABVByb29mAAAAAAAAAQAAA+kAAAAEAAAH0AAAAAlQb29sRXJyb3IAAAA=",
-        "AAAAAAAAAAAAAAAIdHJhbnNmZXIAAAACAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAAOVHJhbnNmZXJBY3Rpb24AAAAAAAAAAAAFcHJvb2YAAAAAAAfQAAAABVByb29mAAAAAAAAAQAAA+kAAAAEAAAH0AAAAAlQb29sRXJyb3IAAAA=",
-        "AAAAAAAAAAAAAAAId2l0aGRyYXcAAAACAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAAOV2l0aGRyYXdBY3Rpb24AAAAAAAAAAAAFcHJvb2YAAAAAAAfQAAAABVByb29mAAAAAAAAAQAAA+kAAAAEAAAH0AAAAAlQb29sRXJyb3IAAAA=",
+        "AAAAAAAAAAAAAAAHZGVwb3NpdAAAAAACAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAANRGVwb3NpdEFjdGlvbgAAAAAAAAAAAAAFcHJvb2YAAAAAAAfQAAAABVByb29mAAAAAAAAAQAAA+kAAAAKAAAH0AAAAAlQb29sRXJyb3IAAAA=",
+        "AAAAAAAAAAAAAAAIdHJhbnNmZXIAAAACAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAAOVHJhbnNmZXJBY3Rpb24AAAAAAAAAAAAFcHJvb2YAAAAAAAfQAAAABVByb29mAAAAAAAAAQAAA+kAAAAKAAAH0AAAAAlQb29sRXJyb3IAAAA=",
+        "AAAAAAAAAAAAAAAId2l0aGRyYXcAAAACAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAAOV2l0aGRyYXdBY3Rpb24AAAAAAAAAAAAFcHJvb2YAAAAAAAfQAAAABVByb29mAAAAAAAAAQAAA+kAAAAKAAAH0AAAAAlQb29sRXJyb3IAAAA=",
         "AAAAAAAAAAAAAAAJYWRkX2Fzc2V0AAAAAAAAAQAAAAAAAAAFYXNzZXQAAAAAAAATAAAAAQAAA+kAAAAEAAAH0AAAAAlQb29sRXJyb3IAAAA=",
         "AAAAAAAAAMVSZS1yZWdpc3RlcnMgdGhlIGN1cnJlbnQgdHJlZSByb290IHdpdGhvdXQgbW92aW5nIHZhbHVlLiBUaGlzIGlzCnBlcm1pc3Npb25sZXNzIHNvIGFuIGlkbGUgcG9vbCByZW1haW5zIHNwZW5kYWJsZSB3aGlsZSBkZXBvc2l0cyBhcmUKcGF1c2VkLCBhbmQgcmVwZWF0ZWQgY2FsbHMgb25seSByZWZyZXNoIHRoZSBzYW1lIGNhbm9uaWNhbCByb290LgAAAAAAAAp0b3VjaF9yb290AAAAAAAAAAAAAQAAA+kAAAfQAAAACUtub3duUm9vdAAAAAAAB9AAAAAJUG9vbEVycm9yAAAA",
         "AAAAAAAAAAAAAAAKdHJlZV9zdGF0ZQAAAAAAAAAAAAEAAAfQAAAAC1RyZWVTdG9yYWdlAA==",
@@ -340,6 +346,7 @@ export class Client extends ContractClient {
         "AAAAAAAAAAAAAAAMYXJjaGl2ZV9tZXRhAAAAAAAAAAEAAAfQAAAAC0FyY2hpdmVNZXRhAA==",
         "AAAAAAAAAAAAAAANX19jb25zdHJ1Y3RvcgAAAAAAAAsAAAAAAAAAEHByb3RvY29sX3ZlcnNpb24AAAAEAAAAAAAAAApuZXR3b3JrX2lkAAAAAAPuAAAAIAAAAAAAAAAIcmVhbG1faWQAAAPuAAAAIAAAAAAAAAAIZ3VhcmRpYW4AAAATAAAAAAAAAAthc3NldF9hZG1pbgAAAAATAAAAAAAAABhwb3NlaWRvbjJfcGFyYW1ldGVyX2hhc2gAAAPuAAAAIAAAAAAAAAAMY2lyY3VpdF9oYXNoAAAD7gAAACAAAAAAAAAAFXZlcmlmaWNhdGlvbl9rZXlfaGFzaAAAAAAAA+4AAAAgAAAAAAAAAAp0cmVlX2RlcHRoAAAAAAAEAAAAAAAAABNyb290X3dpbmRvd19sZWRnZXJzAAAAAAQAAAAAAAAAF2RlcGxveW1lbnRfYmluZGluZ19oYXNoAAAAA+4AAAAgAAAAAA==",
         "AAAAAAAAAAAAAAAPZGVwb3NpdHNfcGF1c2VkAAAAAAAAAAABAAAAAQ==",
+        "AAAAAAAAAEdDb25zdW1lcyBzZWxlY3RlZCBpbnB1dHMgY29tcGxldGVseSwgd2l0aG91dCByZXNlcnZpbmcgb3V0cHV0IGNhcGFjaXR5LgAAAAAPZnVsbF9pbnB1dF9leGl0AAAAAAIAAAAAAAAABmFjdGlvbgAAAAAH0AAAAA5XaXRoZHJhd0FjdGlvbgAAAAAAAAAAAAVwcm9vZgAAAAAAB9AAAAAFUHJvb2YAAAAAAAABAAAD6QAAAAoAAAfQAAAACVBvb2xFcnJvcgAAAA==",
         "AAAAAAAAAAAAAAAQc2V0X2Fzc2V0X3N0YXR1cwAAAAIAAAAAAAAABWluZGV4AAAAAAAABAAAAAAAAAAGc3RhdHVzAAAAAAfQAAAAC0Fzc2V0U3RhdHVzAAAAAAEAAAPpAAAAAgAAB9AAAAAJUG9vbEVycm9yAAAA",
         "AAAAAAAAAAAAAAASYWNjZXB0X2Fzc2V0X2FkbWluAAAAAAAAAAAAAQAAA+kAAAACAAAH0AAAAAlQb29sRXJyb3IAAAA=",
         "AAAAAAAAAAAAAAATcGVuZGluZ19hc3NldF9hZG1pbgAAAAAAAAAAAQAAA+gAAAAT",
@@ -352,9 +359,9 @@ export class Client extends ContractClient {
   public readonly fromJSON = {
     asset: this.txFromJSON<Result<AssetConfig>>,
         config: this.txFromJSON<PoolConfig>,
-        deposit: this.txFromJSON<Result<u32>>,
-        transfer: this.txFromJSON<Result<u32>>,
-        withdraw: this.txFromJSON<Result<u32>>,
+        deposit: this.txFromJSON<Result<u128>>,
+        transfer: this.txFromJSON<Result<u128>>,
+        withdraw: this.txFromJSON<Result<u128>>,
         add_asset: this.txFromJSON<Result<u32>>,
         touch_root: this.txFromJSON<Result<KnownRoot>>,
         tree_state: this.txFromJSON<TreeStorage>,
@@ -363,6 +370,7 @@ export class Client extends ContractClient {
         asset_index: this.txFromJSON<Option<u32>>,
         archive_meta: this.txFromJSON<ArchiveMeta>,
         deposits_paused: this.txFromJSON<boolean>,
+        full_input_exit: this.txFromJSON<Result<u128>>,
         set_asset_status: this.txFromJSON<Result<void>>,
         accept_asset_admin: this.txFromJSON<Result<void>>,
         pending_asset_admin: this.txFromJSON<Option<string>>,
