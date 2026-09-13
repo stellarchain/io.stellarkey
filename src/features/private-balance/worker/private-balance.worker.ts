@@ -79,7 +79,7 @@ function activeSession(req: WorkerRequest): {
 }
 
 function freshAddressDiversifier(): Uint8Array {
-  // Zero is the legacy default; new addresses use a fresh diversifier.
+  // Receive addresses use a fresh, nonzero diversifier.
   // Bound rejection sampling so unavailable/broken entropy cannot wedge a worker.
   for (let attempt = 0; attempt < 64; attempt += 1) {
     const entropy = randomBytes32();

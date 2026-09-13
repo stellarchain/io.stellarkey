@@ -309,15 +309,10 @@ export class PrivateBalanceWorkerClient {
       ? 'skpay_'
       : 'tskpay_';
     const deploymentBindingHash = hex32(parsedManifest.deploymentBindingHash);
-    const storedDiversifier = currentAddress
+    const addressDiversifier = currentAddress
       ? (await decodePrivateAddress(currentAddress, addressPrefix, deploymentBindingHash)).diversifier
       : undefined;
-    // Upgrade a legacy default in the recipient's own session. The provider
-    // records the replacement (and the old diversifier) before publishing it.
-    // Already diversified receive addresses keep their exact identity.
-    const addressDiversifier = storedDiversifier?.some(byte => byte !== 0)
-      ? storedDiversifier
-      : undefined;
+    if (addressDiversifier) this.assertFreshReceiveDiversifier(addressDiversifier);
     const transferredRoot = sessionRoot.buffer;
     const sessionId = this.createId('session');
     const id = this.createId('operation');

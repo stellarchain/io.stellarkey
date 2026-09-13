@@ -83,7 +83,6 @@ import {
 import { formatPrivateBalanceAmount, selectTotalShieldedBalance } from './selectors';
 import { parsePrivateAmount, selectPrivateNotes, planPrivateWithdrawal } from './coin-selection';
 import {
-  retireLegacyPrivateRelayConsent,
   beginPrivateChainedApproval,
   clearPrivateChainedApproval,
   commitPrivateBalanceState,
@@ -134,7 +133,6 @@ import {
   PrivateRpcViewsDisagreeError,
   PrivateRpcWitnessUnavailableError,
   corroboratePrivateRpcCheckpoint,
-  corroboratePrivateLedgerCloseTime,
 } from './rpc-checkpoint';
 import type {
   PrivateBalanceDurableState,
@@ -788,7 +786,6 @@ export function PrivateBalanceProvider({
                 manifest,
               );
             }
-            let scannedHeadLedger: number | undefined;
             const readAuthenticatedHead = async () => {
               const verifiedHead = witnessArchive
                 ? (await corroboratePrivateRpcCheckpoint({
@@ -798,7 +795,6 @@ export function PrivateBalanceProvider({
                     deploymentCheckpoint: manifest.deploymentCheckpoint,
                   })).head
                 : await archive.readHead();
-              scannedHeadLedger = verifiedHead.latestLedger;
               setSnapshot(current => ({
                 ...current,
                 deployment: {
@@ -856,11 +852,8 @@ export function PrivateBalanceProvider({
               );
               progress.durable = durable;
             }
-            durable = await retireLegacyPrivateRelayConsent(storageScope, storageKey, driver) ?? durable;
-            progress.durable = durable;
             if (durable.pendingActions.some(action => action.status === 'signed')) {
               // Only explicitly direct routes may resume over sender RPC.
-              // Relayed/legacy envelopes wait for canonical inclusion/expiry.
               durable = await resumeSignedPrivateBalanceActions({
                 context: storageScope,
                 storageKey,
@@ -996,17 +989,6 @@ export function PrivateBalanceProvider({
                 // Only non-spend envelopes can use envelope failure/expiry
                 // plus canonical absence for recovery.
                 const canonical = durable;
-                let headCloseTimeSeconds: number | undefined;
-                if (pending.submissionMode !== 'direct' && scannedHeadLedger !== undefined) {
-                  if (new URL(rpcUrl).origin === new URL(manifest.witnessRpcUrl).origin) {
-                    throw new PrivateRpcViewsDisagreeError('Expiry recovery requires an independent witness.');
-                  }
-                  headCloseTimeSeconds = await corroboratePrivateLedgerCloseTime({
-                    primary: archive,
-                    witness: witnessArchive ?? new PrivateBalanceArchiveClient(manifest.witnessRpcUrl, manifest),
-                    sequence: scannedHeadLedger,
-                  });
-                }
                 const recovered = await recoverPrivateBalanceAction({
                   context: storageScope,
                   storageKey,
@@ -1016,7 +998,6 @@ export function PrivateBalanceProvider({
                   scanCanonicalTranscript: async () => ({
                     actionFields: canonical.activities.map(activity => activity.id),
                     nullifiers: canonical.activities.flatMap(activity => activity.nullifiers),
-                    ...(headCloseTimeSeconds !== undefined ? { headCloseTimeSeconds } : {}),
                   }),
                   storageDriver: driver,
                 });
@@ -2569,7 +2550,7 @@ export function PrivateBalanceProvider({
   }), [asset.contractId, state]);
   const totalBalanceStroops = selectTotalShieldedBalance(selectedState);
   const totalBalanceDisplay = formatPrivateBalanceAmount(totalBalanceStroops, asset.decimals);
-  const legacyValue = useMemo<PrivateBalanceContextValue>(() => ({
+  const contextValue = useMemo<PrivateBalanceContextValue>(() => ({
     state: selectedState,
     totalBalanceStroops,
     totalBalanceDisplay,
@@ -2682,7 +2663,7 @@ export function PrivateBalanceProvider({
 
   return (
     <PrivateBalanceRuntimeDataProvider value={runtimeValue}>
-      <PrivateBalanceContext.Provider value={legacyValue}>
+      <PrivateBalanceContext.Provider value={contextValue}>
         {children}
       </PrivateBalanceContext.Provider>
     </PrivateBalanceRuntimeDataProvider>

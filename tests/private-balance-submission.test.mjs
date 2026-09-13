@@ -194,7 +194,7 @@ test('private signing persists the exact envelope before an ambiguous broadcast'
     driver,
   );
   const fixture = reviewedFixture();
-  const pending = {
+  const pending = { outgoingHistoryMode: 'recoverable',proofExposure: 'shared',
     id: 'action-1',
     submissionMode: 'direct',
     kind: 'transfer',
@@ -214,7 +214,7 @@ test('private signing persists the exact envelope before an ambiguous broadcast'
     createdAt: 2,
     updatedAt: 2,
   };
-  await reservePrivateBuildReservation(context, storageKey, 0, {
+  await reservePrivateBuildReservation(context, storageKey, 0, { outgoingHistoryMode: 'recoverable',proofExposure: 'local',
     id: pending.id,
     kind: pending.kind,
     assetContractId: pending.assetContractId,
@@ -410,7 +410,7 @@ test('accepted private broadcasts remain conservatively journaled across a concu
     driver,
   );
   const fixture = reviewedFixture();
-  const pending = {
+  const pending = { outgoingHistoryMode: 'recoverable',proofExposure: 'shared',
     id: 'concurrent-action',
     submissionMode: 'direct',
     kind: 'transfer',
@@ -430,7 +430,7 @@ test('accepted private broadcasts remain conservatively journaled across a concu
     createdAt: 2,
     updatedAt: 2,
   };
-  await reservePrivateBuildReservation(context, storageKey, 0, {
+  await reservePrivateBuildReservation(context, storageKey, 0, { outgoingHistoryMode: 'recoverable',proofExposure: 'local',
     id: pending.id,
     kind: pending.kind,
     assetContractId: pending.assetContractId,
@@ -555,7 +555,7 @@ test('signing refuses an expired review before requesting a signature', async ()
   );
 });
 
-async function persistedSignedFixture(submissionMode = 'direct') {
+async function persistedSignedFixture() {
   const { context, storageKey, note, driver } = stateFixture('resume-account');
   await commitPrivateBalanceState(
     context,
@@ -565,9 +565,9 @@ async function persistedSignedFixture(submissionMode = 'direct') {
     driver,
   );
   const fixture = reviewedFixture();
-  const pending = {
+  const pending = { outgoingHistoryMode: 'recoverable',proofExposure: 'shared',
     id: 'resume-action',
-    ...(submissionMode === 'legacy' ? {} : { submissionMode }),
+    submissionMode: 'direct',
     kind: 'transfer',
     assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
@@ -585,18 +585,7 @@ async function persistedSignedFixture(submissionMode = 'direct') {
     createdAt: 2,
     updatedAt: 2,
   };
-  if (submissionMode !== 'direct') {
-    // Seed historical signed bytes directly. New app APIs cannot create/sign this route.
-    fixture.transaction.sign(fixture.signer);
-    await commitPrivateBalanceState(context, storageKey, {
-      ...createEmptyPrivateBalanceState('39'.repeat(32), 1), revision: 1,
-      notes: [{ ...note, status: 'reserved', reservedAt: 2 }],
-      pendingActions: [{ ...pending, status: 'signed', transactionHash: fixture.review.transactionHash,
-        signedEnvelopeXdr: fixture.transaction.toXdr(), expiresAtSeconds: fixture.review.expiresAt, updatedAt: 4 }],
-    }, 0, driver);
-    return { context, storageKey, driver, fixture, pending };
-  }
-  await reservePrivateBuildReservation(context, storageKey, 0, {
+  await reservePrivateBuildReservation(context, storageKey, 0, { outgoingHistoryMode: 'recoverable',proofExposure: 'local',
     id: pending.id,
     kind: pending.kind,
     assetContractId: pending.assetContractId,
@@ -704,89 +693,6 @@ test('persisted signed spends resume through broadcast but envelope expiry canno
 });
 
 
-for (const mode of ['relay', 'legacy']) {
-  test(`${mode} signed recovery never sends or looks up a transaction through sender RPC`, async () => {
-    const { context, storageKey, driver, fixture, pending } = await persistedSignedFixture(mode);
-    let sends = 0;
-    let lookups = 0;
-    const rpc = {
-      async sendTransaction() {
-        sends += 1;
-        return { status: 'PENDING', hash: fixture.review.transactionHash };
-      },
-      async getTransaction() { lookups += 1; return { status: 'FAILED' }; },
-    };
-    const resumed = await resumeSignedPrivateBalanceActions({
-      context, storageKey, networkPassphrase, rpc, storageDriver: driver,
-    });
-    assert.equal(sends, 0);
-    assert.equal(resumed.pendingActions[0].status, 'signed');
-    assert.equal(resumed.notes[0].status, 'reserved');
-    await assert.rejects(broadcastPrivateBalanceAction({
-      context, storageKey, expectedRevision: resumed.revision, actionId: pending.id,
-      networkPassphrase, submissionMode: 'direct', rpc, storageDriver: driver,
-    }), /route/i);
-    assert.equal(sends, 0);
-    const early = await recoverPrivateBalanceAction({
-      context, storageKey, actionId: pending.id, rpc, storageDriver: driver,
-      scanCanonicalTranscript: async () => ({ actionFields: [], nullifiers: [] }),
-    });
-    assert.equal(lookups, 0);
-    assert.equal(early.outcome, 'ambiguous');
-    assert.equal(early.state.notes[0].status, 'reserved');
-    const expired = await recoverPrivateBalanceAction({
-      context, storageKey, actionId: pending.id, rpc, storageDriver: driver,
-      scanCanonicalTranscript: async () => ({
-        actionFields: [], nullifiers: [],
-        headCloseTimeSeconds: fixture.review.expiresAt + PRIVATE_ACTION_EXPIRY_MARGIN_SECONDS + 1,
-      }),
-    });
-    assert.equal(lookups, 0);
-    assert.equal(expired.outcome, 'ambiguous');
-    assert.equal(expired.state.notes[0].status, 'reserved');
-  });
-}
-
-for (const rpcStatus of ['PENDING', 'ERROR']) {
-  test(`legacy relayed ${rpcStatus} record stays reconcile-only during recovery`, async () => {
-    const { context, storageKey, driver, pending } = await persistedSignedFixture('relay');
-    const state = await loadPrivateBalanceState(context, storageKey, driver);
-    await assert.rejects(broadcastPrivateBalanceAction({
-      context, storageKey, expectedRevision: state.revision, actionId: pending.id,
-      networkPassphrase, submissionMode: 'relay', storageDriver: driver,
-      rpc: { async sendTransaction() { assert.fail('No new relay submission'); } },
-    }), /Peer relaying has been removed/);
-    const historical = await transitionPrivatePendingAction(context, storageKey, state.revision, pending.id, {
-      from: 'signed', to: rpcStatus === 'PENDING' ? 'broadcast' : 'ambiguous',
-      latestRpcStatus: rpcStatus, updatedAt: 5,
-    }, driver);
-    assert.equal(historical.pendingActions[0].submissionMode, 'relay');
-    const recovery = await recoverPrivateBalanceAction({
-      context, storageKey, actionId: pending.id, storageDriver: driver,
-      rpc: { async getTransaction() { assert.fail('relay recovery must not reveal the hash'); } },
-      scanCanonicalTranscript: async () => ({ actionFields: [], nullifiers: [] }),
-    });
-    assert.equal(recovery.outcome, 'ambiguous');
-    assert.equal(recovery.state.notes[0].status, 'reserved');
-  });
-}
-
-test('legacy signed spend recovery retains inputs even if stored envelope expiry is derivable', async () => {
-  const { context, storageKey, driver, fixture, pending } = await persistedSignedFixture('legacy');
-  const state = await loadPrivateBalanceState(context, storageKey, driver);
-  const legacy = { ...state.pendingActions[0] };
-  delete legacy.expiresAtSeconds;
-  await commitPrivateBalanceState(context, storageKey, {
-    ...state, revision: state.revision + 1, pendingActions: [legacy],
-  }, state.revision, driver);
-  const recovered = await recoverPrivateBalanceAction({
-    context, storageKey, actionId: pending.id, storageDriver: driver, networkPassphrase,
-    rpc: { async getTransaction() { assert.fail('no hash lookup for legacy routes'); } },
-    scanCanonicalTranscript: async () => ({ actionFields: [], nullifiers: [],
-      headCloseTimeSeconds: fixture.review.expiresAt + PRIVATE_ACTION_EXPIRY_MARGIN_SECONDS + 1 }),
-  });
-  assert.equal(recovered.outcome, 'ambiguous');
-});
 
 test('prepare refuses while a previous payment is still confirming', async () => {
   const { context, storageKey, note, driver } = stateFixture('inflight-account');
@@ -802,7 +708,7 @@ test('prepare refuses while a previous payment is still confirming', async () =>
         updatedAt: 1,
       },
       notes: [{ ...note, status: 'reserved', reservedAt: 2 }],
-      pendingActions: [{
+      pendingActions: [{ outgoingHistoryMode: 'recoverable',proofExposure: 'shared',submissionMode: 'direct',
         id: 'inflight-action',
         kind: 'transfer',
         assetIndex: 0,

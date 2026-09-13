@@ -500,7 +500,7 @@ test("archived derived accounts keep their HD index and are reactivated instead 
   assert.equal(new Set(vault.accounts.map((account) => account.publicKey)).size, 3);
 });
 
-test("loading a vault repairs duplicate mnemonic-derived account metadata", async () => {
+test("duplicate derived-account metadata is rejected without repairing stored wallet bytes", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
   const { addStoredAccount, initializeVault, loadVault, lockVault } = await import(
@@ -522,11 +522,11 @@ test("loading a vault repairs duplicate mnemonic-derived account metadata", asyn
   stored.activeAccountId = duplicate.id;
   localStorage.setItem("stellarkey.vault.v1", JSON.stringify(stored));
 
-  const repaired = loadVault();
-  assert.equal(repaired.accounts.length, 2);
-  assert.equal(repaired.accounts.find((account) => account.index === 1)?.id, duplicate.id);
-  assert.equal(repaired.activeAccountId, duplicate.id);
-  assert.equal(new Set(repaired.accounts.map((account) => account.publicKey)).size, 2);
+  const raw = localStorage.getItem("stellarkey.vault.v1");
+  assert.equal(loadVault() === null, true, "unsupported wallet must not load");
+  const { decodeVaultFile } = await import("../src/lib/backup-schema.ts");
+  assert.equal(decodeVaultFile(stored) === null, true, "backup validation must also reject duplicates");
+  assert.equal(localStorage.getItem("stellarkey.vault.v1"), raw);
 });
 
 test("password verification applies persisted cross-tab backoff after repeated failures", async () => {

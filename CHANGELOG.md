@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- Remove pre-baseline private-payment journals, consent retirement, implicit storage fields, receive-address upgrades, short check codes, birthday-cache upgrades and duplicate-account repair. Unsupported encrypted state and backups are rejected without rewriting their data; merchant orders require an explicit shift identity.
 - Remove pre-baseline public cache imports and merchant metadata upgrades; unsupported encrypted merchant records remain unchanged and fail authentication.
 - Remove internal implementation plans, obsolete task histories and raw UX evidence logs from the release source tree; retain public protocol, security, recovery and contributor documentation.
 

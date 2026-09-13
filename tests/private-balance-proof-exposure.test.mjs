@@ -21,7 +21,7 @@ class MemoryDriver {
   }
   async removePrefix() { throw new Error('Unexpected reset'); }
 }
-const action = { id: 'proof', kind: 'transfer', assetIndex: 0, assetContractId, status: 'prepared', submissionMode: 'relay', proofExposure: 'shared',
+const action = { outgoingHistoryMode: 'recoverable', id: 'proof', kind: 'transfer', assetIndex: 0, assetContractId, status: 'prepared', submissionMode: 'direct', proofExposure: 'shared',
   reservedNoteIds: [hex('5')], actionField: hex('6'), nullifiers: [hex('7'), hex('0')], outputCommitments: [hex('8'), hex('9'), hex('a')],
   anchorRoot: hex('b'), anchorExpiresAtLedger: 100, proofHash: hex('c'), classicFeeCapStroops: '100', resourceFeeCapStroops: '1000', broadcastAttempts: 0, createdAt: 1, updatedAt: 1 };
 const note = { id: hex('5'), commitment: hex('5'), value: '10', assetIndex: 0, assetContractId, diversifier: '00000000', ownerCommitment: hex('1'), leafIndex: 0n, actionIndex: 0n, rho: hex('2'), memoHex: '', senderFingerprintHex: '', status: 'reserved', reservedAt: 1, createdAt: 1 };
@@ -32,8 +32,8 @@ async function fixture(overrides = {}) {
   return { driver, state };
 }
 
-test('unsigned disclosed spends survive cancellation and stale review cleanup, including legacy records', async () => {
-  for (const proofExposure of ['shared', undefined]) {
+test('unsigned disclosed spends survive cancellation and stale review cleanup', async () => {
+  for (const proofExposure of ['shared']) {
     const { driver, state } = await fixture({ proofExposure });
     await assert.rejects(storage.releasePrivatePendingAction(context, key, state.revision, action.id, { reason: 'pre-broadcast-rejection', updatedAt: 2 }, driver), /exposed|cannot be released/iu);
     const swept = await storage.releaseStalePrivatePendingActions(context, key, 10_000_000, 10, driver);
@@ -106,13 +106,15 @@ test('the in-panel consent gate is explicit, abortable and cannot approve a repl
   assert.equal(gate.approve('second'), false);
 });
 
-test('legacy build reservations never expire merely because no envelope was returned', async () => {
+test('build reservations without explicit local exposure are rejected without mutation', async () => {
   const driver = new MemoryDriver();
   let state = { ...storage.createEmptyPrivateBalanceState(hex('d'), 1), notes: [{ ...note, status: 'unspent', reservedAt: undefined }] };
   await storage.commitPrivateBalanceState(context, key, state, null, driver);
-  state = await storage.reservePrivateBuildReservation(context, key, state.revision, { id: 'legacy-build', kind: 'transfer', assetContractId, reservedNoteIds: [note.id], createdAt: 1, updatedAt: 1 }, driver);
-  assert.equal((await storage.releaseExpiredPrivateBuildReservations(context, key, 10_000_000, 1, driver)).buildReservations.length, 1);
-  await assert.rejects(storage.releasePrivateBuildReservation(context, key, state.revision, 'legacy-build', 2, driver), /exposed/);
+  const before = new Map(driver.records);
+  await assert.rejects(storage.reservePrivateBuildReservation(context, key, state.revision,
+    { outgoingHistoryMode: 'recoverable', id: 'unsupported-build', kind: 'transfer', assetContractId,
+      reservedNoteIds: [note.id], createdAt: 1, updatedAt: 1 }, driver), /invalid/i);
+  assert.deepEqual(driver.records, before);
 });
 
 test('context replacement after approval or journal prevents network disclosure', async () => {

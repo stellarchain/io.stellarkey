@@ -216,6 +216,7 @@ const inventoryException = objectOf<Merchant.InventoryException>({
 
 const order = objectOf<Merchant.Order>({
   id: nonEmptyString,
+  shiftId: nullableString,
   number: positiveInteger,
   reference: nonEmptyString,
   network,
@@ -233,9 +234,7 @@ const order = objectOf<Merchant.Order>({
   stockExceptions: arrayOf(inventoryException),
   payerAddress: nullableString,
   note: nullableString,
-}, {
-  shiftId: nullableString,
-});
+}, {});
 
 const chargeQuote = objectOf<Merchant.ChargeQuote>({
   unitPriceMinorE6: nonNegativeInteger,

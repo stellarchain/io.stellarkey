@@ -4030,7 +4030,7 @@ export function MerchantProvider({
     ],
   );
 
-  // Keep the legacy aggregate API on the same values as the focused contexts.
+  // Keep the aggregate API on the same values as the focused contexts.
   const value = useMemo<MerchantContextValue>(() => ({
     ...statusValue,
     ...configurationValue,

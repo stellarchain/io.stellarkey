@@ -8,7 +8,8 @@ export class PrivateProofExposedError extends Error {
 }
 
 /** A spend proof authorizes its outputs independently of an envelope or signer.
- * Missing exposure metadata on legacy spends is conservatively treated as shared.
+ * Malformed exposure metadata is conservatively treated as shared here;
+ * persisted records must additionally pass the strict encrypted-state decoder.
  * Only canonical inclusion or a conflicting canonical spend clears these notes;
  * envelope expiry, rejection and local cancellation do not revoke the proof. */
 export function hasExposedPrivateSpend(action: {

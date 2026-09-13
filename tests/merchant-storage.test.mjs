@@ -13,7 +13,7 @@ import * as storage from "../src/lib/merchant/storage.ts";
 const TILL = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 function completedOrder(overrides = {}) {
-  return {
+  return { shiftId: null,
     id: "order-1",
     number: 1001,
     reference: "MC1001",
@@ -114,6 +114,14 @@ test("the operational store defaults to a complete v3 schema", () => {
   assert.equal(store.nextShiftNumber, 1);
   assert.equal(store.nextInvoiceNumber, 1);
   assert.equal(store.terminal.name, store.settings.terminalName);
+});
+
+test("current orders require an explicit shift identity rather than an absent historical field", () => {
+  const order = completedOrder({ shiftId: null, staffId: null, stockAppliedAt: null, stockExceptions: [] });
+  const store = { ...emptyStore(), orders: [order] };
+  assert.equal(storage.decodeMerchantStore(store) !== null, true);
+  delete order.shiftId;
+  assert.equal(storage.decodeMerchantStore(store) === null, true);
 });
 
 test("the decoder rejects POC and incomplete merchant schemas", () => {

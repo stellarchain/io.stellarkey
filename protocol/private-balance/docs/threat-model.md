@@ -83,8 +83,9 @@ intent-gated worker/vault boundaries, but JavaScript cannot guarantee physical m
 
 Sensitive notes, viewing state, outgoing metadata, checkpoints, and pending actions are encrypted
 and deployment-bound in IndexedDB. The Merkle node cache contains public data but is authenticated
-against the encrypted checkpoint and canonical chain. Corruption fails closed. No backward state
-migration exists for this replacement protocol.
+against the encrypted checkpoint and canonical chain. Corruption fails closed.
+StellarKey 1.5.1 accepts only the current deployment-bound record formats;
+unsupported encrypted state is rejected without mutation.
 
 ## 5. Availability and recovery boundary
 

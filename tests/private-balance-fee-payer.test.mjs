@@ -122,7 +122,7 @@ async function journalScenario() {
       records.set(key, value); return { ok: true, current: value };
     },
   };
-  const pending = { id: 'sponsored-action', kind: 'deposit', assetIndex: 0, assetContractId: StrKey.encodeContract(Buffer.alloc(32, 91)), status: 'reviewed', submissionMode: 'direct', proofExposure: 'shared', feePayer: h.feePayer,
+  const pending = { outgoingHistoryMode: 'recoverable', id: 'sponsored-action', kind: 'deposit', assetIndex: 0, assetContractId: StrKey.encodeContract(Buffer.alloc(32, 91)), status: 'reviewed', submissionMode: 'direct', proofExposure: 'shared', feePayer: h.feePayer,
     reservedNoteIds: [], actionField: '11'.repeat(32), nullifiers: ['00'.repeat(32), '00'.repeat(32)], outputCommitments: ['12'.repeat(32), '13'.repeat(32), '14'.repeat(32)], anchorRoot: '15'.repeat(32), anchorExpiresAtLedger: 500,
     proofHash: '16'.repeat(32), classicFeeCapStroops: '200', resourceFeeCapStroops: '50000', transactionHash: h.request.expectedTransactionHash, broadcastAttempts: 0, createdAt: 1, updatedAt: 1 };
   await commitPrivateBalanceState(context, storageKey, { ...createEmptyPrivateBalanceState('17'.repeat(32), 1), pendingActions: [pending] }, null, driver);

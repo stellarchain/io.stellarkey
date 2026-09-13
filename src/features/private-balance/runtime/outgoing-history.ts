@@ -1,6 +1,6 @@
 export type PrivateOutgoingHistoryMode = 'recoverable' | 'minimized';
 
-/** Missing legacy preferences preserve the existing recovery contract. */
+/** Fresh, unconfigured sessions default to recoverable outgoing history. */
 export function privateOutgoingHistoryMode(value: unknown): PrivateOutgoingHistoryMode {
   if (value === undefined || value === 'recoverable') return 'recoverable';
   if (value === 'minimized') return 'minimized';

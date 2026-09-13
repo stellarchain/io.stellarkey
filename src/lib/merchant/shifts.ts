@@ -154,7 +154,7 @@ function scopedOrders(store: MerchantStore, shift: Shift, until: number) {
     (order) =>
       order.network === shift.network &&
       order.createdAt <= until &&
-      (order.shiftId !== undefined && order.shiftId !== null
+      (order.shiftId !== null
         ? order.shiftId === shift.id
         : order.terminalName === shift.terminalName &&
           (order.createdAt >= shift.openedAt ||

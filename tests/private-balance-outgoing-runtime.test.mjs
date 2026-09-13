@@ -29,7 +29,7 @@ const context = { accountId: 'history-test', networkId: hex('1'), realmId: hex('
 const assetContractId = 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF';
 const key = new Uint8Array(32).fill(7);
 const note = { id: hex('5'), commitment: hex('5'), value: '10', assetIndex: 0, assetContractId, diversifier: '00000000', ownerCommitment: hex('1'), leafIndex: 0n, actionIndex: 0n, rho: hex('2'), memoHex: '', senderFingerprintHex: '', status: 'unspent', createdAt: 1 };
-const pending = { id: 'proof', kind: 'transfer', assetIndex: 0, assetContractId, status: 'prepared', submissionMode: 'direct', proofExposure: 'shared',
+const pending = { outgoingHistoryMode: 'recoverable', id: 'proof', kind: 'transfer', assetIndex: 0, assetContractId, status: 'prepared', submissionMode: 'direct', proofExposure: 'shared',
   reservedNoteIds: [note.id], actionField: hex('6'), nullifiers: [hex('7'), hex('0')], outputCommitments: [hex('8'), hex('9'), hex('a')],
   anchorRoot: hex('b'), anchorExpiresAtLedger: 100, proofHash: hex('c'), classicFeeCapStroops: '100', resourceFeeCapStroops: '1000', broadcastAttempts: 0, createdAt: 1, updatedAt: 1 };
 async function fixture(extra = {}) {
@@ -59,7 +59,7 @@ test('encrypted outgoing-history setting requires explicit loss consent, valid m
 
 test('outgoing-history changes cannot rewrite open reservations, pending proofs or chain approvals', async () => {
   for (const extra of [
-    { notes: [{ ...note, status: 'reserved', reservedAt: 1 }], buildReservations: [{ id: 'build', kind: 'transfer', proofExposure: 'local', assetContractId, reservedNoteIds: [note.id], createdAt: 1, updatedAt: 1 }] },
+    { notes: [{ ...note, status: 'reserved', reservedAt: 1 }], buildReservations: [{ outgoingHistoryMode: 'recoverable', id: 'build', kind: 'transfer', proofExposure: 'local', assetContractId, reservedNoteIds: [note.id], createdAt: 1, updatedAt: 1 }] },
     { notes: [{ ...note, status: 'reserved', reservedAt: 1 }], pendingActions: [pending] },
     { chainedApproval: { id: 'chain', steps: 2, perStepMaxFeeStroops: '1000', cumulativeMaxFeeStroops: '2000', accumulatedFeeStroops: '0', expiresAtSeconds: 1000, createdAt: 1, updatedAt: 1 } },
   ]) {
@@ -72,7 +72,7 @@ test('outgoing-history changes cannot rewrite open reservations, pending proofs 
 test('minimized journal metadata is not promoted into permanent outgoing activity and old history remains recoverable', () => {
   const activity = { id: pending.actionField, actionIndex: 1n, actionKind: 'transfer', direction: 'outflow', assetIndex: 0, assetContractId,
     amount: '10', timestamp: 1, nullifiers: pending.nullifiers, outputCommitments: pending.outputCommitments };
-  const metadata = { actionField: pending.actionField, recipientFingerprint: 'ABCD EF01', memoHex: '0102', transactionHash: hex('e') };
+  const metadata = { actionField: pending.actionField, recipientFingerprint: 'ABCD EF01 2345 6789 ABCD EF01 2345 6789', memoHex: '0102', transactionHash: hex('e') };
   assert.deepEqual(attachLocalActivityMetadata([activity], [{ ...metadata, outgoingHistoryMode: 'minimized' }]), [activity]);
   for (const outgoingHistoryMode of [undefined, 'recoverable']) assert.deepEqual(attachLocalActivityMetadata([activity], [{ ...metadata, outgoingHistoryMode }]), [{ ...activity, recipientFingerprint: metadata.recipientFingerprint, memoHex: metadata.memoHex, transactionHash: metadata.transactionHash }]);
   const incoming = { ...activity, direction: 'inflow', memoHex: '0506' };
@@ -127,8 +127,8 @@ test('build reservations bind an immutable outgoing policy before a proof can be
 
 test('minimized payments do not append a recent private recipient even if a caller supplies one', async () => {
   const recipient = { address: encodePrivateAddress({ deploymentTag: derivePrivateAddressDeploymentTag(new Uint8Array(32).fill(0x44)), diversifier: new Uint8Array([0, 0, 0, 1]),
-    ownerCommitment: new Uint8Array(32).fill(9), hpkePublicKey: new Uint8Array(32).fill(10) }, 'tskpay_'), fingerprint: 'ABCD EF01', lastUsedAt: 3 };
-  for (const outgoingHistoryMode of ['minimized', 'recoverable', undefined]) {
+    ownerCommitment: new Uint8Array(32).fill(9), hpkePublicKey: new Uint8Array(32).fill(10) }, 'tskpay_'), fingerprint: 'ABCD EF01 2345 6789 ABCD EF01 2345 6789', lastUsedAt: 3 };
+  for (const outgoingHistoryMode of ['minimized', 'recoverable']) {
     const { driver, state } = await fixture({ notes: [{ ...note, status: 'reserved', reservedAt: 1 }], pendingActions: [{ ...pending, outgoingHistoryMode }] });
     const updated = await storage.recordPrivateRecentRecipient(context, key, state.revision, recipient, driver, pending.id);
     assert.equal(updated.recentPrivateRecipients?.length ?? 0, outgoingHistoryMode === 'minimized' ? 0 : 1);
@@ -136,30 +136,11 @@ test('minimized payments do not append a recent private recipient even if a call
   }
 });
 
-test('obsolete relay consent blocks history changes only until safe consent retirement', async () => {
-  const notes = [5, 6, 7].map((byte, index) => ({ ...note, id: hex(String(byte)), commitment: hex(String(byte)), leafIndex: BigInt(index) }));
-  // Historical consent loaded from encrypted state, not created by a live planner.
-  const plan = { amountAtomic: '25', perStepMaxPrivateFeeAtomic: '1', cumulativeMaxPrivateFeeAtomic: '2', steps: 2,
-    inputNotes: notes.map(({ id, commitment, value }) => ({ id, commitment, value })),
-    merges: [{ left: 'note:' + notes[0].id, right: 'note:' + notes[1].id, output: 'merge:0', minimumOutputValue: '19', maximumOutputValue: '20' }],
-    finalInputs: ['merge:0', 'note:' + notes[2].id] };
-  const approval = { id: 'legacy-chain', submissionMode: 'relay',
-    contextKey: stringifyPrivateIndices([context.accountId, context.networkId, context.realmId, context.poolId, context.deploymentBindingHash, assetContractId]),
-    assetContractId, assetIndex: 0, draft: { kind: 'transfer', amount: '25', recipientAddress: 'synthetic-destination' },
-    plan, steps: 2, perStepMaxFeeStroops: '1000', cumulativeMaxFeeStroops: '2000', expiresAtSeconds: 2_000_000_000 };
-  const { driver, state } = await fixture({ notes,
-    relayChainedApproval: { approval, authorized: [], privateFeeAtomic: '0', networkFeeStroops: '0', selfAddresses: [] } });
-  await assert.rejects(storage.recordPrivateOutgoingHistoryMode(context, key, state.revision, 'minimized', { acknowledgeRecoveryLoss: true }, driver), /approval|pending/i);
-  const retired = await storage.retireLegacyPrivateRelayConsent(context, key, driver);
-  assert.deepEqual(retired.notes, notes);
-  const changed = await storage.recordPrivateOutgoingHistoryMode(context, key, retired.revision, 'minimized', { acknowledgeRecoveryLoss: true }, driver);
-  assert.equal(changed.outgoingHistoryMode, 'minimized');
-});
 
 test('invalid encrypted history modes fail local load and backup preparation, including pending and build snapshots', async () => {
   const { driver, state } = await fixture();
   const archive = await exportPrivateBalanceBackupArchive(driver);
-  for (const mode of [null, false, '', 'off']) for (const location of ['preference', 'pending', 'build']) {
+  for (const mode of [undefined, null, false, '', 'off']) for (const location of ['preference', 'pending', 'build']) {
     const malformed = structuredClone(archive);
     const record = malformed.records[0];
     const envelope = JSON.parse(record.value);
@@ -181,7 +162,7 @@ test('the real action flow snapshots outgoing mode before worker construction, i
   t.mock.method(PrivateBalanceArchiveClient.prototype, 'readDepositsPaused', async () => false);
   t.mock.method(PrivateBalanceArchiveClient.prototype, 'readAssetBalance', async () => 100_000_000n);
   const sources = ['GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF', Keypair.fromRawEd25519Seed(new Uint8Array(32).fill(9)).publicKey()];
-  for (const accountPublicKey of sources) for (const outgoingHistoryMode of [undefined, 'recoverable', 'minimized']) {
+  for (const accountPublicKey of sources) for (const outgoingHistoryMode of ['recoverable', 'minimized']) {
     const { driver } = await fixture({ outgoingHistoryMode, account: { setupState: 'ready', syncStatus: 'current', lastVerifiedActionIndex: 0n, updatedAt: 1 } });
     let builds = 0;
     await assert.rejects(preparePrivateBalanceActionFlow({ manifest: { assets: [{ index: 0, contractId: assetContractId }] },

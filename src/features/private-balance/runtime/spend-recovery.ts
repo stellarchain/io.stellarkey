@@ -6,7 +6,7 @@ export const MAX_PRIVATE_RECOVERY_ATTEMPTS = 32;
 export function selectPrivateRecoveryInputs(state: PrivateBalanceDurableState, actionId: string, assetContractId: string) {
   const pending = state.pendingActions.find(action => action.id === actionId);
   if (!pending || !hasExposedPrivateSpend(pending) || pending.assetContractId !== assetContractId ||
-    state.pendingActions.length !== 1 || state.buildReservations.length !== 0 || state.chainedApproval || state.relayChainedApproval) {
+    state.pendingActions.length !== 1 || state.buildReservations.length !== 0 || state.chainedApproval) {
     throw new Error('This held private payment is not available for recovery. Check for new activity first.');
   }
   const notes = pending.reservedNoteIds.map(id => state.notes.find(note => note.id === id));
@@ -26,7 +26,7 @@ export function assertPrivateRecoveryReplacement(original: PrivatePendingAction,
     new Set(replacement.nullifiers).size !== 2 || replacement.nullifiers.some(value => /^0+$/.test(value)) ||
     // Input lanes may be shuffled; a one-input proof has a fresh dummy nullifier.
     replacement.nullifiers.filter(value => original.nullifiers.includes(value)).length < original.reservedNoteIds.length ||
-    replacement.relayChain || replacement.directChainApprovalId) {
+    replacement.directChainApprovalId) {
     throw new Error('Private recovery proof does not spend exactly the held inputs back to this wallet.');
   }
 }

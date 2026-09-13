@@ -85,10 +85,10 @@ export interface PendingTransaction {
 }
 
 /**
- * Old recovery records may predate exact envelope max-time persistence. Keep
- * their automatic canonical polling bounded, then require an explicit check.
+ * Stellar envelopes may have no maximum time bound. Keep automatic canonical
+ * polling bounded for those current transactions, then require an explicit check.
  */
-export const LEGACY_PENDING_AUTO_POLL_MS = 10 * 60 * 1_000;
+export const PENDING_AUTO_POLL_MS = 10 * 60 * 1_000;
 
 export type TransactionResolutionStatus = "confirmed" | "failed";
 
@@ -262,7 +262,7 @@ export function pendingTransactionNeedsManualCheck(
   if (transaction.expiresAt !== undefined) {
     return transaction.expiresAt * 1_000 <= nowMs;
   }
-  return nowMs - transaction.createdAt >= LEGACY_PENDING_AUTO_POLL_MS;
+  return nowMs - transaction.createdAt >= PENDING_AUTO_POLL_MS;
 }
 
 export function pendingTransactionPresentation(
@@ -274,13 +274,13 @@ export function pendingTransactionPresentation(
 ): PendingTransactionPresentation {
   const networkLabel = transaction.network === "mainnet" ? "Mainnet" : "Testnet";
   const manualCheck = pendingTransactionNeedsManualCheck(transaction, nowMs);
-  const legacyExpiry = manualCheck && transaction.expiresAt === undefined;
+  const unboundedEnvelope = manualCheck && transaction.expiresAt === undefined;
   if (transaction.status === "status_unknown") {
     return {
       title: `${transaction.label} status unknown`,
       detail: manualCheck
-        ? legacyExpiry
-          ? `This legacy recovery record has no exact envelope expiry. Automatic checks stopped after a bounded interval on ${networkLabel}. Do not resubmit blindly. Use Check Status for a bounded canonical-hash lookup.`
+        ? unboundedEnvelope
+          ? `This envelope has no maximum expiry. Automatic checks stopped after a bounded interval on ${networkLabel}. Do not resubmit blindly. Use Check Status for a bounded canonical-hash lookup.`
           : `The envelope expired before Horizon status could be verified on ${networkLabel}. Do not resubmit blindly. Use Check Status for a bounded canonical-hash lookup.`
         : `Horizon did not confirm whether this transaction was accepted on ${networkLabel}. Do not resubmit blindly. Tracking canonical hash ${transaction.hash}.`,
       caution: true,
@@ -739,7 +739,7 @@ export async function reconcileMergeRecovery(
   const hasKnownExpiry = record.expiresAt !== undefined;
   const expired = hasKnownExpiry && record.expiresAt! * 1000 <= nowMs;
 
-  // A durable-only legacy record has no expiry proof. Check once by canonical
+  // An envelope without a maximum time bound has no expiry proof. Check once by canonical
   // hash, then require a manual retry if Horizon cannot establish finality.
   if (expired || !hasKnownExpiry) {
     let status: CanonicalLookupStatus;

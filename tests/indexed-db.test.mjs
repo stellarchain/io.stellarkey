@@ -321,7 +321,7 @@ test("unsupported merchant integrity ordering is rejected without resealing reco
   globalThis.window = { localStorage: memoryStorage() };
   const driver = new MemoryRecordDriver();
   const repository = new MerchantRepository(driver);
-  const order = (index) => ({
+  const order = (index) => ({ shiftId: null,
     id: `locale-order-${index}`,
     number: 10_000 + index,
     reference: `LOCALE${index}`,
@@ -400,7 +400,7 @@ test("IndexedDB commits preserve unlimited merchant retention", async () => {
   const driver = new MemoryRecordDriver();
   const repository = new MerchantRepository(driver);
   const old = Date.now() - 900 * 86_400_000;
-  const oldOrder = {
+  const oldOrder = { shiftId: null,
     id: "old-order",
     number: 1001,
     reference: "OLD1001",
@@ -448,7 +448,7 @@ test("record-level commits rewrite only metadata and the changed history record"
   globalThis.window = { localStorage: memoryStorage() };
   const driver = new MemoryRecordDriver();
   const repository = new MerchantRepository(driver);
-  const order = (index) => ({
+  const order = (index) => ({ shiftId: null,
     id: `order-${index}`,
     number: 1000 + index,
     reference: `ORDER${index}`,
