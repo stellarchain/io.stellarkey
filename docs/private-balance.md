@@ -4,7 +4,7 @@
 - **Contact:** support@stellarkey.io
 - **Protocol:** V2 capacity-independent full-input exits
 - **Application version:** StellarKey 1.5.1
-- **Implementation baseline:** `f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084` (implementation revision on `release/1.5.1-review`; artifact identities in §16)
+- **Implementation baseline:** `4cdf575b60e350cc6a15e8022822292a35e04d16` (implementation revision on `release/1.5.1-review`; artifact identities in §16)
 - **Implementation status:** Live Testnet development deployment; validation scope and dates in §17; not for real value
 - **Document revision:** 2026-09-13
 
@@ -1090,8 +1090,11 @@ revision is made available.
 ## 17. Deployment and trust status
 
 This is a Live Testnet development deployment. The authenticated deployment
-catalogue advertises one live XLM/USDC development pool on Testnet,
-`CAYCV26VCDNUEM6HHKQYHKDJ3O43CK5DCBT3TMMHFVEXE7CIFVWRY4R7`. XLM is registry index 0 and USDC index 1. The September 13
+catalogue advertises one live XLM/USDC development pool on Testnet:
+
+`CAYCV26VCDNUEM6HHKQYHKDJ3O43CK5DCBT3TMMHFVEXE7CIFVWRY4R7`.
+
+XLM is registry index 0 and USDC index 1. The September 13
 replacement was deployed from a fresh synthetic Testnet account, with deployment
 checkpoint ledger 4,647,256 and post-registry ledger
 4,647,258. Configuration, registered assets, unpaused
@@ -1107,8 +1110,28 @@ file hash alone does not establish the on-chain executable. A separate public re
 executable through the SDF and Ankr RPCs at ledger 4,647,534. Both returned the
 Pool Wasm hash in §16; see
 [capacity-v2-executable.json](../protocol/private-balance/results/capacity-v2-executable.json).
-This read establishes an observed executable match, not a funded lifecycle or
-a locally verified consensus proof. The historical browser run in
+This read establishes an observed executable match, not a locally verified
+consensus proof.
+
+A separate isolated XLM lifecycle on September 13 confirmed a deposit at ledger
+4,647,770, a self-transfer at 4,647,776, and FullInputExit at 4,647,785. All three
+used the deployed Wasm and locally verified Groth16 proofs. After each confirmation,
+the real archive reader and scanner rebuilt the canonical transcript from genesis.
+The exit advanced the action index by one and left the root and leaf count
+unchanged; the final full-history scan found no unspent test note. Keys and proof
+inputs remained in the test process; this was a command-line synthetic test, not
+a browser-wallet or USDC test, and it did not saturate the live tree.
+
+The pre-submission minimum resource-fee estimates were 7,592,212, 7,862,967 and
+7,959,352 stroops respectively. Each was below the application's 10,000,000-stroop
+cap. These are dated Testnet estimates excluding the separate classic inclusion
+fee, not realized net charges, fixed tariffs or throughput measurements. Evidence
+and the bounded runner are
+[capacity-testnet-lifecycle.json](../protocol/private-balance/results/capacity-testnet-lifecycle.json)
+and [run-capacity-testnet.mjs](../protocol/private-balance/spikes/scripts/run-capacity-testnet.mjs).
+The runner requires `--testnet-synthetic` and starts with fresh test keys.
+
+The historical browser run in
 [mvp-e2e.json](../protocol/private-balance/results/mvp-e2e.json), at `7424bb2`,
 is not a new end-to-end validation of V2. Its manifest was
 `222e2028be15d94311751d38aaebadb03c9ef53cc76a19e72cdcf0b3fd01be9f`.
@@ -1133,8 +1156,9 @@ The application is deliberately Testnet-only and Mainnet rejects this feature.
 A Testnet reset deletes the pool and requires a redeploy, new evidence and new
 manifest hashes. Real-value promotion additionally needs independent circuit and
 contract review, a reviewed multi-party Phase 2 ceremony and transcript,
-reproducible builds, measured complete Wasm actions and fees, funded lifecycle and
-recovery drills, and physical-device and human assistive-technology checks.
+reproducible builds, broader Wasm resource/fee evaluation, funded multi-asset
+lifecycle and recovery drills, and physical-device and human assistive-technology
+checks. The isolated XLM lifecycle above addresses only its stated scenario.
 Commitment saturation is addressed by the full-input exit relation, while
 archive growth, finite counters, partial-change capacity, underlying asset
 solvency/authorization and network availability remain explicit limitations.

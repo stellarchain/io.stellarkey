@@ -3,7 +3,7 @@
 Requested scope: fix private commitment capacity, replace the Testnet pool with
 fresh state, default to Dark, and restore/update an arXiv-style manuscript.
 The original checkout is preserved. Review branch: `release/1.5.1-review`.
-Implementation revision: `f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084`.
+Implementation revision: `4cdf575b60e350cc6a15e8022822292a35e04d16`.
 The original baseline is `561f716627debab6e72c72c57b1966e572fc3456`.
 
 ## Implemented
@@ -62,7 +62,7 @@ verification, private UI, the full synthetic component matrix, fixture cleanup,
 production build/bundle gates and public browser checks. A focused pass is not a
 substitute for this command. No release tag or application deployment is implied.
 
-Funded V2 lifecycle/fee evidence, independent circuit/contract audit, public
+Broader funded multi-asset lifecycle/fee evidence, independent circuit/contract audit, public
 Phase 2 ceremony, physical-phone testing and human VoiceOver/NVDA evidence are
 not supplied by the automated application gate. The live-wallet browser runner
 correctly blocks usable-wallet sessions because it cannot disable failure DOM
@@ -73,3 +73,15 @@ exits. It does not provide unlimited storage, constant-cost cold recovery,
 change-producing withdrawals at a full tree, unconditional token redeemability,
 or unconditional ledger availability. The deployment remains Testnet development
 and is not approved for real value or Mainnet.
+
+A fresh isolated command-line XLM lifecycle confirmed deposit, self-transfer and
+full-input exit at ledgers 4,647,770 / 4,647,776 / 4,647,785. Full archive scans
+agreed after every transaction; the exit advanced one action with zero leaves
+and unchanged root. The paper records the dated fee estimates and exact scope.
+The maintained runner requires an explicit Testnet flag and never persists keys,
+proof inputs, notes, XDR, wallet addresses or transaction hashes.
+
+The next complete component run passed 631 of 632 tests; one contrast audit
+sampled a menu entrance animation. The check now waits for finite entrance
+animations; ten repeated Chromium/WebKit checks pass. Restart the complete clean
+release command; do not count the interrupted run as a full pass.
