@@ -1,6 +1,6 @@
 use crate::constants::{DOMAIN_ARCHIVE_GENESIS, DOMAIN_ARCHIVE_RECORD};
 use crate::encoding::{
-    encode_domain, encode_optional_address, encode_u16_be, encode_u32_be, encode_u64_be,
+    encode_domain, encode_optional_address, encode_u16_be, encode_u32_be, encode_u64_be, encode_u128_be,
 };
 use crate::encryption::OutputPackage;
 use alloc::vec::Vec;
@@ -8,9 +8,9 @@ use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArchiveRecord {
-    pub action_index: u32,
+    pub action_index: u128,
     pub ledger_sequence: u32,
-    pub starting_leaf_index: u32,
+    pub starting_leaf_index: u128,
     pub action_kind: u8,
     pub asset_index: Option<u32>,
     pub asset: Option<(u8, [u8; 32])>,
@@ -33,9 +33,9 @@ impl ArchiveRecord {
         let mut buf = Vec::new();
         encode_domain(DOMAIN_ARCHIVE_RECORD, &mut buf);
         encode_u16_be(protocol_version, &mut buf);
-        encode_u32_be(self.action_index, &mut buf);
+        encode_u128_be(self.action_index, &mut buf);
         encode_u32_be(self.ledger_sequence, &mut buf);
-        encode_u32_be(self.starting_leaf_index, &mut buf);
+        encode_u128_be(self.starting_leaf_index, &mut buf);
         buf.push(self.action_kind);
         encode_optional_address(self.asset, &mut buf).unwrap();
         encode_u32_be(self.asset_index.unwrap_or(0), &mut buf);

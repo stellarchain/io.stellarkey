@@ -28,7 +28,7 @@ export interface PrivatePortfolioEntry {
   asset: PrivateBalanceAsset;
   verifiedBalanceAtomicUnits: string;
   lastVerifiedLedger: number | null;
-  lastVerifiedActionIndex: number | null;
+  lastVerifiedActionIndex: bigint | null;
   activities: ShieldedActivityRecord[];
   pendingActions: PrivatePendingAction[];
 }

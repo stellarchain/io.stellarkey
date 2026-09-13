@@ -26,9 +26,9 @@ async function legacyFixture(mode = 'relay', status = 'reviewed') {
       encrypted = value; return { ok: true, current: value };
     },
   };
-  const notes = [1, 2, 3].map(n => ({ id: hex(n), commitment: hex(n), value: '4', leafIndex: n,
+  const notes = [1, 2, 3].map(n => ({ id: hex(n), commitment: hex(n), value: '4', leafIndex: BigInt(n),
     assetContractId: ASSET, assetIndex: 0, status: n < 3 ? 'reserved' : 'unspent', ...(n < 3 ? { reservedAt: 1 } : {}),
-    diversifier: '00000000', ownerCommitment: hex(5), actionIndex: 0, rho: hex(6), memoHex: '', senderFingerprintHex: '', createdAt: 1 }));
+    diversifier: '00000000', ownerCommitment: hex(5), actionIndex: 0n, rho: hex(6), memoHex: '', senderFingerprintHex: '', createdAt: 1 }));
   const approval = { id: 'legacy-chain', submissionMode: 'relay',
     contextKey: JSON.stringify([context.accountId, context.networkId, context.realmId, context.poolId, context.deploymentBindingHash, ASSET]),
     assetContractId: ASSET, assetIndex: 0, draft: { kind: 'transfer', amount: '10', recipientAddress: 'synthetic-final' },

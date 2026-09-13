@@ -93,7 +93,7 @@ export interface PrivateBalanceDeploymentSummary {
   auditStatus: 'not-recorded' | 'recorded';
   ceremonyStatus: 'not-recorded' | 'recorded';
   depositsPaused: boolean | null;
-  actionCount: number | null;
+  actionCount: bigint | null;
   pageCount: number | null;
   latestLedger: number | null;
   recoveryEvidence: PrivateBalanceRecoveryEvidence | null;
@@ -115,11 +115,11 @@ export interface PrivateBalanceRuntimeDataValue {
   configured: boolean;
   isLeader: boolean;
   backgroundSyncing: boolean;
-  syncProgress: { current: number; total: number } | null;
+  syncProgress: { current: bigint; total: bigint } | null;
   verifiedBalanceStroops: string;
-  lastVerifiedActionIndex: number | null;
+  lastVerifiedActionIndex: bigint | null;
   error: string | null;
-  restoreRequiredActionIndex: number | null;
+  restoreRequiredActionIndex: bigint | null;
   deployment: PrivateBalanceDeploymentSummary;
   privateAddress: string | null;
   /** In-memory vault session that authenticated the published receive identity. */

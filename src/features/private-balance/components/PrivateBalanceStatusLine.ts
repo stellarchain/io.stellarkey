@@ -20,7 +20,7 @@ export interface PrivateStatusLine {
 export function privateBalanceStatusLine(input: {
   phase: PrivateBalanceRuntimePhase;
   backgroundSyncing: boolean;
-  syncProgress: { current: number; total: number } | null;
+  syncProgress: { current: bigint; total: bigint } | null;
   error: string | null;
   depositsPaused: boolean | null;
 }): PrivateStatusLine | null {

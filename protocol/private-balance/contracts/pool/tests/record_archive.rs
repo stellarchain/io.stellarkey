@@ -73,7 +73,7 @@ fn actions_are_written_once_as_independent_archive_records() {
                 &action,
                 Some(&asset),
                 &signals,
-                u64::from(index) * 3,
+                u128::from(index) * 3,
                 &BytesN::from_array(&env, &[index as u8 + 1; 32]),
                 Some(&fixture.guardian),
             )

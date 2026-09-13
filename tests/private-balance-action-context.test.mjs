@@ -92,7 +92,7 @@ async function setupWatcher(t) {
   Object.assign(h.state, {
     outgoingHistoryMode: 'recoverable', notes: [], activities: [],
     recentPrivateRecipients: [], spendRecovery: null,
-    account: { lastVerifiedActionIndex: 0 },
+    account: { lastVerifiedActionIndex: 0n },
   });
   h.state.pendingActions[0].status = 'ambiguous';
   Object.assign(h.calls, { lookup: 0, read: 0, recover: 0, commit: 0, publication: 0 });

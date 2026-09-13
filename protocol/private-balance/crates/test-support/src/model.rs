@@ -18,7 +18,7 @@ pub struct ModelContext {
 
 impl ModelContext {
     pub fn context_hash(&self) -> [u8; 32] {
-        compute_context_hash(1, &self.network_id, &self.realm_id, &self.pool_id)
+        compute_context_hash(2, &self.network_id, &self.realm_id, &self.pool_id)
     }
 
     pub fn genesis_record_hash(&self) -> [u8; 32] {
@@ -112,7 +112,7 @@ impl PoolModel {
                 }
                 current_asset_balance
             }
-            ActionKind::Withdraw => {
+            ActionKind::Withdraw | ActionKind::FullInputExit => {
                 if action.public_value == 0 || action.public_value > current_asset_balance {
                     return Err("Invalid withdrawal value".into());
                 }
@@ -129,10 +129,9 @@ impl PoolModel {
             }
         }
 
-        let starting_leaf_index = u32::try_from(self.tree.next_leaf_index)
-            .map_err(|_| "Starting leaf index exceeds u32".to_string())?;
+        let starting_leaf_index = self.tree.next_leaf_index;
         let mut next_tree = self.tree.clone();
-        let root_after = match tree_hash_context {
+        let root_after = if action.kind == ActionKind::FullInputExit { Ok(next_tree.root) } else { match tree_hash_context {
             Some(context) => context.append_three_commitments(
                 &mut next_tree,
                 &action.outputs.clone().map(|output| output.cm),
@@ -141,11 +140,10 @@ impl PoolModel {
                 next_tree.append_three_commitments(&action.outputs.clone().map(|output| output.cm))
             }
         }
-        .map_err(|error| format!("{error:?}"))?;
+        }.map_err(|error| format!("{error:?}"))?;
 
         let rec = ArchiveRecord {
-            action_index: u32::try_from(self.records.len())
-                .map_err(|_| "Action count exceeds u32".to_string())?,
+            action_index: self.records.len() as u128,
             ledger_sequence,
             starting_leaf_index,
             action_kind: action.kind as u8,

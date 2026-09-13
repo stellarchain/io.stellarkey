@@ -51,11 +51,11 @@ fn main() {
         let realm_id = random_bytes(&mut rng);
         let pool_id = random_bytes(&mut rng);
         let account_public_key = random_bytes(&mut rng);
-        let context_hash = compute_context_hash(1, &network_id, &realm_id, &pool_id);
+        let context_hash = compute_context_hash(2, &network_id, &realm_id, &pool_id);
         let context_field = compute_context_field(&context_hash);
         let keys = derive_keys_from_seed(
             &raw_seed,
-            1,
+            2,
             &network_id,
             &realm_id,
             &pool_id,

@@ -454,7 +454,7 @@ test("backup inspection recovers archived-account private state and warns on unk
   const rawSeed = new Uint8Array(StrKey.decodeEd25519SecretSeed(archived.secret()));
   const sessionRoot = derivePrivacySessionRoot(
     rawSeed,
-    1,
+    2,
     Buffer.from(context.networkId, "hex"),
     Buffer.from(context.realmId, "hex"),
     Buffer.from(context.poolId, "hex"),

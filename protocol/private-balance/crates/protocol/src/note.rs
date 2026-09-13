@@ -177,11 +177,11 @@ pub fn compute_nullifier(
     context_field: &[u8; 32],
     nk: &[u8; 32],
     rho: &[u8; 32],
-    leaf_index: u32,
+    leaf_index: u128,
     cm: &[u8; 32],
 ) -> [u8; 32] {
     let mut idx_field = [0u8; 32];
-    idx_field[28..32].copy_from_slice(&leaf_index.to_be_bytes());
+    idx_field[16..32].copy_from_slice(&leaf_index.to_be_bytes());
     p2(
         DOMAIN_NULLIFIER,
         &[*context_field, *nk, *rho, idx_field, *cm],

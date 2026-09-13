@@ -1,4 +1,4 @@
-import { encodeDomain, encodeU16Be, encodeU32Be, encodeU64Be } from './encoding.js';
+import { encodeDomain, encodeU16Be, encodeU32Be, encodeU64Be, encodeU128Be } from './encoding.js';
 import { equalBytes, sha256Bytes } from './hash.js';
 import { appendFrontier, refreshTreeRoot } from './tree.js';
 export const DOMAIN_ARCHIVE_RECORD = 'SKSB_ARCHIVE_RECORD_V1';
@@ -20,7 +20,9 @@ function requireLength(name, bytes, length) {
         throw new Error(`${name} must be ${length} bytes`);
 }
 function requireRecordWidths(record) {
-    const boundary = record.actionKind === 1 || record.actionKind === 3;
+    if (![1, 2, 3, 4].includes(record.actionKind))
+        throw new Error('Invalid archive action kind');
+    const boundary = record.actionKind === 1 || record.actionKind === 3 || record.actionKind === 4;
     if (boundary !== (record.asset !== undefined && record.assetIndex !== undefined)) {
         throw new Error('Archive boundary asset shape is invalid');
     }
@@ -58,9 +60,9 @@ export function computeRecordHash(record, protocolVersion, priorRecordHash) {
     const bytes = [];
     encodeDomain(DOMAIN_ARCHIVE_RECORD, bytes);
     encodeU16Be(protocolVersion, bytes);
-    encodeU32Be(record.actionIndex, bytes);
+    encodeU128Be(record.actionIndex, bytes);
     encodeU32Be(record.ledgerSequence, bytes);
-    encodeU32Be(record.startingLeafIndex, bytes);
+    encodeU128Be(record.startingLeafIndex, bytes);
     bytes.push(record.actionKind);
     encodeOptionalAddress(record.asset, bytes);
     encodeU32Be(record.assetIndex ?? 0, bytes);
@@ -85,6 +87,7 @@ export function computeGenesisRecordHash(contextHash, deploymentBindingHash) {
     return sha256Bytes(Uint8Array.from(bytes));
 }
 export async function applyArchiveRecord(tree, record) {
+    requireRecordWidths(record);
     if (record.startingLeafIndex !== tree.nextIndex)
         throw new Error('Archive leaf position mismatch');
     const nextTree = {
@@ -92,9 +95,11 @@ export async function applyArchiveRecord(tree, record) {
         frontier: tree.frontier.map(node => node.slice()),
         currentRoot: tree.currentRoot.slice(),
     };
-    for (const output of record.outputs)
-        await appendFrontier(nextTree, output.cm);
-    const root = await refreshTreeRoot(nextTree);
+    if (record.actionKind !== 4) {
+        for (const output of record.outputs)
+            await appendFrontier(nextTree, output.cm);
+    }
+    const root = record.actionKind === 4 ? nextTree.currentRoot.slice() : await refreshTreeRoot(nextTree);
     if (!equalBytes(root, record.treeRootAfter))
         throw new Error('Archive tree root mismatch');
     tree.nextIndex = nextTree.nextIndex;

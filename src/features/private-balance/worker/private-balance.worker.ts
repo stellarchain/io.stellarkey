@@ -243,6 +243,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
             accountAddress: { kind: 0, payload: keyContext.accountPublicKey },
           },
           expectedPriorRecordHash: req.expectedPriorRecordHash,
+          expectedFirstActionIndex: req.expectedFirstActionIndex,
           initialTree: req.initialTree,
           existingNotes: req.existingNotes,
           ledgerClosedAt: req.ledgerClosedAt,

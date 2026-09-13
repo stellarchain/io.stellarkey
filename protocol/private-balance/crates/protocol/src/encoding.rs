@@ -24,6 +24,10 @@ pub fn encode_u64_be(val: u64, out: &mut Vec<u8>) {
     out.extend_from_slice(&val.to_be_bytes());
 }
 
+pub fn encode_u128_be(val: u128, out: &mut Vec<u8>) {
+    out.extend_from_slice(&val.to_be_bytes());
+}
+
 pub fn encode_domain(label: &str, out: &mut Vec<u8>) {
     let bytes = label.as_bytes();
     encode_u16_be(bytes.len() as u16, out);

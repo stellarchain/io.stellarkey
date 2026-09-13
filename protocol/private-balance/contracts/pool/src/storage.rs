@@ -43,7 +43,7 @@ pub struct AssetConfig {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TreeStorage {
-    pub next_index: u64,
+    pub next_index: u128,
     pub frontier: Vec<BytesN<32>>,
     pub current_root: BytesN<32>,
 }
@@ -69,7 +69,7 @@ pub enum DataKey {
     Meta,
     Nullifier(BytesN<32>),
     KnownRoot(BytesN<32>),
-    ArchiveRecord(u32),
+    ArchiveRecord(u128),
 }
 
 pub fn get_asset_admin(env: &Env) -> Option<Address> {
@@ -222,14 +222,14 @@ pub fn add_known_root(
     Ok(value)
 }
 
-pub fn get_archive_record(env: &Env, action_index: u32) -> Option<ArchiveRecord> {
+pub fn get_archive_record(env: &Env, action_index: u128) -> Option<ArchiveRecord> {
     let key = DataKey::ArchiveRecord(action_index);
     env.storage().persistent().get(&key)
 }
 
 pub fn set_archive_record(
     env: &Env,
-    action_index: u32,
+    action_index: u128,
     record: &ArchiveRecord,
 ) -> Result<(), PoolError> {
     let key = DataKey::ArchiveRecord(action_index);

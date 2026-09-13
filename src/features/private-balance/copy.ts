@@ -306,8 +306,8 @@ export const WHAT_STAYS_PUBLIC = {
 /** Ambient status line copy, keyed by what the wallet is doing. */
 export const STATUS_LINE = {
   gettingReady: 'Getting ready…',
-  updating: (done: number, total: number) =>
-    total > 1 ? `Updating… ${Math.min(done, total)} of ${total}` : 'Updating…',
+  updating: (done: number | bigint, total: number | bigint) =>
+    total > 1 ? `Updating… ${(done < total ? done : total)} of ${total}` : 'Updating…',
   restoreNeeded: 'Action needed · Restore access',
   restoring: (step: number, total: number) => `Restoring… step ${step} of ${total}`,
   statusUnknown: 'Status unknown · last checked balance unchanged',

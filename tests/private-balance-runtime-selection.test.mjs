@@ -483,7 +483,7 @@ test('private portfolio immediately inserts a newly configured asset and later u
     },
     verifiedBalanceAtomicUnits: '0',
     lastVerifiedLedger: 4_500_000,
-    lastVerifiedActionIndex: 0,
+    lastVerifiedActionIndex: 0n,
     activities: [],
     pendingActions: [],
   };
@@ -517,7 +517,7 @@ test('private asset selection retains its verified balance while the runtime hyd
     asset,
     verifiedBalanceAtomicUnits: '25000000',
     lastVerifiedLedger: 4_500_001,
-    lastVerifiedActionIndex: 12,
+    lastVerifiedActionIndex: 12n,
     activities: [],
     pendingActions: [],
   };
@@ -559,15 +559,15 @@ test('private portfolio restores an already-scanned incoming memo from its encry
     durable: {
       notes: [{
         value: '25000000', status: 'unspent', assetContractId: contractId,
-        actionIndex: 7, memoHex,
+        actionIndex: 7n, memoHex,
       }],
       activities: [{
-        id: 'received', actionIndex: 7, actionKind: 'transfer', amount: '25000000',
+        id: 'received', actionIndex: 7n, actionKind: 'transfer', amount: '25000000',
         direction: 'inflow', timestamp: 1_700_000_000_000,
         assetContractId: contractId, nullifiers: [], outputCommitments: [],
       }],
       pendingActions: [],
-      checkpoint: { lastActionIndex: 7, latestLedger: 4_500_001 },
+      checkpoint: { lastActionIndex: 7n, latestLedger: 4_500_001 },
     },
   }]);
 
@@ -594,7 +594,7 @@ test('asset-pinned pool updates preserve unrelated private balances', async () =
     asset: selectedAsset,
     verifiedBalanceAtomicUnits: balance,
     lastVerifiedLedger: 4_500_001,
-    lastVerifiedActionIndex: 12,
+    lastVerifiedActionIndex: 12n,
     activities: [],
     pendingActions: [],
   });
@@ -647,7 +647,7 @@ test('private portfolio representative value prices configured XLM and USDC with
     },
     verifiedBalanceAtomicUnits: value,
     lastVerifiedLedger: 1,
-    lastVerifiedActionIndex: 0,
+    lastVerifiedActionIndex: 0n,
     activities: [],
     pendingActions: [],
   });
@@ -684,13 +684,13 @@ test('configured private activity normalizes into explicit bank-style wallet act
       name: 'USD Coin', decimals: 7, displayDecimals: 7,
       contractId: `C${'A'.repeat(55)}`,
     },
-    verifiedBalanceAtomicUnits: '0', lastVerifiedLedger: 20, lastVerifiedActionIndex: 3,
+    verifiedBalanceAtomicUnits: '0', lastVerifiedLedger: 20, lastVerifiedActionIndex: 3n,
     pendingActions: [],
     activities: [
-      { id: 'deposit', actionIndex: 1, actionKind: 'deposit', amount: '25000000', direction: 'inflow', timestamp: 1_700_000_000_000, nullifiers: [], outputCommitments: [] },
-      { id: 'send', actionIndex: 2, actionKind: 'transfer', amount: '5000000', direction: 'outflow', timestamp: 1_700_000_001_000, nullifiers: [], outputCommitments: [], memoHex: Buffer.from('invoice 42').toString('hex'), recipientFingerprint: 'ABCD 1234' },
-      { id: 'receive', actionIndex: 3, actionKind: 'transfer', amount: '10000000', direction: 'inflow', timestamp: 1_700_000_002_000, nullifiers: [], outputCommitments: [], memoHex: Buffer.from('thank you').toString('hex') },
-      { id: 'withdraw', actionIndex: 4, actionKind: 'withdraw', amount: '7500000', direction: 'outflow', timestamp: 1_700_000_003_000, nullifiers: [], outputCommitments: [] },
+      { id: 'deposit', actionIndex: 1n, actionKind: 'deposit', amount: '25000000', direction: 'inflow', timestamp: 1_700_000_000_000, nullifiers: [], outputCommitments: [] },
+      { id: 'send', actionIndex: 2n, actionKind: 'transfer', amount: '5000000', direction: 'outflow', timestamp: 1_700_000_001_000, nullifiers: [], outputCommitments: [], memoHex: Buffer.from('invoice 42').toString('hex'), recipientFingerprint: 'ABCD 1234' },
+      { id: 'receive', actionIndex: 3n, actionKind: 'transfer', amount: '10000000', direction: 'inflow', timestamp: 1_700_000_002_000, nullifiers: [], outputCommitments: [], memoHex: Buffer.from('thank you').toString('hex') },
+      { id: 'withdraw', actionIndex: 4n, actionKind: 'withdraw', amount: '7500000', direction: 'outflow', timestamp: 1_700_000_003_000, nullifiers: [], outputCommitments: [] },
     ],
   }];
   const items = privatePortfolioActivityItems(entries);
@@ -706,7 +706,7 @@ test('configured private activity normalizes into explicit bank-style wallet act
     credit: { amount: '2.5000000', assetCode: 'USDC', assetIssuer: `G${'A'.repeat(55)}`, balance: 'private' },
   });
   assert.equal(items[0].private?.deploymentId, 'testnet-usdc-v1');
-  assert.equal(items[0].private?.actionIndex, 4);
+  assert.equal(items[0].private?.actionIndex, 4n);
   assert.equal(items[1].private?.memoHex, Buffer.from('thank you').toString('hex'));
   assert.equal(items[2].private?.memoHex, Buffer.from('invoice 42').toString('hex'));
   assert.equal(items[2].private?.recipientFingerprint, 'ABCD 1234');
@@ -795,7 +795,7 @@ test('broadcast private actions remain visible as pending wallet activity', asyn
       name: 'Stellar Lumens', decimals: 7, displayDecimals: 7,
       contractId: `C${'A'.repeat(55)}`,
     },
-    verifiedBalanceAtomicUnits: '25000000', lastVerifiedLedger: 20, lastVerifiedActionIndex: 3,
+    verifiedBalanceAtomicUnits: '25000000', lastVerifiedLedger: 20, lastVerifiedActionIndex: 3n,
     activities: [],
     pendingActions: [{
       id: 'withdraw-pending', kind: 'withdraw', assetContractId: `C${'A'.repeat(55)}`,

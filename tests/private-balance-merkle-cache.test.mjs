@@ -1,3 +1,4 @@
+import { stringifyPrivateIndices } from '../src/features/private-balance/runtime/indices.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { MerkleNodeStore } from '@stellarkey/private-balance';
@@ -59,7 +60,7 @@ function expected(checkpoint) {
     deploymentBindingHash: '09'.repeat(32),
     cursor: checkpoint.cursor,
     transcriptHead: hex(checkpoint.transcriptHead),
-    commitmentCount: checkpoint.commitments.length,
+    commitmentCount: BigInt(checkpoint.commitments.length),
     root: hex(checkpoint.store.currentRoot),
     frontier: checkpoint.frontier.map(hex),
   };
@@ -80,11 +81,11 @@ test('incremental Merkle cache appends without reading old commitments and retur
     }
     const { refreshTreeRoot } = await import('@stellarkey/private-balance');
     await refreshTreeRoot(tree);
-    const startIndex = batchIndex === 0 ? 0 : 7;
+    const startIndex = batchIndex === 0 ? 0n : 7n;
     await recordVerifiedPrivateBalanceMerkleBatch(context, {
       deploymentBindingHash: bytes(9),
-      priorCursor: batchIndex,
-      cursor: batchIndex + 1,
+      priorCursor: BigInt(batchIndex),
+      cursor: BigInt(batchIndex + 1),
       transcriptHead: bytes(20 + batchIndex),
       startIndex,
       commitments: batch,
@@ -96,19 +97,19 @@ test('incremental Merkle cache appends without reading old commitments and retur
   driver.reads = [];
   driver.prefixReads = 0;
   const paths = await loadPrivateBalanceMerklePaths(context, expected({
-    cursor: 2,
+    cursor: 2n,
     transcriptHead: bytes(21),
     commitments,
     store,
     frontier: tree.frontier,
-  }), [2, 18], driver);
+  }), [2n, 18n], driver);
   assert.equal(paths.length, 2);
-  for (const [pathIndex, leafIndex] of [2, 18].entries()) {
+  for (const [pathIndex, leafIndex] of [2n, 18n].entries()) {
     const oracle = await store.getPath(leafIndex);
     assert.deepEqual(paths[pathIndex], oracle);
   }
   assert.equal(driver.prefixReads, 0, 'spend paths must not enumerate pool history');
-  assert.ok(driver.reads.length <= 67, `two paths should use bounded reads, got ${driver.reads.length}`);
+  assert.ok(driver.reads.length <= 259, `two paths should use bounded reads, got ${driver.reads.length}`);
 });
 
 test('Merkle cache rejects every authenticated checkpoint field mutation', async () => {
@@ -121,16 +122,16 @@ test('Merkle cache rejects every authenticated checkpoint field mutation', async
   await refreshTreeRoot(tree);
   await recordVerifiedPrivateBalanceMerkleBatch(context, {
     deploymentBindingHash: bytes(9),
-    priorCursor: 0,
-    cursor: 1,
+    priorCursor: 0n,
+    cursor: 1n,
     transcriptHead: bytes(10),
-    startIndex: 0,
+    startIndex: 0n,
     commitments: [bytes(1), bytes(2)],
     expectedRoot: store.currentRoot,
     expectedFrontier: tree.frontier,
   }, driver);
   const baseline = expected({
-    cursor: 1,
+    cursor: 1n,
     transcriptHead: bytes(10),
     commitments: [bytes(1), bytes(2)],
     store,
@@ -138,9 +139,9 @@ test('Merkle cache rejects every authenticated checkpoint field mutation', async
   });
   const mutations = [
     { deploymentBindingHash: '08'.repeat(32) },
-    { cursor: 2 },
+    { cursor: '2' },
     { transcriptHead: '0b'.repeat(32) },
-    { commitmentCount: 3 },
+    { commitmentCount: '3' },
     { root: '0c'.repeat(32) },
     { frontier: baseline.frontier.map((value, index) => index === 0 ? '0d'.repeat(32) : value) },
   ];
@@ -149,7 +150,7 @@ test('Merkle cache rejects every authenticated checkpoint field mutation', async
   for (const mutation of mutations) {
     const checkpoint = JSON.parse(driver.records.get(checkpointKey));
     Object.assign(checkpoint, mutation);
-    driver.records.set(checkpointKey, JSON.stringify(checkpoint));
+    driver.records.set(checkpointKey, stringifyPrivateIndices(checkpoint));
     await assert.rejects(
       () => requirePrivateBalanceMerkleCheckpoint(context, baseline, driver),
       /checkpoint/i,

@@ -184,7 +184,7 @@ function assertRecoveredResult({ result, finalRecordHash, tree, expectedBalance,
     throw new Error('Recovered balance mismatch.');
   }
   const recoveredIndexes = result.activities.map(activity => activity.actionIndex);
-  const expectedIndexes = [...ownedIndexes];
+  const expectedIndexes = [...ownedIndexes].map(BigInt);
   if (
     recoveredIndexes.length !== expectedIndexes.length ||
     recoveredIndexes.some((value, index) => value !== expectedIndexes[index]) ||
@@ -214,13 +214,13 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
   const accountPublicKey = bytes(5);
   const deploymentBindingHash = bytes(6);
   const externalAccountPublicKey = bytes(9);
-  const contextHash = computeContextHash(1, networkId, realmId, poolId);
+  const contextHash = computeContextHash(2, networkId, realmId, poolId);
   const contextField = computeContextField(contextHash);
   const walletSeed = bytes(7);
   const externalSeed = bytes(8);
   const walletKeys = await deriveKeysFromSeed(
     walletSeed,
-    1,
+    2,
     networkId,
     realmId,
     poolId,
@@ -229,7 +229,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
   );
   const externalKeys = await deriveKeysFromSeed(
     externalSeed,
-    1,
+    2,
     networkId,
     realmId,
     poolId,
@@ -267,7 +267,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       : externalKeys.ownerCommitment;
     const actionNonce = u64Field(options.actionCount + actionIndex + 1);
     const note = {
-      protocolVersion: 1,
+      protocolVersion: 2,
       flags: 0,
       value,
       diversifier,
@@ -283,7 +283,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       ? walletKeys.hpkePublicKey
       : externalKeys.hpkePublicKey;
     const outgoingPlaintext = encodeOutgoingPlaintext({
-      protocolVersion: 1,
+      protocolVersion: 2,
       flags: 0,
       value,
       diversifier,
@@ -328,7 +328,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
         dummyRho,
       );
       const dummyNoteBytes = encodeNotePlaintext({
-        protocolVersion: 1,
+        protocolVersion: 2,
         flags: 1,
         value: 0n,
         diversifier,
@@ -340,7 +340,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
         reserved: new Uint8Array(11),
       });
       const dummyOutgoingPlaintext = encodeOutgoingPlaintext({
-        protocolVersion: 1,
+        protocolVersion: 2,
         flags: 1,
         value: 0n,
         diversifier,
@@ -385,7 +385,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       payload: owned ? accountPublicKey : externalAccountPublicKey,
     };
     const action = {
-      protocolVersion: 1,
+      protocolVersion: 2,
       kind: ActionKind.Deposit,
       assetIndex,
       asset,
@@ -397,9 +397,9 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       depositSource,
     };
     const record = {
-      actionIndex,
+      actionIndex: BigInt(actionIndex),
       ledgerSequence: actionIndex + 1,
-      startingLeafIndex: actionIndex * 3,
+      startingLeafIndex: BigInt(actionIndex * 3),
       actionKind: ActionKind.Deposit,
       assetIndex,
       asset,
@@ -412,7 +412,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       depositSource,
     };
     records.push(record);
-    priorRecordHash = computeRecordHash(record, 1, priorRecordHash);
+    priorRecordHash = computeRecordHash(record, 2, priorRecordHash);
     if (owned) expectedBalance += value;
     if ((actionIndex + 1) % 1_000 === 0) {
       sampleMemory();
@@ -429,7 +429,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
     records,
     viewingKey: toViewingKey(walletKeys),
     context: {
-      protocolVersion: 1,
+      protocolVersion: 2,
       networkId,
       realmId,
       poolId,

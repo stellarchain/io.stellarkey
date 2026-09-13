@@ -1,3 +1,4 @@
+import { stringifyPrivateIndices } from '../src/features/private-balance/runtime/indices.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as storage from '../src/features/private-balance/runtime/storage.ts';
@@ -27,7 +28,7 @@ const hex = byte => byte.repeat(64);
 const context = { accountId: 'history-test', networkId: hex('1'), realmId: hex('2'), poolId: hex('3'), deploymentBindingHash: hex('4') };
 const assetContractId = 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF';
 const key = new Uint8Array(32).fill(7);
-const note = { id: hex('5'), commitment: hex('5'), value: '10', assetIndex: 0, assetContractId, diversifier: '00000000', ownerCommitment: hex('1'), leafIndex: 0, actionIndex: 0, rho: hex('2'), memoHex: '', senderFingerprintHex: '', status: 'unspent', createdAt: 1 };
+const note = { id: hex('5'), commitment: hex('5'), value: '10', assetIndex: 0, assetContractId, diversifier: '00000000', ownerCommitment: hex('1'), leafIndex: 0n, actionIndex: 0n, rho: hex('2'), memoHex: '', senderFingerprintHex: '', status: 'unspent', createdAt: 1 };
 const pending = { id: 'proof', kind: 'transfer', assetIndex: 0, assetContractId, status: 'prepared', submissionMode: 'direct', proofExposure: 'shared',
   reservedNoteIds: [note.id], actionField: hex('6'), nullifiers: [hex('7'), hex('0')], outputCommitments: [hex('8'), hex('9'), hex('a')],
   anchorRoot: hex('b'), anchorExpiresAtLedger: 100, proofHash: hex('c'), classicFeeCapStroops: '100', resourceFeeCapStroops: '1000', broadcastAttempts: 0, createdAt: 1, updatedAt: 1 };
@@ -69,7 +70,7 @@ test('outgoing-history changes cannot rewrite open reservations, pending proofs 
 });
 
 test('minimized journal metadata is not promoted into permanent outgoing activity and old history remains recoverable', () => {
-  const activity = { id: pending.actionField, actionIndex: 1, actionKind: 'transfer', direction: 'outflow', assetIndex: 0, assetContractId,
+  const activity = { id: pending.actionField, actionIndex: 1n, actionKind: 'transfer', direction: 'outflow', assetIndex: 0, assetContractId,
     amount: '10', timestamp: 1, nullifiers: pending.nullifiers, outputCommitments: pending.outputCommitments };
   const metadata = { actionField: pending.actionField, recipientFingerprint: 'ABCD EF01', memoHex: '0102', transactionHash: hex('e') };
   assert.deepEqual(attachLocalActivityMetadata([activity], [{ ...metadata, outgoingHistoryMode: 'minimized' }]), [activity]);
@@ -136,14 +137,14 @@ test('minimized payments do not append a recent private recipient even if a call
 });
 
 test('obsolete relay consent blocks history changes only until safe consent retirement', async () => {
-  const notes = [5, 6, 7].map((byte, index) => ({ ...note, id: hex(String(byte)), commitment: hex(String(byte)), leafIndex: index }));
+  const notes = [5, 6, 7].map((byte, index) => ({ ...note, id: hex(String(byte)), commitment: hex(String(byte)), leafIndex: BigInt(index) }));
   // Historical consent loaded from encrypted state, not created by a live planner.
   const plan = { amountAtomic: '25', perStepMaxPrivateFeeAtomic: '1', cumulativeMaxPrivateFeeAtomic: '2', steps: 2,
     inputNotes: notes.map(({ id, commitment, value }) => ({ id, commitment, value })),
     merges: [{ left: 'note:' + notes[0].id, right: 'note:' + notes[1].id, output: 'merge:0', minimumOutputValue: '19', maximumOutputValue: '20' }],
     finalInputs: ['merge:0', 'note:' + notes[2].id] };
   const approval = { id: 'legacy-chain', submissionMode: 'relay',
-    contextKey: JSON.stringify([context.accountId, context.networkId, context.realmId, context.poolId, context.deploymentBindingHash, assetContractId]),
+    contextKey: stringifyPrivateIndices([context.accountId, context.networkId, context.realmId, context.poolId, context.deploymentBindingHash, assetContractId]),
     assetContractId, assetIndex: 0, draft: { kind: 'transfer', amount: '25', recipientAddress: 'synthetic-destination' },
     plan, steps: 2, perStepMaxFeeStroops: '1000', cumulativeMaxFeeStroops: '2000', expiresAtSeconds: 2_000_000_000 };
   const { driver, state } = await fixture({ notes,
@@ -166,9 +167,9 @@ test('invalid encrypted history modes fail local load and backup preparation, in
     const candidate = location === 'preference' ? { ...state, outgoingHistoryMode: mode } : location === 'pending'
       ? { ...state, notes: [reserved], pendingActions: [{ ...pending, outgoingHistoryMode: mode }] }
       : { ...state, notes: [reserved], buildReservations: [{ id: 'build', kind: 'transfer', outgoingHistoryMode: mode, proofExposure: 'local', assetContractId, reservedNoteIds: [note.id], createdAt: 1, updatedAt: 1 }] };
-    envelope.crypto = await encryptBytesWithKey(new TextEncoder().encode(JSON.stringify(candidate)), key,
+    envelope.crypto = await encryptBytesWithKey(new TextEncoder().encode(stringifyPrivateIndices(candidate)), key,
       new TextEncoder().encode(`stellarkey-private-balance-state|2|${state.revision}|${record.key}`));
-    record.value = JSON.stringify(envelope);
+    record.value = stringifyPrivateIndices(envelope);
     const tampered = new MemoryDriver(); tampered.records.set(record.key, record.value);
     await assert.rejects(storage.loadPrivateBalanceState(context, key, tampered), /schema/);
     await assert.rejects(preparePrivateBalanceBackupArchive({ archive: malformed, resolveStorageKey: async () => key.slice(), validateContext: async () => assert.fail('Invalid history policy must not reach context acceptance') }), /schema/);
@@ -181,7 +182,7 @@ test('the real action flow snapshots outgoing mode before worker construction, i
   t.mock.method(PrivateBalanceArchiveClient.prototype, 'readAssetBalance', async () => 100_000_000n);
   const sources = ['GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF', Keypair.fromRawEd25519Seed(new Uint8Array(32).fill(9)).publicKey()];
   for (const accountPublicKey of sources) for (const outgoingHistoryMode of [undefined, 'recoverable', 'minimized']) {
-    const { driver } = await fixture({ outgoingHistoryMode, account: { setupState: 'ready', syncStatus: 'current', lastVerifiedActionIndex: 0, updatedAt: 1 } });
+    const { driver } = await fixture({ outgoingHistoryMode, account: { setupState: 'ready', syncStatus: 'current', lastVerifiedActionIndex: 0n, updatedAt: 1 } });
     let builds = 0;
     await assert.rejects(preparePrivateBalanceActionFlow({ manifest: { assets: [{ index: 0, contractId: assetContractId }] },
       accountPublicKey, privateAddress: 'unused-by-deposit', storageContext: context, storageKey: key,

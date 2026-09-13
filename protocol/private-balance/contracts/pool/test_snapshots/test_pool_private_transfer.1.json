@@ -81,7 +81,7 @@
                     "symbol": "ArchiveRecord"
                   },
                   {
-                    "u32": 0
+                    "u128": "0"
                   }
                 ]
               },
@@ -93,7 +93,7 @@
                       "symbol": "action_index"
                     },
                     "val": {
-                      "u32": 0
+                      "u128": "0"
                     }
                   },
                   {
@@ -117,7 +117,7 @@
                       "symbol": "anchor_root"
                     },
                     "val": {
-                      "bytes": "1d0b30c264d6d9a0cecbe597a9d835a9846a6f03d3af538859788f6046430399"
+                      "bytes": "21582df86efdf31566db55bde1dd7086c2ed2b5e372c1c86875aba415d1941d5"
                     }
                   },
                   {
@@ -151,7 +151,7 @@
                       "symbol": "nullifier_0"
                     },
                     "val": {
-                      "bytes": "1c409dfa9ab90275f09615a49ce6631b6070b1a52a7bc1c715d5eeb1fd906b1c"
+                      "bytes": "1d255cfbdd0a01bcfb537380859e7972390755be9c3a0079639f208eb2d52752"
                     }
                   },
                   {
@@ -159,7 +159,7 @@
                       "symbol": "nullifier_1"
                     },
                     "val": {
-                      "bytes": "063f5feae198a886d1e41c99e2ff9b72accaaf945b188e138add34e741768884"
+                      "bytes": "13f71e9d77c9ff5d5be91308c0723560072a9412da4afb29f484f0537a3d97a8"
                     }
                   },
                   {
@@ -173,7 +173,7 @@
                             "symbol": "commitment"
                           },
                           "val": {
-                            "bytes": "2a8193de3d2345af35830a8dc4fb2f710708fb68a6b441349bf2e19d012eb656"
+                            "bytes": "0ba0a75a80caa91545f0e9975efe9dbd159a078082f6bdd1b7853b10a6a28884"
                           }
                         },
                         {
@@ -206,7 +206,7 @@
                             "symbol": "commitment"
                           },
                           "val": {
-                            "bytes": "1b228ec16c265ae78df4f1df21861f99062b7cfe84f1520c0041224c836df03f"
+                            "bytes": "1d56626fdf2d88b07e7313567e8983f75ee1bdbf32ce3327f9f740f98d70baa6"
                           }
                         },
                         {
@@ -239,7 +239,7 @@
                             "symbol": "commitment"
                           },
                           "val": {
-                            "bytes": "16d0a3aa2162061046d8c2316f11868ae84e0462ad29fd5d60f82d1cd6682160"
+                            "bytes": "2b0b02fcb6ce99dae06c7a6bd8383109fe812e162b4f166dfb83ec964b51d061"
                           }
                         },
                         {
@@ -280,7 +280,7 @@
                       "symbol": "starting_leaf_index"
                     },
                     "val": {
-                      "u32": 0
+                      "u128": "0"
                     }
                   },
                   {
@@ -288,7 +288,7 @@
                       "symbol": "tree_root_after"
                     },
                     "val": {
-                      "bytes": "29621f16b3b384955d62544db0935e95b4faf3cd915870e29a4dec3069cd5980"
+                      "bytes": "19dcbe4dcaefd627108b350ada09e7f9d4cc4cae8325116f094dd89ea41d3659"
                     }
                   }
                 ]
@@ -312,7 +312,7 @@
                     "symbol": "KnownRoot"
                   },
                   {
-                    "bytes": "1d0b30c264d6d9a0cecbe597a9d835a9846a6f03d3af538859788f6046430399"
+                    "bytes": "0a88b1683de196e31692d1b5870ddd60b7e41eac248a35f398f8ae841f3b261d"
                   }
                 ]
               },
@@ -356,7 +356,7 @@
                     "symbol": "KnownRoot"
                   },
                   {
-                    "bytes": "23b3e23c0bc898db86d462d5e7a3c7e7a3f1f4f9409dfc3744feb2fb4cae15a5"
+                    "bytes": "19dcbe4dcaefd627108b350ada09e7f9d4cc4cae8325116f094dd89ea41d3659"
                   }
                 ]
               },
@@ -400,7 +400,7 @@
                     "symbol": "KnownRoot"
                   },
                   {
-                    "bytes": "29621f16b3b384955d62544db0935e95b4faf3cd915870e29a4dec3069cd5980"
+                    "bytes": "21582df86efdf31566db55bde1dd7086c2ed2b5e372c1c86875aba415d1941d5"
                   }
                 ]
               },
@@ -444,7 +444,7 @@
                     "symbol": "Nullifier"
                   },
                   {
-                    "bytes": "063f5feae198a886d1e41c99e2ff9b72accaaf945b188e138add34e741768884"
+                    "bytes": "13f71e9d77c9ff5d5be91308c0723560072a9412da4afb29f484f0537a3d97a8"
                   }
                 ]
               },
@@ -456,7 +456,7 @@
                       "symbol": "spent_at_action"
                     },
                     "val": {
-                      "u32": 0
+                      "u128": "0"
                     }
                   },
                   {
@@ -488,7 +488,7 @@
                     "symbol": "Nullifier"
                   },
                   {
-                    "bytes": "1c409dfa9ab90275f09615a49ce6631b6070b1a52a7bc1c715d5eeb1fd906b1c"
+                    "bytes": "1d255cfbdd0a01bcfb537380859e7972390755be9c3a0079639f208eb2d52752"
                   }
                 ]
               },
@@ -500,7 +500,7 @@
                       "symbol": "spent_at_action"
                     },
                     "val": {
-                      "u32": 0
+                      "u128": "0"
                     }
                   },
                   {
@@ -664,7 +664,7 @@
                               "symbol": "circuit_hash"
                             },
                             "val": {
-                              "bytes": "e8e9566deeaabd745b9c4306f9b222e5f8dc3b224c5e1fd4741da729785fc2d3"
+                              "bytes": "b59eaddeb2ec6eac403d2c2adee693ea2446abb094edcdd6f309456e1d77ae2f"
                             }
                           },
                           {
@@ -672,7 +672,7 @@
                               "symbol": "context_field"
                             },
                             "val": {
-                              "bytes": "1f6387701aa8af22bf7817b827e9bd4de7d3a7118af1a8f1c0821d767fe0e838"
+                              "bytes": "14fd932e233ff5479ed10b551280b65bb0a86d2cd826e23d398fb957a171e05f"
                             }
                           },
                           {
@@ -680,7 +680,7 @@
                               "symbol": "context_hash"
                             },
                             "val": {
-                              "bytes": "66aa18c67fddf46689171a3020badef26a5170a7de7e1ef78189750fbbf482ea"
+                              "bytes": "87020046c3f819cfec2387b8f7bfcb424fea9fd3bc9de6695c4ef08f9b7afab9"
                             }
                           },
                           {
@@ -688,7 +688,7 @@
                               "symbol": "deployment_binding_hash"
                             },
                             "val": {
-                              "bytes": "0b072453abdca3d34d4723dbb3ac6cf313c4c14a146c54fa4a651782bc9e4dcd"
+                              "bytes": "ebac3a68c95871f527ddeb638615ae9926c64b0ef6264523e63f5def62bcf9ed"
                             }
                           },
                           {
@@ -728,7 +728,7 @@
                               "symbol": "protocol_version"
                             },
                             "val": {
-                              "u32": 1
+                              "u32": 2
                             }
                           },
                           {
@@ -752,7 +752,7 @@
                               "symbol": "tree_depth"
                             },
                             "val": {
-                              "u32": 17
+                              "u32": 64
                             }
                           },
                           {
@@ -760,7 +760,7 @@
                               "symbol": "verification_key_hash"
                             },
                             "val": {
-                              "bytes": "6af84a98f2e9bddc7fbcfdf08160c10b2d627e2aab19fa612290b1feaf09e0f7"
+                              "bytes": "4c39e247db8e932695e881041e94337d28858208f04b477b32d51604bb3c03bc"
                             }
                           }
                         ]
@@ -793,7 +793,7 @@
                               "symbol": "action_count"
                             },
                             "val": {
-                              "u32": 1
+                              "u128": "1"
                             }
                           },
                           {
@@ -801,7 +801,7 @@
                               "symbol": "transcript_head"
                             },
                             "val": {
-                              "bytes": "3b7d8fffac825512410e47be85ee8327380a05a1035f63d639ab7c6cbba07dbd"
+                              "bytes": "d84ba191dfa05ce3a6afe0deb6452499cf5199fd6e22464c5a3972b9540a5910"
                             }
                           }
                         ]
@@ -822,7 +822,7 @@
                               "symbol": "current_root"
                             },
                             "val": {
-                              "bytes": "29621f16b3b384955d62544db0935e95b4faf3cd915870e29a4dec3069cd5980"
+                              "bytes": "19dcbe4dcaefd627108b350ada09e7f9d4cc4cae8325116f094dd89ea41d3659"
                             }
                           },
                           {
@@ -832,13 +832,13 @@
                             "val": {
                               "vec": [
                                 {
-                                  "bytes": "2a8193de3d2345af35830a8dc4fb2f710708fb68a6b441349bf2e19d012eb656"
+                                  "bytes": "0ba0a75a80caa91545f0e9975efe9dbd159a078082f6bdd1b7853b10a6a28884"
                                 },
                                 {
-                                  "bytes": "1b228ec16c265ae78df4f1df21861f99062b7cfe84f1520c0041224c836df03f"
+                                  "bytes": "1d56626fdf2d88b07e7313567e8983f75ee1bdbf32ce3327f9f740f98d70baa6"
                                 },
                                 {
-                                  "bytes": "1431553b0ab0a53a9dd5602e65571c0713f43b9ce369d1155a9375137d21e7e9"
+                                  "bytes": "06369a19b19f945acf9168b57bbec4e5975e6d35d65287c864e1c587810ab8c5"
                                 },
                                 {
                                   "bytes": "2a5de47ed300af27b706aaa14762fc468f5cfc16cd8116eb6b09b0f2643ca2b9"
@@ -932,6 +932,288 @@
                                 },
                                 {
                                   "bytes": "1bdaee57fd2490bdbcd7328fe96f98dcd62dab5d2818e47d12d8327cc59d4215"
+                                },
+                                {
+                                  "bytes": "23b3e23c0bc898db86d462d5e7a3c7e7a3f1f4f9409dfc3744feb2fb4cae15a5"
+                                },
+                                {
+                                  "bytes": "23b3e23c0bc898db86d462d5e7a3c7e7a3f1f4f9409dfc3744feb2fb4cae15a5"
+                                },
+                                {
+                                  "bytes": "0fbab90226f7d74293653c4b391c3f0b05ea7de7a0ab705187b5684e7a4e7360"
+                                },
+                                {
+                                  "bytes": "0fbab90226f7d74293653c4b391c3f0b05ea7de7a0ab705187b5684e7a4e7360"
+                                },
+                                {
+                                  "bytes": "2c1ef457f50de669d0f5cdb2df763a914d545f1e840e6fb927923564fd7d5706"
+                                },
+                                {
+                                  "bytes": "2c1ef457f50de669d0f5cdb2df763a914d545f1e840e6fb927923564fd7d5706"
+                                },
+                                {
+                                  "bytes": "1469b5586ace72e4c51bb7f05fa6b10ea8f9a525c96e36458f159b4794ac7c35"
+                                },
+                                {
+                                  "bytes": "1469b5586ace72e4c51bb7f05fa6b10ea8f9a525c96e36458f159b4794ac7c35"
+                                },
+                                {
+                                  "bytes": "301938ee9324c6d0ffcb658fdd9258c9b3b0e7e68f9412e4182161a317b5baaa"
+                                },
+                                {
+                                  "bytes": "301938ee9324c6d0ffcb658fdd9258c9b3b0e7e68f9412e4182161a317b5baaa"
+                                },
+                                {
+                                  "bytes": "0d68b5b4e8b531a6f5ad342e0f11bd42525dc6c265072eee22e239875117d443"
+                                },
+                                {
+                                  "bytes": "0d68b5b4e8b531a6f5ad342e0f11bd42525dc6c265072eee22e239875117d443"
+                                },
+                                {
+                                  "bytes": "00c3222bf7dc82141f65a1e6d03628238e268e1d8c51edc5d844f169c25e17f4"
+                                },
+                                {
+                                  "bytes": "00c3222bf7dc82141f65a1e6d03628238e268e1d8c51edc5d844f169c25e17f4"
+                                },
+                                {
+                                  "bytes": "0bb9c7421a3701d4bee94bcd238b3f28bc21f258a3f314cfdcd92ce70e13c9f2"
+                                },
+                                {
+                                  "bytes": "0bb9c7421a3701d4bee94bcd238b3f28bc21f258a3f314cfdcd92ce70e13c9f2"
+                                },
+                                {
+                                  "bytes": "1dcc4363be3bc5ee79d8b75711b0de7c95ad80c5d9d42f9ca7b102818c374577"
+                                },
+                                {
+                                  "bytes": "1dcc4363be3bc5ee79d8b75711b0de7c95ad80c5d9d42f9ca7b102818c374577"
+                                },
+                                {
+                                  "bytes": "18bfbee711f72eb823d4f5c713124ab2c65aa75cbfc03cc296d353b9046a5265"
+                                },
+                                {
+                                  "bytes": "18bfbee711f72eb823d4f5c713124ab2c65aa75cbfc03cc296d353b9046a5265"
+                                },
+                                {
+                                  "bytes": "0f1bb2627068b413a1ff607e926b79da818024163fd3a106fbe1eea991cb5605"
+                                },
+                                {
+                                  "bytes": "0f1bb2627068b413a1ff607e926b79da818024163fd3a106fbe1eea991cb5605"
+                                },
+                                {
+                                  "bytes": "06a86b14d6504bbae040952899e939ed167adcc9e6d5d3f29aba6ba735434d83"
+                                },
+                                {
+                                  "bytes": "06a86b14d6504bbae040952899e939ed167adcc9e6d5d3f29aba6ba735434d83"
+                                },
+                                {
+                                  "bytes": "0eeb69dc4e64bdd7357441ada53bba615db22a5e5f6c38f80d9671c18411b9bc"
+                                },
+                                {
+                                  "bytes": "0eeb69dc4e64bdd7357441ada53bba615db22a5e5f6c38f80d9671c18411b9bc"
+                                },
+                                {
+                                  "bytes": "2c13a15877fdbbba5da345a1968e2bb4789ecd562344291799fb0e28b5886411"
+                                },
+                                {
+                                  "bytes": "2c13a15877fdbbba5da345a1968e2bb4789ecd562344291799fb0e28b5886411"
+                                },
+                                {
+                                  "bytes": "112ded08aaf309fcb8029432ecb60e5d9667195786094368f6342f31e2fb98e2"
+                                },
+                                {
+                                  "bytes": "112ded08aaf309fcb8029432ecb60e5d9667195786094368f6342f31e2fb98e2"
+                                },
+                                {
+                                  "bytes": "2506aa865236788b903bec5dc8d07649bb2a50e675f375cc84cbaa5af2a13b09"
+                                },
+                                {
+                                  "bytes": "2506aa865236788b903bec5dc8d07649bb2a50e675f375cc84cbaa5af2a13b09"
+                                },
+                                {
+                                  "bytes": "1213761ff3f86bc202edd697d61a4b5b888aee5b85155c6efb73cce81b7872e7"
+                                },
+                                {
+                                  "bytes": "1213761ff3f86bc202edd697d61a4b5b888aee5b85155c6efb73cce81b7872e7"
+                                },
+                                {
+                                  "bytes": "0388dde9a6288ff4d775d54dc4c46ec0dcec1280426520cc516884eec97f3f9d"
+                                },
+                                {
+                                  "bytes": "0388dde9a6288ff4d775d54dc4c46ec0dcec1280426520cc516884eec97f3f9d"
+                                },
+                                {
+                                  "bytes": "28f9767aaab3e050702f04620d4703694c1e3a945af37e10b9dc20b23b153535"
+                                },
+                                {
+                                  "bytes": "28f9767aaab3e050702f04620d4703694c1e3a945af37e10b9dc20b23b153535"
+                                },
+                                {
+                                  "bytes": "1b716bb4f7c7efaa1210f9e2d899e47a45dfdb9df61d112c155e8a7b0df478c1"
+                                },
+                                {
+                                  "bytes": "1b716bb4f7c7efaa1210f9e2d899e47a45dfdb9df61d112c155e8a7b0df478c1"
+                                },
+                                {
+                                  "bytes": "228f271a2f5291accc4673fb47f4930abe123c4ecf83dc40ded50b672da840a9"
+                                },
+                                {
+                                  "bytes": "228f271a2f5291accc4673fb47f4930abe123c4ecf83dc40ded50b672da840a9"
+                                },
+                                {
+                                  "bytes": "07bd3caca6983523f03e565072b864dadf8ab4d2c15e7640d860486cda5f96e4"
+                                },
+                                {
+                                  "bytes": "07bd3caca6983523f03e565072b864dadf8ab4d2c15e7640d860486cda5f96e4"
+                                },
+                                {
+                                  "bytes": "032092ca4228b611feb11f754778389ca049fb3e6b95c5186716e4d12af4202f"
+                                },
+                                {
+                                  "bytes": "032092ca4228b611feb11f754778389ca049fb3e6b95c5186716e4d12af4202f"
+                                },
+                                {
+                                  "bytes": "0d438d8b23d2a0a7d719552aea4afa0dee6a858b87e21e7d3a4c357319ce0a90"
+                                },
+                                {
+                                  "bytes": "0d438d8b23d2a0a7d719552aea4afa0dee6a858b87e21e7d3a4c357319ce0a90"
+                                },
+                                {
+                                  "bytes": "23017d765398b66c6879cb0a670e4dfaf476349a219153a43c0eeb03a9df62e1"
+                                },
+                                {
+                                  "bytes": "23017d765398b66c6879cb0a670e4dfaf476349a219153a43c0eeb03a9df62e1"
+                                },
+                                {
+                                  "bytes": "28366a76bbd917530c78463010cca9af73afb3df7c4bbf98046bc0c547af6af8"
+                                },
+                                {
+                                  "bytes": "28366a76bbd917530c78463010cca9af73afb3df7c4bbf98046bc0c547af6af8"
+                                },
+                                {
+                                  "bytes": "25dd9433d36a34d4caf46a541e34cdb213f9412aa9c075c53b786c532106dcf3"
+                                },
+                                {
+                                  "bytes": "25dd9433d36a34d4caf46a541e34cdb213f9412aa9c075c53b786c532106dcf3"
+                                },
+                                {
+                                  "bytes": "2db208980e7e7dffc6d9f099f4058d411d509f5f7a3b66eb5c4b617d31e770c6"
+                                },
+                                {
+                                  "bytes": "2db208980e7e7dffc6d9f099f4058d411d509f5f7a3b66eb5c4b617d31e770c6"
+                                },
+                                {
+                                  "bytes": "0d52a4d76be2edc96e893745fe3518c9eab8405da593bc3db521dadd4ca11591"
+                                },
+                                {
+                                  "bytes": "0d52a4d76be2edc96e893745fe3518c9eab8405da593bc3db521dadd4ca11591"
+                                },
+                                {
+                                  "bytes": "0e3f0659258613520f2a7370b3c7dd6f338998b2e4fde4c8ac5b7a55a2a9c0fb"
+                                },
+                                {
+                                  "bytes": "0e3f0659258613520f2a7370b3c7dd6f338998b2e4fde4c8ac5b7a55a2a9c0fb"
+                                },
+                                {
+                                  "bytes": "2399d7478eef4fd19b4e94b5a713f006e340512beec0a0dcf1d4cb1e66e50961"
+                                },
+                                {
+                                  "bytes": "2399d7478eef4fd19b4e94b5a713f006e340512beec0a0dcf1d4cb1e66e50961"
+                                },
+                                {
+                                  "bytes": "1d263cb0b11860e5f96cb2dd4e0fd9cff3b287783a516cf3fa90a76c54a2b01e"
+                                },
+                                {
+                                  "bytes": "1d263cb0b11860e5f96cb2dd4e0fd9cff3b287783a516cf3fa90a76c54a2b01e"
+                                },
+                                {
+                                  "bytes": "23c9da1f22b05ad67e160afa80f299b0633a9db06b51b8b0fcb2dcaa92b1103b"
+                                },
+                                {
+                                  "bytes": "23c9da1f22b05ad67e160afa80f299b0633a9db06b51b8b0fcb2dcaa92b1103b"
+                                },
+                                {
+                                  "bytes": "07e59570543797da4724a956417a0a4d84d3ed5d6ff4758831a07c5b54fc491e"
+                                },
+                                {
+                                  "bytes": "07e59570543797da4724a956417a0a4d84d3ed5d6ff4758831a07c5b54fc491e"
+                                },
+                                {
+                                  "bytes": "0363c38bf454400ebeaeafcd38e490b874573246e8471be767249b8b40795109"
+                                },
+                                {
+                                  "bytes": "0363c38bf454400ebeaeafcd38e490b874573246e8471be767249b8b40795109"
+                                },
+                                {
+                                  "bytes": "1d164e5658573774d1a997e4c22a425c3cbee908fad01b36080a9ae5e9c2c50d"
+                                },
+                                {
+                                  "bytes": "1d164e5658573774d1a997e4c22a425c3cbee908fad01b36080a9ae5e9c2c50d"
+                                },
+                                {
+                                  "bytes": "06b1b95b31b3f1d59e0845f1dfc62e927797ffc41233471191f74e735224a63e"
+                                },
+                                {
+                                  "bytes": "06b1b95b31b3f1d59e0845f1dfc62e927797ffc41233471191f74e735224a63e"
+                                },
+                                {
+                                  "bytes": "0e5bb4750733ca89e93b898541c1a532e8a36f607cda14becf4a422ee749f6a7"
+                                },
+                                {
+                                  "bytes": "0e5bb4750733ca89e93b898541c1a532e8a36f607cda14becf4a422ee749f6a7"
+                                },
+                                {
+                                  "bytes": "06f2a1d723239d3ecd0c407baaa2184ece04e85821ec80568570bc3c6174892a"
+                                },
+                                {
+                                  "bytes": "06f2a1d723239d3ecd0c407baaa2184ece04e85821ec80568570bc3c6174892a"
+                                },
+                                {
+                                  "bytes": "293aa0e1600022f00ecc178e5c8c0bd0a371b88b98690f320ba7cb732f03c84e"
+                                },
+                                {
+                                  "bytes": "293aa0e1600022f00ecc178e5c8c0bd0a371b88b98690f320ba7cb732f03c84e"
+                                },
+                                {
+                                  "bytes": "1bb312be1bcf5af8be7c8c970c13dffeb2bb57755e3ea035e895b511aca2961e"
+                                },
+                                {
+                                  "bytes": "1bb312be1bcf5af8be7c8c970c13dffeb2bb57755e3ea035e895b511aca2961e"
+                                },
+                                {
+                                  "bytes": "235ceff4ee0ea50d0c11f7d8a1ff137d3ecf51ddea722ecf82ddde2a61a3e72c"
+                                },
+                                {
+                                  "bytes": "235ceff4ee0ea50d0c11f7d8a1ff137d3ecf51ddea722ecf82ddde2a61a3e72c"
+                                },
+                                {
+                                  "bytes": "2d971a97feaf712193ec467a251713e6a66cd643270dfc41af27c260ee05ca5a"
+                                },
+                                {
+                                  "bytes": "2d971a97feaf712193ec467a251713e6a66cd643270dfc41af27c260ee05ca5a"
+                                },
+                                {
+                                  "bytes": "067a6febfdb56a3c13abb1523695bd522ab047485bf5a1f8d461580a4cd38bf3"
+                                },
+                                {
+                                  "bytes": "067a6febfdb56a3c13abb1523695bd522ab047485bf5a1f8d461580a4cd38bf3"
+                                },
+                                {
+                                  "bytes": "23c04426a20b2d85cfe7958ee524484f3ec88cdd4848e54412482c48a431c718"
+                                },
+                                {
+                                  "bytes": "23c04426a20b2d85cfe7958ee524484f3ec88cdd4848e54412482c48a431c718"
+                                },
+                                {
+                                  "bytes": "2d373bf14259527dcc4b51e0bc265c258dca13227146f25dc6c32987db141b84"
+                                },
+                                {
+                                  "bytes": "2d373bf14259527dcc4b51e0bc265c258dca13227146f25dc6c32987db141b84"
+                                },
+                                {
+                                  "bytes": "1572cf7d43d3a0a459f14902eb73d8466c38ede1ef92dce71bbec760b2444ff0"
+                                },
+                                {
+                                  "bytes": "1572cf7d43d3a0a459f14902eb73d8466c38ede1ef92dce71bbec760b2444ff0"
                                 }
                               ]
                             }
@@ -941,7 +1223,7 @@
                               "symbol": "next_index"
                             },
                             "val": {
-                              "u64": "3"
+                              "u128": "3"
                             }
                           }
                         ]

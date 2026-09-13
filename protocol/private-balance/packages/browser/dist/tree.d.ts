@@ -1,6 +1,8 @@
 export declare const TREE_ARITY = 3;
-export declare const TREE_DEPTH = 17;
-export declare const TREE_CAPACITY: number;
+export declare const TREE_INNER_DEPTH = 17;
+export declare const TREE_OUTER_DEPTH = 47;
+export declare const TREE_DEPTH: number;
+export declare const TREE_CAPACITY: bigint;
 export declare const TREE_FRONTIER_WIDTH: number;
 export declare const TREE_FRONTIER_SIZE: number;
 export type MerkleChildren = readonly [Uint8Array, Uint8Array, Uint8Array];
@@ -8,13 +10,13 @@ export type MerkleSiblings = readonly [Uint8Array, Uint8Array];
 export declare function hashMerkleNode(children: MerkleChildren): Uint8Array;
 export declare const EMPTY_ROOTS: readonly Uint8Array[];
 export interface MerkleTree {
-    nextIndex: number;
+    nextIndex: bigint;
     frontier: Uint8Array[];
     currentRoot: Uint8Array;
 }
 export interface MerklePathWitness {
     leaf: Uint8Array;
-    leafIndex: number;
+    leafIndex: bigint;
     siblings: [Uint8Array, Uint8Array][];
     positions: number[];
     root: Uint8Array;
@@ -33,8 +35,8 @@ export declare class MerkleNodeStore {
     private constructor();
     static empty(): Promise<MerkleNodeStore>;
     static fromCommitments(commitments: readonly Uint8Array[]): Promise<MerkleNodeStore>;
-    get nextIndex(): number;
+    get nextIndex(): bigint;
     get currentRoot(): Uint8Array;
     append(leaf: Uint8Array): Promise<Uint8Array>;
-    getPath(leafIndex: number): Promise<MerklePathWitness>;
+    getPath(leafIndex: bigint): Promise<MerklePathWitness>;
 }

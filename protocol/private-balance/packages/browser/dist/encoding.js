@@ -14,7 +14,7 @@ function requireUnsignedInteger(value, maximum, name) {
     }
 }
 function requireUnsignedBigInt(value, bits, name) {
-    if (value < 0n || value >= 1n << BigInt(bits)) {
+    if (typeof value !== 'bigint' || value < 0n || value >= 1n << BigInt(bits)) {
         throw new Error(`${name} must fit in ${bits} unsigned bits`);
     }
 }
@@ -129,7 +129,7 @@ export function deriveHpkeAad(contextHash, cm, actionNonce, outputIndex) {
     return Uint8Array.from(buf);
 }
 function validateOutgoingPlaintext(plaintext) {
-    if (plaintext.protocolVersion !== 1)
+    if (plaintext.protocolVersion !== 2)
         throw new Error('Unsupported outgoing plaintext version');
     if (plaintext.flags !== 0 && plaintext.flags !== OUTGOING_DUMMY_FLAG) {
         throw new Error('Unsupported outgoing plaintext flags');

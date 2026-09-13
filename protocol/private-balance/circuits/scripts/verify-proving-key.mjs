@@ -7,7 +7,7 @@ import { ensurePowersOfTau } from './powers-of-tau.mjs';
 const circuitsDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const buildDir = join(circuitsDir, 'build');
 const r1csPath = join(buildDir, 'action.r1cs');
-const ptauPath = join(buildDir, 'pot14_final.ptau');
+const ptauPath = join(buildDir, 'ppot_0080_17.ptau');
 const zkeyPath = join(buildDir, 'action_dev.zkey');
 
 export function verifyProvingKey({

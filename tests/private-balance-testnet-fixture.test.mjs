@@ -133,11 +133,11 @@ test('testnet fixture entropy is exact, independent, and rejects malformed provi
   assert.throws(() => createFixtureEntropy(() => Buffer.alloc(32)), /non-zero/i);
 });
 
-test('deployment binding matches the canonical V1 fixture vector', () => {
+test('deployment binding matches the canonical V2 fixture vector', () => {
   const guardian = StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 5));
   const poolContractId = StrKey.encodeContract(Buffer.alloc(32, 3));
   const binding = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     networkId: '01'.repeat(32),
     realmId: '02'.repeat(32),
     poolContractId,
@@ -146,12 +146,12 @@ test('deployment binding matches the canonical V1 fixture vector', () => {
     poseidon2ParameterHash: '06'.repeat(32),
     circuitHash: '07'.repeat(32),
     verificationKeyHash: '08'.repeat(32),
-    treeDepth: 17,
+    treeDepth: 64,
     rootWindowLedgers: 1_440,
   };
   assert.equal(
     computeDeploymentBindingHash(binding),
-    '1a9133f26d4a002631b097040561e2423c525a10c705678f3d0e9645879ab173',
+    '8696d76af8614841b7920cffd0a195ef52c1f6c9c1e91b0d078c99b1cef5c307',
   );
 });
 
@@ -168,7 +168,7 @@ test('constructor arguments bind the public testnet and exact deployment hash', 
   assert.equal(TESTNET_PASSPHRASE, 'Test SDF Network ; September 2015');
   assert.deepEqual(argumentsList.slice(0, 4), [
     '--protocol_version',
-    '1',
+    '2',
     '--network_id',
     TESTNET_NETWORK_ID,
   ]);

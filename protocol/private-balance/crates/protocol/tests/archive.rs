@@ -56,7 +56,7 @@ fn test_archive_record_hash_chain() {
     };
 
     let prior = [fill(&["record", "priorRecordHashFill"]); 32];
-    let rh = rec.compute_record_hash(1, &prior);
+    let rh = rec.compute_record_hash(2, &prior);
     assert_eq!(
         hex::encode(rh),
         vector["expectedRecordHash"].as_str().unwrap()

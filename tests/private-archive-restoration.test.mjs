@@ -55,7 +55,7 @@ function exactBatchSimulation(transaction, resourceFee = '500', latestLedger = 1
 
 test('archive restoration discovers only the contiguous unavailable prefix', async () => {
   const keys = Array.from({ length: 6 }, (_, offset) =>
-    deriveArchiveRecordLedgerKey(poolContractId, 41 + offset));
+    deriveArchiveRecordLedgerKey(poolContractId, 41n + BigInt(offset)));
   const range = await findContiguousPrivateArchiveRestorationRange({
     rpc: {
       async getLedgerEntries(...requested) {
@@ -75,14 +75,14 @@ test('archive restoration discovers only the contiguous unavailable prefix', asy
       },
     },
     poolContractId,
-    startActionIndex: 41,
-    endActionIndexExclusive: 47,
+    startActionIndex: 41n,
+    endActionIndexExclusive: 47n,
   });
 
   assert.deepEqual(range, {
-    startActionIndex: 41,
-    endActionIndexExclusive: 44,
-    probedEndActionIndexExclusive: 47,
+    startActionIndex: 41n,
+    endActionIndexExclusive: 44n,
+    probedEndActionIndexExclusive: 47n,
     latestLedger: 123,
   });
   assert.ok(Object.isFrozen(range));
@@ -94,14 +94,14 @@ test('archive restoration discovery rejects keys outside its local probe', async
       rpc: {
         async getLedgerEntries() {
           return {
-            entries: [{ key: deriveArchiveRecordLedgerKey(poolContractId, 99) }],
+            entries: [{ key: deriveArchiveRecordLedgerKey(poolContractId, 99n) }],
             latestLedger: 123,
           };
         },
       },
       poolContractId,
-      startActionIndex: 41,
-      endActionIndexExclusive: 43,
+      startActionIndex: 41n,
+      endActionIndexExclusive: 43n,
     }),
     /unexpected archive record/i,
   );
@@ -124,8 +124,8 @@ test('archive restoration preparation refuses indices outside the canonical acti
       },
       manifest: { networkPassphrase, poolContractId },
       source: signer.publicKey(),
-      startActionIndex: 41,
-      actionCount: 42,
+      startActionIndex: 41n,
+      actionCount: 42n,
       maximumActionCount: 2,
       classicFeeStroops: 100n,
       maximumResourceFeeStroops: 1_000n,
@@ -137,7 +137,7 @@ test('archive restoration preparation refuses indices outside the canonical acti
 
 test('archive restoration reviews one exact locally derived record key', async () => {
   const signer = Keypair.random();
-  const actionIndex = 41;
+  const actionIndex = 41n;
   const expectedKey = deriveArchiveRecordLedgerKey(poolContractId, actionIndex).toXDR('base64');
   const rpc = {
     async getAccount(address) {
@@ -159,7 +159,7 @@ test('archive restoration reviews one exact locally derived record key', async (
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
     startActionIndex: actionIndex,
-    actionCount: actionIndex + 1,
+    actionCount: actionIndex + 1n,
     maximumActionCount: 1,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,
@@ -180,11 +180,11 @@ test('archive restoration rejects an RPC-expanded footprint', async () => {
       return new Account(signer.publicKey(), '7');
     },
     async simulateTransaction() {
-      const simulation = exactSimulation(41);
+      const simulation = exactSimulation(41n);
       simulation.transactionData = new SorobanDataBuilder()
         .setFootprint([], [
-          deriveArchiveRecordLedgerKey(poolContractId, 41),
-          deriveArchiveRecordLedgerKey(poolContractId, 42),
+          deriveArchiveRecordLedgerKey(poolContractId, 41n),
+          deriveArchiveRecordLedgerKey(poolContractId, 42n),
         ])
         .setResourceFee('500');
       return simulation;
@@ -196,8 +196,8 @@ test('archive restoration rejects an RPC-expanded footprint', async () => {
       rpc,
       manifest: { networkPassphrase, poolContractId },
       source: signer.publicKey(),
-      startActionIndex: 41,
-      actionCount: 51,
+      startActionIndex: 41n,
+      actionCount: 51n,
       maximumActionCount: 1,
       classicFeeStroops: 100n,
       maximumResourceFeeStroops: 1_000n,
@@ -214,13 +214,13 @@ test('archive restoration binds signed submission and confirmation to its hash',
         return new Account(signer.publicKey(), '7');
       },
       async simulateTransaction() {
-        return exactSimulation(41);
+        return exactSimulation(41n);
       },
     },
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
-    startActionIndex: 41,
-    actionCount: 51,
+    startActionIndex: 41n,
+    actionCount: 51n,
     maximumActionCount: 1,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,
@@ -269,13 +269,13 @@ test('archive restoration refuses a mismatched confirmation hash', async () => {
         return new Account(signer.publicKey(), '7');
       },
       async simulateTransaction() {
-        return exactSimulation(41);
+        return exactSimulation(41n);
       },
     },
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
-    startActionIndex: 41,
-    actionCount: 51,
+    startActionIndex: 41n,
+    actionCount: 51n,
     maximumActionCount: 1,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,
@@ -329,8 +329,8 @@ test('archive restoration selects the largest safe prefix and freshly simulates 
     rpc,
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
-    startActionIndex: 41,
-    actionCount: 51,
+    startActionIndex: 41n,
+    actionCount: 51n,
     maximumActionCount: 10,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,
@@ -338,7 +338,7 @@ test('archive restoration selects the largest safe prefix and freshly simulates 
   });
 
   assert.deepEqual(calls, [1, 2, 4, 8, 6, 7, 6]);
-  assert.deepEqual(prepared.actionIndices, [41, 42, 43, 44, 45, 46]);
+  assert.deepEqual(prepared.actionIndices, [41n, 42n, 43n, 44n, 45n, 46n]);
   assert.deepEqual(
     prepared.review.ledgerKeysXdr,
     prepared.actionIndices.map(actionIndex =>
@@ -365,8 +365,8 @@ test('archive restoration bisects resource overflow with an explicit 80% margin'
     },
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
-    startActionIndex: 41,
-    actionCount: 51,
+    startActionIndex: 41n,
+    actionCount: 51n,
     maximumActionCount: 8,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,
@@ -374,7 +374,7 @@ test('archive restoration bisects resource overflow with an explicit 80% margin'
   });
 
   assert.deepEqual(calls, [1, 2, 4, 8, 6, 5, 5]);
-  assert.deepEqual(prepared.actionIndices, [41, 42, 43, 44, 45]);
+  assert.deepEqual(prepared.actionIndices, [41n, 42n, 43n, 44n, 45n]);
   assert.equal(prepared.review.resourceFeeStroops, 750n);
 });
 
@@ -384,8 +384,8 @@ test('archive restoration falls back to one key and reports a one-key failure', 
   const base = {
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
-    startActionIndex: 41,
-    actionCount: 51,
+    startActionIndex: 41n,
+    actionCount: 51n,
     maximumActionCount: 4,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,
@@ -407,7 +407,7 @@ test('archive restoration falls back to one key and reports a one-key failure', 
     },
   });
   assert.deepEqual(calls, [1, 2, 1]);
-  assert.deepEqual(prepared.actionIndices, [41]);
+  assert.deepEqual(prepared.actionIndices, [41n]);
 
   await assert.rejects(
     preparePrivateArchiveRestoration({
@@ -441,7 +441,7 @@ test('archive restoration rejects an RPC-expanded or reordered batch footprint',
             transactionData: new SorobanDataBuilder()
               .setFootprint([], [
                 ...keys.toReversed(),
-                deriveArchiveRecordLedgerKey(poolContractId, 99),
+                deriveArchiveRecordLedgerKey(poolContractId, 99n),
               ])
               .setResourceFee('500'),
           };
@@ -449,8 +449,8 @@ test('archive restoration rejects an RPC-expanded or reordered batch footprint',
       },
       manifest: { networkPassphrase, poolContractId },
       source: signer.publicKey(),
-      startActionIndex: 41,
-      actionCount: 51,
+      startActionIndex: 41n,
+      actionCount: 51n,
       maximumActionCount: 2,
       classicFeeStroops: 100n,
       maximumResourceFeeStroops: 1_000n,
@@ -475,8 +475,8 @@ test('archive restoration rejects a selected batch whose fresh simulation change
       },
       manifest: { networkPassphrase, poolContractId },
       source: signer.publicKey(),
-      startActionIndex: 41,
-      actionCount: 51,
+      startActionIndex: 41n,
+      actionCount: 51n,
       maximumActionCount: 4,
       classicFeeStroops: 100n,
       maximumResourceFeeStroops: 1_000n,
@@ -504,8 +504,8 @@ test('archive restoration aborts intentional cancellation between simulations', 
       },
       manifest: { networkPassphrase, poolContractId },
       source: signer.publicKey(),
-      startActionIndex: 41,
-      actionCount: 51,
+      startActionIndex: 41n,
+      actionCount: 51n,
       maximumActionCount: 8,
       classicFeeStroops: 100n,
       maximumResourceFeeStroops: 1_000n,
@@ -522,13 +522,13 @@ test('confirmed restoration prefixes report durable resume cursors', async () =>
   const prepare = async ({ startActionIndex, maximumActionCount }) => ({
     actionIndices: Object.freeze(
       Array.from({ length: Math.min(2, maximumActionCount) }, (_, offset) =>
-        startActionIndex + offset),
+        startActionIndex + BigInt(offset)),
     ),
     review: { startActionIndex },
     simulationLedger: 123,
   });
   const submit = async review => {
-    if (review.startActionIndex === 12 && !failedOnce) {
+    if (review.startActionIndex === 12n && !failedOnce) {
       failedOnce = true;
       throw new Error('temporary failure');
     }
@@ -536,24 +536,24 @@ test('confirmed restoration prefixes report durable resume cursors', async () =>
 
   await assert.rejects(
     restorePrivateArchiveRange({
-      startActionIndex: 10,
-      endActionIndexExclusive: 16,
+      startActionIndex: 10n,
+      endActionIndexExclusive: 16n,
       prepare,
       submit,
       onProgress: update => progress.push(update),
     }),
     /temporary failure/,
   );
-  assert.equal(progress.at(-1).nextActionIndex, 12);
+  assert.equal(progress.at(-1).nextActionIndex, 12n);
 
   await restorePrivateArchiveRange({
     startActionIndex: progress.at(-1).nextActionIndex,
-    endActionIndexExclusive: 16,
+    endActionIndexExclusive: 16n,
     prepare,
     submit,
     onProgress: update => progress.push(update),
   });
-  assert.deepEqual(progress.map(update => update.nextActionIndex), [12, 14, 16]);
+  assert.deepEqual(progress.map(update => update.nextActionIndex), [12n, 14n, 16n]);
 });
 
 test('archive restoration cancellation stops confirmation polling', async () => {
@@ -564,13 +564,13 @@ test('archive restoration cancellation stops confirmation polling', async () => 
         return new Account(signer.publicKey(), '7');
       },
       async simulateTransaction() {
-        return exactSimulation(41);
+        return exactSimulation(41n);
       },
     },
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
-    startActionIndex: 41,
-    actionCount: 51,
+    startActionIndex: 41n,
+    actionCount: 51n,
     maximumActionCount: 1,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,

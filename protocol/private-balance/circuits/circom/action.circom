@@ -4,7 +4,7 @@ include "poseidon2.circom";
 include "owner.circom";
 include "note.circom";
 include "nullifier.circom";
-include "merkle.circom";
+include "hierarchy.circom";
 
 template IsZero() {
     signal input in;
@@ -29,7 +29,9 @@ template CheckBits(BITS) {
     in === acc;
 }
 
-template ActionCircuit() {
+template ActionCircuit(INNER, OUTER) {
+    var DEPTH = INNER + OUTER;
+    assert(INNER > 0 && OUTER > 0 && DEPTH <= 64);
     // The verifier receives exactly these eleven public signals, in this order.
     signal input contextField;
     // Public only at transparent deposit and withdrawal boundaries. Internal
@@ -57,8 +59,8 @@ template ActionCircuit() {
     signal input inputValue[2];
     signal input inputRho[2];
     signal input inputLeafIndex[2];
-    signal input inputSiblings[2][17][2];
-    signal input inputPositions[2][17];
+    signal input inputSiblings[2][DEPTH][2];
+    signal input inputPositions[2][DEPTH];
 
     signal input outputOwnerCommitment[3];
     signal input outputValue[3];
@@ -76,29 +78,33 @@ template ActionCircuit() {
     actionAssetZero.in <== actionAssetField;
     actionAssetZero.out === 0;
 
-    // actionKindField must be exactly Deposit (1), Transfer (2), or Withdraw (3).
+    // Proof-bound mode: Deposit (1), Transfer (2), Withdraw (3), FullInputExit (4).
     signal kindMinusOne;
     signal kindMinusTwo;
     signal kindMinusThree;
     signal kindProduct;
+    signal kindTriple;
     kindMinusOne <== actionKindField - 1;
     kindMinusTwo <== actionKindField - 2;
     kindMinusThree <== actionKindField - 3;
     kindProduct <== kindMinusOne * kindMinusTwo;
-    kindProduct * kindMinusThree === 0;
+    kindTriple <== kindProduct * kindMinusThree;
+    kindTriple * (actionKindField - 4) === 0;
 
     component depositKind = IsZero();
     component transferKind = IsZero();
     component withdrawKind = IsZero();
+    component exitKind = IsZero();
     depositKind.in <== kindMinusOne;
     transferKind.in <== kindMinusTwo;
     withdrawKind.in <== kindMinusThree;
+    exitKind.in <== actionKindField - 4;
     signal isDeposit;
     signal isTransfer;
     signal isWithdraw;
     isDeposit <== depositKind.out;
     isTransfer <== transferKind.out;
-    isWithdraw <== withdrawKind.out;
+    isWithdraw <== withdrawKind.out + exitKind.out;
     isDeposit + isTransfer + isWithdraw === 1;
 
     component publicValueRange = CheckBits(63);
@@ -157,7 +163,7 @@ template ActionCircuit() {
         inputDummy[i] * inputLeafIndex[i] === 0;
         inputDummy[i] * inputDummySecretZero[i].out === 0;
         inputReal[i] * inputDummySecret[i] === 0;
-        for (var l = 0; l < 17; l++) {
+        for (var l = 0; l < DEPTH; l++) {
             inputDummy[i] * inputSiblings[i][l][0] === 0;
             inputDummy[i] * inputSiblings[i][l][1] === 0;
         }
@@ -194,10 +200,10 @@ template ActionCircuit() {
             + inputReal[i] * (inputNullifier[i].out - inputDummyNullifier[i].out);
         selectedNullifier[i] === nullifier[i];
 
-        inputPath[i] = MerklePath(17);
+        inputPath[i] = HierarchyPath(INNER, OUTER);
         inputPath[i].leaf <== inputNote[i].out;
         inputPath[i].leafIndex <== inputLeafIndex[i];
-        for (var p = 0; p < 17; p++) {
+        for (var p = 0; p < DEPTH; p++) {
             inputPath[i].siblings[p][0] <== inputSiblings[i][p][0];
             inputPath[i].siblings[p][1] <== inputSiblings[i][p][1];
             inputPath[i].positions[p] <== inputPositions[i][p];
@@ -231,6 +237,9 @@ template ActionCircuit() {
     signal outputDummy[3];
 
     for (var j = 0; j < 3; j++) {
+        // An exit cannot destroy hidden change while skipping the append. Three
+        // nonzero dummy commitments remain proof-bound but are never inserted.
+        exitKind.out * outputValue[j] === 0;
         outputValueRange[j] = CheckBits(63);
         outputValueRange[j].in <== outputValue[j];
         outputValueZero[j] = IsZero();
@@ -313,4 +322,4 @@ template ActionCircuit() {
     isWithdraw * (assetField - actionAssetField) === 0;
 }
 
-component main {public [contextField, assetField, actionKindField, anchorRoot, publicValueField, actionField, nullifier, outputCommitment]} = ActionCircuit();
+component main {public [contextField, assetField, actionKindField, anchorRoot, publicValueField, actionField, nullifier, outputCommitment]} = ActionCircuit(17, 47);

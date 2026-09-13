@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoveredPublicActivity {
-    pub action_index: u32,
+    pub action_index: u128,
     pub action_kind: ActionKind,
     pub asset_index: Option<u32>,
     pub asset: Option<(u8, [u8; 32])>,
@@ -20,7 +20,7 @@ pub struct RecoveredPublicActivity {
 pub struct RecoveredPoolState {
     pub tree: TreeState,
     pub nullifiers: HashSet<[u8; 32]>,
-    pub action_count: u32,
+    pub action_count: u128,
     pub transcript_head: [u8; 32],
     pub total_public_balance: u64,
     pub asset_public_balances: HashMap<(u8, [u8; 32]), u64>,
@@ -90,14 +90,13 @@ fn replay_record(
     index: usize,
     tree_hash_context: Option<&NativeTreeHashContext>,
 ) -> Result<(), String> {
-    let action_index = u32::try_from(index).map_err(|_| "Action count exceeds u32".to_string())?;
+    let action_index = index as u128;
     if record.action_index != action_index {
         return Err(format!(
             "Non-sequential action index at action {action_index}"
         ));
     }
-    let starting_leaf_index = u32::try_from(accumulator.tree.next_leaf_index)
-        .map_err(|_| "Starting leaf index exceeds u32".to_string())?;
+    let starting_leaf_index = accumulator.tree.next_leaf_index;
     if record.starting_leaf_index != starting_leaf_index {
         return Err(format!(
             "Invalid starting leaf index at action {action_index}"
@@ -110,6 +109,7 @@ fn replay_record(
         1 => ActionKind::Deposit,
         2 => ActionKind::PrivateTransfer,
         3 => ActionKind::Withdraw,
+        4 => ActionKind::FullInputExit,
         _ => return Err(format!("Invalid action kind at action {action_index}")),
     };
     let current_asset_balance = record
@@ -133,7 +133,7 @@ fn replay_record(
             }
             current_asset_balance
         }
-        ActionKind::Withdraw => {
+        ActionKind::Withdraw | ActionKind::FullInputExit => {
             if record.public_value == 0 || record.public_value > current_asset_balance {
                 return Err(format!("Invalid withdrawal value at action {action_index}"));
             }
@@ -167,7 +167,7 @@ fn replay_record(
         }
     }
 
-    let root_after = match tree_hash_context {
+    let root_after = if kind == ActionKind::FullInputExit { Ok(accumulator.tree.root) } else { match tree_hash_context {
         Some(context) => context.append_three_commitments(
             &mut accumulator.tree,
             &record.outputs.clone().map(|output| output.cm),
@@ -176,7 +176,7 @@ fn replay_record(
             .tree
             .append_three_commitments(&record.outputs.clone().map(|output| output.cm)),
     }
-    .map_err(|error| format!("Tree replay failed at action {action_index}: {error:?}"))?;
+    }.map_err(|error| format!("Tree replay failed at action {action_index}: {error:?}"))?;
     if record.tree_root_after != root_after {
         return Err(format!("Invalid tree root at action {action_index}"));
     }
@@ -214,7 +214,7 @@ fn recovered_state(
     Ok(RecoveredPoolState {
         tree,
         nullifiers,
-        action_count: u32::try_from(record_count)
+        action_count: u128::try_from(record_count)
             .map_err(|_| "Action count exceeds u32".to_string())?,
         transcript_head,
         total_public_balance,

@@ -2,8 +2,10 @@ import { bigintTo32Bytes, bytesToBigint } from './field.js';
 import { equalBytes } from './hash.js';
 import { poseidon2Hash } from './poseidon2.js';
 export const TREE_ARITY = 3;
-export const TREE_DEPTH = 17;
-export const TREE_CAPACITY = TREE_ARITY ** TREE_DEPTH;
+export const TREE_INNER_DEPTH = 17;
+export const TREE_OUTER_DEPTH = 47;
+export const TREE_DEPTH = TREE_INNER_DEPTH + TREE_OUTER_DEPTH;
+export const TREE_CAPACITY = 3n ** BigInt(TREE_DEPTH);
 export const TREE_FRONTIER_WIDTH = TREE_ARITY - 1;
 export const TREE_FRONTIER_SIZE = TREE_DEPTH * TREE_FRONTIER_WIDTH;
 export function hashMerkleNode(children) {
@@ -31,7 +33,7 @@ export async function getEmptyRoots() {
 }
 export async function createEmptyTree() {
     return {
-        nextIndex: 0,
+        nextIndex: 0n,
         frontier: initialFrontier(),
         currentRoot: EMPTY_ROOTS[TREE_DEPTH].slice(),
     };
@@ -41,13 +43,15 @@ export async function appendFrontier(tree, leaf, hash = hashMerkleNode) {
         throw new Error('Commitment must be 32 bytes');
     if (tree.frontier.length !== TREE_FRONTIER_SIZE)
         throw new Error('Invalid Merkle frontier');
+    if (typeof tree.nextIndex !== 'bigint' || tree.nextIndex < 0n)
+        throw new Error('Invalid Merkle index');
     if (tree.nextIndex >= TREE_CAPACITY)
         throw new Error('Merkle tree full');
     let current = leaf.slice();
     let nodeIndex = tree.nextIndex;
     let level = 0;
     for (;;) {
-        const position = nodeIndex % TREE_ARITY;
+        const position = Number(nodeIndex % 3n);
         if (position === 0) {
             tree.frontier[frontierOffset(level, 0)] = current;
             break;
@@ -61,16 +65,18 @@ export async function appendFrontier(tree, leaf, hash = hashMerkleNode) {
             tree.frontier[frontierOffset(level, 1)],
             current,
         ]);
-        nodeIndex = Math.floor(nodeIndex / TREE_ARITY);
+        nodeIndex = nodeIndex / 3n;
         level += 1;
         if (level === TREE_DEPTH) {
             tree.currentRoot = current;
             break;
         }
     }
-    tree.nextIndex += 1;
+    tree.nextIndex += 1n;
 }
 export async function refreshTreeRoot(tree, hash = hashMerkleNode) {
+    if (typeof tree.nextIndex !== 'bigint' || tree.nextIndex < 0n || tree.nextIndex > TREE_CAPACITY)
+        throw new Error('Invalid Merkle index');
     if (tree.nextIndex === TREE_CAPACITY)
         return tree.currentRoot.slice();
     if (tree.frontier.length !== TREE_FRONTIER_SIZE)
@@ -79,7 +85,7 @@ export async function refreshTreeRoot(tree, hash = hashMerkleNode) {
     let nodeIndex = tree.nextIndex;
     for (let level = 0; level < TREE_DEPTH; level += 1) {
         const empty = EMPTY_ROOTS[level];
-        const position = nodeIndex % TREE_ARITY;
+        const position = Number(nodeIndex % 3n);
         current = position === 0
             ? await hash([current, empty, empty])
             : position === 1
@@ -89,7 +95,7 @@ export async function refreshTreeRoot(tree, hash = hashMerkleNode) {
                     tree.frontier[frontierOffset(level, 1)],
                     current,
                 ]);
-        nodeIndex = Math.floor(nodeIndex / TREE_ARITY);
+        nodeIndex = nodeIndex / 3n;
     }
     tree.currentRoot = current;
     return current.slice();
@@ -108,7 +114,7 @@ function nodeKey(level, index) {
 }
 export class MerkleNodeStore {
     nodes = new Map();
-    _nextIndex = 0;
+    _nextIndex = 0n;
     _currentRoot;
     constructor(emptyRoot) {
         this._currentRoot = Uint8Array.from(emptyRoot);
@@ -138,19 +144,19 @@ export class MerkleNodeStore {
         let nodeIndex = this._nextIndex;
         this.nodes.set(nodeKey(0, nodeIndex), Uint8Array.from(leaf));
         for (let level = 0; level < TREE_DEPTH; level += 1) {
-            const parentIndex = Math.floor(nodeIndex / TREE_ARITY);
-            const firstChildIndex = parentIndex * TREE_ARITY;
-            const children = [0, 1, 2].map(offset => (this.nodes.get(nodeKey(level, firstChildIndex + offset)) ?? EMPTY_ROOTS[level]));
+            const parentIndex = nodeIndex / 3n;
+            const firstChildIndex = parentIndex * 3n;
+            const children = [0, 1, 2].map(offset => (this.nodes.get(nodeKey(level, firstChildIndex + BigInt(offset))) ?? EMPTY_ROOTS[level]));
             const parent = hashMerkleNode(children);
             this.nodes.set(nodeKey(level + 1, parentIndex), parent);
             nodeIndex = parentIndex;
         }
-        this._nextIndex += 1;
-        this._currentRoot = Uint8Array.from(this.nodes.get(nodeKey(TREE_DEPTH, 0)) ?? EMPTY_ROOTS[TREE_DEPTH]);
+        this._nextIndex += 1n;
+        this._currentRoot = Uint8Array.from(this.nodes.get(nodeKey(TREE_DEPTH, 0n)) ?? EMPTY_ROOTS[TREE_DEPTH]);
         return this.currentRoot;
     }
     async getPath(leafIndex) {
-        if (!Number.isSafeInteger(leafIndex) || leafIndex < 0 || leafIndex >= this._nextIndex) {
+        if (typeof leafIndex !== 'bigint' || leafIndex < 0n || leafIndex >= this._nextIndex) {
             throw new Error('Merkle leaf is not present');
         }
         const leaf = this.nodes.get(nodeKey(0, leafIndex));
@@ -161,15 +167,15 @@ export class MerkleNodeStore {
         let current = Uint8Array.from(leaf);
         let nodeIndex = leafIndex;
         for (let level = 0; level < TREE_DEPTH; level += 1) {
-            const position = nodeIndex % TREE_ARITY;
-            const firstChildIndex = nodeIndex - position;
+            const position = Number(nodeIndex % 3n);
+            const firstChildIndex = nodeIndex - BigInt(position);
             const children = [0, 1, 2].map(offset => (offset === position
                 ? current
-                : Uint8Array.from(this.nodes.get(nodeKey(level, firstChildIndex + offset)) ?? EMPTY_ROOTS[level])));
+                : Uint8Array.from(this.nodes.get(nodeKey(level, firstChildIndex + BigInt(offset))) ?? EMPTY_ROOTS[level])));
             siblings.push(children.filter((_, index) => index !== position));
             positions.push(position);
             current = hashMerkleNode(children);
-            nodeIndex = Math.floor(nodeIndex / TREE_ARITY);
+            nodeIndex = nodeIndex / 3n;
         }
         if (!equalBytes(current, this._currentRoot)) {
             throw new Error('Merkle node store is inconsistent with its current root');

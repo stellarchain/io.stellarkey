@@ -65,11 +65,11 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
   const assetField = computeAssetField(asset);
   const accountPublicKey = bytes(5);
   const deploymentBindingHash = bytes(6);
-  const contextHash = computeContextHash(1, networkId, realmId, poolId);
+  const contextHash = computeContextHash(2, networkId, realmId, poolId);
   const contextField = computeContextField(contextHash);
   const keys = await deriveKeysFromSeed(
     bytes(7),
-    1,
+    2,
     networkId,
     realmId,
     poolId,
@@ -85,7 +85,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     diversifier,
   );
   const note = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     flags: 0,
     value: 50_000_000n,
     diversifier,
@@ -177,7 +177,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
   const anchorRoot = zero(32);
   const treeRootAfter = await appendCommitments(tree, outputs.map(output => output.cm));
   const action = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     kind: ActionKind.Deposit,
     assetIndex: 0,
     asset,
@@ -190,9 +190,9 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
   };
   const priorRecordHash = computeGenesisRecordHash(contextHash, deploymentBindingHash);
   const record = {
-    actionIndex: 0,
+    actionIndex: 0n,
     ledgerSequence: 123,
-    startingLeafIndex: 0,
+    startingLeafIndex: 0n,
     actionKind: ActionKind.Deposit,
     assetIndex: 0,
     asset,
@@ -204,13 +204,13 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     publicValue: note.value,
     depositSource: action.depositSource,
   };
-  const recordHash = computeRecordHash(record, 1, priorRecordHash);
+  const recordHash = computeRecordHash(record, 2, priorRecordHash);
 
   const result = await scanArchiveRecords({
     records: [record],
     viewingKey: toViewingKey(keys),
     context: {
-      protocolVersion: 1,
+      protocolVersion: 2,
       networkId,
       realmId,
       poolId,
@@ -234,8 +234,8 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     assetContractId,
     diversifier: '01020304',
     ownerCommitment: hex(receiveKeys.ownerCommitment),
-    leafIndex: 0,
-    actionIndex: 0,
+    leafIndex: 0n,
+    actionIndex: 0n,
     rho: hex(rho),
     memoHex: Buffer.from('rent').toString('hex'),
     senderFingerprintHex: '',
@@ -251,7 +251,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
 
   const recipientKeys = await deriveKeysFromSeed(
     bytes(17),
-    1,
+    2,
     networkId,
     realmId,
     poolId,
@@ -352,7 +352,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     const outgoingNote = [recipientNote, changeNote, transferDummy][outputIndex];
     const recipientPublicKey = outputIndex === 0 ? recipientKeys.hpkePublicKey : keys.hpkePublicKey;
     const outgoingPlaintext = encodeOutgoingPlaintext({
-      protocolVersion: 1,
+      protocolVersion: 2,
       flags: outgoingNote.value === 0n ? 1 : 0,
       value: outgoingNote.value,
       diversifier: outgoingNote.diversifier,
@@ -390,7 +390,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     transferOutputs.map(output => output.cm),
   );
   const transferAction = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     kind: ActionKind.PrivateTransfer,
     actionNonce: transferNonce,
     anchorRoot: treeRootAfter,
@@ -399,9 +399,9 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     publicValue: 0n,
   };
   const transferRecord = {
-    actionIndex: 1,
+    actionIndex: 1n,
     ledgerSequence: 124,
-    startingLeafIndex: 3,
+    startingLeafIndex: 3n,
     actionKind: ActionKind.PrivateTransfer,
     actionNonce: transferNonce,
     anchorRoot: treeRootAfter,
@@ -410,12 +410,12 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     outputs: transferOutputs,
     publicValue: 0n,
   };
-  const transferRecordHash = computeRecordHash(transferRecord, 1, recordHash);
+  const transferRecordHash = computeRecordHash(transferRecord, 2, recordHash);
   const transferResult = await scanArchiveRecords({
     records: [record, transferRecord],
     viewingKey: toViewingKey(keys),
     context: {
-      protocolVersion: 1,
+      protocolVersion: 2,
       networkId,
       realmId,
       poolId,
@@ -463,7 +463,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     records: [record, transferRecord],
     viewingKey: toViewingKey(recipientKeys),
     context: {
-      protocolVersion: 1,
+      protocolVersion: 2,
       networkId,
       realmId,
       poolId,
@@ -519,9 +519,9 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
   );
   const duplicateRecord = {
     ...record,
-    actionIndex: 1,
+    actionIndex: 1n,
     ledgerSequence: 124,
-    startingLeafIndex: 3,
+    startingLeafIndex: 3n,
     actionNonce: duplicateNonce,
     treeRootAfter: duplicateTreeRootAfter,
     outputs: duplicateOutputs,
@@ -530,7 +530,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     records: [record, duplicateRecord],
     viewingKey: toViewingKey(keys),
     context: {
-      protocolVersion: 1,
+      protocolVersion: 2,
       networkId,
       realmId,
       poolId,
@@ -551,10 +551,10 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     duplicateResult.nullifiersByCommitment.get(duplicateResult.notes[0].id),
     duplicateResult.nullifiersByCommitment.get(duplicateResult.notes[1].id),
   );
-  assert.equal(duplicateResult.tree.nextIndex, 6, 'every on-chain output still advances the tree');
+  assert.equal(duplicateResult.tree.nextIndex, 6n, 'every on-chain output still advances the tree');
 
   const scanContext = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     networkId,
     realmId,
     poolId,
@@ -614,9 +614,9 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
   const laterTreeRoot = await appendCommitments(tree, duplicateOutputs.map(output => output.cm));
   const laterRecord = {
     ...duplicateRecord,
-    actionIndex: 2,
+    actionIndex: 2n,
     ledgerSequence: 125,
-    startingLeafIndex: 6,
+    startingLeafIndex: 6n,
     nullifiers: [bytes(27), bytes(28)],
     treeRootAfter: laterTreeRoot,
   };
@@ -630,8 +630,8 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
         ...transferRecord,
         outputs: await resealTransferMetadata(recipientIndexes),
       };
-      const mixedRecordHash = computeRecordHash(mixedRecord, 1, recordHash);
-      const laterRecordHash = computeRecordHash(laterRecord, 1, mixedRecordHash);
+      const mixedRecordHash = computeRecordHash(mixedRecord, 2, recordHash);
+      const laterRecordHash = computeRecordHash(laterRecord, 2, mixedRecordHash);
       for (const [owner, ownerKeys] of [['sender', keys], ['recipient', recipientKeys]]) {
         const input = { ...scanInput, viewingKey: toViewingKey(ownerKeys) };
         const full = await scanArchiveRecords({
@@ -650,7 +650,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
             ? [['50000000', 0, 'spent'], ['20000000', 4, 'unspent'], ['50000000', 6, 'unspent']]
             : [['30000000', 3, 'unspent']]
           ).map(([value, leafIndex, status]) => ({
-            value, assetIndex: 0, assetContractId, leafIndex, status,
+            value, assetIndex: 0, assetContractId, leafIndex: BigInt(leafIndex), status,
           })),
           'only commitment-authenticated real outputs enter canonical note accounting',
         );
@@ -663,7 +663,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
         assert.ok(full.activities.every(activity => (
           activity.assetIndex === 0 && activity.assetContractId === assetContractId
         )));
-        const activity = full.activities.find(activity => activity.actionIndex === 1);
+        const activity = full.activities.find(activity => activity.actionIndex === 1n);
         assert.equal(activity.memoHex, Buffer.from('pay').toString('hex'));
         if (owner === 'sender') {
           assert.equal(activity.recipientFingerprint, privateAddressFingerprint(recipientAddress));
@@ -671,17 +671,17 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
         } else {
           assert.deepEqual(full.spentNullifierHexes, []);
         }
-        assert.equal(full.tree.nextIndex, 9);
+        assert.equal(full.tree.nextIndex, 9n);
         assert.deepEqual(full.tree.currentRoot, laterTreeRoot);
         assert.deepEqual(full.lastRecordHash, laterRecordHash);
 
         const firstPage = await scanArchiveRecords({ ...input, records: [record, mixedRecord] });
-        assert.equal(firstPage.tree.nextIndex, 6);
+        assert.equal(firstPage.tree.nextIndex, 6n);
         assert.deepEqual(firstPage.lastRecordHash, mixedRecordHash);
         const nextPage = await scanArchiveRecords({
           ...input,
           records: [laterRecord],
-          initialTree: firstPage.tree,
+          initialTree: firstPage.tree, expectedFirstActionIndex: 2n,
           existingNotes: firstPage.notes,
           expectedPriorRecordHash: firstPage.lastRecordHash,
         });
@@ -690,7 +690,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
         assert.deepEqual(nextPage.tree, full.tree);
         assert.deepEqual(nextPage.lastRecordHash, full.lastRecordHash);
         assert.deepEqual(nextPage.nullifiersByCommitment, full.nullifiersByCommitment);
-        assert.equal(firstPage.tree.nextIndex, 6, 'incremental scanning must not mutate its prior cursor');
+        assert.equal(firstPage.tree.nextIndex, 6n, 'incremental scanning must not mutate its prior cursor');
       }
     });
   }
@@ -705,8 +705,8 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
       ['duplicate nullifier', { nullifiers: [bytes(13), bytes(13)] }, /nullifiers must differ/i],
       ['malformed transcript field', { actionNonce: bytes(9, 31) }, /action nonce must be 32 bytes/i],
       ['wrong tree root', { treeRootAfter: bytes(10) }, /tree root mismatch/i],
-      ['wrong action sequence', { actionIndex: 1 }, /action sequence mismatch/i],
-      ['wrong leaf position', { actionIndex: 1, startingLeafIndex: 3 }, /leaf position mismatch/i],
+      ['wrong action sequence', { actionIndex: 1n }, /action sequence mismatch/i],
+      ['wrong leaf position', { actionIndex: 1n, startingLeafIndex: 3n }, /leaf position mismatch/i],
     ]) {
       await assert.rejects(
         () => scanArchiveRecords({ ...scanInput, records: [{ ...record, ...patch }] }),
@@ -741,7 +741,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
         () => scanArchiveRecords({
           ...scanInput,
           records: [transferRecord],
-          initialTree: result.tree,
+          initialTree: result.tree, expectedFirstActionIndex: 1n,
           existingNotes: result.notes.map(owned => ({ ...owned, ...patch })),
           expectedPriorRecordHash: result.lastRecordHash,
         }),
@@ -752,10 +752,10 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
 
   await assert.rejects(
     () => scanArchiveRecords({
-      records: [{ ...record, actionIndex: 1 }],
+      records: [{ ...record, actionIndex: 1n }],
       viewingKey: toViewingKey(keys),
       context: {
-        protocolVersion: 1,
+        protocolVersion: 2,
         networkId,
         realmId,
         poolId,
@@ -774,7 +774,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
       records: [{ ...record, treeRootAfter: bytes(10) }],
       viewingKey: toViewingKey(keys),
       context: {
-        protocolVersion: 1,
+        protocolVersion: 2,
         networkId,
         realmId,
         poolId,

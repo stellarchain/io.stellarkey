@@ -1,3 +1,4 @@
+import { parsePrivateIndices, stringifyPrivateIndices } from '../src/features/private-balance/runtime/indices.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as storage from '../src/features/private-balance/runtime/storage.ts';
@@ -65,8 +66,8 @@ const note = {
   assetContractId: ASSET_CONTRACT_ID,
   diversifier: '00000000',
   ownerCommitment: '07'.repeat(32),
-  leafIndex: 0,
-  actionIndex: 0,
+  leafIndex: 0n,
+  actionIndex: 0n,
   rho: '08'.repeat(32),
   memoHex: '',
   senderFingerprintHex: '',
@@ -74,10 +75,10 @@ const note = {
   createdAt: 1,
 };
 const checkpoint = {
-  lastActionIndex: 0,
+  lastActionIndex: 0n, nextLeafIndex: 3n,
   lastRecordHash: '0a'.repeat(32),
   treeRoot: '0b'.repeat(32),
-  treeFrontier: Array.from({ length: 34 }, () => '00'.repeat(32)),
+  treeFrontier: Array.from({ length: 128 }, () => '00'.repeat(32)),
   deploymentBindingHash: context.deploymentBindingHash,
   manifestHash,
   latestLedger: 100,
@@ -92,7 +93,7 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
     account: {
       setupState: 'ready',
       syncStatus: 'current',
-      lastVerifiedActionIndex: 0,
+      lastVerifiedActionIndex: 0n,
       updatedAt: 2,
     },
     notes: [note],
@@ -431,7 +432,7 @@ test('build reservations past the TTL release their notes in one commit', async 
   assert.equal(released.notes[0].reservedAt, undefined);
   assert.deepEqual(
     await loadPrivateBalanceState(context, key, driver),
-    JSON.parse(JSON.stringify(released)),
+    parsePrivateIndices(stringifyPrivateIndices(released), ['leafIndex', 'actionIndex', 'spentInActionIndex', 'lastVerifiedActionIndex', 'lastActionIndex', 'nextLeafIndex']),
   );
 });
 
@@ -540,7 +541,7 @@ test('stale pre-broadcast pending actions release their notes, broadcasts never 
   assert.equal(statuses.get(freshNote.id), 'reserved');
   assert.deepEqual(
     await loadPrivateBalanceState(context, key, driver),
-    JSON.parse(JSON.stringify(swept)),
+    parsePrivateIndices(stringifyPrivateIndices(swept), ['leafIndex', 'actionIndex', 'spentInActionIndex', 'lastVerifiedActionIndex', 'lastActionIndex', 'nextLeafIndex']),
   );
 });
 

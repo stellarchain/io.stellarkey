@@ -4,7 +4,7 @@ use soroban_sdk::{BytesN, Env, contracttype};
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpentNullifier {
-    pub spent_at_action: u32,
+    pub spent_at_action: u128,
     pub spent_at_ledger: u32,
 }
 
@@ -21,7 +21,7 @@ pub(crate) fn require_unspent(env: &Env, nullifier: &BytesN<32>) -> Result<(), P
     Ok(())
 }
 
-pub(crate) fn mark_spent(env: &Env, nullifier: &BytesN<32>, action_index: u32) {
+pub(crate) fn mark_spent(env: &Env, nullifier: &BytesN<32>, action_index: u128) {
     let key = DataKey::Nullifier(nullifier.clone());
     let value = SpentNullifier {
         spent_at_action: action_index,

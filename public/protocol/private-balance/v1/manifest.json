@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "protocolVersion": 1,
-  "artifactVersion": "1.0.2-dev-fixture",
+  "protocolVersion": 2,
+  "artifactVersion": "2.0.0-dev-fixture",
   "status": "development",
   "minimumStellarProtocol": 25,
   "networkPassphrase": "Test SDF Network ; September 2015",
   "networkId": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
-  "realmId": "db67e508600237c451d33ce9ffd2c1d952e406b458794cec05f37c431c3ffe5b",
-  "poolContractId": "CBQIGXD6DPBBHCNNLQDQR552ZAANJOIPPM7DGOO3TT33TTT2SJW4DRUI",
-  "guardianAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
-  "assetAdminAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
+  "realmId": "53d96aa6983ecbd1c077ce52914f4f0fdf093e6fe1e3546051ea68602d628164",
+  "poolContractId": "CAYCV26VCDNUEM6HHKQYHKDJ3O43CK5DCBT3TMMHFVEXE7CIFVWRY4R7",
+  "guardianAddress": "GB642TQHL5QPNPJLSJK3JNZ6Z34LNER6EMNWBNCLDXNWB4F5U7WXTYYL",
+  "assetAdminAddress": "GB642TQHL5QPNPJLSJK3JNZ6Z34LNER6EMNWBNCLDXNWB4F5U7WXTYYL",
   "assets": [
     {
       "index": 0,
@@ -34,36 +34,36 @@
       "contractId": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
     }
   ],
-  "stealthAnnouncerAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
+  "stealthAnnouncerAddress": "GB642TQHL5QPNPJLSJK3JNZ6Z34LNER6EMNWBNCLDXNWB4F5U7WXTYYL",
   "witnessRpcUrl": "https://rpc.ankr.com/stellar_testnet_soroban",
   "deploymentCheckpoint": {
-    "ledger": 4491845,
-    "hash": "2fd40507958359c7a3739e3eacbe7469e3ab0aa4b983e61fdf1beb392defe5f9"
+    "ledger": 4647256,
+    "hash": "188d5260965cf3be048f6eb34659db9c4946b44817ec4b98b9c3fb201f50ad9e"
   },
   "registryCheckpoint": {
-    "ledger": 4491848,
-    "hash": "c6e3092c20577fcce3041d53e54a089ba6039db7400629ecca521bb5544c4087",
+    "ledger": 4647258,
+    "hash": "8e15b2402501a2c5cddf31b721f7fa8eafa635ed09da68efc6df6aeef5e0108a",
     "assetCount": 2
   },
-  "deploymentBindingHash": "59d5c0fbdf41c649daf919ccf9a4d64d3d0034ee55d7b41a002f399fff1aaf2f",
+  "deploymentBindingHash": "8cdb7051ce7f0c465e285098f87832d2dc82c33422e6edbed2e948f24f169758",
   "artifacts": {
-    "r1csSha256": "e8e9566deeaabd745b9c4306f9b222e5f8dc3b224c5e1fd4741da729785fc2d3",
-    "r1csConstraints": 15114,
-    "wasmSha256": "d574799b6191e8564cc2f364e7ac0a927e2452bb6ceed8ffe37d5e9fdcff8d7e",
-    "wasmByteLength": 154930,
-    "zkeySha256": "fd04e9225485bbdfcca999b5f46be3735c6435ca6a3c98a1346b5952e9672273",
-    "zkeyByteLength": 9264916,
+    "r1csSha256": "b59eaddeb2ec6eac403d2c2adee693ea2446abb094edcdd6f309456e1d77ae2f",
+    "r1csConstraints": 40594,
+    "wasmSha256": "185a6d8c684b9a1d4fbe878bf19ea1906afaf3f1137376b90235890b7ac128ed",
+    "wasmByteLength": 261555,
+    "zkeySha256": "6082d74328d861e5a2247083ec9e83f642b61fa89aef8b297f235d43ec1f07f0",
+    "zkeyByteLength": 26308892,
     "zkeyTransport": {
       "encoding": "points-compressed",
-      "sha256": "c684799ed86b8a40b22b1d818c3c866d3aa6d2c7f4fe7d5728bf8c5328d39520",
-      "byteLength": 6327606,
-      "wireByteLength": 2498167
+      "sha256": "814ac828a3a961daf9dd97dfde4c04082c71bb0af8eb618e34279b5a61dc84ba",
+      "byteLength": 17722398,
+      "wireByteLength": 7368646
     },
-    "vkJsonSha256": "8a1fdbb8e21a688c5279edd43e4deafbed788604f518209c5cee27499ea996e7",
-    "vkBinSha256": "6af84a98f2e9bddc7fbcfdf08160c10b2d627e2aab19fa612290b1feaf09e0f7"
+    "vkJsonSha256": "960b480dd4a10580e9e55e284eabdae072a359623b7530dd3bf40a399d64accf",
+    "vkBinSha256": "4c39e247db8e932695e881041e94337d28858208f04b477b32d51604bb3c03bc"
   },
   "constants": {
-    "treeDepth": 17,
+    "treeDepth": 64,
     "treeArity": 3,
     "rootWindowLedgers": 1440,
     "publicInputs": 11,
@@ -83,14 +83,14 @@
     "aeadId": "0x0001"
   },
   "release": {
-    "contractWasmSha256": "9868d322fb170fe95cbcbcd48eb03e9c2cf48e0be7e2a72431a69f8a03801ecd",
+    "contractWasmSha256": "88547981e9fe10861ba0e152a2185efd94ce5679e81822949bc9e39eb71ac39c",
     "contractSourceCommit": "2035d27b2de370197f3cde060e42dce1e5d019c3",
-    "circuitSourceSha256": "50ecb2c842c217a29d03a66c22b1dc9cc578c6011b1e3fac0c7b40e3fba5e682",
+    "circuitSourceSha256": "3050d093aece12a4eb25552419a16a0902e4c94a6fa1f7b1d0d2d5e49d8aeec9",
     "poseidonParametersSha256": "6ecf310eeece863dcb24370c6668cfe42808ac1cdb25c30f4b85461ab37789a8",
     "hpkePackageVersion": "@hpke/core@1.9.0+@hpke/dhkem-x25519@1.8.0",
     "hpkeDependencyIntegritySha256": "312a82fc6626f2bb66b1a24f351f8e13f95bde25fa4de350a8b10d2f4fe7a6b7",
-    "toolchainLockSha256": "3bbe3f725d6578e620dd1291ef9ce2d0fdfc5138aa51569856124c288344b413",
-    "powersOfTauSha256": "3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db",
+    "toolchainLockSha256": "0abe5d6bf7fcf8a87d5e5aeb476ba4e0aea5e92e8fe4739034d6b70ce7099e64",
+    "powersOfTauSha256": "f807e065fde53f72f4bf4d57140fab85b26daa6cc95bdfec7cce93622b3a367c",
     "zkeyVerified": true,
     "ceremonyTranscriptRoot": "0000000000000000000000000000000000000000000000000000000000000000",
     "auditReports": [],

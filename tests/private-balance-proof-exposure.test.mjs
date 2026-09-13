@@ -24,7 +24,7 @@ class MemoryDriver {
 const action = { id: 'proof', kind: 'transfer', assetIndex: 0, assetContractId, status: 'prepared', submissionMode: 'relay', proofExposure: 'shared',
   reservedNoteIds: [hex('5')], actionField: hex('6'), nullifiers: [hex('7'), hex('0')], outputCommitments: [hex('8'), hex('9'), hex('a')],
   anchorRoot: hex('b'), anchorExpiresAtLedger: 100, proofHash: hex('c'), classicFeeCapStroops: '100', resourceFeeCapStroops: '1000', broadcastAttempts: 0, createdAt: 1, updatedAt: 1 };
-const note = { id: hex('5'), commitment: hex('5'), value: '10', assetIndex: 0, assetContractId, diversifier: '00000000', ownerCommitment: hex('1'), leafIndex: 0, actionIndex: 0, rho: hex('2'), memoHex: '', senderFingerprintHex: '', status: 'reserved', reservedAt: 1, createdAt: 1 };
+const note = { id: hex('5'), commitment: hex('5'), value: '10', assetIndex: 0, assetContractId, diversifier: '00000000', ownerCommitment: hex('1'), leafIndex: 0n, actionIndex: 0n, rho: hex('2'), memoHex: '', senderFingerprintHex: '', status: 'reserved', reservedAt: 1, createdAt: 1 };
 async function fixture(overrides = {}) {
   const driver = new MemoryDriver();
   const state = { ...storage.createEmptyPrivateBalanceState(hex('d'), 1), notes: [note], pendingActions: [{ ...action, ...overrides }] };

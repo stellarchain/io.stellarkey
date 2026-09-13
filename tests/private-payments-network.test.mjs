@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { TransactionBuilder } from '@stellar/stellar-sdk';
+import { planPrivateWithdrawal } from '../src/features/private-balance/runtime/coin-selection.ts';
 import { ACTORS, createPrivatePaymentsNetwork, format } from './helpers/private-payments-network.ts';
 
 const manifest = JSON.parse(readFileSync(new URL('../protocol/private-balance/manifests/development.json', import.meta.url), 'utf8'));
@@ -160,6 +161,39 @@ test('withdrawals: direct to another public account and to the sender\'s own acc
     assert.equal(await publicBalance(net, 'alice'), '910');
     assert.equal(await spendable(net, 'charlie'), '20');
     assert.equal(net.rpcLookups, 0);
+    await net.assertSettled();
+  } finally { net.restore(); }
+});
+
+test('multi-note full withdrawal advances the archive without adding leaves and survives seed-only recovery', async () => {
+  const net = await network();
+  try {
+    for (const amount of ['3', '4', '5']) {
+      await net.include(await net.send('alice', { kind: 'deposit', amount }));
+    }
+    const before = await net.state('alice');
+    const notes = before.notes.filter(note => note.status === 'unspent');
+    assert.equal(notes.length, 3);
+    const steps = planPrivateWithdrawal(notes, xlm('12'));
+    assert.equal(steps.length, 2);
+    const leafIndex = net.records.at(-1).startingLeafIndex + 3n;
+    const root = net.records.at(-1).treeRootAfter;
+    for (const step of steps) {
+      const handle = await net.prepare('alice', { kind: 'withdraw', amount: format(BigInt(step.amountStroops)),
+        publicRecipient: net.publicKey('alice'), selectedNoteIds: step.noteIds, requireFullInputExit: true });
+      assert.equal(handle.review.transaction.method, 'full_input_exit');
+      assert.equal(handle.review.changeValueStroops, '0');
+      await net.submit(handle);
+      await net.include(handle);
+      assert.equal(net.records.at(-1).actionKind, 4);
+      assert.equal(net.records.at(-1).startingLeafIndex, leafIndex);
+      assert.deepEqual(net.records.at(-1).treeRootAfter, root);
+    }
+    assert.equal(net.records.length, 5);
+    assert.equal(await spendable(net, 'alice'), '0');
+    assert.equal(await publicBalance(net, 'alice'), '1000');
+    await net.forget('alice');
+    assert.equal(await spendable(net, 'alice'), '0');
     await net.assertSettled();
   } finally { net.restore(); }
 });

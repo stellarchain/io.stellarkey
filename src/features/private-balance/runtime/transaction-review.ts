@@ -32,7 +32,7 @@ export interface PrivateBalanceTransactionReview {
   feePayer?: PrivateFeePayer;
   envelopeXdr: string;
   transactionHash: string;
-  method: 'deposit' | 'transfer' | 'withdraw';
+  method: 'deposit' | 'transfer' | 'withdraw' | 'full_input_exit';
   refreshesAnchor: boolean;
   classicFeeStroops: bigint;
   resourceFeeStroops: bigint;
@@ -183,7 +183,7 @@ function invokedMethod(transaction: Transaction, poolContractId: string): Privat
     throw new Error('Private transaction pool contract does not match the manifest');
   }
   const functionName = invocation.functionName.toString();
-  if (!['deposit', 'transfer', 'withdraw'].includes(functionName)) {
+  if (!['deposit', 'transfer', 'withdraw', 'full_input_exit'].includes(functionName)) {
     throw new Error('Private transaction method is unsupported');
   }
   return functionName as PrivateBalanceTransactionReview['method'];

@@ -14,9 +14,9 @@ use soroban_sdk::{Address, BytesN, Env, contracttype};
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArchiveRecord {
-    pub action_index: u32,
+    pub action_index: u128,
     pub ledger_sequence: u32,
-    pub starting_leaf_index: u32,
+    pub starting_leaf_index: u128,
     pub action_kind: u32,
     pub asset_index: Option<u32>,
     pub asset: Option<Address>,
@@ -36,7 +36,7 @@ pub struct ArchiveRecord {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArchiveMeta {
-    pub action_count: u32,
+    pub action_count: u128,
     pub transcript_head: BytesN<32>,
 }
 
@@ -87,14 +87,12 @@ pub fn append_record(
     action: &Action,
     asset: Option<&AssetConfig>,
     signals: &[[u8; 32]; 11],
-    starting_leaf_index: u64,
+    starting_leaf_index: u128,
     tree_root_after: &BytesN<32>,
     public_address: Option<&Address>,
 ) -> Result<ArchiveRecord, PoolError> {
     let mut meta = storage::get_meta(env);
     let action_index = meta.action_count;
-    let starting_leaf_index =
-        u32::try_from(starting_leaf_index).map_err(|_| PoolError::TreeFull)?;
     if signals[6] != action.nullifiers[0]
         || signals[7] != action.nullifiers[1]
         || signals[8] != action.outputs[0].cm
@@ -124,7 +122,7 @@ pub fn append_record(
             }
             (None, None)
         }
-        private_balance_protocol::action::ActionKind::Withdraw => {
+        private_balance_protocol::action::ActionKind::Withdraw | private_balance_protocol::action::ActionKind::FullInputExit => {
             let recipient = public_address.ok_or(PoolError::InvalidActionShape)?;
             if action.public_recipient != Some(address_payload(recipient)?) {
                 return Err(PoolError::ArchiveCorrupt);

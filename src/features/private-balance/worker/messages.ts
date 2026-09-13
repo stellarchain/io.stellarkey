@@ -51,6 +51,7 @@ export type WorkerRequest =
       type: 'SCAN_PAGE';
       records: ArchiveRecordModel[];
       expectedPriorRecordHash: Uint8Array;
+    expectedFirstActionIndex?: bigint;
       initialTree?: MerkleTree;
       existingNotes?: ShieldedNoteRecord[];
       ledgerClosedAt?: Readonly<Record<number, number>>;

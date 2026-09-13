@@ -19,14 +19,14 @@ const manifest = JSON.parse(readFileSync(
 const vectors = JSON.parse(readFileSync(join(protocolDir, 'vectors/proofs-v1.json'), 'utf8'));
 const publicInputs = manifest?.constants?.publicInputs;
 
-if (vectors.schemaVersion !== 1 || vectors.protocolVersion !== 1 || !Array.isArray(vectors.proofs)) {
+if (vectors.schemaVersion !== 1 || vectors.protocolVersion !== 2 || !Array.isArray(vectors.proofs)) {
   throw new Error('Private proof vectors have an unsupported schema.');
 }
 if (!Number.isSafeInteger(publicInputs) || publicInputs <= 0) {
   throw new Error('Private development manifest has an invalid public-input count.');
 }
 
-const requiredKinds = new Set(['Deposit', 'PrivateTransfer', 'Withdraw']);
+const requiredKinds = new Set(['Deposit', 'PrivateTransfer', 'Withdraw', 'FullInputExit']);
 for (const item of vectors.proofs) {
   if (!item || typeof item.name !== 'string' || !requiredKinds.has(item.actionKind)) {
     throw new Error('Private proof vector metadata is invalid.');

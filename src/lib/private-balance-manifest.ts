@@ -116,7 +116,7 @@ const CONTRACT_ADDRESS = /^C[A-Z2-7]{55}$/;
 const ACCOUNT_ADDRESS = /^G[A-Z2-7]{55}$/;
 const ASSET_CODE = /^[A-Z0-9]{1,12}$/;
 const EXPECTED_CONSTANTS: PrivateBalanceConstants = {
-  treeDepth: 17,
+  treeDepth: 64,
   treeArity: 3,
   rootWindowLedgers: 1440,
   publicInputs: 11,
@@ -324,7 +324,7 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
   if (obj.schemaVersion !== 1) {
     throw new Error(`Unsupported schemaVersion: ${String(obj.schemaVersion)}`);
   }
-  if (obj.protocolVersion !== 1) {
+  if (obj.protocolVersion !== 2) {
     throw new Error(`Unsupported protocolVersion: ${String(obj.protocolVersion)}`);
   }
   if (
@@ -415,7 +415,7 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
 
   const parsed: PrivateBalanceManifest = {
     schemaVersion: 1,
-    protocolVersion: 1,
+    protocolVersion: 2,
     artifactVersion: string(obj.artifactVersion, 'artifactVersion'),
     status: obj.status as PrivateBalanceManifest['status'],
     minimumStellarProtocol: integer(obj.minimumStellarProtocol, 'minimumStellarProtocol'),

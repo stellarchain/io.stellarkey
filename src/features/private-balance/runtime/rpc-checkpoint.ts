@@ -1,3 +1,4 @@
+import { isPrivateIndex, stringifyPrivateIndices } from './indices';
 import type { ArchiveHeadState } from './archive-client';
 import { TREE_FRONTIER_SIZE } from '@stellarkey/private-balance';
 
@@ -134,11 +135,11 @@ function headFingerprint(head: ArchiveHeadState, name: string): string {
   ) {
     throw new PrivateRpcViewsDisagreeError(`${name} contract head is invalid.`);
   }
-  const actionCount = u32(meta.actionCount, `${name} action count`);
-  if (!Number.isSafeInteger(tree.nextIndex) || tree.nextIndex !== actionCount * 3) {
+  const actionCount = meta.actionCount;
+  if (!isPrivateIndex(actionCount) || !isPrivateIndex(tree.nextIndex) || tree.nextIndex > actionCount * 3n || tree.nextIndex % 3n !== 0n) {
     throw new PrivateRpcViewsDisagreeError(`${name} contract head is inconsistent.`);
   }
-  return JSON.stringify({
+  return stringifyPrivateIndices({
     config: {
       protocolVersion: u32(config.protocolVersion, `${name} protocol version`),
       networkId: bytes32(config.networkId, `${name} network ID`),

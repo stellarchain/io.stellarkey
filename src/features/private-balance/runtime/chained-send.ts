@@ -1,4 +1,5 @@
-import { parsePrivateAmount } from './coin-selection';
+import { formatPrivateBalanceAmount } from './selectors';
+import { parsePrivateAmount, type PrivateWithdrawalStep } from './coin-selection';
 import { assertDirectPrivateSubmission } from './direct-submission';
 import type { PreparedPrivateActionReview, PrivateActionDraft } from './action-flow';
 import type { PrivateActionSubmission } from './submission';
@@ -7,15 +8,13 @@ import { assertSamePrivateFeePayer, type PrivateFeePayer } from './fee-policy';
 export const PRIVATE_CHAINED_APPROVAL_WINDOW_SECONDS = 15 * 60;
 export const MAX_PRIVATE_CHAINED_STEPS = 64;
 
-export interface PrivateChainedSendDraft {
-  feePayerAccountId?: string;
-  kind: 'transfer';
-  amount: string;
-  recipientAddress: string;
-  memo?: string;
-}
+export type PrivateChainedSendDraft = { feePayerAccountId?: string } & (
+  | { kind: 'transfer'; amount: string; recipientAddress: string; memo?: string }
+  | { kind: 'withdraw'; amount: string; publicRecipient: string }
+);
 
 export interface PrivateChainedSendApproval {
+  withdrawalSteps?: readonly PrivateWithdrawalStep[];
   feePayer?: PrivateFeePayer;
   id: string;
   steps: number;
@@ -67,6 +66,7 @@ function stroops(value: bigint, name: string): bigint {
 export function planPrivateChainedSend(input: {
   approvalId: string;
   consolidationActionCount: number;
+  withdrawalSteps?: readonly PrivateWithdrawalStep[];
   perStepMaxFeeStroops: bigint;
   publicXlmBalanceStroops: bigint;
   feePayer?: PrivateFeePayer;
@@ -93,7 +93,9 @@ export function planPrivateChainedSend(input: {
   if (!Number.isSafeInteger(nowSeconds) || nowSeconds < 0) {
     throw new Error('Private chained approval time is invalid.');
   }
+  if (input.withdrawalSteps && input.withdrawalSteps.length !== steps) throw new Error('Private withdrawal step count changed.');
   return {
+    ...(input.withdrawalSteps ? { withdrawalSteps: input.withdrawalSteps.map(step => ({ ...step, noteIds: [...step.noteIds] })) } : {}),
     ...(input.feePayer ? { feePayer: Object.freeze({ ...input.feePayer }) } : {}),
     id: input.approvalId,
     steps,
@@ -135,11 +137,13 @@ export interface RunPrivateChainedSendInput {
 export async function runPrivateChainedSend(
   input: RunPrivateChainedSendInput,
 ): Promise<PrivateChainedSendResult> {
+  input = { ...input, draft: { ...input.draft }, approval: { ...input.approval,
+    ...(input.approval.withdrawalSteps ? { withdrawalSteps: input.approval.withdrawalSteps.map(step => ({ ...step, noteIds: [...step.noteIds] })) } : {}) } };
   assertDirectPrivateSubmission(input.approval);
   assertDirectPrivateSubmission(input.draft);
   const now = input.now ?? Date.now;
   const totalSteps = input.approval.steps;
-  if (!Number.isSafeInteger(totalSteps) || totalSteps < 2) {
+  if (!Number.isSafeInteger(totalSteps) || totalSteps < 2 || totalSteps > MAX_PRIVATE_CHAINED_STEPS) {
     throw new Error('Private chained approval step count is invalid.');
   }
   const perStepMax = BigInt(input.approval.perStepMaxFeeStroops);
@@ -147,16 +151,31 @@ export async function runPrivateChainedSend(
   const expectedAmountStroops = parsePrivateAmount(
     input.draft.amount,
     input.assetDecimals,
+    { aggregateWithdrawal: input.draft.kind === 'withdraw' },
   ).toString();
   // The final send's memo is enforced with the same normalization the
   // preparation flow applies before it journals memoHex.
-  const trimmedMemo = input.draft.memo?.trim() ?? '';
+  const trimmedMemo = input.draft.kind === 'transfer' ? input.draft.memo?.trim() ?? '' : '';
   const expectedMemoHex = trimmedMemo.length > 0
     ? Array.from(
         new TextEncoder().encode(trimmedMemo),
         byte => byte.toString(16).padStart(2, '0'),
       ).join('')
     : null;
+  const withdrawalSteps = input.approval.withdrawalSteps;
+  if ((input.draft.kind === 'withdraw') !== Boolean(withdrawalSteps)) throw new Error('Private withdrawal plan is missing or changed.');
+  if (withdrawalSteps) {
+    const ids = withdrawalSteps.flatMap(step => step.noteIds);
+    if (withdrawalSteps.length !== totalSteps || new Set(ids).size !== ids.length ||
+      withdrawalSteps.some(step => step.noteIds.length < 1 || step.noteIds.length > 2 ||
+        step.noteIds.some(id => !/^[0-9a-f]{64}$/.test(id)) ||
+        BigInt(step.amountStroops) < 1n || BigInt(step.inputValueStroops) > (1n << 63n) - 1n ||
+        BigInt(step.amountStroops) > BigInt(step.inputValueStroops) ||
+        step.fullInputExit !== (step.amountStroops === step.inputValueStroops)) ||
+      withdrawalSteps.reduce((sum, step) => sum + BigInt(step.amountStroops), 0n).toString() !== expectedAmountStroops) {
+      throw new Error('Private withdrawal plan no longer matches the approved amount.');
+    }
+  }
   let accumulated = 0n;
 
   for (let step = 1; step <= totalSteps; step += 1) {
@@ -167,12 +186,27 @@ export async function runPrivateChainedSend(
     }
     const isFinal = step === totalSteps;
     input.onProgress?.({ step, totalSteps, stage: 'preparing' });
-    const review = await input.prepare(isFinal ? { ...input.draft } : { kind: 'consolidate', ...(input.draft.feePayerAccountId ? { feePayerAccountId: input.draft.feePayerAccountId } : {}) });
+    const withdrawal = withdrawalSteps?.[step - 1];
+    const stepDraft: PrivateActionDraft = input.draft.kind === 'withdraw' && withdrawal
+      ? { ...input.draft, amount: formatPrivateBalanceAmount(BigInt(withdrawal.amountStroops), input.assetDecimals),
+        selectedNoteIds: [...withdrawal.noteIds], requireFullInputExit: withdrawal.fullInputExit }
+      : isFinal ? { ...input.draft } : { kind: 'consolidate', ...(input.draft.feePayerAccountId ? { feePayerAccountId: input.draft.feePayerAccountId } : {}) };
+    const review = await input.prepare(stepDraft);
     let stepFee: bigint;
     try {
       assertDirectPrivateSubmission(review);
       assertSamePrivateFeePayer(input.approval.feePayer, review.transaction.feePayer);
-      if (isFinal) {
+      if (withdrawal && input.draft.kind === 'withdraw') {
+        if (review.kind !== 'withdraw' || review.publicRecipient !== input.draft.publicRecipient ||
+          review.amountStroops !== withdrawal.amountStroops || review.inputValueStroops !== withdrawal.inputValueStroops ||
+          BigInt(review.changeValueStroops) !== BigInt(withdrawal.inputValueStroops) - BigInt(withdrawal.amountStroops) ||
+          review.transaction.method !== (withdrawal.fullInputExit ? 'full_input_exit' : 'withdraw') ||
+          !review.selectedNoteIds || review.selectedNoteIds.length !== withdrawal.noteIds.length ||
+          new Set(review.selectedNoteIds).size !== withdrawal.noteIds.length ||
+          review.selectedNoteIds.some(id => !withdrawal.noteIds.includes(id))) {
+          throw new PrivateChainedStepRejectedError('The withdrawal no longer matches the approved inputs, amount, or recipient.');
+        }
+      } else if (isFinal && input.draft.kind === 'transfer') {
         if (
           review.kind !== 'transfer' ||
           review.amountStroops !== expectedAmountStroops ||
