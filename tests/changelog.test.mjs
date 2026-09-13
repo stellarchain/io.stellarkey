@@ -29,10 +29,36 @@ test('the changelog parser rejects ambiguous or unsafe structure', () => {
     ['raw HTML', '# Changelog\n<script>alert(1)</script>\n## [Unreleased]\n### Changed\n- Entry'],
     ['unsupported category', '# Changelog\n## [Unreleased]\n### Misc\n- Entry'],
     ['empty published release', '# Changelog\n## [1.1.0] - 2026-08-29'],
+    ['empty unreleased category', '# Changelog\n## [Unreleased]\n### Changed'],
+    ['dated unreleased section', '# Changelog\n## [Unreleased] - 2026-09-12\n### Changed\n- Entry'],
   ];
 
   for (const [label, source] of invalid) {
     assert.throws(() => parseChangelog(source), undefined, label);
+  }
+});
+
+test('new unreleased entries preserve all published 1.5.0-and-earlier notes byte for byte', () => {
+  const source = read('CHANGELOG.md');
+  const start = source.indexOf('## [1.5.0]');
+  assert.ok(start >= 0);
+  assert.equal(
+    createHash('sha256').update(source.slice(start)).digest('hex'),
+    '437035c37709a0c02c6c12a67bd687e73e18c9eb3c97ac75a084f500c469f589',
+    'Published notes may change only for an explicitly documented factual correction',
+  );
+});
+
+test('Unreleased accepts empty or categorized entries without changing the published release', () => {
+  const published = '## [1.5.0] - 2026-09-12\n### Changed\n- Published entry\n';
+  const expectedRelease = parseChangelog('# Changelog\n' + published).releases[0];
+  for (const [pending, categories] of [
+    ['', []],
+    ['### Changed\n- Update a dependency.\n', [{ name: 'Changed', entries: ['Update a dependency.'] }]],
+  ]) {
+    const document = parseChangelog('# Changelog\n## [Unreleased]\n' + pending + published);
+    assert.deepEqual(document.releases[0], { version: 'Unreleased', date: null, categories });
+    assert.deepEqual(document.releases[1], expectedRelease);
   }
 });
 
@@ -48,7 +74,8 @@ test('the tracked changelog documents the current release', () => {
     document.releases.map(({ version }) => version),
     ['Unreleased', '1.5.0', '1.4.1', '1.4.0', '1.3.0', '1.2.0', '1.1.0', '1.0.0']
   );
-  assert.deepEqual(document.releases[0].categories, []);
+  assert.equal(document.releases[0].date, null);
+  assert.ok(document.releases[0].categories.every(({ entries }) => entries.length > 0));
   const release = document.releases[1];
   assert.equal(release.version, '1.5.0');
   assert.equal(release.date, '2026-09-12');
