@@ -114,13 +114,14 @@ for (const kind of ['send', 'withdrawal'] as const) {
   });
 }
 
-for (const mode of ['send', 'withdrawal', 'chained-send'] as const) {
+for (const mode of ['send', 'withdrawal', 'chained-send', 'chained-withdrawal'] as const) {
   test(`${mode} keeps the first submission outcome after two real confirmation events in the same render`, async ({ page }) => {
-    const chained = mode === 'chained-send';
+    const chained = mode === 'chained-send' || mode === 'chained-withdrawal';
+    const withdrawal = mode === 'withdrawal' || mode === 'chained-withdrawal';
     await page.getByRole('button', { name: chained ? 'Use direct chained preparation' : 'Use direct preparation', exact: true }).click();
-    await openReview(page, mode === 'withdrawal' ? 'withdrawal' : 'send');
+    await openReview(page, withdrawal ? 'withdrawal' : 'send');
     if (!chained) await page.getByRole('button', { name: 'Authorize Proof Sharing', exact: true }).click();
-    const confirm = page.getByRole('button', { name: mode === 'withdrawal' ? 'Confirm' : 'Confirm Send', exact: true });
+    const confirm = page.getByRole('button', { name: withdrawal ? 'Confirm' : 'Confirm Send', exact: true });
     await expect(confirm).toBeEnabled();
     await confirm.focus();
     await deliver(page, 'Double activate private confirmation');
@@ -241,3 +242,30 @@ test('direct chained sends still preflight and progress without helper selection
   await expect(page.getByText('Verifying on Stellar — your balance updates in a moment')).toBeVisible();
   await expect(page.getByTestId('direct-submissions')).toHaveText('1');
 });
+
+for (const reducedMotion of ['reduce', 'no-preference'] as const) {
+  test(`multi-note withdrawal uses its real form and keeps the approval shell (${reducedMotion})`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion });
+    await page.getByRole('button', { name: 'Use direct chained preparation', exact: true }).click();
+    await openReview(page, 'withdrawal');
+    const confirm = page.getByRole('button', { name: 'Confirm', exact: true });
+    await expect(confirm).toBeEnabled();
+    await expect(page.locator('dd').filter({ hasText: 'Sends in 2 steps' })).toBeVisible();
+    await expect(page.getByText('Consolidating notes', { exact: true })).toHaveCount(0);
+    const audit = await new AxeBuilder({ page }).include('[role="dialog"]').analyze();
+    expect(audit.violations.map(v => ({ id: v.id, impact: v.impact, count: v.nodes.length }))).toEqual([]);
+    await confirm.press('Enter');
+    await expect(page.getByText('Step 1 of 2 · Confirming…')).toBeVisible();
+    await stableShell(page);
+    await deliver(page, 'Advance direct chain');
+    await expect(page.getByText('Step 2 of 2 · Confirming…')).toBeVisible();
+    await stableShell(page);
+    await deliver(page, 'Advance direct chain');
+    await expect(page.getByText('Verifying on Stellar — your balance updates in a moment')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /confirmed/i })).toHaveCount(0);
+    await expect(page.getByTestId('direct-submissions')).toHaveText('1');
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Open synthetic private withdrawal', exact: true })).toBeFocused();
+  });
+}

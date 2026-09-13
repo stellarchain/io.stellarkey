@@ -1704,7 +1704,7 @@ async function prepareDecodedBackup(
             );
             sessionRoot = derivePrivacySessionRoot(
               rawSeed,
-              1,
+              2, // Current replacement protocol; retired Testnet state is not migrated.
               decodePrivacyContextHex(context.networkId, "Network ID"),
               decodePrivacyContextHex(context.realmId, "Realm ID"),
               decodePrivacyContextHex(context.poolId, "Pool ID"),
