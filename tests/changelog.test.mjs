@@ -43,7 +43,8 @@ test('new unreleased entries preserve all published 1.5.0-and-earlier notes byte
   const start = source.indexOf('## [1.5.0]');
   assert.ok(start >= 0);
   assert.equal(createHash('sha256').update(source.slice(start)).digest('hex'),
-    '437035c37709a0c02c6c12a67bd687e73e18c9eb3c97ac75a084f500c469f589');
+    '437035c37709a0c02c6c12a67bd687e73e18c9eb3c97ac75a084f500c469f589',
+    'Published notes may change only for an explicitly documented factual correction');
 });
 
 test('Unreleased accepts empty or categorized entries without changing the published release', () => {
@@ -52,6 +53,7 @@ test('Unreleased accepts empty or categorized entries without changing the publi
   for (const [pending, categories] of [
     ['', []],
     ['### Fixed\n- Fix artifact storage.\n', [{ name: 'Fixed', entries: ['Fix artifact storage.'] }]],
+    ['### Changed\n- Update a dependency.\n', [{ name: 'Changed', entries: ['Update a dependency.'] }]],
   ]) {
     const document = parseChangelog('# Changelog\n## [Unreleased]\n' + pending + published);
     assert.deepEqual(document.releases[0], { version: 'Unreleased', date: null, categories });
