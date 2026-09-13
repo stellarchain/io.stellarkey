@@ -12,7 +12,7 @@
   --color-line-strong: rgba(255, 255, 255, 0.32);
   --color-ink: #ffffff;
   --color-muted: rgba(235, 235, 245, 0.66);
-  --color-faint: rgba(235, 235, 245, 0.55);
+  --color-faint: rgba(235, 235, 245, 0.66);
   --color-accent: #0a84ff;
   --color-accent-2: #64d2ff;
   --color-pos: #30d158;
@@ -107,6 +107,11 @@
   color: #409cff;
 }
 
+/* Small secondary labels need contrast on translucent raised review surfaces. */
+:root:not([data-theme="light"]) .text-neutral-400 {
+  color: #b0b0b6;
+}
+
 /* Small negative text also appears on tinted and raised dark review panels. */
 :root:not([data-theme="light"]) .text-\[\#FF453A\],
 :root:not([data-theme="light"]) .text-\[\#FF6961\],
@@ -166,7 +171,7 @@
   --color-line-strong: rgba(255, 255, 255, 0.32);
   --color-ink: #ffffff;
   --color-muted: rgba(235, 235, 245, 0.66);
-  --color-faint: rgba(235, 235, 245, 0.55);
+  --color-faint: rgba(235, 235, 245, 0.66);
   --color-accent: #0a84ff;
   --color-accent-2: #64d2ff;
   --color-pos: #30d158;

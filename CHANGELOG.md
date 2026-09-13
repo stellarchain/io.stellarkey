@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wait for menu entrance animations before running static accessibility contrast checks.
 - Validate encrypted Private Payments backups with the Protocol V2 key domain, including archived wallet accounts.
 - Cover multi-note withdrawal approval, repeated confirmation and progress with real controls in Chromium and iPhone WebKit.
-- Improve small negative and error text contrast on raised and tinted dark review panels.
+- Improve small negative, error and secondary text contrast on raised, tinted and translucent dark review panels.
 - Allow full-input private withdrawals without appending commitments, including at tree saturation. Multi-note withdrawals use explicitly reviewed batches of up to two inputs and preserve fee limits and confirmation between steps.
 - Track archive actions independently of commitment count so withdrawals that append no leaves remain recoverable and cache checkpoints stay authenticated.
 
