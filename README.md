@@ -84,8 +84,9 @@ Private Payments has one published development pool for XLM and USDC on Testnet;
 Mainnet is refused independently. Internal transfers hide their asset, amount,
 recipient and memo; deposits, withdrawals, the submitting
 Stellar account, and timing remain public. Payments submit directly from the user's
-account through the selected RPC. Peer relaying and helper earnings have been removed.
-Old encrypted pending records remain recoverable without resubmitting legacy relay routes. Its privacy limits,
+account through the selected RPC. StellarKey 1.5.1 is the starting application
+baseline: only current deployment-bound state and encrypted backups are supported.
+Unsupported records are rejected without being rewritten. Its privacy limits,
 local storage, direct RPC metadata, and recovery model are documented in the
 [Private Balance whitepaper](docs/private-balance.md). The single-party
 development key passes circuit/Powers-of-Tau compatibility verification, but
@@ -125,14 +126,14 @@ control require a separate hardware bridge and remain unavailable without one.
 A full encrypted `stellar-wallet-backup` version 2 backup contains the vault
 and its matching merchant archive. The standalone Tax Records archive contains
 encrypted operational records but no wallet key material, so it cannot restore
-a wallet by itself. Legacy plaintext version 1 wallet exports are rejected.
+a wallet by itself. Only the current encrypted wallet backup format is accepted.
 
 See [Merchant Mode operations](docs/merchant-mode.md) for setup, daily use,
 offline behavior, recovery, and security boundaries.
 
 ## Verify a deployed release
 
-The current release is `1.5.1`. Every build embeds the full 40-character Git
+The current release is `1.5.1`, the stable starting baseline. Every build embeds the full 40-character Git
 commit SHA in the interface and in
 [`/release.json`](https://stellarkey.io/release.json). Compare it with the
 commit attached to the corresponding source release or run:

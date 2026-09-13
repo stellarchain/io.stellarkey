@@ -2,11 +2,11 @@
 
 [PDF](private-payments.pdf) · [Standalone LaTeX](private-payments.tex) · [arXiv source archive](arxiv-source.zip) · [Maintained Markdown](../private-balance.md)
 
-Author: **DRAFT**. Contact: **support@stellarkey.io**. No affiliation is asserted.
-The September 13, 2026 draft describes application **1.5.1**, Protocol **V2**,
-with implementation revision `60dda388a71513724f664fdadcf92dabe5bb01c4` on the local
-`release/1.5.1-review` branch. Publish that source revision before relying on the
-manuscript's pinned GitHub links. Nothing has been submitted to arXiv.
+Author: **StellarKey**. Contact: **support@stellarkey.io**. No affiliation is asserted.
+The September 13, 2026 whitepaper describes the stable application baseline
+**1.5.1**, Protocol **V2**, with implementation revision
+`78cb4c111cf95e08987be986a028b68ce6569376`. Only current-format application state
+is supported. Nothing has been submitted to arXiv.
 
 The manuscript includes a threat model, conditional state-transition arguments,
 current artifact identities, raw browser measurements, primary-source related

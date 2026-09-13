@@ -30,8 +30,8 @@ reusable private address is intentionally not retained as activity metadata.
 If outgoing recovery was explicitly disabled, future outgoing lanes contain
 random fixed-size fillers. Owned balances, spent notes and incoming payments
 still recover, but those outgoing lanes cannot recover sent recipient or memo
-details. Older recovery-enabled records still work regardless of the current
-preference. Turning recovery off does not erase old archives or backups. The
+details. Current-format recovery-enabled records still work regardless of the current
+preference. Turning recovery off does not erase archives or backups. The
 preference is local encrypted state: a seed-only restore defaults it to enabled.
 
 Evicted persistent archive records may need a normal Stellar restore-footprint
@@ -58,5 +58,6 @@ therefore displays status unknown, not a failed or cancelled payment.
 Never retry a private spend blindly. Seed-only recovery cannot reconstruct an
 unconfirmed shared proof whose local journal was lost. Preserve the encrypted
 backup and pending records when recovering an interrupted action. Local work
-known never to have disclosed a spend proof can be cancelled safely; legacy
-records without that evidence remain conservative.
+known never to have disclosed a spend proof can be cancelled safely. StellarKey
+1.5.1 accepts only current-format records with explicit route and exposure
+markers. Unsupported records and backups are rejected without modifying them.

@@ -32,8 +32,7 @@ Consensus and operational review decisions are recorded in
 [`0002-private-note-key-agreement.md`](decisions/0002-private-note-key-agreement.md),
 [`0008-governed-asset-private-pool.md`](decisions/0008-governed-asset-private-pool.md), and
 [`0004-poseidon2-capacity-domain.md`](decisions/0004-poseidon2-capacity-domain.md),
-with the historical relayer, association-set, and stealth-subsystem boundaries in
-[`0009-browser-peer-relay.md`](decisions/0009-browser-peer-relay.md),
+with association-set and stealth-subsystem boundaries in
 [`0006-association-sets.md`](decisions/0006-association-sets.md), and
 [`0007-stealth-subsystem.md`](decisions/0007-stealth-subsystem.md).
 
@@ -50,9 +49,9 @@ normal action appends exactly three commitments; a FullInputExit binds but does 
 A zero-value output is a dummy note, not an absent slot. Its commitment, randomness, keys,
 diversifier, recipient envelope, and outgoing envelope are freshly constructed in the same format
 as a real output. The private `outputReal` selector is derived in-circuit as `value != 0`; it is not
-independent witness data. The wallet randomizes recipient, change, and dummy lane ordering. Historical fee-note lanes remain readable.
+independent witness data. The wallet randomizes recipient, change, and dummy lane ordering.
 All three recipient envelopes in an action carry the same clear four-byte action diversifier. This
-removes the prior clear-diversifier lane-role fingerprint, but it does not hide that diversifier or
+prevents a clear-diversifier lane-role fingerprint, but it does not hide that diversifier or
 make repeated use of one receive address unlinkable across actions.
 
 ## 4. Merkle tree
@@ -135,10 +134,9 @@ relayer or relayer-fee field. Its explicit non-zero circuit constraint gives it 
 input coefficient; mutating it invalidates a proof. The contract derives that field itself and
 independently validates canonical non-zero, distinct slots before accepting the proof.
 
-Historical relayed transfers or withdrawals used one ordinary encrypted same-asset
-output note for a peer fee, included in `sum(outputs)` rather than a public value leg.
-The application no longer constructs peer-fee outputs. Direct submission uses a
-zero-value dummy in the otherwise available lane; the consensus format is unchanged.
+The application constructs recipient, change and zero-value dummy outputs;
+it does not construct private peer-fee outputs. Every action has three output
+lanes, with FullInputExit binding but not appending its dummy commitments.
 
 ## 7. Encryption and recovery transcript
 

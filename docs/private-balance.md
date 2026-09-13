@@ -1,10 +1,11 @@
 # StellarKey Private Balance Whitepaper
 
-- **Author:** DRAFT
+- **Author:** StellarKey
 - **Contact:** support@stellarkey.io
 - **Protocol:** V2 capacity-independent full-input exits
 - **Application version:** StellarKey 1.5.1
-- **Implementation baseline:** `60dda388a71513724f664fdadcf92dabe5bb01c4` (implementation revision on `release/1.5.1-review`; artifact identities in §16)
+- **Application baseline:** Stable 1.5.1; only current-format state is supported
+- **Implementation baseline:** `78cb4c111cf95e08987be986a028b68ce6569376` (v1.5.1 baseline implementation; artifact identities in §16)
 - **Implementation status:** Live Testnet development deployment; validation scope and dates in §17; not for real value
 - **Document revision:** 2026-09-13
 
@@ -27,7 +28,7 @@ checks exercise saturation, positions beyond 64 bits, shared replay protection,
 transaction rollback, independent archive and leaf cursors, and balanced but
 invalid exit witnesses. We give conditional state-transition arguments, describe
 an authenticated recovery transcript and the browser's durable proof-exposure
-rules, and distinguish current validation from historical performance evidence.
+rules, and distinguish synthetic validation from dated Testnet evidence.
 The contribution is a systems construction and implementation; it is neither a
 new proving system nor a claim of unbounded storage. Groth16/BN254, a single-party
 development setup, public transaction sources, metadata leakage, token backing,
@@ -149,13 +150,11 @@ closed without falling back to charging the current account.
 Because the inner signature affects the outer hash, signing atomically journals
 the submitted outer hash together with the reviewed inner hash before broadcast.
 Polling, explorer links and resume use the actual submitted envelope and its
-retained payer and fee limits; old ordinary direct records remain compatible.
+retained payer and fee limits.
 
-Peer relaying and helper earnings have been removed. New reviews always use
-the user's account as the inner source; stale relayed reviews are rejected and never silently fall
-back to direct submission. No public relayer address or fee exists in the
-unchanged contract action or archive. Historical encrypted fee notes remain
-ordinary recoverable outputs.
+Reviews use the selected wallet account as the inner source. Direct submission
+is the only supported route. No public relayer address or fee exists in the
+contract action or archive, and there is no helper-earnings capability.
 
 ## 3. Deployment-bound keys and private addresses
 
@@ -181,10 +180,11 @@ address can still link the whole actions that carry it. Spending authority stays
 common to the account while issued receive addresses can rotate.
 
 First setup generates a random non-zero receive diversifier. Session
-initialization replaces a stored legacy zero-diversifier address once, while
-preserving an existing diversified address exactly. The provider records the
-replacement and the old diversifier in encrypted local state before publishing
-the new receive address; older notes remain recoverable.
+initialization preserves an existing supported receive address exactly and
+rejects an unsupported default identity. Only explicit rotation generates a
+replacement. The provider records each issued diversifier in encrypted local
+state before publishing the address; receipts from current-format issued
+addresses remain recoverable.
 
 Issuance records up to 65,536 diversifiers and refuses to reissue a recorded
 value. Rotation excludes the zero diversifier and current address. Full
@@ -195,8 +195,7 @@ disabling existing addresses. This is local reuse prevention, not
 hidden-diversifier cryptography or a guarantee across independent devices, old
 lost history, seed-only recovery, or deliberate local-data removal.
 
-The current Base58 address format is intentionally shorter than the retired
-format. `tskpay_` addresses are exactly 128 ASCII characters on Testnet and
+In the current Base58 address format, `tskpay_` addresses are exactly 128 ASCII characters on Testnet and
 `skpay_` addresses are exactly 127 on Mainnet. The decoded form contains a
 one-byte format marker, an 84-byte payload, and a four-byte checksum. The
 payload contains:
@@ -543,11 +542,10 @@ Minimized actions do not add recent recipients or copy pending outgoing
 fingerprints, memos or transaction hashes into permanent activity. Pending safety
 journals still need payment details until canonical reconciliation. Seed scans
 continue to recover owned notes, spent status and incoming information; a
-canonical outgoing amount describes the net private-balance debit, including any
-historical private helper fee, not necessarily the recipient's amount. New payments have no helper fee. Self-payments may
+canonical outgoing amount describes the net private-balance debit. Self-payments may
 still be recoverable as incoming payments. This is not deletion or forward
-secrecy: recipients retain their own information, and older outgoing records and
-backups remain readable. The scanner always tries older recoverable records even
+secrecy: recipients retain their own information, and current-format outgoing
+records and backups remain readable. The scanner tries recovery-enabled records even
 when the current preference is minimized. Full encrypted backups and verification
 rebuilds preserve the setting; a seed-only restore defaults to recovery enabled.
 
@@ -683,15 +681,14 @@ notes reserved. For an exposed spend proof, absence alone is never sufficient
 to release them; the separate deposit-envelope recovery rules are described
 below.
 
-New prepared actions persist a direct submission route in encrypted state;
-signing and broadcasting reject any other route, including missing legacy routes. Restart only rebroadcasts explicitly
-direct signed actions. Relayed and old records with no route are reconciled from
-the common archive without sender-RPC transaction-hash lookups. A disclosed spend
+Prepared actions persist an explicit direct submission route, proof-exposure
+marker and outgoing-history policy in encrypted state. Missing or unsupported
+fields are rejected before signing, broadcasting or recovery. Restart only
+rebroadcasts current-format direct signed actions. A disclosed spend
 proof is reusable in a fresh transaction: envelope failure or maximum-time expiry
 does not revoke it, and a current anchor can be refreshed. The client durably
 records exposure before proof-bearing RPC preparation and keeps those
-inputs reserved on cancellation, rejection, timeout or envelope expiry, including
-legacy spend records with unknown exposure. Canonical inclusion or observed
+inputs reserved on cancellation, rejection, timeout or envelope expiry. Canonical inclusion or observed
 consumed nullifiers resolve the notes. Unsigned exposed preparations are visibly
 status-unknown; they are not silently discarded as unsubmitted drafts.
 
@@ -705,16 +702,15 @@ non-reusable deposit authorization; conservative common-ledger corroboration and
 exact-envelope validation still apply there. A timeout, RPC acceptance,
 or removed pending record alone is not a success receipt.
 
-## 13. Direct submission and legacy recovery
+## 13. Direct submission and held-balance recovery
 
 ### Review, fees, and confirmation
 
-Private transfers, withdrawals, and consolidation now submit only from the
+Private transfers, withdrawals, and consolidation submit only from the
 user's own Stellar account through the selected RPC. The review explains that
-the submitting account and public network fee remain visible. Peer discovery,
-quotes, helper approval, helper fee notes, Earn controls, and Waku/Nostr
-transports are removed. A stale relayed draft or review fails closed; it is
-never silently converted into a direct payment.
+the submitting account and public network fee remain visible. The application
+has no peer discovery, helper approval, helper fee notes or Earn controls.
+Only current direct-payment drafts and reviews are accepted.
 
 The browser reviews the exact simulated envelope before signing: source,
 sequence, time bounds, pool call and arguments, authorization, simulation data,
@@ -757,23 +753,21 @@ confirmation, another conflicting spend, and still pending. If neither spend
 confirms, the balance can remain held; the wallet never reports recovery merely
 because the replacement was approved, broadcast, or timed out.
 
-### Legacy records
+### Current-format state
 
-The earlier removal of peer relaying preserved its then-current circuit,
-contract and archive format. Protocol V2 separately replaces the deployment,
-circuit and index encodings. Historical fee notes remain readable as ordinary
-owned outputs within their original deployment and format, using a compatible
-implementation; they are not imported as V2 spends.
-Old encrypted pending records and backups retain their original submission
-route and proof-exposure holds. Legacy relayed or unknown-route records are
-reconcile-only, without new signing, rebroadcast, or transaction-hash lookup.
+StellarKey 1.5.1 is the starting application baseline. There are no supported
+pre-baseline deployments, record migrations or compatibility recovery routes.
+Encrypted pending actions require a direct route, explicit proof exposure and
+an outgoing-history policy. Signed actions also require their exact envelope
+expiry. Local build reservations are explicitly marked local; proof disclosure
+requires a durable pending action first. Issued-address history and the account's
+outgoing-history preference are explicit fields, including in a fresh wallet.
 
-An atomic encrypted-state update retires obsolete relay-chain consent. It does
-not release pending inputs, build reservations, or issued-address history.
-Canonical reconciliation and explicit held-balance self-recovery remain
-available under the same conservative exposed-proof policy. Historical relay
-decision records and measurements are retained as historical evidence, not
-current product capabilities.
+Unsupported records and encrypted backups fail validation without rewriting
+or deleting their bytes. The application does not sign, rebroadcast, look up
+transaction hashes or run recovery for an unsupported record. Current-format
+canonical reconciliation and held-balance self-recovery retain the conservative
+exposed-proof policy described above.
 
 ## 14. Local state and execution boundary
 
@@ -1030,19 +1024,12 @@ measurement. The reproducible harness and exact samples are
 [run-capacity-browser.mjs](../protocol/private-balance/spikes/scripts/run-capacity-browser.mjs)
 and [capacity-browser-v2.json](../protocol/private-balance/results/capacity-browser-v2.json).
 
-### Historical evidence and contemporary comparison
+### Contemporary comparison
 
-The September 2 microbenchmarks in
-[review-validation.json](../protocol/private-balance/results/review-validation.json)
-used an earlier 14,574-constraint, two-output design. Their Apple M3 Max Node.js
-results include 371.708 microseconds with JWK import and 84.792 microseconds with
-PKCS#8 import, a 77.19% median improvement in the measured X25519 operation.
-They do not measure V2 recovery. The later isolated capacity prototype's
-browser and native contract measurements are also historical; only a benchmark
-that identifies the integrated artifact hashes is evidence for this revision.
-No statistical performance comparison with another deployed shielded system
-has been conducted. No physical-phone result is claimed; iPhone or iPad emulation
-is not physical-device evidence.
+Only a benchmark that identifies the integrated artifact hashes is evidence
+for this baseline. No statistical performance comparison with another deployed
+shielded system has been conducted. No physical-phone result is claimed;
+iPhone or iPad emulation is not physical-device evidence.
 
 Groth16 [1] gives small pairing-based proofs at the cost of circuit-specific
 setup. Zcash Orchard [5] instead uses Halo 2 over the Pallas/Vesta cycle and
@@ -1090,9 +1077,7 @@ checks. Run `cargo test --workspace --locked` from `protocol/private-balance`
 for Rust checks. Two fresh isolated builds on September 13 produced identical
 R1CS, witness Wasm and pool Wasm hashes matching the table above. The implementation
 revision identifies the circuit, contract, runtime and validation tools;
-subsequent manuscript commits record documentation updates. The review
-branch is local until published; its GitHub links resolve only after that source
-revision is made available.
+subsequent manuscript commits record documentation updates.
 
 ## 17. Deployment and trust status
 
@@ -1102,14 +1087,13 @@ catalogue advertises one live XLM/USDC development pool on Testnet:
 `CAYCV26VCDNUEM6HHKQYHKDJ3O43CK5DCBT3TMMHFVEXE7CIFVWRY4R7`.
 
 XLM is registry index 0 and USDC index 1. The September 13
-replacement was deployed from a fresh synthetic Testnet account, with deployment
+pool was deployed from a fresh synthetic Testnet account, with deployment
 checkpoint ledger 4,647,256 and post-registry ledger
 4,647,258. Configuration, registered assets, unpaused
 deposits, empty archive and empty tree were read back after the deployment and
-registrations completed. The ephemeral deployment key was removed. There is no
-backward-compatible state migration from the retired V1 pool; its evidence is
-preserved as historical evidence. Old notes and exposed proofs are not reinterpreted
-under the new deployment context.
+registrations completed. The ephemeral deployment key was removed. Notes,
+addresses, proofs and encrypted state are accepted only in this deployment's
+current format and context.
 
 The deployment fixture records the locally selected Wasm hash and canonical
 ledger checkpoints. It does not contain a deployment transaction hash; a local
@@ -1138,16 +1122,11 @@ and the bounded runner are
 and [run-capacity-testnet.mjs](../protocol/private-balance/spikes/scripts/run-capacity-testnet.mjs).
 The runner requires `--testnet-synthetic` and starts with fresh test keys.
 
-The historical browser run in
-[mvp-e2e.json](../protocol/private-balance/results/mvp-e2e.json), at `7424bb2`,
-is not a new end-to-end validation of V2. Its manifest was
-`222e2028be15d94311751d38aaebadb03c9ef53cc76a19e72cdcf0b3fd01be9f`.
-It passed ten desktop Chromium checks and four production browser smoke checks,
-including behavior since removed. The September 11 fee investigation does not
-establish a successful user payment or USDC action for V2. Updating this paper
-does not renew those dated results or constitute a security audit. The September
-12 detached-watcher follow-up records 89 passing focused ownership/submission
-checks for that earlier revision; current regression evidence is listed separately.
+The dated XLM lifecycle and integrated browser experiment cover only their
+stated scenarios. They do not establish a complete browser-wallet or USDC
+lifecycle. Updating this paper does not renew measurements or constitute a
+security audit. Full application verification and human/device signoff remain
+separate release evidence.
 
 The current proving key was created by a single-party setup. It passes
 `snarkjs zkey verify` against the pinned Powers-of-Tau transcript. The published
@@ -1179,7 +1158,7 @@ Repository paths identify the normative source files at the implementation
 revision. Current artifact hashes identify the compiled V2 artifacts.
 Circuit and contract behavior determine what the deployment permits.
 
-- [Protocol V2 specification (retained filename)](../protocol/private-balance/docs/protocol-v1.md)
+- [Protocol V2 specification](../protocol/private-balance/docs/protocol-v1.md)
 - [Threat model](../protocol/private-balance/docs/threat-model.md)
 - [Canonical encoding](../protocol/private-balance/docs/encoding.md)
 - [Action circuit](../protocol/private-balance/circuits/circom/action.circom), [witness construction](../src/features/private-balance/worker/action-builder.ts), and [authenticated deployment manifest](../public/protocol/private-balance/v1/manifest.json)
@@ -1190,7 +1169,6 @@ Circuit and contract behavior determine what the deployment permits.
 - [Action preparation](../src/features/private-balance/runtime/action-transaction.ts), [envelope review](../src/features/private-balance/runtime/transaction-review.ts), and [fee policy](../src/features/private-balance/runtime/fee-policy.ts)
 - [Held-proof recovery rules](../src/features/private-balance/runtime/spend-recovery.ts)
 - [Wallet/runtime authority and outcome watchers](../src/features/private-balance/runtime/provider.tsx) and [submission journal and polling](../src/features/private-balance/runtime/submission.ts)
-- [Protocol review and measurements](private-balance-protocol-review-2026-09-02.md)
 - [Recovery guide](private-balance-recovery.md)
 - [Safe support guide](private-balance-support.md)
 - [Incident-response playbook](private-balance-incident-response.md)

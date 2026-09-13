@@ -3,8 +3,8 @@
 ## 1. Assets and security objectives
 
 - Conservation of value: private inputs plus a public deposit equal three private outputs plus a
-  public withdrawal, using exact bounded integers. Historical peer fees used an ordinary output;
-  the current application does not construct peer-fee outputs.
+  public withdrawal, using exact bounded integers. The application constructs recipient,
+  change and dummy outputs, without private peer fees.
 - Double-spend and replay prevention: accepted real nullifiers are persistent and unique; a deposit
   retains one durable dummy nullifier so the same proof cannot be replayed.
 - Spend authorization: only a valid note witness and the required spending/nullifier secrets can
@@ -30,8 +30,8 @@ whole actions through its clear four-byte diversifier.
 
 Direct submission uses the user's Stellar account as the transaction source and links the action
 to it. A fee-bump sponsor changes only the outer fee source. Direct submission is the only
-supported application path. Stale relayed reviews are rejected; historical pending records
-remain reconcile-only without signing or rebroadcast.
+supported application path. Unsupported pending records fail validation without
+signing, rebroadcast, hash lookup or a compatibility recovery path.
 
 RPC operators see the connecting IP address, timing, selected deployment, ledger ranges,
 simulations, restoration attempts, and submissions. With authenticated HTTPS and uncompromised

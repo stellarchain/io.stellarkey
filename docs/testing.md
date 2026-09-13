@@ -29,15 +29,16 @@ The ignored 100,000-action deterministic recovery model is Gate B. GitHub runs i
 also be started manually through the `Private Balance Gate B` workflow; it remains separate from the
 bounded pull-request suite.
 
-## Direct-only private payments and legacy recovery
+## Direct-only private payments and current-format recovery
 
 The isolated `private-direct.spec.ts` covers direct send and withdrawal, explicit
 proof-sharing consent, visible public submitting-account metadata, cancellation,
 and stale-result ownership. The recovery fixture covers held proofs, canonical
 reconciliation, backup/reload, and actual-provider session replacement in desktop
 Chromium and iPhone WebKit. It uses synthetic RPC failures, never a relay service.
-`private-balance-no-relay.test.mjs` checks removed runtime/dependency boundaries
-and atomic retirement of obsolete encrypted consent without releasing holds.
+`private-balance-no-relay.test.mjs` checks direct-only runtime/dependency boundaries.
+`private-balance-baseline.test.mjs` requires unsupported encrypted records and
+backups to fail closed without signing, network reads or storage changes.
 No Waku or Nostr connection check is needed or supported.
 
 ## Isolated Private Balance testnet fixture
