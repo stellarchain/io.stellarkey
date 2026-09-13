@@ -132,7 +132,7 @@ offline behavior, recovery, and security boundaries.
 
 ## Verify a deployed release
 
-The current release is `1.5.0`. Every build embeds the full 40-character Git
+The current release is `1.5.1`. Every build embeds the full 40-character Git
 commit SHA in the interface and in
 [`/release.json`](https://stellarkey.io/release.json). Compare it with the
 commit attached to the corresponding source release or run:
@@ -230,7 +230,7 @@ not replace physical-device pinch zoom or human VoiceOver/NVDA checks.
 | [Support](SUPPORT.md) | Help boundaries and recovery expectations |
 | [Contributing](CONTRIBUTING.md) | Development workflow, DCO, and review expectations |
 | [Merchant Mode operations](docs/merchant-mode.md) | Setup, daily operations, recovery, and limitations |
-| [Private Balance whitepaper](docs/private-balance.md) | Implemented protocol, privacy boundary, measurements, recovery, and deployment status |
+| [Private Balance whitepaper](docs/private-balance.md) · [PDF](docs/whitepaper/private-payments.pdf) · [LaTeX](docs/whitepaper/private-payments.tex) | Implemented protocol, privacy boundary, measurements, recovery, and deployment status |
 | [Testing guide](docs/testing.md) | Automated and physical-device verification |
 | [Release checklist](docs/release-checklist.md) | Security, recovery, device, and mainnet release gates |
 | [Deployment runbook](docs/production-deployment.md) | Immutable Cloudflare Pages deployment and rollback |
