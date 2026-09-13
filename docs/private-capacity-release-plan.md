@@ -3,7 +3,7 @@
 Requested scope: fix private commitment capacity, replace the Testnet pool with
 fresh state, default to Dark, and restore/update an arXiv-style manuscript.
 The original checkout is preserved. Review branch: `release/1.5.1-review`.
-Implementation revision: `4cdf575b60e350cc6a15e8022822292a35e04d16`.
+Implementation revision: `60dda388a71513724f664fdadcf92dabe5bb01c4`.
 The original baseline is `561f716627debab6e72c72c57b1966e572fc3456`.
 
 ## Implemented
@@ -18,8 +18,8 @@ The original baseline is `561f716627debab6e72c72c57b1966e572fc3456`.
   confirmation before the next step. Partial change still needs commitment slots.
 - Scanner, recovery, cache and cross-tab paths preserve exact indices, authenticated
   checkpoints, overlap checks and prior proof-exposure reservations.
-- New sessions default to Dark; saved choices persist. Small negative text contrast
-  is corrected on dark raised and tinted panels.
+- New sessions default to Dark; saved choices persist. Small negative and secondary text contrast
+  is corrected on dark raised, tinted and translucent panels.
 - Application metadata and changelog prepare 1.5.1. Protocol format is V2; retained
   `v1` asset-directory/spec filenames are paths, not protocol-version assertions.
 - The manuscript uses the requested draft attribution and contact, ten primary references,
@@ -85,3 +85,13 @@ The next complete component run passed 631 of 632 tests; one contrast audit
 sampled a menu entrance animation. The check now waits for finite entrance
 animations; ten repeated Chromium/WebKit checks pass. Restart the complete clean
 release command; do not count the interrupted run as a full pass.
+
+The existing held-balance recovery control still constructs a self-transfer and
+therefore needs free commitment slots. It does not offer a public full-input exit
+for reserved notes; normal withdrawals exclude held inputs. The manuscript now
+distinguishes this wallet limitation from the contract's no-append exit result.
+
+A further full run passed all 1,939 application tests and 61 protocol tests, but
+failed one recovery-panel contrast check among 632 component tests. Secondary
+foreground colors are corrected; 30 repeated Chromium/WebKit recovery and menu
+checks pass with no retries. The complete clean gate is being rerun.
