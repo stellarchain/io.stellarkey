@@ -205,7 +205,17 @@ test('artifacts: content-addressed cache serves verified copies and dedupes load
 
     // A warm cache answers without touching the network at all.
     globalThis.fetch = async () => { throw new Error('cache hit must not fetch'); };
-    const cached = await loadCircuitArtifacts(manifest, undefined, cache);
+    // Prover callers own transferable, erasable copies, not the public warm key.
+    new Uint8Array(first.zkeyBuffer).fill(0);
+    structuredClone(first.zkeyBuffer, { transfer: [first.zkeyBuffer] });
+    const originalCompile = WebAssembly.compile;
+    WebAssembly.compile = async () => { throw new Error('A warm artifact load must not rebuild the expansion curve'); };
+    let cached;
+    try {
+      cached = await loadCircuitArtifacts(manifest, undefined, cache);
+    } finally {
+      WebAssembly.compile = originalCompile;
+    }
     assert.equal(cached.wasmBuffer.byteLength, manifest.artifacts.wasmByteLength);
     assert.equal(cached.verificationKey.protocol, 'groth16');
     assert.equal(await computeSha256(cached.zkeyBuffer), manifest.artifacts.zkeySha256);

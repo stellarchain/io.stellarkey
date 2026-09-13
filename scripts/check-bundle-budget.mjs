@@ -292,8 +292,8 @@ export function measurePrivateBalanceAssets(outputDirectory = "out") {
       gzipBytes: artifactGzipBytes,
       paths: artifactPaths,
     },
-    // One shared persistent copy per revision. Expanded proving buffers are
-    // transient memory, not another persistent application cache.
+    // One shared persistent copy per revision. The loader's one-entry RAM warm
+    // key and caller-owned proving buffers are not persistent storage.
     peakCacheBytes: artifactRawBytes * 2,
   };
 }

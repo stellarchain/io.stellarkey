@@ -132,10 +132,12 @@ not reclassified as passing. The artifact budget remains unresolved.
 
 The loader and service worker now share one revisioned, hash-keyed cache of the
 actual point-compressed transport, witness Wasm and verification-key JSON. The
-expanded proving key is transient input, is checked against its original hash
-after every expansion, and is no longer stored in a second persistent cache.
-Warm loads therefore repeat point expansion; this is a storage saving, not a
-claim of lower proving latency or peak process memory.
+expanded proving key is checked against its original hash and is no longer
+stored in a second persistent cache. One verified public key is retained in RAM
+to avoid repeated expansion on warm actions; callers receive independent,
+transferable copies. This is a persistent-storage saving, not a claim of lower
+peak process memory. No wallet key, proof input or transaction record belongs
+to this public-artifact cache.
 
 Only a complete, successfully stored replacement can retire the old public
 artifact caches. Failed downloads or quota-denied writes preserve old entries;
