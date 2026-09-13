@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import base from './playwright.config';
 
-// Playwright 1.62.1 locator failures can still include an ARIA snapshot.
+// Playwright 1.63.0 locator failures can still include an ARIA snapshot.
 // The base policy blocks usable wallets and reports only structural diagnostics.
 // This runner is restricted to isolated, non-usable synthetic fixture data;
 // normal output cleanup cannot protect against an uncatchable process kill.
