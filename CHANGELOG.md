@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Wait for menu entrance animations before running static accessibility contrast checks.
 - Validate encrypted Private Payments backups with the Protocol V2 key domain, including archived wallet accounts.
 - Cover multi-note withdrawal approval, repeated confirmation and progress with real controls in Chromium and iPhone WebKit.
 - Improve small negative and error text contrast on raised and tinted dark review panels.
