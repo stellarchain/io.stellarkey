@@ -4,7 +4,7 @@
 - **Contact:** support@stellarkey.io
 - **Protocol:** V2 capacity-independent full-input exits
 - **Application version:** StellarKey 1.5.1
-- **Implementation baseline:** `4cdf575b60e350cc6a15e8022822292a35e04d16` (implementation revision on `release/1.5.1-review`; artifact identities in §16)
+- **Implementation baseline:** `60dda388a71513724f664fdadcf92dabe5bb01c4` (implementation revision on `release/1.5.1-review`; artifact identities in §16)
 - **Implementation status:** Live Testnet development deployment; validation scope and dates in §17; not for real value
 - **Document revision:** 2026-09-13
 
@@ -742,6 +742,13 @@ against a currently usable anchor and separately asks for proof-sharing and
 signing consent. An atomic encrypted-state update replaces the pending attempt
 without making the inputs available in between.
 
+This recovery control currently constructs a self-transfer, so it still requires
+free commitment slots. It does not offer a full-input public-exit option for
+reserved notes, and ordinary withdrawal selection excludes held inputs. Thus
+§15's contract-level saturation result does not make this particular wallet
+recovery control capacity-independent. A public withdrawal of held inputs would
+need a separate reviewed recovery path; the wallet never silently substitutes it.
+
 This is a competing spend, not cancellation or instant unlocking. The
 replacement does not revoke the original proof: either can still confirm while
 its anchor is accepted and its real-input nullifiers remain unspent.
@@ -1082,8 +1089,8 @@ mutation checks. `npm run test:private-protocol` runs browser-language protocol
 checks. Run `cargo test --workspace --locked` from `protocol/private-balance`
 for Rust checks. Two fresh isolated builds on September 13 produced identical
 R1CS, witness Wasm and pool Wasm hashes matching the table above. The implementation
-revision identifies the circuit, contract and runtime sources; the subsequent
-release-preparation commit adds version metadata and the manuscript. The review
+revision identifies the circuit, contract, runtime and validation tools;
+subsequent manuscript commits record documentation updates. The review
 branch is local until published; its GitHub links resolve only after that source
 revision is made available.
 
