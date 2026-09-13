@@ -72,7 +72,7 @@ export default function OpenGraphImage() {
               textTransform: "uppercase",
             }}
           >
-            a stellar wallet // a card machine // a quiet mode
+            a stellar wallet // a point of sale // a quiet mode
           </div>
           <div
             style={{

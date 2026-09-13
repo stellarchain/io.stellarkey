@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Correct the homepage's circuit count, public-proof and metadata disclosures, backup requirements and merchant-service limits, and describe the product as a point of sale rather than a card processor in page and sharing metadata.
+
 ## [1.0.1] - 2026-09-13
 
 ### Fixed

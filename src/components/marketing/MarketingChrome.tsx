@@ -101,7 +101,7 @@ export function MarketingFooter() {
           <div className="brand"><Brand /></div>
           <p>
             A self-custody Stellar wallet with a point of sale in it. Runs as a static site with
-            no backend; screens on this page come from the real app.
+            no application backend; the illustrated panels use representative values.
           </p>
         </div>
         <div>

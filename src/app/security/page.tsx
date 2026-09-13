@@ -126,9 +126,10 @@ export default function SecurityPage() {
         <section id="security-threat"><h2><DocScales />What this protects you from, and what it does not</h2>
         <p>Anyone who only tells you the first half is selling something. Both halves are true and you should read the second one twice.</p>
         <div className="two">
-        <div className="col ok"><h3><DocCheck />It protects you from</h3><ul><li>Somebody taking your money, because nobody but you can sign for it</li><li>A company freezing your account, because there is no account</li><li>A database of your customers leaking, because it never left your device</li><li>Us reading your balance, your notes or your books</li><li>A fee appearing later, because there is no billing relationship</li></ul></div>
+        <div className="col ok"><h3><DocCheck />Designed to reduce</h3><ul><li>Custody risk: StellarKey does not hold your signing keys or route public payments through its own account</li><li>Exposure from a central merchant database: operational records stay encrypted in your browser</li><li>Exposure from a locked profile: sensitive vault contents require the unlock material</li><li>Accidental authorization: transactions and fees are presented for review before signing</li><li>Platform charges: StellarKey has no subscription or processing fee; network and third-party costs remain</li></ul></div>
         <div className="col no"><h3><DocAlert />It cannot protect you from</h3><ul><li>A stolen unlocked device, or a password written on the machine</li><li>Malware on the computer you are using, or a hostile browser extension</li><li>You approving a transaction you did not read properly</li><li>Losing your recovery phrase, which nobody can give back to you</li><li>A mistake in this software, which is why the source is public</li></ul></div>
         </div>
+        <p>Public Stellar balances and activity remain readable by anyone. Issued assets may retain issuer authorization, freeze or clawback controls. Local encryption and self-custody do not remove those boundaries or guarantee protection against theft.</p>
         </section>
 
         <section id="security-checklist"><h2><DocCheck />Five things worth doing today</h2>

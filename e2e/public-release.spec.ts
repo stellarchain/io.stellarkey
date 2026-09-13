@@ -5,7 +5,7 @@ import { importTestWallet, installNetworkFixtures, installQuietEventSource } fro
 import privateManifest from "../public/protocol/private-balance/v1/manifest.json";
 
 const routes = [
-  { path: "/", heading: "Your keys never leave this device.", title: "StellarKey: a Stellar wallet with a card machine in it" },
+  { path: "/", heading: "Your keys never leave this device.", title: "StellarKey: a Stellar wallet with a point of sale in it" },
   { path: "/about", heading: "About StellarKey", title: "About StellarKey — StellarKey" },
   { path: "/privacy", heading: "Your data stays close", title: "Your data stays close — StellarKey" },
   { path: "/terms", heading: "You remain in control", title: "You remain in control — StellarKey" },
