@@ -2365,7 +2365,7 @@ export function SettingsPage({
                 disabled={changePasswordBusy}
               />
             </Field>
-            <Field label="New Password" hint="12+ characters; avoid common or predictable passwords">
+            <Field label="New Password" hint="At least 12 characters">
               <input
                 className="input text-base sm:text-[14px]"
                 type="password"
