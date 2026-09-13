@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Start the Stellar trademark notice on a new line after the independence statement in public footers, About and Settings.
+
 ## [1.0.1] - 2026-09-13
 
 ### Fixed

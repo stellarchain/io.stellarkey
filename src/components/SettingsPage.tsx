@@ -1331,7 +1331,8 @@ export function SettingsPage({
 
           <p className="px-2 text-[10.5px] leading-relaxed text-neutral-500">
             Independent software, not affiliated with, sponsored or endorsed by the Stellar
-            Development Foundation. “Stellar” is a trademark of the Stellar Development Foundation.
+            Development Foundation.<br />
+            “Stellar” is a trademark of the Stellar Development Foundation.
           </p>
         </div>
       )}

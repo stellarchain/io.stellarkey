@@ -4,6 +4,13 @@ import { readFileSync } from 'node:fs';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
+test('Stellar trademark notices begin on a new line after the independence statement', () => {
+  for (const path of ['src/components/PublicFooter.tsx', 'src/components/marketing/MarketingChrome.tsx',
+    'src/components/SettingsPage.tsx', 'src/app/about/page.tsx']) {
+    assert.ok(/Foundation\.\s*<br\s*\/>\s*“Stellar” is a trademark/.test(read(path)), path);
+  }
+});
+
 test('homepage copy matches the current circuit and does not overclaim privacy or recovery', () => {
   const landing = read('src/components/marketing/LandingBody.tsx');
   const metadata = read('src/app/page.tsx');

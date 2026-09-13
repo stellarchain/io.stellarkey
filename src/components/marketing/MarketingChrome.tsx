@@ -159,7 +159,8 @@ export function MarketingFooter() {
         </span>
         <span className="fine">
           Independent project. Not affiliated with, sponsored or endorsed by the Stellar
-          Development Foundation. “Stellar” is a trademark of the Stellar Development Foundation.
+          Development Foundation.<br />
+          “Stellar” is a trademark of the Stellar Development Foundation.
         </span>
       </div>
     </footer>

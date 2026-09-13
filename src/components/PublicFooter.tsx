@@ -43,7 +43,8 @@ export function PublicFooter({
       </p>
       <p className="mx-auto mt-2 max-w-2xl text-[10.5px] leading-relaxed text-neutral-500">
         This is an independent project, not affiliated with, sponsored or endorsed by the Stellar
-        Development Foundation. “Stellar” is a trademark of the Stellar Development Foundation.
+        Development Foundation.<br />
+        “Stellar” is a trademark of the Stellar Development Foundation.
       </p>
     </footer>
   );

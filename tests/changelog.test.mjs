@@ -44,7 +44,10 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   const source = read('CHANGELOG.md');
   const document = parseChangelog(source);
   assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.0.1', '1.0.0']);
-  assert.deepEqual(document.releases[0].categories, []);
+  assert.deepEqual(document.releases[0].categories, [{
+    name: 'Fixed',
+    entries: ['Start the Stellar trademark notice on a new line after the independence statement in public footers, About and Settings.'],
+  }]);
   assert.equal(document.releases[1].date, '2026-09-13');
   assert.equal(document.releases[2].date, '2026-09-13');
   const notes = document.releases[2].categories.flatMap(({ entries }) => entries).join(' ');
