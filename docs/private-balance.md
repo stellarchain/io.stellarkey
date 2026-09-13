@@ -3,9 +3,9 @@
 - **Author:** StellarKey
 - **Contact:** support@stellarkey.io
 - **Protocol:** V2 capacity-independent full-input exits
-- **Application version:** StellarKey 1.0.0
+- **Application version:** StellarKey 1.0.1
 - **Application baseline:** Stable 1.0.0; only current-format state is supported
-- **Implementation baseline:** `v1.0.0` (immutable release tag; artifact identities in §16)
+- **Implementation baseline:** `v1.0.1` (immutable release tag; artifact identities in §16)
 - **Implementation status:** Live Testnet development deployment; validation scope and dates in §17; not for real value
 - **Document revision:** 2026-09-13
 

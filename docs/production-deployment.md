@@ -75,8 +75,8 @@ These are required settings, not proof of their live state. Read back GitHub set
 and check the intended commit's successful runs before promotion. Delete old workflow
 runs separately from workflow definitions; historical logs are not the deployment setup.
 
-The v1.0.0 release exception in the release checklist records the maintainer's
-explicit deferral of human/device and Trezor redistribution/origin sign-off.
+The v1.0.0 and v1.0.1 release exceptions in the release checklist record the maintainer's
+explicit, release-specific deferrals of human/device and Trezor redistribution/origin sign-off.
 Those checks are not evidence of a pass and the exception grants no license rights.
 
 ## 2. Trezor production gate

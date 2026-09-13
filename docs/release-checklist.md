@@ -29,6 +29,17 @@ beyond the unaudited Testnet-only development deployment.
 
 ## Manual device boundaries
 
+### v1.0.1 release exception
+
+On 2026-09-13 the maintainer explicitly continued the same deferral for the
+packaging and public-copy patch release 1.0.1: physical iPhone/iPad,
+VoiceOver/NVDA, passkey and Trezor checks, including Trezor redistribution and
+registered-origin sign-off. They remain unperformed or unconfirmed, not passed.
+This exception grants no third-party license rights, does not waive automated
+gates, and does not promote Private Payments beyond unaudited Testnet use.
+
+### Required checks
+
 - On a real iPhone, test Safari onboarding, encrypted-backup restore, lock/unlock, form entry, safe areas, and Add to Home Screen cold launch. Verify pinch zoom and 200% reflow, VoiceOver, and system text without clipping controls or obscuring focus.
 - On a real iPad, repeat the installed-app, rotation, modal, keyboard, and account-menu lock flows.
 - Create a passkey on a real compatible Apple device, lock and unlock with Face ID or Touch ID, verify password fallback, and confirm removal rejects a wrong current password.
