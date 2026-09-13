@@ -95,3 +95,35 @@ A further full run passed all 1,939 application tests and 61 protocol tests, but
 failed one recovery-panel contrast check among 632 component tests. Secondary
 foreground colors are corrected; 30 repeated Chromium/WebKit recovery and menu
 checks pass with no retries. The complete clean gate is being rerun.
+
+## Complete application gate result
+
+The clean `npm run release:verify` run at `9c87935c8fd2f920b286b0a4c0e7c81dd7d9275c`
+exited **1** at `check:bundle`. Generated artifacts, typecheck, all 1,939
+application tests, 61 protocol tests, lint (three existing warnings), dependency
+audits, safe reporter checks, 16 private UI tests, all 632 synthetic component
+tests, fixture cleanup, the production build and five bundle tests passed. The
+component suite had no failures or retries. The audit reports ten low-severity
+vulnerable packages attributable to one distinct advisory, GHSA-848j-6mx2-7j84.
+
+The unchanged artifact gate measures 18,192,388 gzip bytes against 13,000,000 and
+a two-version expanded-artifact cache estimate of 53,150,404 bytes against
+50,000,000. The transport uses a smaller point-compressed key, but the application
+artifact cache currently stores the expanded key. Correcting transport accounting
+alone would not resolve the expanded-cache budget failure. This is an unresolved
+release blocker; no threshold was raised and the release is not verified or tagged.
+The remaining production browser matrix runs separately and cannot turn the
+failed complete release command into a pass.
+
+The separate production browser run completed 491 cases: 146 passed, 341
+fixture-dependent or project-inapplicable skips, and four failures. Three failures
+were the stale September 12 changelog date assertion in Chromium, iPhone WebKit
+and iPad WebKit; the assertion now expects the actual September 13 release date.
+The fourth was iPad settings-subpage navigation. Targeted repeated checks are
+recorded separately; the failed original matrix is retained in the evidence.
+
+All 14 targeted repeated production browser checks then passed with zero retries
+and zero skips: the corrected changelog assertion across Chromium, iPhone and
+iPad, plus wallet settings across light/dark Chromium, iPhone and iPad. The iPad
+settings failure did not recur; its original failed run remains recorded and is
+not reclassified as passing. The artifact budget remains unresolved.
