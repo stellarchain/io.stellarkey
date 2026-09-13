@@ -46,6 +46,17 @@ test('archive validation rejects corruption, wrong length and unexpected extract
   }
 });
 
+test('CI caches only archives and executes validation on both cache hits and misses', async () => {
+  await installer();
+  const action = readFileSync(new URL('../.github/actions/setup-stellar-cli/action.yml', import.meta.url), 'utf8');
+  assert.match(action, /actions\/cache@[0-9a-f]{40}/);
+  assert.match(action, /stellarkey-cli-archives/);
+  assert.doesNotMatch(action, /cache-hit.*(?:true|false)|continue-on-error/);
+  assert.match(action, /node scripts\/ci\/install-stellar-cli\.mjs/);
+  assert.match(action, /libdbus-1-3 libudev1/);
+  assert.doesNotMatch(action, /cargo.*install stellar-cli|--no-default-features/);
+});
+
 test('cached archive reads are bounded and validate the actual file bytes', async () => {
   const { readPinnedArchive } = await installer();
   const directory = await mkdtemp(path.join(tmpdir(), 'stellarkey-cli-cache-test-'));

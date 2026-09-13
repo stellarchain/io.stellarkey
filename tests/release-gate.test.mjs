@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
@@ -41,13 +41,159 @@ test("iPhone WebKit gates payment catch-up after a mobile reload", () => {
   assert.match(smoke, /Switch to Imported Account/);
 });
 
-test("manual release gates preserve the private Rust model evidence", () => {
-  const evidence = JSON.parse(read("protocol/private-balance/results/model-100k.json"));
-  const scripts = JSON.parse(read("package.json")).scripts;
-  assert.equal(evidence.passed, true);
-  assert.equal(evidence.dataset.randomizedActions, 100_000);
-  assert.match(evidence.sourceCommit, /^[0-9a-f]{40}$/);
-  assert.match(scripts["verify:private-model"], /one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption -- --ignored --exact/);
+test("CI pins third-party actions and verifies the complete static release", () => {
+  const ci = read(".github/workflows/ci.yml");
+  assert.match(ci, /actions\/checkout@[0-9a-f]{40}/);
+  assert.match(ci, /actions\/setup-node@[0-9a-f]{40}/);
+  assert.match(ci, /corepack install[\s\S]*corepack npm ci/);
+  assert.match(ci, /playwright install --with-deps chromium webkit/);
+  assert.match(ci, /npm run verify:application/);
+  assert.match(JSON.parse(read("package.json")).scripts["verify:application"], /npm run check:bundle/);
+  assert.match(ci, /test -f out\/index\.html/);
+  assert.doesNotMatch(ci, /uses:\s+[^\n]+@v\d+/);
+});
+
+test("main and tagged releases require the pinned Private Payments Gate A", () => {
+  const pinnedCiverCommit = "af7d4ed0325e6f7743d8a1ac0e415d0c69b8aae8";
+  const workflows = [
+    read(".github/workflows/ci.yml"),
+    read(".github/workflows/release.yml"),
+  ];
+
+  for (const workflow of workflows) {
+    assert.match(workflow, /private-gate-a:/);
+    assert.match(workflow, /https:\/\/github\.com\/costa-group\/circom_civer\.git/);
+    assert.match(workflow, new RegExp(pinnedCiverCommit));
+    assert.match(workflow, /CIVER_CIRCOM:/);
+    assert.match(workflow, /CIVER_SOURCE_COMMIT:/);
+    assert.match(workflow, /npm run private:gate-a/);
+    assert.doesNotMatch(
+      workflow,
+      /^ {4}env:\s*\n {6}CIVER_CIRCOM:\s*\$\{\{\s*runner\.temp\s*\}\}/m,
+      "runner.temp is unavailable in a job-level env block",
+    );
+    assert.match(
+      workflow,
+      /^ {6}- run: npm run private:gate-a\s*\n {8}env:\s*\n {10}CIVER_CIRCOM:\s*\$\{\{\s*runner\.temp\s*\}\}\/circom_civer\/target\/release\/civer_circom$/m,
+      "the analyzer path must be resolved from runner.temp at step scope",
+    );
+  }
+
+  assert.match(workflows[1], /release:\s*\n\s*needs:\s*private-gate-a/);
+});
+
+test("CI, releases, and the scheduled Gate B execute the private Rust models", () => {
+  const ci = read(".github/workflows/ci.yml");
+  const release = read(".github/workflows/release.yml");
+  const gateB = read(".github/workflows/private-gate-b.yml");
+  const modelEvidence = JSON.parse(read("protocol/private-balance/results/model-100k.json"));
+  const workspaceCommand = /cargo \+1\.97\.1 test --workspace --locked/;
+
+  for (const workflow of [ci, release]) {
+    assert.match(workflow, workspaceCommand);
+    assert.match(
+      workflow,
+      /cargo \+1\.97\.1 test --workspace --locked\s*\n\s*working-directory: protocol\/private-balance/,
+    );
+  }
+  assert.match(gateB, /schedule:\s*\n\s*- cron:/);
+  assert.match(gateB, /workflow_dispatch:/);
+  assert.match(gateB, /cargo \+1\.97\.1 test --release --locked/);
+  assert.match(gateB, /one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption/);
+  assert.match(gateB, /--ignored --exact/);
+  assert.match(gateB, /working-directory: protocol\/private-balance/);
+  assert.doesNotMatch(gateB, /uses:\s+[^\n]+@v\d+/);
+  assert.equal(modelEvidence.passed, true);
+  assert.equal(modelEvidence.dataset.randomizedActions, 100_000);
+  assert.match(modelEvidence.sourceCommit, /^[0-9a-f]{40}$/);
+  assert.match(modelEvidence.command, /cargo \+1\.97\.1 test --release --locked/);
+  assert.match(
+    modelEvidence.command,
+    /one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption -- --ignored --exact/,
+  );
+});
+
+test("every CLI-consuming CI job installs the checksum-verified complete CLI", () => {
+  for (const file of [".github/workflows/ci.yml", ".github/workflows/release.yml"]) {
+    const jobs = read(file)
+      .split(/\n(?= {2}[a-z][a-z0-9-]*:\s*\n)/)
+      .filter((job) => /uses: \.\/\.github\/actions\/setup-stellar-cli/.test(job));
+    assert.equal(jobs.length, 2, `${file} must cover both application and artifact jobs`);
+
+    for (const job of jobs) {
+      assert.match(job, /runs-on: (?:ubuntu-latest|macos-15)/);
+      assert.doesNotMatch(job, /cargo[^\n]*install stellar-cli|--no-default-features/);
+    }
+  }
+});
+
+test("Gate A requires Linux circuit analysis and canonical macOS ARM64 reproduction", () => {
+  for (const file of [".github/workflows/ci.yml", ".github/workflows/release.yml"]) {
+    const workflow = read(file);
+    const job = (name) => workflow.split(`\n  ${name}:\n`)[1]?.split(/\n {2}[a-z][a-z0-9-]*:\n/)[0];
+    const circuits = job("private-circuits");
+    const artifacts = job("private-artifacts");
+    const aggregate = job("private-gate-a");
+    assert.ok(circuits && artifacts && aggregate, "keep distinct circuit, artifact and required aggregate jobs");
+    assert.match(circuits, /runs-on: ubuntu-latest/);
+    assert.match(circuits, /npm run private:gate-a/);
+    assert.match(circuits, /circomspect --version 0\.9\.0 --locked/);
+    assert.match(circuits, /audit --audit-level=high/);
+    assert.doesNotMatch(circuits, /private:check-reproducible/);
+    assert.match(artifacts, /runs-on: macos-15/);
+    assert.match(artifacts, /rustup toolchain install 1\.97\.1 --profile minimal/);
+    assert.match(artifacts, /rustup target add wasm32v1-none --toolchain 1\.97\.1/);
+    assert.match(artifacts, /--tag v2\.2\.3 --locked circom/);
+    assert.match(artifacts, /uses: \.\/\.github\/actions\/setup-stellar-cli/);
+    assert.match(artifacts, /npm run private:check-reproducible/);
+    assert.match(aggregate, /name: Private Balance Gate A/);
+    assert.match(aggregate, /needs: \[private-circuits, private-artifacts\]/);
+    assert.match(aggregate, /if: \$\{\{ always\(\) \}\}/);
+    assert.match(aggregate, /CIRCUIT_RESULT: \$\{\{ needs\.private-circuits\.result \}\}/);
+    assert.match(aggregate, /ARTIFACT_RESULT: \$\{\{ needs\.private-artifacts\.result \}\}/);
+    assert.doesNotMatch(aggregate, /continue-on-error/);
+    const command = aggregate.match(/ {8}run: \|\n((?: {10}.+\n?)+)/)?.[1];
+    assert.ok(command, "execute the actual fail-closed aggregation script");
+    for (const circuit of ["success", "failure", "cancelled", "skipped", ""]) {
+      for (const artifact of ["success", "failure", "cancelled", "skipped", ""]) {
+        const result = spawnSync("bash", ["-e", "-c", command], {
+          env: { ...process.env, CIRCUIT_RESULT: circuit, ARTIFACT_RESULT: artifact },
+        });
+        assert.equal(result.status === 0, circuit === "success" && artifact === "success",
+          `${file}: circuit=${circuit || "missing"} artifact=${artifact || "missing"}`);
+      }
+    }
+  }
+});
+
+test("generated-artifact checks install their complete toolchain in the same job", () => {
+  const ci = read(".github/workflows/ci.yml");
+  const release = read(".github/workflows/release.yml");
+  const ciVerify = ci.split("\n  verify:")[1];
+  const releaseJob = release.split("\n  release:")[1].split("\n  deploy:")[0];
+
+  assert.match(ciVerify, /fetch-depth: 0/);
+  for (const job of [ciVerify, releaseJob]) {
+    assert.match(job, /rustup toolchain install 1\.97\.1 --profile minimal/);
+    assert.match(job, /uses: \.\/\.github\/actions\/setup-stellar-cli/);
+    assert.match(job, /corepack npm --prefix protocol\/private-balance\/circuits ci/);
+    assert.match(
+      job,
+      /corepack npm --prefix protocol\/private-balance\/circuits ci[\s\S]*npm run (?:verify:application|release:verify)/,
+    );
+    assert.doesNotMatch(job, /run: npm run private:check-generated/,
+      "the shared application gate owns the generated-file check exactly once");
+  }
+});
+
+test("hosted application gates allow the complete private and public browser matrix", () => {
+  const ciVerify = read(".github/workflows/ci.yml").split("\n  verify:")[1];
+  const release = read(".github/workflows/release.yml").split("\n  release:")[1].split("\n  deploy:")[0];
+  for (const job of [ciVerify, release]) {
+    assert.match(job, /timeout-minutes: 90/,
+      "cold toolchain installs and the complete synthetic browser matrix need a 90-minute job budget");
+    assert.doesNotMatch(job, /continue-on-error:\s*true|--grep-invert|--max-failures/);
+  }
 });
 
 test("the isolated Private Payments Gate A installs its internal browser package", () => {
@@ -97,7 +243,17 @@ test("the isolated Private Payments Gate A installs its internal browser package
   );
 });
 
-test("clean release verification runs generated bundle assertions only after the static build", () => {
+test("CI verifies pull-request branches once and main after merge", () => {
+  const ci = read(".github/workflows/ci.yml");
+
+  assert.match(ci, /push:\s*\n\s*branches:\s*\["main"\]/);
+  assert.match(ci, /pull_request:\s*\n\s*branches:\s*\["main"\]/);
+  assert.match(ci, /concurrency:\s*\n\s*group:\s*ci-/);
+  assert.match(ci, /cancel-in-progress:\s*true/);
+});
+
+test("clean CI runs generated bundle assertions only after the static build", () => {
+  const ci = read(".github/workflows/ci.yml");
   const pkg = JSON.parse(read("package.json"));
 
   assert.equal(existsSync(new URL("../tests/bundle-budget.test.mjs", import.meta.url)), false);
@@ -107,6 +263,10 @@ test("clean release verification runs generated bundle assertions only after the
   assert.match(
     pkg.scripts["verify:application"],
     /npm test.*npm run build.*npm run test:bundle.*npm run check:bundle.*playwright test/,
+  );
+  assert.match(
+    ci,
+    /npm run verify:application[\s\S]*test -f out\/index\.html/,
   );
   assert.match(pkg.scripts["release:verify"], /^node scripts\/assert-clean-release\.mjs && npm run verify:application$/);
 });
@@ -121,7 +281,7 @@ test("the toolchain and dependency lifecycle approvals are explicit", () => {
   assert.match(npmConfig, /^ignore-scripts=true$/m);
 });
 
-test("private proving artifacts are provenance-checked in local and release gates", () => {
+test("private proving artifacts are provenance-checked in local, CI, and release gates", () => {
   const pkg = JSON.parse(read("package.json"));
   const circuits = JSON.parse(read("protocol/private-balance/circuits/package.json"));
   const generatedCheck = read("protocol/private-balance/scripts/check-generated.mjs");
@@ -129,6 +289,8 @@ test("private proving artifacts are provenance-checked in local and release gate
   const transcript = read("protocol/private-balance/circuits/scripts/powers-of-tau.mjs");
   const verify = read("protocol/private-balance/circuits/scripts/verify-proving-key.mjs");
   const manifestValidator = read("src/lib/private-balance-manifest.ts");
+  const ci = read(".github/workflows/ci.yml");
+  const release = read(".github/workflows/release.yml");
 
   assert.match(pkg.scripts["verify:application"], /private:check-generated/);
   assert.match(circuits.scripts["verify:zkey"], /verify-proving-key\.mjs/);
@@ -142,8 +304,12 @@ test("private proving artifacts are provenance-checked in local and release gate
   assert.match(manifestValidator, /parsed\.release\.auditReports\.length === 0/);
   assert.match(manifestValidator, /parsed\.release\.deploymentTransactions\.length === 0/);
   assert.match(generatedCheck, /protocol\/private-balance\/packages\/browser\/dist/);
-  assert.equal(pkg.scripts["verify:private-artifacts"], "npm run private:check-reproducible");
-  assert.match(pkg.scripts["verify:private-rust"], /cargo \+1\.97\.1 deny check/);
+  for (const workflow of [ci, release]) {
+    assert.match(workflow, /npm run (?:verify:application|release:verify)/);
+    assert.match(workflow, /npm run private:check-reproducible/);
+  }
+  assert.match(release, /cargo \+1\.97\.1 install cargo-deny --version 0\.20\.2 --locked/);
+  assert.match(release, /cargo \+1\.97\.1 deny check/);
 });
 
 test("browser verification is runner-owned instead of ad-hoc", () => {

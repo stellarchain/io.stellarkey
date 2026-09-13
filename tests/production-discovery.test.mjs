@@ -202,15 +202,34 @@ test("release artifacts inventory every static file and remain byte deterministi
   assert.match(sums, /  stellarkey-1\.0\.0\.cdx\.json$/m);
 });
 
-test("manual releases publish the verified archive without claiming Actions build provenance", () => {
-  const runbook = read("docs/production-deployment.md");
-  assert.match(runbook, /npm run release:verify/);
-  assert.match(runbook, /node scripts\/create-release-artifact\.mjs/);
-  assert.match(runbook, /gh release create.*--draft/);
-  assert.match(runbook, /gh release edit.*--draft=false/);
-  assert.match(runbook, /shasum -a 256 --check SHA256SUMS/);
-  assert.match(runbook, /no GitHub Actions build-provenance attestation/i);
-  assert.match(runbook, /Never rebuild during deployment/i);
+test("tag releases build once, attest, and publish the exact artifacts", () => {
+  const workflow = read(".github/workflows/release.yml");
+  assert.match(workflow, /tags:\s*\n\s*- ['"]v\*['"]/);
+  assert.match(workflow, /actions\/checkout@[0-9a-f]{40}/);
+  assert.match(workflow, /actions\/setup-node@[0-9a-f]{40}/);
+  assert.match(workflow, /actions\/attest-build-provenance@[0-9a-f]{40}/);
+  assert.match(workflow, /npm run release:verify/);
+  assert.equal((workflow.match(/npm run build/g) ?? []).length, 0);
+  assert.match(workflow, /node scripts\/create-release-artifact\.mjs/);
+  assert.match(workflow, /gh release create/);
+  assert.match(workflow, /release-artifacts\/\*/);
+});
+
+test("production deploys the exact published release archive to Cloudflare Pages", () => {
+  const workflow = read(".github/workflows/release.yml");
+  assert.match(workflow, /deploy:\s*\n\s*needs: release/);
+  assert.match(workflow, /environment:\s*\n\s*name: production\s*\n\s*url: https:\/\/stellarkey\.io/);
+  assert.match(workflow, /gh release download "\$GITHUB_REF_NAME"/);
+  assert.match(workflow, /sha256sum --check SHA256SUMS/);
+  assert.match(workflow, /gh attestation verify "\$archive"/);
+  assert.match(workflow, /--signer-workflow "\$GITHUB_REPOSITORY\/.github\/workflows\/release\.yml"/);
+  assert.match(workflow, /gh release view "\$GITHUB_REF_NAME"[\s\S]{0,100}--json isImmutable/);
+  assert.match(workflow, /tar -xzf .* --strip-components=1 -C deploy/);
+  assert.match(workflow, /cloudflare\/wrangler-action@[0-9a-f]{40}/);
+  assert.match(workflow, /wranglerVersion: "4\.[0-9.]+"/);
+  assert.match(workflow, /CLOUDFLARE_ACCOUNT_ID/);
+  assert.match(workflow, /CLOUDFLARE_API_TOKEN/);
+  assert.match(workflow, /pages deploy deploy --project-name=stellarkey --branch=main/);
 });
 
 test("sharing metadata and structured data describe one independent finance app", () => {

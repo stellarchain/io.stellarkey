@@ -5,7 +5,7 @@ import { importTestWallet, installNetworkFixtures, installQuietEventSource } fro
 import privateManifest from "../public/protocol/private-balance/v1/manifest.json";
 
 const routes = [
-  { path: "/", heading: "Your keys never leave this device.", title: "StellarKey: a Stellar wallet with a card machine in it" },
+  { path: "/", heading: "Your keys never leave this device.", title: "StellarKey: a Stellar wallet with a point of sale in it" },
   { path: "/about", heading: "About StellarKey", title: "About StellarKey — StellarKey" },
   { path: "/privacy", heading: "Your data stays close", title: "Your data stays close — StellarKey" },
   { path: "/terms", heading: "You remain in control", title: "You remain in control — StellarKey" },
@@ -234,10 +234,13 @@ test("the landing page tells the private payments story with its limits attached
 
   await expect(page.getByRole("heading", { level: 2, name: "Then it goes quiet." })).toBeVisible();
   const act = page.locator("#private");
-  await expect(act).toContainText("preview on Stellar testnet");
+  await expect(act).toContainText("Protocol V2");
+  await expect(act).toContainText("unaudited, Testnet-only");
   await expect(act).toContainText("public by design");
   await expect(act).toContainText("Privacy grows with more independent activity");
   await expect(act).toContainText("not a guarantee");
+  await expect(page.locator("#private-how")).toContainText("40,594 constraints");
+  await expect(page.locator("#private-how")).toContainText("private witness stays local");
   await expect(
     page.locator("#private-how").getByRole("link", { name: "Read exactly how it works →" }),
   ).toHaveAttribute("href", "/private");

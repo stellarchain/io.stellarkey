@@ -6,11 +6,11 @@ import { MarketingFooter, MarketingHeader } from "@/components/marketing/Marketi
 import "@/components/marketing/marketing.css";
 import "@/components/marketing/landing.css";
 
-const title = `${BRAND_NAME}: a Stellar wallet with a card machine in it`;
+const title = `${BRAND_NAME}: a Stellar wallet with a point of sale in it`;
 const description =
   "A self-custody Stellar wallet and a point of sale in one app. The vault is encrypted in " +
-  "your browser, every signature is shown to you first, and nothing about the shop leaves " +
-  "the device it runs on.";
+  "your browser, transactions are reviewed before signing, and merchant records stay local. " +
+  "Stellar payments and network request metadata remain public or visible to the services you use.";
 
 export const metadata: Metadata = {
   title: { absolute: title },

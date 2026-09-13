@@ -7,9 +7,10 @@ This wallet ships as static files and talks directly to user-selected Stellar se
 - Use Node 22.22.2+ and npm 11.19.0+ from the supported ranges in `package.json`.
 - Install exactly from `package-lock.json` with `npm ci`. The checked-in `.npmrc` sets `ignore-scripts=true`; no `allowScripts` allowlist is configured. Review any proposed change to that policy or manual dependency-script execution explicitly.
 - Run `npm run release:verify` from a clean checkout.
-- Run `npm run verify:private-rust`, `npm run verify:private-circuits`, and `npm run verify:private-artifacts` separately from application verification. Retain the 100,000-action model check through `npm run verify:private-model`. Use the pinned toolchains described in the deployment runbook. The application gate includes nested browser-protocol tests, mandatory synthetic private UI/component and overlay/manifest tests, fixture cleanup before and after the production build, and the normal browser matrix.
+- Require the separate Rust security and circuit Gate A workflow jobs as well as application verification. The equivalent local commands are `npm run verify:private-rust`, `npm run verify:private-circuits`, and `npm run verify:private-artifacts`. The 100,000-action recovery model runs weekly and on manual dispatch; `npm run verify:private-model` is its local counterpart. Use the pinned toolchains described in the deployment runbook. The application gate includes nested browser-protocol tests, mandatory synthetic private UI/component and overlay/manifest tests, fixture cleanup before and after the production build, and the normal browser matrix.
 - Create release files only from that verified `out/` directory with `node scripts/create-release-artifact.mjs`. Never rebuild during deployment.
-- Verify `SHA256SUMS`, then compare every static file with `release-files.json`. The archive, inventory, CycloneDX SBOM, and checksums must come from the same immutable GitHub release. Its release attestation records the published assets; it is not an Actions build-provenance attestation.
+- The packager verifies the point-compressed proving key against the canonical raw key and manifest, then omits only the redundant raw key and `.DS_Store` files from the archive. It rejects any remaining asset above Cloudflare Pages' 25 MiB limit. Source artifacts and `out/` remain unchanged; deploy the archive, not the unfiltered build directory.
+- Verify `SHA256SUMS`, then compare every static file with `release-files.json`. The archive, inventory, CycloneDX SBOM, and checksums must come from the same immutable GitHub release. For workflow-built releases, verify the Actions build-provenance attestation against the release workflow and exact source commit before deployment. The manually published `1.0.0` release has only GitHub's immutable-release attestation, not Actions build provenance; do not claim otherwise or replace its immutable assets.
 - Confirm [CHANGELOG.md](../CHANGELOG.md) has a dated entry for the package version and a fresh `[Unreleased]` section before tagging; leave that section empty rather than publishing a placeholder note.
 - Confirm `out/index.html`, `out/_headers`, `out/sw.js`, `out/manifest.webmanifest`, and the icon files exist.
 - Deploy the contents of the exact `stellarkey-<version>.tar.gz` release archive to an HTTPS static host that applies `_headers`. Do not rebuild it and do not add an application-server requirement.
@@ -27,6 +28,17 @@ remove the requirements below for later releases, or promote Private Payments
 beyond the unaudited Testnet-only development deployment.
 
 ## Manual device boundaries
+
+### v1.0.1 release exception
+
+On 2026-09-13 the maintainer explicitly continued the same deferral for the
+packaging and public-copy patch release 1.0.1: physical iPhone/iPad,
+VoiceOver/NVDA, passkey and Trezor checks, including Trezor redistribution and
+registered-origin sign-off. They remain unperformed or unconfirmed, not passed.
+This exception grants no third-party license rights, does not waive automated
+gates, and does not promote Private Payments beyond unaudited Testnet use.
+
+### Required checks
 
 - On a real iPhone, test Safari onboarding, encrypted-backup restore, lock/unlock, form entry, safe areas, and Add to Home Screen cold launch. Verify pinch zoom and 200% reflow, VoiceOver, and system text without clipping controls or obscuring focus.
 - On a real iPad, repeat the installed-app, rotation, modal, keyboard, and account-menu lock flows.

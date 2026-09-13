@@ -24,7 +24,7 @@ export function LandingBody() {
       <section className="sheet">
         <div className="hero-grid">
           <div>
-            <p className="mono-label">a stellar wallet<span className="sep">{"//"}</span>a card machine<span className="sep">{"//"}</span>a quiet mode</p>
+            <p className="mono-label">a stellar wallet<span className="sep">{"//"}</span>a point of sale<span className="sep">{"//"}</span>a quiet mode</p>
             <h1 className="display" style={{ marginTop: "1.6rem" }}>Your keys never<br />leave this device.</h1>
             <p className="lede"><strong>StellarKey is three things in one app.</strong> A self-custody Stellar wallet. A point of sale that pays straight into it. And a private balance, in testnet preview, that keeps the amount, the recipient, and the memo to itself.</p>
             <div className="cta-row">
@@ -32,7 +32,7 @@ export function LandingBody() {
               <a className="btn btn-line" href="#till">See the till</a>
               <a className="btn btn-line" href="#private">Then go quiet</a>
             </div>
-            <p className="hero-foot">Horizon or RPC for the chain · this device for everything else</p>
+            <p className="hero-foot">Local signing and records · direct Stellar requests · optional third-party services</p>
           </div>
 
           <div className="hero-stack rv">
@@ -96,8 +96,8 @@ export function LandingBody() {
       <section className="band"><div className="sheet" style={{ paddingTop: "3rem", paddingBottom: "3rem" }}>
         <ul className="rail">
           <li><b>AES-256-GCM</b><span>The vault cipher, keyed by PBKDF2, encrypted here, never uploaded.</span></li>
-          <li><b>0</b><span>Accounts, servers or custodians between you and your money.</span></li>
-          <li><b>1</b><span>Network dependency. Horizon or RPC, Stellar’s public APIs.</span></li>
+          <li><b>0</b><span>Hosted StellarKey accounts or application custody services.</span></li>
+          <li><b>Direct</b><span>Stellar requests, plus optional market-data, issuer and hardware services.</span></li>
           <li><b>0 %</b><span>Platform fee at the counter. There is no platform to pay.</span></li>
         </ul>
       </div></section>
@@ -310,7 +310,7 @@ export function LandingBody() {
         <div className="head">
           <p className="mono-label">the rest of the till<span className="sep">{"//"}</span>same device<span className="sep">{"//"}</span>no server</p>
           <h2 className="display-sm">A counter’s worth of tools, none of them hosted.</h2>
-          <p className="lede">Everything a card machine’s dashboard promises, done locally instead. Each of these lives in the till’s encrypted records, and none of it phones home.</p>
+          <p className="lede">Merchant records and reports, kept locally. Card tenders record payments handled by your separate card provider; StellarKey does not process cards. Each report comes from the till’s encrypted records.</p>
         </div>
         <ul className="facts rv">
           <li><span className="d"><DocFile /></span><div><b>Invoices</b><span>Drafted, issued, and reconciled from the ledger like any sale. Overdue is a fact the app shows you, not an email it sends.</span></div></li>
@@ -329,8 +329,8 @@ export function LandingBody() {
           <div className="head">
             <p className="mono-label">act three<span className="sep">{"//"}</span>the same wallet, in private</p>
             <h2 className="display-sm">Then it goes quiet.</h2>
-            <p className="lede"><strong>Private Payments is the same wallet with a second pocket.</strong> Move XLM or USDC into one private pool and send internally while the asset, amount, recipient, and memo stay encrypted. The proof is built on this device; a contract on the public Stellar ledger verifies it without reading it.</p>
-            <p className="lede">It ships today as a preview on Stellar testnet, and it is honest about its edges. Money moving in or out of the private balance is public by design. Your account is public as the submitting account and network-fee payer. Timing is public. Privacy grows with more independent activity — it is context, not a guarantee.</p>
+            <p className="lede"><strong>Private Payments is the same wallet with a second pocket.</strong> Move XLM or USDC into one private pool and send internally while the asset, amount, recipient, and memo stay encrypted. The proof is built on this device; a contract on the public Stellar ledger verifies the public proof without receiving its private witness.</p>
+            <p className="lede">Protocol V2 ships as an unaudited, Testnet-only feature. Money moving in or out of the private balance is public by design. The submitting account, fee payer and timing remain public. Privacy grows with more independent activity — it is context, not a guarantee.</p>
           </div>
           <div className="rv"><PanelDeal /></div>
         </div>
@@ -340,7 +340,7 @@ export function LandingBody() {
         <div className="head">
           <p className="mono-label">a private payment<span className="sep">{"//"}</span>proved here<span className="sep">{"//"}</span>verified there</p>
           <h2 className="display-sm">Payments that keep the amount to themselves.</h2>
-          <p className="lede">There is no StellarKey relay backend, indexer, or key service under this. The wallet downloads hash-pinned proving files once, builds each proof in an isolated worker, and talks straight to the Stellar RPC endpoint you chose. Payments submit directly from your account; there is no peer relay to configure.</p>
+          <p className="lede">There is no StellarKey transaction backend, indexer, or key service. After explicit intent, the wallet downloads and caches hash-pinned proving files, builds each proof in an isolated worker, and talks directly to the Stellar RPC endpoint you chose. A missing or corrupt cache is fetched again. Payments submit from your public account; RPC operators receive proofs and transactions and can observe request metadata.</p>
         </div>
         <div className="demo inline rv" data-demo="quiet">
           <div className="bar"><span className="dot" data-dot></span><b data-label>a private payment, start to finish</b>
@@ -359,9 +359,9 @@ export function LandingBody() {
             <div className="step" data-step="1">
               <div className="sub" style={{ marginBottom: ".7rem" }}>PROVE · ON THIS DEVICE</div>
               <div className="rows">
-                <div><span>circuit</span><b>56,757 constraints</b></div>
+                <div><span>circuit</span><b>40,594 constraints</b></div>
                 <div><span>built in</span><b>an isolated worker</b></div>
-                <div><span>uploaded</span><b className="g">nothing</b></div>
+                <div><span>private witness</span><b className="g">stays on this device</b></div>
               </div>
               <div className="pinrow" data-prove><i></i><i></i><i></i><i></i><i></i><i></i></div>
               <div className="sub" style={{ textAlign: "center", marginTop: ".7rem" }}>proving…</div>
@@ -374,7 +374,7 @@ export function LandingBody() {
                 <div><span>memo</span><b className="g">encrypted</b></div>
                 <div><span>network fee</span><b>0.4847157 XLM · public</b></div>
               </div>
-              <div className="wait">the review shows you everything · the ledger sees none of it</div>
+              <div className="wait">transfer details encrypted · source, fee and timing public</div>
             </div>
             <div className="step" data-step="3">
               <div className="sub" style={{ marginBottom: ".7rem" }}>WHAT AN OBSERVER SEES</div>
@@ -384,7 +384,7 @@ export function LandingBody() {
                 <div><span>timing</span><b>visible</b></div>
                 <div><span>amount · recipient · memo</span><b className="g">encrypted</b></div>
               </div>
-              <div className="wait" style={{ marginTop: ".9rem" }}>and nothing else</div>
+              <div className="wait" style={{ marginTop: ".9rem" }}>proof, commitments, nullifiers and ciphertext are also public</div>
             </div>
           </div>
           <div className="track" data-track><i></i><i></i><i></i><i></i></div>
@@ -393,13 +393,13 @@ export function LandingBody() {
         <div className="head" style={{ marginTop: "4.5rem" }}>
           <p className="mono-label">the split<span className="sep">{"//"}</span>drawn exactly</p>
           <h2 className="display-sm">What leaves your device.</h2>
-          <p className="lede">Everything on the left stays in this browser’s encrypted storage. Everything on the right is public on Stellar, for anyone, forever. The only thing that crosses is the proof.</p>
+          <p className="lede">Signing keys and the private witness stay on the device. Private-transfer details travel as encrypted output and recovery records; deposits and withdrawals expose their asset, amount and endpoint. The proof, public inputs, commitments, nullifiers and ciphertext are published on Stellar.</p>
         </div>
         <div className="split rv">
           <svg
             viewBox="0 0 760 432"
             role="img"
-            aria-label="Split diagram. Stays on this device: your keys, amounts, recipients, memos, the proof’s inputs. The public ledger: deposits and withdrawals with their amounts, network fees paid by your Stellar account, timing, and an encrypted package. One arrow crosses between them: the proof, checkable by the contract, readable by no one."
+            aria-label="Split diagram. Signing keys and private proof inputs stay on the device. Private-transfer amounts, recipients and memos are encrypted. The public ledger sees deposits and withdrawals with their amounts, the submitting account and fees, timing, proof, commitments, nullifiers and encrypted output records. The public proof is verifiable without revealing its private witness."
             style={{ fontFamily: "var(--mono)" }}
           >
             <rect x="8" y="14" width="334" height="322" rx="10" fill="#0E0E11" stroke="rgba(255,255,255,0.13)" />
@@ -419,9 +419,9 @@ export function LandingBody() {
             </g>
             <g fill="#D9D9DE" fontSize="14">
               <text x="56" y="94">your keys</text>
-              <text x="56" y="134">amounts</text>
-              <text x="56" y="174">recipients</text>
-              <text x="56" y="214">memos</text>
+              <text x="56" y="134">private-transfer amounts</text>
+              <text x="56" y="174">private recipients</text>
+              <text x="56" y="214">private memos</text>
               <text x="56" y="254">the proof’s inputs</text>
               <text x="466" y="94">deposits and withdrawals,</text>
               <text x="466" y="112">with their amounts</text>
@@ -430,12 +430,12 @@ export function LandingBody() {
               <text x="466" y="210">timing</text>
               <text x="466" y="248">an encrypted package</text>
             </g>
-            <text x="36" y="312" fill="#8C8C8C" fontSize="11">encrypted at rest · never uploaded</text>
+            <text x="36" y="312" fill="#8C8C8C" fontSize="11">private details leave only as ciphertext</text>
             <text x="446" y="312" fill="#8C8C8C" fontSize="11">visible to anyone, forever</text>
             <path d="M175 336 L175 384 L585 384 L585 344" fill="none" stroke="#FDDA24" strokeWidth="1.5" />
             <polygon points="579,350 591,350 585,338" fill="#FDDA24" />
             <text x="380" y="372" textAnchor="middle" fill="#FDDA24" fontSize="13">the proof</text>
-            <text x="380" y="414" textAnchor="middle" fill="#8C8C8C" fontSize="11.5">checkable by the contract · readable by no one</text>
+            <text x="380" y="414" textAnchor="middle" fill="#8C8C8C" fontSize="11.5">public and verifiable · private witness stays local</text>
           </svg>
         </div>
 
@@ -525,7 +525,7 @@ export function LandingBody() {
           <li><span className="d"><DocCoin /></span><div><b>The fee account is public</b><span>A private send is still a transaction, and the Stellar account paying its fee is visible, along with when.</span></div></li>
           <li><span className="d"><DocShieldDots /></span><div><b>Privacy is context, not a guarantee</b><span>It grows with more independent activity, and it can shrink with reuse and timing.</span></div></li>
           <li><span className="d"><DocAlert /></span><div><b>A preview on testnet today</b><span>Mainnet waits for independent audit and trusted-setup evidence. The app shows you that status table itself.</span></div></li>
-          <li><span className="d"><DocKey /></span><div><b>Recovery is your phrase alone</b><span>The private balance rebuilds from the public record, on this device, with no server to ask. Restoring can cost network fees.</span></div></li>
+          <li><span className="d"><DocKey /></span><div><b>Keep your phrase and encrypted backup</b><span>Seed recovery needs the matching deployment and authenticated archive. Pending-proof holds and local metadata need the backup. Archive restoration can cost network fees.</span></div></li>
           <li><span className="d"><DocEyeOff /></span><div><b>Testnet balances are worth nothing</b><span>Values shown against private testnet assets are representative pricing only.</span></div></li>
         </ul>
         <div className="cta-row">
@@ -540,22 +540,22 @@ export function LandingBody() {
         <ul className="who rv">
           <li><em>the counter</em><b>Small shops taking payment</b><span>A café, a market stall, a studio. You want the money and you do not want a third of a percent of every coffee going somewhere else.</span></li>
           <li><em>the holder</em><b>People holding their own keys</b><span>Multi-sig, hardware signing, watch-only accounts, and a private balance in testnet preview for the payments that are nobody else’s business. The vault never leaves the browser.</span></li>
-          <li><em>the accountant</em><b>Whoever does the books</b><span>VAT by rate, per-line tax, refunds netted off, and a transaction hash against every figure. Exports without asking anyone’s permission.</span></li>
+          <li><em>the accountant</em><b>Whoever does the books</b><span>VAT by rate, per-line tax, refunds netted off, and ledger references for confirmed crypto payments. Cash and external-card records need separate reconciliation.</span></li>
         </ul>
       </div></section>
       <section className="band" id="limits"><div className="sheet">
         <div className="head">
           <p className="mono-label">limits<span className="sep">{"//"}</span>stated plainly</p>
-          <h2 className="display-sm">What StellarKey will never do.</h2>
-          <p className="lede">Each of these was considered and refused, because each one needs a server, and a server is the thing this product will not have. Anything that cannot run on your device is not a feature, it is a promise somebody else has to keep.</p>
+          <h2 className="display-sm">The limits of this release.</h2>
+          <p className="lede">StellarKey is a local wallet and merchant tool, not a hosted payment processor or cloud service. These capabilities are not included; use independent services where you need them.</p>
         </div>
         <ul className="nope rv">
-          <li><span className="x">✕</span><div><b>Host a payment page</b><span>A link a stranger opens has to be served by someone. There is no one.</span></div></li>
+          <li><span className="x">✕</span><div><b>Host a merchant checkout service</b><span>The static app is hosted, but it does not operate per-merchant checkout sessions or a payment backend.</span></div></li>
           <li><span className="x">✕</span><div><b>Sync two tills</b><span>Shared state needs a shared database. One install is one terminal, and says so.</span></div></li>
           <li><span className="x">✕</span><div><b>Chase an invoice on a timer</b><span>Sending email on a schedule means a machine awake when you are not.</span></div></li>
           <li><span className="x">✕</span><div><b>Pay out to a bank</b><span>That is an anchor’s job, and an anchor is a custodian by another name.</span></div></li>
-          <li><span className="x">✕</span><div><b>Reset your password</b><span>Nobody holds a copy. Your recovery phrase is the whole story.</span></div></li>
-          <li><span className="x">✕</span><div><b>Know anything about you</b><span>No analytics, no telemetry, no account. The trade is real, and it is the point.</span></div></li>
+          <li><span className="x">✕</span><div><b>Recover your password for you</b><span>Keep your password, recovery phrase and tested encrypted backup. They protect different recovery paths.</span></div></li>
+          <li><span className="x">✕</span><div><b>Run application analytics</b><span>No analytics, telemetry or hosted account. Hosts and third-party services can still observe requests, and Stellar transactions are public.</span></div></li>
         </ul>
       </div></section>
       <section className="band" id="faq"><div className="sheet">
@@ -569,11 +569,11 @@ export function LandingBody() {
           <details><summary>What if my customer doesn’t have a Stellar wallet?</summary>
             <p>Then they cannot pay this way, and you take cash or a card instead. This is not a replacement for every payment method on day one; it is the one with no StellarKey processing fee when the customer does have a wallet. Be honest with yourself about your own customers before switching anything off.</p></details>
           <details><summary>Where does my money actually go?</summary>
-            <p>Straight to the Stellar account you nominate, which you hold the keys to. It never passes through an account we control, because there is no account we control. That is also why there is nobody to freeze it, and nobody to ask if something goes wrong.</p></details>
+            <p>Straight to the Stellar account you nominate, under your signing authority. StellarKey does not route public merchant payments through a custody account. Issued assets can still have issuer authorization, freeze or clawback controls; check the full asset identity and its terms.</p></details>
           <details><summary>What happens if I lose the device?</summary>
-            <p>Your funds are on the ledger and recoverable from your recovery phrase on any device. Your <em>records</em>, meaning orders, catalogue and customers, live in that browser’s encrypted storage, so export a backup and keep it somewhere. The app has a guided flow for both, and it will tell you when it thinks you are exposed.</p></details>
+            <p>The matching recovery material restores signing authority for your accounts; a phrase does not restore separately imported keys or hardware accounts. Merchant records need a tested encrypted backup. Private Payments recovery also needs the matching deployment and authenticated archive; its unconfirmed proof holds and local metadata need the backup. Keep the wallet password and all relevant recovery material offline.</p></details>
           <details><summary>Is this legal for my shop?</summary>
-            <p>Taking payment in a digital asset, and how it is taxed, depends entirely on where you trade. The app gives you per-line VAT, VAT by rate over a period, and a transaction hash against every figure, which is what an accountant will ask for. It does not give you advice. Ask someone qualified where you trade.</p></details>
+            <p>Taking payment in a digital asset, and how it is taxed, depends on where you trade. The app records per-line VAT, totals by rate and ledger references for confirmed crypto payments. Cash and external-card records need separate evidence. It does not provide legal or tax advice; ask someone qualified where you trade.</p></details>
           <details><summary>Why can everyone see me adding money to a private balance?</summary>
             <p>Because crossing between pockets is a public Stellar transaction, and pretending otherwise would be a lie. Adding funds is public; the resulting private balance is not. Inside, the amount, the recipient, and the memo of a send stay encrypted. Step back out and the withdrawal is public again, like any Stellar payment.</p></details>
           <details id="cost"><summary>What does it cost?</summary>
@@ -584,7 +584,7 @@ export function LandingBody() {
         <div className="head">
           <p className="mono-label">no signup<span className="sep">{"//"}</span>no custodian<span className="sep">{"//"}</span>first sale today</p>
           <h2 className="display-sm">Start taking payments in minutes.</h2>
-          <p className="lede">Create a vault, open the till, and put a code in front of a customer. Nothing to register, nothing to wait for, and nothing about the shop leaves the device it runs on.</p>
+          <p className="lede">Create a vault, open the till, and show a payment code. No StellarKey account is required. Shop records stay local; crypto payments are public and selected network services can observe requests.</p>
           <div className="cta-row">
             <a className="btn btn-gold" href="/app">Open the app</a>
             <a className="btn btn-line" href="#limits">Read the limits first</a>

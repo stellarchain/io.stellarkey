@@ -3,9 +3,9 @@
 [PDF](private-payments.pdf) · [Standalone LaTeX](private-payments.tex) · [arXiv source archive](arxiv-source.zip) · [Maintained Markdown](../private-balance.md)
 
 Author: **StellarKey**. Contact: **support@stellarkey.io**. No affiliation is asserted.
-The September 13, 2026 whitepaper describes the stable application baseline
-**1.0.0**, Protocol **V2**, with implementation pinned to the immutable release tag
-`v1.0.0`. Only current-format application state
+The September 13, 2026 whitepaper describes application release **1.0.1**,
+continuing the stable **1.0.0** application baseline and Protocol **V2**,
+with implementation pinned to the immutable release tag `v1.0.1`. Only current-format application state
 is supported. Nothing has been submitted to arXiv.
 
 The manuscript includes a threat model, conditional state-transition arguments,
