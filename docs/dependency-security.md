@@ -159,8 +159,8 @@ The subsequent clean-tree `release:verify` passed at
 protocol tests, both reporter probes, all 528 required browser checks, the
 production build and unchanged bundle budgets, and 114 active normal browser
 checks. The normal matrix also recorded 278 intentional skips; required suites
-had none. See [the final hardening results](../plans/004-hardening-results-2026-09-07.md)
-for the complete matrix, earlier failed attempts, separate Rust results and
-unverified circuit/human/device gates. This passing application command does not
+had none. These are historical application results; separate Rust/circuit and
+human/physical-device evidence remain required by the
+[release checklist](release-checklist.md). This passing application command does not
 resolve the embedded-parser, remote-core, elliptic or distribution-authorization
 limits above and is not a tagged release certification.
