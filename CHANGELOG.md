@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Mark up the public Private Payments glossary as a definition list so assistive technology can associate terms with their descriptions.
 - Align the public Private Payments explainer with Protocol V2, current artifact sizes, dated Testnet evidence, withdrawal behavior, and recovery and metadata limits.
 - Share compressed proving artifacts between the application and service worker, retaining two cache revisions and retiring redundant expanded-key caches after a verified replacement.
 - Keep one verified public proving key in memory for warm actions, with independent caller-owned buffers and no extra persistent copy.

@@ -275,13 +275,13 @@ export default function PrivatePaymentsPage() {
 
         <section id="private-how"><h2><DocChip />How a private payment works</h2>
         <p>The private balance is a set of notes — think unspent banknotes rather than an account balance. A note is a 128-byte record carrying a 63-bit value, its owner, a random seed, and an optional 32-byte memo. The vocabulary, defined once and used throughout:</p>
-        <div className="deflist">
+        <dl className="deflist">
         <div><dt>commitment</dt><dd>A Poseidon2 hash of a note (BN254, width 4, domain-tagged). The ledger stores the hash; the note itself never appears on-chain.</dd></div>
         <div><dt>Merkle tree</dt><dd>The pool&apos;s ternary depth-64 tree has room for 3<sup>64</sup> commitments. Positions and archive counters use exact 128-bit integers. Owning a note means being able to prove a private path from its commitment to a recent root, without identifying its leaf.</dd></div>
         <div><dt>nullifier</dt><dd>A second domain-tagged Poseidon2 hash, derivable only by a note&apos;s owner and revealed exactly once, when the note is spent. The contract keeps every nullifier it has seen; a repeat is a double-spend and is refused. The nullifier cannot be linked back to its commitment by an observer.</dd></div>
         <div><dt>Groth16</dt><dd>The proof system: a succinct zero-knowledge proof over the BN254 pairing curve. It proves the statement without revealing its private witness; public inputs and transaction metadata remain visible.</dd></div>
         <div><dt>recipient envelope</dt><dd>A 181-byte HPKE ciphertext (RFC 9180: X25519 key agreement, HKDF-SHA256, AES-128-GCM) that carries the new note to its owner. Only the matching viewing key can open it.</dd></div>
-        </div>
+        </dl>
         <p>Each proof has two input lanes, three output lanes, and a public value leg that is zero for a private transfer. Recipient, change and randomized dummy notes occupy fixed 370-byte output packages. Historical fee notes remain readable, but peer relaying and new peer-fee payments have been removed. A full-input exit uses the same proof shape without inserting its zero-value dummy outputs.</p>
         <ol className="prose-list">
         <li>The wallet selects the notes to spend. The proof anchors to any pool root from the last 1,440 ledgers, roughly the last two hours, so the transaction does not reveal how fresh your notes are.</li>

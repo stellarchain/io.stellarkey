@@ -112,6 +112,7 @@ test("the private explainer matches V2 artifacts and retains recovery limits", a
   await expect(page.getByRole("link", { name: "public manifest", exact: true }))
     .toHaveAttribute("href", "/protocol/private-balance/v1/manifest.json");
   const audit = await new AxeBuilder({ page }).include("main").analyze();
+  expect(audit.violations.filter(({ id }) => id === "dlitem")).toHaveLength(0);
   expect(audit.violations
     .filter(({ impact }) => impact === "critical" || impact === "serious")
     .map(({ id, impact, nodes }) => ({ id, impact, nodes: nodes.length }))).toEqual([]);
