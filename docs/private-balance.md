@@ -5,7 +5,7 @@
 - **Protocol:** V2 capacity-independent full-input exits
 - **Application version:** StellarKey 1.5.1
 - **Application baseline:** Stable 1.5.1; only current-format state is supported
-- **Implementation baseline:** `78cb4c111cf95e08987be986a028b68ce6569376` (v1.5.1 baseline implementation; artifact identities in §16)
+- **Implementation baseline:** `b79c58fca32c56b36c86f912ee10d6385c4f591b` (v1.5.1 baseline implementation; artifact identities in §16)
 - **Implementation status:** Live Testnet development deployment; validation scope and dates in §17; not for real value
 - **Document revision:** 2026-09-13
 
