@@ -1,0 +1,408 @@
+"use client";
+
+import { useEffect, useId, useLayoutEffect, useMemo, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
+import QRCode from "qrcode";
+import { useWalletIdentity, useWalletLedger } from "@/hooks/useWallet";
+import {
+  usePrivateBalanceRuntime,
+} from "@/hooks/usePrivateBalanceRuntime";
+import { NETWORKS } from "@/lib/stellar";
+import { buildSep7PayUri } from "@/lib/payuri";
+import { triggerHaptic } from "@/lib/haptics";
+import { Button, CopyButton, HashValue, LoadingRegion, Modal, ModalBody, ModalHeader, Select, Tabs } from "./ui";
+import { FiatValue } from "./FiatValue";
+import { IconAlert, IconDownload, IconShare, IconTrezor } from "./icons";
+
+// The private receive body stays behind the feature's lazy boundary: the chunk
+// only loads when someone actually switches the toggle to Private.
+const PrivateReceiveContent = dynamic(
+  () =>
+    import("@/features/private-balance/components/ReceivePrivate").then(
+      (module) => module.PrivateReceiveContent,
+    ),
+  {
+    ssr: false,
+    loading: () => <LoadingRegion label="Opening private receive address" />,
+  },
+);
+const PrivateAssetSelector = dynamic(
+  () =>
+    import("@/features/private-balance/components/PrivateAssetSelector").then(
+      (module) => module.PrivateAssetSelector,
+    ),
+  {
+    ssr: false,
+    loading: () => <LoadingRegion label="Opening private asset" className="min-h-16" />,
+  },
+);
+const PrivatePaymentAccessGate = dynamic(
+  () =>
+    import("@/features/private-balance/components/PrivatePaymentAccessGate").then(
+      (module) => module.PrivatePaymentAccessGate,
+    ),
+  {
+    ssr: false,
+    loading: () => <LoadingRegion label="Opening private payment" />,
+  },
+);
+
+export function ReceiveModal({
+  open,
+  onClose,
+  initialMode = "public",
+}: {
+  open: boolean;
+  onClose: () => void;
+  initialMode?: "public" | "private";
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      busy={busy}
+      busyReason="Wait for the address operation to finish before closing."
+    >
+      <ModalHeader
+        title="Receive Funds"
+        subtitle="Share a public or private receive address"
+        onClose={onClose}
+      />
+      {/* Private receive addresses are sensitive: the body leaves at close while
+          the shell holds its geometry through the exit. */}
+      {open ? <ReceiveInner initialMode={initialMode} onBusyChange={setBusy} /> : null}
+    </Modal>
+  );
+}
+
+function ReceiveInner({
+  initialMode,
+  onBusyChange,
+}: {
+  initialMode: "public" | "private";
+  onBusyChange: (busy: boolean) => void;
+}) {
+  const { activeAccount, network } = useWalletIdentity();
+  const { balances } = useWalletLedger();
+  const { availableAssets, requestRuntime } = usePrivateBalanceRuntime();
+  const [receiveMode, setReceiveMode] = useState<"public" | "private">(initialMode);
+  const [privateBusy, setPrivateBusy] = useState(false);
+  const [, startRuntimeTransition] = useTransition();
+  const [selectedAssetKey, setSelectedAssetKey] = useState("native");
+  const [qrImage, setQrImage] = useState<{ payload: string; url: string } | null>(null);
+  const [showCustomRequest, setShowCustomRequest] = useState(false);
+  const [requestAmount, setRequestAmount] = useState("");
+  const [requestMemo, setRequestMemo] = useState("");
+  const [trezorVerification, setTrezorVerification] = useState<
+    {
+      accountId: string | null;
+      state: "idle" | "pending" | "success" | "error";
+      message: string;
+    }
+  >({ accountId: null, state: "idle", message: "" });
+  const requestAmountId = useId();
+  const requestMemoId = useId();
+
+  const address = activeAccount?.publicKey ?? "";
+  const trezorPending =
+    activeAccount?.hardware === "trezor" &&
+    trezorVerification.accountId === activeAccount.id &&
+    trezorVerification.state === "pending";
+
+  useEffect(() => {
+    if (initialMode === "private") requestRuntime();
+  }, [initialMode, requestRuntime]);
+
+  useLayoutEffect(() => {
+    onBusyChange(trezorPending || privateBusy);
+    return () => onBusyChange(false);
+  }, [onBusyChange, trezorPending, privateBusy]);
+
+  const selectedAsset = useMemo(
+    () => balances?.find((b) => b.key === selectedAssetKey) ?? null,
+    [balances, selectedAssetKey]
+  );
+
+  const payload = useMemo(() => {
+    if (!address) return "";
+    if (showCustomRequest && (requestAmount.trim() || requestMemo.trim() || selectedAssetKey !== "native")) {
+      return buildSep7PayUri({
+        destination: address,
+        amount: requestAmount.trim() || undefined,
+        memo: requestMemo.trim() || undefined,
+        assetCode: selectedAsset?.isNative ? undefined : selectedAsset?.code,
+        assetIssuer: selectedAsset?.isNative ? undefined : (selectedAsset?.issuer ?? undefined),
+      });
+    }
+    return address;
+  }, [address, showCustomRequest, requestAmount, requestMemo, selectedAssetKey, selectedAsset]);
+
+  // A retained image must never describe a newly edited request or account.
+  const qrDataUrl = payload && qrImage?.payload === payload ? qrImage.url : null;
+
+  useEffect(() => {
+    let alive = true;
+    if (!payload) return;
+    void (async () => {
+      try {
+        const url = await QRCode.toDataURL(payload, {
+          width: 440,
+          margin: 1.5,
+          color: {
+            dark: "#000000",
+            light: "#ffffff",
+          },
+        });
+        if (alive) setQrImage({ payload, url });
+      } catch {
+        if (alive) setQrImage(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [payload]);
+
+  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+
+  async function handleVerifyTrezor() {
+    if (activeAccount?.hardware !== "trezor") return;
+    if (!activeAccount.path) {
+      setTrezorVerification({
+        accountId: activeAccount.id,
+        state: "error",
+        message: "This Trezor account has no saved derivation path to verify.",
+      });
+      return;
+    }
+    setTrezorVerification({
+      accountId: activeAccount.id,
+      state: "pending",
+      message: "Check the address on your Trezor.",
+    });
+    try {
+      const { verifyTrezorAddress } = await import("@/lib/hardware");
+      await verifyTrezorAddress(activeAccount.path, activeAccount.publicKey);
+      setTrezorVerification({
+        accountId: activeAccount.id,
+        state: "success",
+        message: "The address on Trezor matches this account.",
+      });
+      triggerHaptic("success");
+    } catch (error) {
+      setTrezorVerification({
+        accountId: activeAccount.id,
+        state: "error",
+        message: error instanceof Error ? error.message : "Trezor verification failed.",
+      });
+      triggerHaptic("error");
+    }
+  }
+
+  async function handleShare() {
+    try {
+      await navigator.share({
+        title: "My Stellar Address",
+        text: `Send Stellar (${NETWORKS[network].label}) assets to: ${address}`,
+        url: showCustomRequest ? payload : undefined,
+      });
+    } catch {
+      // ignore user cancel
+    }
+  }
+
+  const publicPanel = (
+    <ModalBody>
+      <div className="flex flex-col items-center text-center">
+        {activeAccount && (
+          <div className="mb-3 flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[12px] text-neutral-200">
+            <span className="h-2 w-2 rounded-full bg-[#0A84FF]" />
+            <span className="font-semibold">{activeAccount.label}</span>
+          </div>
+        )}
+
+        {showCustomRequest && requestAmount.trim() && (
+          <div className="fade-up mb-3 flex items-center gap-1.5 rounded-full border border-[#0A84FF]/30 bg-[#0A84FF]/15 px-3.5 py-1 text-[12px] font-semibold text-[#0A84FF]">
+            <span>Requesting {requestAmount} {selectedAsset?.code ?? "XLM"}</span>
+          </div>
+        )}
+
+        <div className="rounded-3xl bg-[var(--color-oncolor)] p-3.5 shadow-[0_20px_60px_-15px_var(--shadow-strong)]">
+          {qrDataUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={qrDataUrl}
+              alt="Address QR code"
+              width={210}
+              height={210}
+              className="rounded-2xl"
+            />
+          ) : (
+            <div className="skeleton h-[210px] w-[210px] rounded-2xl" />
+          )}
+        </div>
+
+        <HashValue
+          full
+          value={address}
+          className="mt-4 justify-center text-center text-[12.5px] leading-relaxed text-neutral-300"
+        />
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-center">
+          <CopyButton value={address} label="Copy Address" className="chip tap" />
+          {activeAccount?.hardware === "trezor" && (
+            <Button
+              variant="secondary"
+              className="btn-sm"
+              loading={trezorPending}
+              loadingLabel="Checking Trezor"
+              onClick={() => void handleVerifyTrezor()}
+            >
+              <IconTrezor size={13} /> Verify on Trezor
+            </Button>
+          )}
+          {canShare && (
+            <button type="button" className="chip" onClick={handleShare}>
+              <IconShare size={12} /> Share
+            </button>
+          )}
+          {qrDataUrl && (
+            <a
+              href={qrDataUrl}
+              download="stellarkey-receive-qr.png"
+              className="chip tap"
+            >
+              <IconDownload size={13} /> Save QR
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowCustomRequest((value) => !value)}
+            className="chip"
+          >
+            {showCustomRequest ? "Hide Request Options" : "Set Amount / Memo"}
+          </button>
+        </div>
+
+        {activeAccount?.hardware === "trezor" &&
+          trezorVerification.accountId === activeAccount.id &&
+          trezorVerification.state !== "idle" && (
+          <p
+            aria-live="polite"
+            className={`mt-2 text-[11.5px] ${
+              trezorVerification.state === "success"
+                ? "text-[#30D158]"
+                : trezorVerification.state === "error"
+                  ? "text-[#FF453A]"
+                  : "text-neutral-400"
+            }`}
+          >
+            {trezorVerification.message}
+          </p>
+        )}
+
+        {showCustomRequest && (
+          <div className="fade-up mt-4 w-full space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left">
+            <p className="text-[12px] font-semibold text-white">Dynamic Payment Request (SEP-0007)</p>
+            {balances && balances.length > 1 && (
+              <div>
+                <p className="mb-1 block text-[11px] font-medium text-neutral-400">
+                  Requested Asset
+                </p>
+                <Select
+                  value={selectedAssetKey}
+                  onChange={setSelectedAssetKey}
+                  ariaLabel="Requested asset"
+                  className="text-[13px]"
+                  options={balances.map((balance) => ({
+                    value: balance.key,
+                    label: balance.code,
+                  }))}
+                />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label htmlFor={requestAmountId} className="mb-1 block text-[11px] font-medium text-neutral-400">
+                  Amount (optional)
+                </label>
+                <input
+                  id={requestAmountId}
+                  className="input text-base sm:text-[13px]"
+                  placeholder="e.g. 50"
+                  inputMode="decimal"
+                  enterKeyHint="next"
+                  autoComplete="off"
+                  value={requestAmount}
+                  onChange={(event) => setRequestAmount(event.target.value.replace(/[^0-9.]/g, ""))}
+                />
+                <FiatValue
+                  amount={requestAmount}
+                  code={selectedAsset?.code ?? "XLM"}
+                  issuer={selectedAsset?.issuer}
+                  isNative={selectedAsset?.isNative}
+                  className="mt-1 block text-[11px] text-neutral-500"
+                />
+              </div>
+              <div>
+                <label htmlFor={requestMemoId} className="mb-1 block text-[11px] font-medium text-neutral-400">
+                  Memo (optional)
+                </label>
+                <input
+                  id={requestMemoId}
+                  className="input text-base sm:text-[13px]"
+                  placeholder="e.g. Dinner"
+                  value={requestMemo}
+                  enterKeyHint="done"
+                  autoComplete="off"
+                  onChange={(event) => setRequestMemo(event.target.value)}
+                />
+              </div>
+            </div>
+            {payload.startsWith("web+stellar") && (
+              <CopyButton
+                value={payload}
+                label="Copy SEP-0007 Link"
+                className="chip tap w-full justify-center"
+              />
+            )}
+          </div>
+        )}
+
+        <div className="mt-4 flex w-full items-start gap-2.5 rounded-2xl border border-white/10 bg-white/[0.02] px-3.5 py-3 text-left">
+          <IconAlert size={15} className="mt-0.5 shrink-0 text-[#FF9F0A]" />
+          <p className="text-[11.5px] leading-relaxed text-neutral-400">
+            Only send Stellar network assets (XLM, USDC, etc.) to this address. Funds sent on other blockchains are unrecoverable.
+          </p>
+        </div>
+      </div>
+    </ModalBody>
+  );
+  const panel = receiveMode === "private" ? (
+    <PrivatePaymentAccessGate action="receive">
+      <PrivateReceiveContent onBusyChange={setPrivateBusy} assetSelector={<PrivateAssetSelector disabled={privateBusy} />} />
+    </PrivatePaymentAccessGate>
+  ) : publicPanel;
+
+  if (availableAssets.length === 0) return panel;
+  return (
+    <Tabs
+      activationMode="manual"
+      value={receiveMode}
+      onChange={(next) => {
+        setReceiveMode(next);
+        if (next === "private") startRuntimeTransition(requestRuntime);
+      }}
+      ariaLabel="Receive address type"
+      options={[
+        { value: "public", label: "Public", disabled: privateBusy || trezorPending },
+        { value: "private", label: "Private", disabled: privateBusy || trezorPending },
+      ]}
+      tabListClassName="mx-4 mt-4 sm:mx-6"
+      panelClassName="min-h-56"
+    >
+      {panel}
+    </Tabs>
+  );
+}

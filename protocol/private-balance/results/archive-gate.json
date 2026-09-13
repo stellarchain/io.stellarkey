@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scope": "controlled-core-archival-replay-gate",
+  "passed": true,
+  "completedAt": "2026-09-13T00:35:51.422Z",
+  "network": {
+    "passphrase": "Standalone Network ; February 2017",
+    "protocolVersion": 27,
+    "startingLedger": 15,
+    "archivedAtLedger": 73,
+    "finalLedger": 77,
+    "limits": {
+      "max_entry_ttl": 1054080,
+      "min_temporary_ttl": 16,
+      "min_persistent_ttl": 16,
+      "max_entries_to_archive": 1000,
+      "live_soroban_state_size_window_sample_period": 1,
+      "starting_eviction_scan_level": 1
+    }
+  },
+  "software": {
+    "quickstartImage": "stellar/quickstart:testing",
+    "quickstartImageId": "sha256:a5016f0f657b81a1150c352478b5c101d8fd13b97390556ff73bd53da003e2bf",
+    "stellarCli": "stellar 27.0.0 (5a7c5fe76530bf4248477ac812fc757146b98cc4)",
+    "stellarCore": "v28.0.0",
+    "stellarRpc": "stellar-rpc 28.0.0 (e29c911f2a720e2bf05028014c00492450547ccc) HEAD"
+  },
+  "probe": {
+    "contractId": "CDWYWJLJWA3GSURZYU4IOWYQ757MP4QGI3FQBVOPLB7GL7PTL2MM2TGU",
+    "wasmSha256": "fc6ce93138b37324929bd914c3a989fb88f8010689aeec5883ceeb48bb8eeb04",
+    "account": "GCQGT7F5MSU3NHDEYN4PJAMNCANFYW3PVUS2C6CV6CBIEJKJ3CU4NOF6",
+    "sourceHashes": {
+      "gateContract": "54b499580d72485c994aba1df2e65dc504ea1b425b58b538e1b57900fcd9733d",
+      "poolNullifier": "9ce5a672971222df6ad6134066ef4c94875260103603fc609de2582e1663d235",
+      "poolStorage": "38905b26b8ef291a282b0cb76fc86361e27b53432a03aa077e597489722a19c6"
+    }
+  },
+  "checks": {
+    "pageLiveBeforeExpiry": true,
+    "nullifierLiveBeforeExpiry": true,
+    "pageArchivedWithZeroTtl": true,
+    "nullifierArchivedWithZeroTtl": true,
+    "pageAutoRestoreSetExact": true,
+    "nullifierAutoRestoreSetExact": true,
+    "pageRestoredAndReadable": true,
+    "nullifierRestoredAsSpent": true,
+    "duplicateRejectedAfterRestore": true
+  },
+  "restoration": {
+    "page": {
+      "minResourceFee": "213906",
+      "transactionHash": "a352ef48515f576e87c8ef730e3455d91f3d29a6fc826a792cd0d284c5f11f98"
+    },
+    "nullifier": {
+      "minResourceFee": "82049",
+      "transactionHash": "d403e00dcc6ce6db9cfadad1912847c4a0bf47046c7af87ac50ec7a58846a6ea"
+    },
+    "duplicateSimulationError": "HostError: Error(Contract, #1)\n\nEvent log (newest first):\n   0: [Diagnostic Event] contract:CDWYWJLJWA3GSURZYU4IOWYQ757MP4QGI3FQBVOPLB7GL7PTL2MM2TGU, topics:[error, Error(Contract, #1)], data:\"escalating Ok(ScErrorType::Contract) frame-exit to Err\"\n   1: [Diagnostic Event] topics:[fn_call, CDWYWJLJWA3GSURZYU4IOWYQ757MP4QGI3FQBVOPLB7GL7PTL2MM2TGU, spend], data:Bytes(7777777777777777777777777777777777777777777777777777777777777777)\n"
+  },
+  "limitations": [
+    "The test-only contract mirrors the release pool storage pattern; it is not deployed in production.",
+    "This gate proves current Core archival and replay semantics, not independent audit approval."
+  ]
+}

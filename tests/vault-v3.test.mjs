@@ -1,0 +1,694 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+import { Keypair } from "@stellar/stellar-sdk";
+import { zeroKey } from "../src/lib/vault-keys.ts";
+
+class MemoryStorage {
+  #items = new Map();
+  get length() { return this.#items.size; }
+  key(index) { return [...this.#items.keys()][index] ?? null; }
+  getItem(key) { return this.#items.get(key) ?? null; }
+  setItem(key, value) { this.#items.set(key, String(value)); }
+  removeItem(key) { this.#items.delete(key); }
+}
+
+function passkeyDependencies(storage) {
+  const credentialId = new Uint8Array([11, 22, 33, 44]);
+  const prfOutput = new Uint8Array(32).fill(91);
+  const credential = (registration = false) => ({
+    type: "public-key",
+    rawId: credentialId.slice().buffer,
+    getClientExtensionResults: () => registration
+      ? { prf: { enabled: true, results: { first: prfOutput.slice().buffer } } }
+      : { prf: { results: { first: prfOutput.slice().buffer } } },
+  });
+  return {
+    credentials: {
+      create: async () => credential(true),
+      get: async () => credential(false),
+    },
+    secureContext: true,
+    storage,
+  };
+}
+
+const password = "correct horse battery staple";
+
+test("session observers distinguish revocation and activation across every unlock method", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const vault = await import("../src/lib/vault.ts");
+  vault.lockVault();
+  const seen = [];
+  const unsubscribeThrowing = vault.subscribeSessionChanges(() => { throw new Error("Synthetic observer failure"); });
+  const unsubscribe = vault.subscribeSessionChanges(() => { seen.push(vault.getSessionSnapshot()); });
+  try {
+    assert.equal(vault.getSessionSnapshot(), null);
+    await vault.initializeVault(password, { secret: Keypair.random().secret() });
+    const initial = vault.getSessionSnapshot();
+    assert.equal(typeof initial, "number");
+    const order = [];
+    const unsubscribeOrder = vault.subscribeSessionChanges(() => { order.push("changed"); });
+    vault.subscribeSessionRevocation(() => {
+      assert.equal(vault.getSessionSnapshot(), null);
+      order.push("revoked");
+    });
+    vault.lockVault();
+    assert.deepEqual(order, ["revoked", "changed"]);
+    unsubscribeOrder();
+    await vault.unlockVault(password);
+    assert.notEqual(vault.getSessionSnapshot(), initial);
+    const deps = passkeyDependencies(localStorage);
+    await vault.enablePasskeyUnlock(password, deps);
+    vault.lockVault();
+    await vault.unlockVaultWithPasskey(deps);
+    assert.equal(typeof vault.getSessionSnapshot(), "number");
+    assert.equal(seen.filter(value => value !== null).length, 3);
+    unsubscribe();
+    const count = seen.length;
+    vault.lockVault();
+    assert.equal(seen.length, count);
+  } finally {
+    unsubscribe();
+    unsubscribeThrowing();
+    vault.lockVault();
+  }
+});
+
+test("session observers cannot recurse on an unchanged lock or report a revoked activation as success", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const vault = await import("../src/lib/vault.ts");
+  vault.lockVault();
+  await vault.initializeVault(password, { secret: Keypair.random().secret() });
+  let calls = 0;
+  const unsubscribe = vault.subscribeSessionChanges(() => {
+    calls++;
+    if (calls < 3) vault.lockVault();
+  });
+  try {
+    vault.lockVault();
+    assert.equal(calls, 1, "locking an already locked observable session must not notify again");
+  } finally { unsubscribe(); }
+  const revokeActivation = vault.subscribeSessionChanges(() => {
+    if (vault.getSessionSnapshot() !== null) vault.lockVault();
+  });
+  try {
+    await assert.rejects(vault.unlockVault(password), { name: "VaultLockedError" });
+    assert.equal(vault.getSessionSnapshot(), null);
+  } finally { revokeActivation(); vault.lockVault(); }
+});
+
+test("new software vaults reject weak passwords at the storage boundary", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { initializeVault, lockVault } = await import("../src/lib/vault.ts");
+  lockVault();
+  const source = Keypair.random();
+
+  for (const candidate of ["password123", "aaaaaaaaaaaaaaaa", "Aurora!27"]) {
+    await assert.rejects(
+      () => initializeVault(candidate, { secret: source.secret() }),
+      /password|characters|predictable|common/i,
+    );
+  }
+  assert.equal(localStorage.getItem("stellarkey.vault.v1"), null);
+});
+
+test("new wallets persist a password-wrapped v3 master key without plaintext secrets", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { initializeVault, lockVault } = await import("../src/lib/vault.ts");
+  lockVault();
+  const source = Keypair.random();
+
+  const result = await initializeVault(password, { secret: source.secret() });
+  const stored = JSON.parse(localStorage.getItem("stellarkey.vault.v1"));
+
+  assert.equal(stored.version, 3);
+  assert.ok(stored.wrappedMasterKey?.salt);
+  assert.ok(stored.wrappedMasterKey?.ciphertext);
+  assert.ok(stored.wrappedMerchantKey?.ciphertext);
+  assert.equal(stored.accounts[0].publicKey, source.publicKey());
+  assert.equal(result.account.publicKey, source.publicKey());
+  assert.equal(JSON.stringify(stored).includes(source.secret()), false);
+  assert.deepEqual(Object.keys(stored.accounts[0].secret).sort(), ["ciphertext", "iv"]);
+});
+
+test("new wallets persist the explicit per-signature password policy", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    initializeVault,
+    isSigningPasswordRequired,
+    lockVault,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+
+  await initializeVault(password, {
+    secret: Keypair.random().secret(),
+    requirePasswordForSigning: true,
+  });
+
+  const stored = JSON.parse(localStorage.getItem("stellarkey.vault.v1"));
+  assert.equal(stored.requirePasswordForSigning, true);
+  assert.equal(isSigningPasswordRequired(), true);
+});
+
+test("existing vault records without a signing policy default safely to disabled", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    initializeVault,
+    isSigningPasswordRequired,
+    loadVaultResult,
+    lockVault,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  const stored = JSON.parse(localStorage.getItem("stellarkey.vault.v1"));
+  delete stored.requirePasswordForSigning;
+  localStorage.setItem("stellarkey.vault.v1", JSON.stringify(stored));
+
+  assert.equal(loadVaultResult().kind, "ready");
+  assert.equal(isSigningPasswordRequired(), false);
+});
+
+test("disabling signing password confirmation requires the current password", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    initializeVault,
+    isSigningPasswordRequired,
+    lockVault,
+    setSigningPasswordRequired,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+
+  await initializeVault(password, {
+    secret: Keypair.random().secret(),
+    requirePasswordForSigning: true,
+  });
+  await assert.rejects(
+    () => setSigningPasswordRequired(false, "wrong password"),
+    /incorrect password/i,
+  );
+  assert.equal(isSigningPasswordRequired(), true);
+
+  await setSigningPasswordRequired(false, password);
+  assert.equal(isSigningPasswordRequired(), false);
+
+  await setSigningPasswordRequired(true);
+  assert.equal(isSigningPasswordRequired(), true);
+});
+
+test("changing the vault password re-wraps the same master key without invalidating secrets or passkeys", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    changeVaultPassword,
+    enablePasskeyUnlock,
+    hasPasskeyUnlock,
+    initializeVault,
+    lockVault,
+    unlockVault,
+    unlockVaultWithPasskey,
+    withSecretKey,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  const source = Keypair.random();
+  const { account } = await initializeVault(password, { secret: source.secret() });
+  const deps = passkeyDependencies(localStorage);
+  await enablePasskeyUnlock(password, deps);
+  const replacement = "violet glacier orbit lantern harbor";
+
+  await assert.rejects(
+    () => changeVaultPassword("wrong password", replacement),
+    /incorrect password/i,
+  );
+  await unlockVault(password);
+
+  await changeVaultPassword(password, replacement);
+  assert.equal(hasPasskeyUnlock(localStorage), true);
+  lockVault();
+  await assert.rejects(() => unlockVault(password), /incorrect password/i);
+  await unlockVault(replacement);
+  assert.equal(await withSecretKey(account.id, (secret) => secret), source.secret());
+
+  lockVault();
+  await unlockVaultWithPasskey(deps);
+  assert.equal(await withSecretKey(account.id, (secret) => secret), source.secret());
+});
+
+test("POC vault formats are rejected without modifying them", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { loadVaultResult, lockVault, unlockVault } = await import("../src/lib/vault.ts");
+  lockVault();
+  const source = Keypair.random();
+  for (const version of [1, 2]) {
+    const raw = JSON.stringify({
+      version,
+      accounts: [{
+        id: `poc-${version}`,
+        label: "POC wallet",
+        publicKey: source.publicKey(),
+        createdAt: 1,
+      }],
+      activeAccountId: `poc-${version}`,
+    });
+    localStorage.setItem("stellarkey.vault.v1", raw);
+
+    const result = loadVaultResult();
+    assert.equal(result.kind, "corrupt");
+    assert.match(result.message, /unsupported|current/i);
+    await assert.rejects(() => unlockVault(password), /no wallet found/i);
+    assert.equal(localStorage.getItem("stellarkey.vault.v1"), raw);
+  }
+});
+
+test("secret access is scoped to one async operation and lock zeroes session authority", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { initializeVault, isUnlocked, lockVault, withSecretKey } = await import(
+    "../src/lib/vault.ts"
+  );
+  lockVault();
+  const source = Keypair.random();
+  const { account } = await initializeVault(password, { secret: source.secret() });
+
+  assert.equal(isUnlocked(), true);
+  assert.equal(await withSecretKey(account.id, async (secret) => Keypair.fromSecret(secret).publicKey()), source.publicKey());
+  lockVault();
+  assert.equal(isUnlocked(), false);
+  await assert.rejects(() => withSecretKey(account.id, () => null), /locked/i);
+});
+
+test("an in-flight software signer is revoked before signing when the vault locks", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { initializeVault, lockVault, withSigningKeypair } = await import(
+    "../src/lib/vault.ts"
+  );
+  lockVault();
+  const source = Keypair.random();
+  const { account } = await initializeVault(password, { secret: source.secret() });
+
+  let release;
+  const paused = new Promise((resolve) => {
+    release = resolve;
+  });
+  let signerReady;
+  const ready = new Promise((resolve) => {
+    signerReady = resolve;
+  });
+  const operation = withSigningKeypair(account.id, async (signer) => {
+    signerReady();
+    await paused;
+    return signer.sign(Buffer.from("prepared transaction"));
+  });
+
+  await ready;
+  lockVault();
+  release();
+  await assert.rejects(operation, /locked|revoked/i);
+});
+
+test("a lock issued during password unlock cannot be undone by the stale unlock", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { initializeVault, isUnlocked, lockVault, unlockVault } = await import(
+    "../src/lib/vault.ts"
+  );
+  lockVault();
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  lockVault();
+
+  const unlocking = unlockVault(password);
+  lockVault();
+  await assert.rejects(unlocking, /locked|revoked/i);
+  assert.equal(isUnlocked(), false);
+});
+
+test("a lock issued during passkey unlock cannot be undone by the stale assertion", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    enablePasskeyUnlock,
+    initializeVault,
+    isUnlocked,
+    lockVault,
+    unlockVaultWithPasskey,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  const base = passkeyDependencies(localStorage);
+  await enablePasskeyUnlock(password, base);
+  lockVault();
+  let release;
+  let requested;
+  const requestStarted = new Promise((resolve) => { requested = resolve; });
+  const paused = new Promise((resolve) => { release = resolve; });
+  const dependencies = {
+    ...base,
+    credentials: {
+      ...base.credentials,
+      get: async (...args) => {
+        requested();
+        await paused;
+        return base.credentials.get(...args);
+      },
+    },
+  };
+
+  const unlocking = unlockVaultWithPasskey(dependencies);
+  await requestStarted;
+  lockVault();
+  release();
+  await assert.rejects(unlocking, /locked|revoked/i);
+  assert.equal(isUnlocked(), false);
+});
+
+test("encrypted account payloads stay bound to their public identities", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { addStoredAccount, initializeVault, lockVault, withSecretKey } = await import(
+    "../src/lib/vault.ts"
+  );
+  lockVault();
+  const first = Keypair.random();
+  const second = Keypair.random();
+  const initialized = await initializeVault(password, { secret: first.secret() });
+  const added = await addStoredAccount({ secret: second.secret() });
+  const stored = JSON.parse(localStorage.getItem("stellarkey.vault.v1"));
+  const firstStored = stored.accounts.find((account) => account.id === initialized.account.id);
+  const secondStored = stored.accounts.find((account) => account.id === added.id);
+  [firstStored.secret, secondStored.secret] = [secondStored.secret, firstStored.secret];
+  localStorage.setItem("stellarkey.vault.v1", JSON.stringify(stored));
+
+  await assert.rejects(
+    () => withSecretKey(initialized.account.id, () => null),
+    /does not match.*public address/i,
+  );
+});
+
+test("backup vault identity is independent of the browser locale", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    addStoredAccount,
+    backupVaultIdentity,
+    initializeVault,
+    loadVault,
+    lockVault,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  await addStoredAccount({ secret: Keypair.random().secret() });
+  const vault = loadVault();
+  vault.accounts[0].id = "dd00";
+  vault.accounts[1].id = "df00";
+  const canonicalIdentity = backupVaultIdentity(vault);
+  const legacyCompare = new Intl.Collator("cy").compare;
+  const originalLocaleCompare = String.prototype.localeCompare;
+  String.prototype.localeCompare = function localeCompare(other) {
+    return legacyCompare(this, String(other));
+  };
+  try {
+    assert.equal(backupVaultIdentity(vault), canonicalIdentity);
+  } finally {
+    String.prototype.localeCompare = originalLocaleCompare;
+  }
+});
+
+test("concurrent imported-account writes reject a stale vault revision instead of losing a key", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { addStoredAccount, initializeVault, lockVault } = await import("../src/lib/vault.ts");
+  lockVault();
+  await initializeVault(password, { secret: Keypair.random().secret() });
+
+  const [first, second] = await Promise.allSettled([
+    addStoredAccount({ secret: Keypair.random().secret(), label: "Concurrent A" }),
+    addStoredAccount({ secret: Keypair.random().secret(), label: "Concurrent B" }),
+  ]);
+  const outcomes = [first, second];
+  assert.equal(outcomes.filter((result) => result.status === "fulfilled").length, 1);
+  const rejected = outcomes.find((result) => result.status === "rejected");
+  assert.match(String(rejected?.reason), /changed in another tab|retry/i);
+
+  const stored = JSON.parse(localStorage.getItem("stellarkey.vault.v1"));
+  assert.equal(stored.revision, 1);
+  assert.equal(stored.accounts.length, 2);
+});
+
+test("account labels cannot make the persisted vault unreadable", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    initializeVault,
+    loadVaultResult,
+    lockVault,
+    updateAccountLabel,
+    withSecretKey,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  const source = Keypair.random();
+  const { account } = await initializeVault(password, { secret: source.secret() });
+
+  updateAccountLabel(account.id, "x".repeat(256));
+  assert.equal(loadVaultResult().kind, "ready");
+
+  assert.throws(
+    () => updateAccountLabel(account.id, "y".repeat(257)),
+    /account label.*256/i,
+  );
+  assert.equal(loadVaultResult().kind, "ready");
+  assert.equal(await withSecretKey(account.id, (secret) => secret), source.secret());
+});
+
+test("archived derived accounts keep their HD index and are reactivated instead of duplicated", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    addStoredAccount,
+    initializeVault,
+    loadVault,
+    lockVault,
+    removeStoredAccount,
+    restoreAccountByIndex,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  await initializeVault(password, {
+    mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+  });
+  const merged = await addStoredAccount();
+  assert.equal(merged.index, 1);
+  removeStoredAccount(merged.id);
+
+  const addedAfterMerge = await addStoredAccount();
+  assert.equal(addedAfterMerge.index, 2);
+
+  const restored = await restoreAccountByIndex(1);
+  const vault = loadVault();
+  assert.equal(restored.id, merged.id);
+  assert.deepEqual(vault.accounts.map((account) => account.index), [0, 2, 1]);
+  assert.equal(vault.archivedAccounts?.length ?? 0, 0);
+  assert.equal(new Set(vault.accounts.map((account) => account.publicKey)).size, 3);
+});
+
+test("duplicate derived-account metadata is rejected without repairing stored wallet bytes", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { addStoredAccount, initializeVault, loadVault, lockVault } = await import(
+    "../src/lib/vault.ts"
+  );
+  lockVault();
+  await initializeVault(password, {
+    mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+  });
+  const original = await addStoredAccount();
+  const stored = JSON.parse(localStorage.getItem("stellarkey.vault.v1"));
+  const duplicate = {
+    ...stored.accounts.find((account) => account.id === original.id),
+    id: "selected-duplicate",
+    label: "Selected account",
+    createdAt: Date.now() + 1,
+  };
+  stored.accounts.push(duplicate);
+  stored.activeAccountId = duplicate.id;
+  localStorage.setItem("stellarkey.vault.v1", JSON.stringify(stored));
+
+  const raw = localStorage.getItem("stellarkey.vault.v1");
+  assert.equal(loadVault() === null, true, "unsupported wallet must not load");
+  const { decodeVaultFile } = await import("../src/lib/backup-schema.ts");
+  assert.equal(decodeVaultFile(stored) === null, true, "backup validation must also reject duplicates");
+  assert.equal(localStorage.getItem("stellarkey.vault.v1"), raw);
+});
+
+test("password verification applies persisted cross-tab backoff after repeated failures", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { initializeVault, lockVault, unlockVault } = await import("../src/lib/vault.ts");
+  lockVault();
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  lockVault();
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await assert.rejects(() => unlockVault("definitely wrong password"), /incorrect password|try again/i);
+  }
+  await assert.rejects(() => unlockVault(password), /try again/i);
+  const throttle = JSON.parse(localStorage.getItem("stellarkey.vault.password-attempts.v1"));
+  assert.equal(throttle.failures, 5);
+  assert.equal(throttle.lockoutLevel, 1);
+  assert.ok(throttle.blockedUntil > Date.now());
+});
+
+test("password-sensitive exports verify the password at the point of use", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { exportVaultBackup, initializeVault, lockVault, revealSecret } = await import(
+    "../src/lib/vault.ts"
+  );
+  lockVault();
+  const source = Keypair.random();
+  const { account } = await initializeVault(password, { secret: source.secret() });
+
+  await assert.rejects(() => exportVaultBackup("wrong password"), /incorrect password/i);
+  await assert.rejects(() => revealSecret(account.id, "wrong password"), /incorrect password/i);
+  assert.equal(await revealSecret(account.id, password), source.secret());
+  assert.match(await exportVaultBackup(password), /stellar-wallet-backup/);
+});
+
+test("backup export rejects a vault revision changed after password verification", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    changeVaultPassword,
+    exportVaultBackup,
+    initializeVault,
+    lockVault,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  const oldVault = localStorage.getItem("stellarkey.vault.v1");
+  const replacement = "violet glacier orbit lantern harbor";
+  await changeVaultPassword(password, replacement);
+  const changedVault = localStorage.getItem("stellarkey.vault.v1");
+  localStorage.setItem("stellarkey.vault.v1", oldVault);
+
+  const originalGetItem = localStorage.getItem.bind(localStorage);
+  let vaultReads = 0;
+  localStorage.getItem = (key) => {
+    if (key === "stellarkey.vault.v1" && ++vaultReads === 2) {
+      localStorage.setItem(key, changedVault);
+    }
+    return originalGetItem(key);
+  };
+
+  await assert.rejects(
+    () => exportVaultBackup(password),
+    /wallet changed.*backup|backup.*wallet changed/i,
+  );
+});
+
+test("account keystores accept only the current format marker", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    exportKeystoreWithPassword,
+    importKeystore,
+    initializeVault,
+    lockVault,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  const { account } = await initializeVault(password, { secret: Keypair.random().secret() });
+  const current = JSON.parse(await exportKeystoreWithPassword(account.id, password));
+  current.format = "stellarkey-keystore/v1";
+
+  await assert.rejects(
+    () => importKeystore(JSON.stringify(current), password),
+    /invalid.*keystore format/i,
+  );
+});
+
+test("account keystores bind the declared address to the decrypted secret", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    exportKeystoreWithPassword,
+    importKeystore,
+    initializeVault,
+    lockVault,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  const { account } = await initializeVault(password, { secret: Keypair.random().secret() });
+  const keystore = JSON.parse(await exportKeystoreWithPassword(account.id, password));
+  keystore.address = Keypair.random().publicKey();
+
+  await assert.rejects(
+    () => importKeystore(JSON.stringify(keystore), password),
+    /address|match/i,
+  );
+});
+
+test("an optional local passkey unwraps the v3 master key while password fallback remains", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    enablePasskeyUnlock,
+    hasPasskeyUnlock,
+    initializeVault,
+    lockVault,
+    removePasskeyUnlock,
+    unlockVault,
+    unlockVaultWithPasskey,
+    withSecretKey,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  const source = Keypair.random();
+  const { account } = await initializeVault(password, { secret: source.secret() });
+  const deps = passkeyDependencies(localStorage);
+
+  await enablePasskeyUnlock(password, deps);
+  assert.equal(hasPasskeyUnlock(localStorage), true);
+  assert.equal(localStorage.getItem("wallet.passkey-prf.v1").includes(password), false);
+
+  lockVault();
+  await unlockVaultWithPasskey(deps);
+  assert.equal(await withSecretKey(account.id, (secret) => secret), source.secret());
+
+  lockVault();
+  await unlockVault(password);
+  assert.equal(await withSecretKey(account.id, (secret) => secret), source.secret());
+
+  await assert.rejects(
+    () => removePasskeyUnlock("wrong password", localStorage),
+    /incorrect password/i,
+  );
+  assert.equal(hasPasskeyUnlock(localStorage), true);
+
+  await removePasskeyUnlock(password, localStorage);
+  assert.equal(hasPasskeyUnlock(localStorage), false);
+});
+
+test("wallet runtime retains only key bytes, never passwords, mnemonics, or account secrets", () => {
+  const vault = readFileSync(new URL("../src/lib/vault.ts", import.meta.url), "utf8");
+  const walletHook = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
+  const merchantHook = readFileSync(new URL("../src/hooks/useMerchant.tsx", import.meta.url), "utf8");
+
+  assert.doesNotMatch(vault, /sessionPassword|sessionMnemonic|sessionSecrets/);
+  assert.doesNotMatch(walletHook, /getSecretKey/);
+  assert.match(vault, /sessionMasterKey\?\.fill\(0\)/);
+  assert.match(walletHook, /withSigningKeypair/);
+  assert.doesNotMatch(walletHook, /withSecretKey/);
+  assert.match(merchantHook, /const releaseMerchantKey = useCallback\(\(key: Uint8Array\) => \{\s*key\.fill\(0\);\s*merchantKeysRef\.current\.delete\(key\)/);
+  assert.ok((merchantHook.match(/finally \{\s*releaseMerchantKey\(key\)/g) ?? []).length >= 4);
+
+  const key = new Uint8Array([1, 2, 3, 4]);
+  zeroKey(key);
+  assert.deepEqual(key, new Uint8Array(4));
+});

@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/protocol",
+    "crates/test-support",
+    "crates/verifier",
+    "contracts/archive-gate",
+    "contracts/pool",
+    "spikes",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "AGPL-3.0-or-later"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+overflow-checks = true
+panic = "abort"
+strip = "symbols"

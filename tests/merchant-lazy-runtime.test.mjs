@@ -1,0 +1,145 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+function source(path) {
+  return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
+async function bootstrapDomain() {
+  try {
+    return await import("../src/lib/merchant/bootstrap.ts");
+  } catch (error) {
+    assert.fail(
+      `The merchant bootstrap domain is missing: ${error instanceof Error ? error.message : error}`,
+    );
+  }
+}
+
+function memoryStorage(initial = {}) {
+  const values = new Map(Object.entries(initial));
+  return {
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, String(value)); },
+    removeItem(key) { values.delete(key); },
+  };
+}
+
+test("merchant bootstrap stores only validated non-sensitive runtime flags", async () => {
+  const {
+    MERCHANT_BOOTSTRAP_STORAGE_KEY,
+    merchantShellEnabled,
+    merchantRuntimeShouldMount,
+    readMerchantBootstrapState,
+    writeMerchantBootstrapState,
+  } = await bootstrapDomain();
+  const storage = memoryStorage();
+
+  assert.equal(readMerchantBootstrapState(storage), null);
+  writeMerchantBootstrapState({ enabled: false, configured: true }, storage);
+  assert.deepEqual(readMerchantBootstrapState(storage), {
+    version: 1,
+    enabled: false,
+    configured: true,
+  });
+  assert.deepEqual(JSON.parse(storage.getItem(MERCHANT_BOOTSTRAP_STORAGE_KEY)), {
+    version: 1,
+    enabled: false,
+    configured: true,
+  });
+
+  storage.setItem(MERCHANT_BOOTSTRAP_STORAGE_KEY, JSON.stringify({ version: 1, enabled: "yes" }));
+  assert.equal(readMerchantBootstrapState(storage), null);
+
+  assert.equal(merchantShellEnabled({ ready: false, encryptedEnabled: false, enabledHint: true }), true);
+  assert.equal(merchantShellEnabled({ ready: true, encryptedEnabled: true, enabledHint: false }), true);
+  assert.equal(merchantShellEnabled({ ready: true, encryptedEnabled: false, enabledHint: true }), false);
+
+  writeMerchantBootstrapState(
+    { enabled: false, configured: false, recoveryRequired: true },
+    storage,
+  );
+  assert.deepEqual(readMerchantBootstrapState(storage), {
+    version: 1,
+    enabled: false,
+    configured: false,
+    recoveryRequired: true,
+  });
+  assert.equal(
+    merchantShellEnabled({
+      ready: true,
+      encryptedEnabled: false,
+      enabledHint: false,
+      recoveryRequired: true,
+    }),
+    true,
+  );
+  assert.equal(
+    merchantRuntimeShouldMount(readMerchantBootstrapState(storage), false),
+    true,
+  );
+  assert.equal(
+    merchantRuntimeShouldMount(
+      { version: 1, enabled: false, configured: true, recoveryRequired: false },
+      false,
+    ),
+    false,
+  );
+  assert.equal(merchantRuntimeShouldMount(null, true), true);
+});
+
+test("unavailable browser storage never blocks the wallet shell", async () => {
+  const { readMerchantBootstrapState, writeMerchantBootstrapState } = await bootstrapDomain();
+  const unavailableStorage = {
+    getItem() { throw new DOMException("Storage is disabled", "SecurityError"); },
+    setItem() { throw new DOMException("Storage is disabled", "SecurityError"); },
+  };
+
+  assert.equal(readMerchantBootstrapState(unavailableStorage), null);
+  assert.equal(
+    writeMerchantBootstrapState({ enabled: true, configured: true }, unavailableStorage),
+    false,
+  );
+});
+
+test("the authenticated wallet has no second full-screen merchant loading gate", () => {
+  const shell = source("src/components/UnlockedWalletShell.tsx");
+  const boundary = source("src/components/MerchantRuntimeBoundary.tsx");
+  const dashboard = source("src/components/Dashboard.tsx");
+  const settings = source("src/components/SettingsPage.tsx");
+  const provider = source("src/hooks/useMerchant.tsx");
+
+  assert.doesNotMatch(shell, /from "@\/hooks\/useMerchant"/);
+  assert.match(shell, /MerchantRuntimeBoundary/);
+  assert.doesNotMatch(boundary, /import \{ MerchantProvider \} from "@\/hooks\/useMerchant"/);
+  assert.match(boundary, /lazy\(\(\) =>\s*import\("@\/hooks\/useMerchant"\)/s);
+  assert.match(boundary, /<Suspense fallback=\{fallback\}>/);
+  assert.match(boundary, /const fallback = \(\s*<MerchantRuntimeDataProviders/s);
+  assert.match(boundary, /merchantRuntimeShouldMount\(bootstrap, requested\)/);
+  assert.match(boundary, /onRuntimeMounted=/);
+  assert.doesNotMatch(boundary, /Opening merchant tools/);
+  assert.doesNotMatch(boundary, /min-h-screen/);
+  assert.match(boundary, /useState<MerchantBootstrapState \| null>\(null\)/);
+  assert.match(boundary, /window\.addEventListener\("storage", onStorage\);\s*refresh\(\);/);
+  assert.match(dashboard, /from "@\/hooks\/useMerchantRuntime"/);
+  assert.match(settings, /from "@\/hooks\/useMerchantRuntime"/);
+  assert.match(provider, /writeMerchantBootstrapState/);
+  assert.match(provider, /enableOnReady/);
+  assert.match(provider, /onRuntimeMounted/);
+  assert.match(dashboard, /if \(!merchantRuntimeIntent \|\| !merchantRuntimeMounted\) return/);
+});
+
+test("merchant setup is mounted only after its runtime is requested", () => {
+  const dashboard = source("src/components/Dashboard.tsx");
+  assert.match(dashboard, /requestRuntime\("setup"\)/);
+  assert.match(dashboard, /useState\(false\)/);
+  assert.match(
+    dashboard,
+    /if \(!merchantRuntimeIntent \|\| !merchantRuntimeMounted\) return;[\s\S]*merchantRuntimeIntent === "setup"[\s\S]*setSetupWizardOpen\(true\)/,
+  );
+  // The wizard chunk mounts on the first open and stays only through its exit.
+  assert.match(dashboard, /const setupWizardMounted = useMountedThroughExit\(setupWizardOpen\);/);
+  assert.match(dashboard, /setupWizardMounted && \(/);
+  assert.doesNotMatch(dashboard, /<SetupWizard\s+open\s/);
+  assert.match(dashboard, /releaseRuntime/);
+});

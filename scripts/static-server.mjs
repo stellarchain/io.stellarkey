@@ -1,0 +1,136 @@
+import { createReadStream } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
+import { createServer } from "node:http";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+
+const projectRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const outputRoot = path.join(projectRoot, "out");
+const args = process.argv.slice(2);
+const option = (name, fallback) => {
+  const index = args.indexOf(name);
+  return index >= 0 && args[index + 1] ? args[index + 1] : fallback;
+};
+const hostname = option("--hostname", "127.0.0.1");
+const port = Number(option("--port", process.env.PORT ?? "3000"));
+
+const mimeTypes = new Map([
+  [".css", "text/css; charset=utf-8"],
+  [".html", "text/html; charset=utf-8"],
+  [".ico", "image/x-icon"],
+  [".js", "text/javascript; charset=utf-8"],
+  [".json", "application/json; charset=utf-8"],
+  [".png", "image/png"],
+  [".svg", "image/svg+xml"],
+  [".txt", "text/plain; charset=utf-8"],
+  [".webmanifest", "application/manifest+json; charset=utf-8"],
+]);
+const exactMimeTypes = new Map([
+  ["/opengraph-image", "image/png"],
+  ["/twitter-image", "image/png"],
+]);
+
+function parseHeaderRules(raw) {
+  const rules = [];
+  let current = null;
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    if (!/^\s/.test(line)) {
+      current = { pattern: line.trim(), headers: {} };
+      rules.push(current);
+      continue;
+    }
+    if (!current) continue;
+    const separator = line.indexOf(":");
+    if (separator < 0) continue;
+    current.headers[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
+  }
+  return rules;
+}
+
+const headersPath = path.join(outputRoot, "_headers");
+function matchesHeaderRule(pattern, urlPath) {
+  if (pattern === "/*") return true;
+  if (pattern.endsWith("*")) return urlPath.startsWith(pattern.slice(0, -1));
+  return pattern === urlPath;
+}
+
+async function headersFor(urlPath) {
+  // A local production build replaces both index.html and its CSP hashes. Read
+  // them as one live release boundary instead of retaining hashes from startup.
+  const headerRules = parseHeaderRules(await readFile(headersPath, "utf8"));
+  const headers = {};
+  for (const rule of headerRules) {
+    if (matchesHeaderRule(rule.pattern, urlPath)) Object.assign(headers, rule.headers);
+  }
+  return headers;
+}
+
+async function resolveFile(urlPath) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(urlPath);
+  } catch {
+    return null;
+  }
+  const relative = decoded === "/" ? "index.html" : decoded.replace(/^\/+/, "");
+  const candidates = [relative];
+  if (!path.extname(relative)) candidates.push(`${relative}.html`, path.join(relative, "index.html"));
+  for (const candidate of candidates) {
+    const fullPath = path.resolve(outputRoot, candidate);
+    if (!fullPath.startsWith(`${outputRoot}${path.sep}`)) continue;
+    try {
+      if ((await stat(fullPath)).isFile()) return fullPath;
+    } catch {
+      // Try the next static route representation.
+    }
+  }
+  return null;
+}
+
+function contentTypeFor(urlPath, filePath) {
+  return exactMimeTypes.get(urlPath) ?? mimeTypes.get(path.extname(filePath)) ?? "application/octet-stream";
+}
+
+async function serveFile({ request, response, filePath, urlPath, status = 200 }) {
+  const headers = await headersFor(urlPath);
+  headers["Content-Type"] = contentTypeFor(urlPath, filePath);
+  response.writeHead(status, headers);
+  if (request.method === "HEAD") response.end();
+  else createReadStream(filePath).pipe(response);
+}
+
+const server = createServer(async (request, response) => {
+  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+
+  if (url.pathname.length > 1 && url.pathname.endsWith("/")) {
+    const canonicalPath = url.pathname.replace(/\/+$/, "");
+    if (await resolveFile(canonicalPath)) {
+      response.writeHead(308, {
+        ...(await headersFor(canonicalPath)),
+        Location: `${canonicalPath}${url.search}`,
+      });
+      response.end();
+      return;
+    }
+  }
+
+  const filePath = await resolveFile(url.pathname);
+  if (!filePath) {
+    const notFoundPath = await resolveFile("/404.html");
+    if (notFoundPath) {
+      await serveFile({ request, response, filePath: notFoundPath, urlPath: "/404.html", status: 404 });
+      return;
+    }
+    response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    if (request.method === "HEAD") response.end();
+    else response.end("Not found");
+    return;
+  }
+  await serveFile({ request, response, filePath, urlPath: url.pathname });
+});
+
+server.listen(port, hostname, () => {
+  process.stdout.write(`Static wallet available at http://${hostname}:${port}\n`);
+});

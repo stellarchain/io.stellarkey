@@ -1,0 +1,101 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+
+const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('private payments setup is one consent screen with an honest disclosure and Turn On', () => {
+  const setup = read('src/features/private-balance/components/PrivateBalanceSetupBody.tsx');
+  const disclosure = read('src/features/private-balance/components/PrivacyDisclosure.tsx');
+  const surface = `${setup}\n${disclosure}`;
+
+  // One screen — the old three-step wizard is gone.
+  assert.doesNotMatch(setup, /Step \$\{step \+ 1\} of 3|Requirements|Set up locally/);
+  assert.match(setup, /Private Payments/);
+  assert.match(setup, /where the amount and recipient stay encrypted/);
+  assert.match(disclosure, /Private internal sends:/);
+  assert.match(disclosure, /Public:/);
+  assert.match(surface, /money moving in or out/i);
+  assert.match(surface, /timing/i);
+  // Exactly one reworded consent checkbox.
+  assert.equal((setup.match(/type="checkbox"/g) ?? []).length, 1);
+  assert.match(setup, /Money moving in or out of my private balance is public/);
+  assert.match(setup, /single-party development proving key/);
+  assert.match(setup, /could forge proofs and take testnet funds/);
+  assert.match(setup, /use testnet funds only/);
+  assert.match(setup, /Turn On/);
+  assert.match(setup, /Not Now/);
+  assert.match(setup, /void optIn\(\{ prefetchArtifacts:/);
+  assert.doesNotMatch(setup, /creating an account|connecting to (?:our|a) server/i);
+});
+
+test('setup expands Learn more with download size and recovery without an unconfigured status card', () => {
+  const setup = read('src/features/private-balance/components/PrivateBalanceSetupBody.tsx');
+
+  assert.match(setup, /Learn more/);
+  assert.match(setup, /aria-expanded=\{learnMore\}/);
+  assert.doesNotMatch(setup, /<PrivateBalanceStatus/);
+  assert.match(setup, /artifactDownloadBytes/);
+  assert.match(setup, /One-time download/);
+  assert.match(
+    setup,
+    /recovery phrase can rebuild your private balance from Stellar/i,
+  );
+  assert.doesNotMatch(setup, /StellarKey(?:&apos;|')s servers disappear/i);
+  assert.doesNotMatch(setup, /estimated anonymity|guaranteed recovery|instant proof/i);
+});
+
+test('one setup prepares every verified asset, finishes on the original selection, and dismisses itself', () => {
+  const setup = read('src/features/private-balance/components/PrivateBalanceSetupBody.tsx');
+  const accessGate = read(
+    'src/features/private-balance/components/PrivatePaymentAccessGate.tsx',
+  );
+
+  assert.match(setup, /role="progressbar"/);
+  assert.match(setup, /aria-valuemin=\{0\}/);
+  assert.match(setup, /aria-valuemax=\{100\}/);
+  assert.match(setup, /aria-valuenow=\{progressPercent\}/);
+  assert.match(setup, /progressHighWater/);
+  assert.match(setup, /runtimeMatchesSetupTarget/);
+  assert.doesNotMatch(setup, /<ol\b|SETUP_STEPS/);
+  assert.match(
+    accessGate,
+    /if \(\s*setupOpen \|\|\s*accessState !== 'preparing'/,
+    'the underlying action gate must not start a second sync while setup owns the flow',
+  );
+  assert.doesNotMatch(setup, /Catching up with the network/);
+  assert.match(setup, /privatePaymentSetupTarget/);
+  assert.match(setup, /privatePaymentSetupComplete/);
+  assert.match(setup, /allAssetsPrepared/);
+  assert.match(setup, /selectedDeploymentRestored/);
+  assert.match(setup, /runtimeMatchesSelection/);
+  assert.match(setup, /selectAsset/);
+  assert.match(setup, /remainingUnpreparedAssets/);
+  assert.match(setup, /prefetchArtifacts:\s*remainingUnpreparedAssets === 1/);
+  assert.doesNotMatch(setup, /stage === 'running' && configured && privateAddress !== null/);
+  assert.match(setup, /void optIn\(\{ prefetchArtifacts:/);
+  assert.doesNotMatch(setup, /await optIn\(\)/);
+  assert.match(setup, /Private Payments ready/);
+  assert.doesNotMatch(setup, /prepared automatically when you first use/);
+  assert.doesNotMatch(setup, /checking past private activity continues in the background/);
+  assert.match(setup, /aria-live="polite"/);
+  // Completion is visible briefly, then setup releases the modal without a
+  // mandatory acknowledgement that leaves the wallet inert.
+  assert.match(setup, /SETUP_COMPLETION_HOLD_MS/);
+  assert.match(setup, /if \(!open \|\| !setupReady\) return/);
+  assert.match(setup, /triggerHaptic\('success'\)/);
+  assert.match(setup, /triggerHaptic\('success'\);\s*onCloseRef\.current\(\)/);
+  // The completed state stays on screen through the exit; a reopen resets.
+  assert.doesNotMatch(setup, /reset\(\);\s*onCloseRef\.current\(\)/);
+  assert.match(setup, /if \(open !== prevOpen\) \{\s*setPrevOpen\(open\);\s*if \(open\) reset\(\);/);
+  assert.match(setup, /Complete\s*<\/p>/);
+  assert.doesNotMatch(setup, /PrivateSuccess|doneLabel="Done"/);
+  // Errors surface humanized with collapsed technical details.
+  assert.match(setup, /HumanizedErrorNotice/);
+  assert.match(setup, /Try Again/);
+  assert.match(setup, /Securing this device/);
+  assert.match(setup, /Checking private history/);
+  assert.doesNotMatch(setup, /\(\$\{Math\.max\(0, setupTargetIndex\) \+ 1\} of \$\{setupPlan\.deploymentIds\.length\}\)/);
+  // Old protocol vocabulary stays off the setup surface.
+  assert.doesNotMatch(setup, /manifest|artifact download|canonical archive|checkpoint|\bpool\b/i);
+});

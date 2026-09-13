@@ -1,0 +1,102 @@
+import type { Metadata, Viewport } from "next";
+import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
+import { ThemeController } from "@/components/ThemeController";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import {
+  BRAND_DESCRIPTION,
+  BRAND_NAME,
+  BRAND_ORIGIN,
+  SOURCE_REPOSITORY_URL,
+} from "@/lib/brand";
+import "./globals.css";
+
+const defaultTitle = `${BRAND_NAME} — Self-custodial Stellar wallet`;
+const applicationJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: BRAND_NAME,
+  url: BRAND_ORIGIN,
+  description: BRAND_DESCRIPTION,
+  codeRepository: SOURCE_REPOSITORY_URL,
+  license: "https://www.gnu.org/licenses/agpl-3.0.html",
+  "applicationCategory": "FinanceApplication",
+  operatingSystem: "Any modern browser",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+};
+const serializedApplicationJsonLd = JSON.stringify(applicationJsonLd).replace(/</g, "\\u003c");
+
+export const metadata: Metadata = {
+  metadataBase: new URL(BRAND_ORIGIN),
+  title: {
+    default: defaultTitle,
+    template: `%s — ${BRAND_NAME}`,
+  },
+  description: BRAND_DESCRIPTION,
+  applicationName: BRAND_NAME,
+  alternates: { canonical: "/" },
+  category: "finance",
+  creator: BRAND_NAME,
+  publisher: BRAND_NAME,
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: BRAND_NAME,
+    title: defaultTitle,
+    description: BRAND_DESCRIPTION,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: defaultTitle,
+    description: BRAND_DESCRIPTION,
+  },
+  /*
+   * Declared here rather than left to the file-based icon routes: Next
+   * fingerprints those into the URL (/apple-icon.png?apple-icon.<hash>.png),
+   * and iOS is unreliable at fetching an apple-touch-icon whose URL carries a
+   * query string — Add to Home Screen then falls back to a page screenshot
+   * instead of the logo. The same files are served at these plain paths.
+   */
+  icons: {
+    icon: [{ url: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+      { url: "/apple-icon2.png", sizes: "167x167", type: "image/png" },
+      { url: "/apple-icon1.png", sizes: "152x152", type: "image/png" },
+    ],
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: BRAND_NAME,
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#000000",
+  viewportFit: "cover",
+  width: "device-width",
+  initialScale: 1,
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
+      <body className="flex min-h-full flex-col">
+        {/* Applies the saved appearance before first paint to avoid a flash. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <ThemeController />
+        <a className="skip-link" href="#app-content">Skip to content</a>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializedApplicationJsonLd }}
+        />
+        {children}
+        <ServiceWorkerRegistration />
+      </body>
+    </html>
+  );
+}

@@ -1,0 +1,944 @@
+{
+  "generators": {
+    "address": 2,
+    "nonce": 0,
+    "mux_id": 0
+  },
+  "auth": [
+    [],
+    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3",
+              "function_name": "add_asset",
+              "args": [
+                {
+                  "address": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3",
+              "function_name": "set_deposits_paused",
+              "args": [
+                {
+                  "bool": true
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3",
+              "function_name": "set_deposits_paused",
+              "args": [
+                {
+                  "bool": false
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    []
+  ],
+  "ledger": {
+    "protocol_version": 27,
+    "sequence_number": 0,
+    "timestamp": 0,
+    "network_id": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
+    "base_reserve": 0,
+    "min_persistent_entry_ttl": 4096,
+    "min_temp_entry_ttl": 16,
+    "max_entry_ttl": 6312000,
+    "ledger_entries": [
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": {
+                "ledger_key_nonce": {
+                  "nonce": "1033654523790656264"
+                }
+              },
+              "durability": "temporary",
+              "val": "void"
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 6311999
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": {
+                "ledger_key_nonce": {
+                  "nonce": "5541220902715666415"
+                }
+              },
+              "durability": "temporary",
+              "val": "void"
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 6311999
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+              "key": {
+                "ledger_key_nonce": {
+                  "nonce": "801925984706572462"
+                }
+              },
+              "durability": "temporary",
+              "val": "void"
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 6311999
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "KnownRoot"
+                  },
+                  {
+                    "bytes": "0a88b1683de196e31692d1b5870ddd60b7e41eac248a35f398f8ae841f3b261d"
+                  }
+                ]
+              },
+              "durability": "temporary",
+              "val": {
+                "map": [
+                  {
+                    "key": {
+                      "symbol": "created_at_ledger"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "valid_until_ledger"
+                    },
+                    "val": {
+                      "u32": 1440
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 1504
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "RegisteredAsset"
+                  },
+                  {
+                    "u32": 0
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "map": [
+                  {
+                    "key": {
+                      "symbol": "asset"
+                    },
+                    "val": {
+                      "address": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "asset_field"
+                    },
+                    "val": {
+                      "bytes": "0fa59baaa8e420fbf133e5f8e488ed2e2073219b6bf201091500fa723ccfa657"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "index"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "status"
+                    },
+                    "val": {
+                      "vec": [
+                        {
+                          "symbol": "Active"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 6311999
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "RegisteredAssetIndex"
+                  },
+                  {
+                    "address": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "u32": 0
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 6311999
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3",
+              "key": "ledger_key_contract_instance",
+              "durability": "persistent",
+              "val": {
+                "contract_instance": {
+                  "executable": {
+                    "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  "storage": [
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "AssetAdmin"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "AssetCount"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "Config"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "map": [
+                          {
+                            "key": {
+                              "symbol": "circuit_hash"
+                            },
+                            "val": {
+                              "bytes": "b59eaddeb2ec6eac403d2c2adee693ea2446abb094edcdd6f309456e1d77ae2f"
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "context_field"
+                            },
+                            "val": {
+                              "bytes": "14fd932e233ff5479ed10b551280b65bb0a86d2cd826e23d398fb957a171e05f"
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "context_hash"
+                            },
+                            "val": {
+                              "bytes": "87020046c3f819cfec2387b8f7bfcb424fea9fd3bc9de6695c4ef08f9b7afab9"
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "deployment_binding_hash"
+                            },
+                            "val": {
+                              "bytes": "ebac3a68c95871f527ddeb638615ae9926c64b0ef6264523e63f5def62bcf9ed"
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "guardian"
+                            },
+                            "val": {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "initial_asset_admin"
+                            },
+                            "val": {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "network_id"
+                            },
+                            "val": {
+                              "bytes": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472"
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "poseidon2_parameter_hash"
+                            },
+                            "val": {
+                              "bytes": "6ecf310eeece863dcb24370c6668cfe42808ac1cdb25c30f4b85461ab37789a8"
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "protocol_version"
+                            },
+                            "val": {
+                              "u32": 2
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "realm_id"
+                            },
+                            "val": {
+                              "bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "root_window_ledgers"
+                            },
+                            "val": {
+                              "u32": 1440
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "tree_depth"
+                            },
+                            "val": {
+                              "u32": 64
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "verification_key_hash"
+                            },
+                            "val": {
+                              "bytes": "4c39e247db8e932695e881041e94337d28858208f04b477b32d51604bb3c03bc"
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "DepositPause"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "Meta"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "map": [
+                          {
+                            "key": {
+                              "symbol": "action_count"
+                            },
+                            "val": {
+                              "u128": "0"
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "transcript_head"
+                            },
+                            "val": {
+                              "bytes": "b6990a22462662c82cc309f0b445e4e5fc7d11c0eb8bda1be77c42e14b897467"
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "Tree"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "map": [
+                          {
+                            "key": {
+                              "symbol": "current_root"
+                            },
+                            "val": {
+                              "bytes": "0a88b1683de196e31692d1b5870ddd60b7e41eac248a35f398f8ae841f3b261d"
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "frontier"
+                            },
+                            "val": {
+                              "vec": [
+                                {
+                                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                                },
+                                {
+                                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                                },
+                                {
+                                  "bytes": "2a5de47ed300af27b706aaa14762fc468f5cfc16cd8116eb6b09b0f2643ca2b9"
+                                },
+                                {
+                                  "bytes": "2a5de47ed300af27b706aaa14762fc468f5cfc16cd8116eb6b09b0f2643ca2b9"
+                                },
+                                {
+                                  "bytes": "1070e389d2a8c6c59df016833644d786bc20cd3c02702f8842318abdbc24f2be"
+                                },
+                                {
+                                  "bytes": "1070e389d2a8c6c59df016833644d786bc20cd3c02702f8842318abdbc24f2be"
+                                },
+                                {
+                                  "bytes": "0219c4d94d0a6bbedaca37389b257a9d77b79eb808c6c96aad26b3fedf18623f"
+                                },
+                                {
+                                  "bytes": "0219c4d94d0a6bbedaca37389b257a9d77b79eb808c6c96aad26b3fedf18623f"
+                                },
+                                {
+                                  "bytes": "1c542f962c10039f740a8df044f0f7a24a5e34ddfdb4aceac279219ec138994a"
+                                },
+                                {
+                                  "bytes": "1c542f962c10039f740a8df044f0f7a24a5e34ddfdb4aceac279219ec138994a"
+                                },
+                                {
+                                  "bytes": "041427ef9d920eea17d39cd01efa15f87b5d86bc43d2681fa6e37498625106ab"
+                                },
+                                {
+                                  "bytes": "041427ef9d920eea17d39cd01efa15f87b5d86bc43d2681fa6e37498625106ab"
+                                },
+                                {
+                                  "bytes": "0ac86b0ef82942a569557943ec2600126932f3b1d171bb2a2cd54eeae3401868"
+                                },
+                                {
+                                  "bytes": "0ac86b0ef82942a569557943ec2600126932f3b1d171bb2a2cd54eeae3401868"
+                                },
+                                {
+                                  "bytes": "24a59b2c70ffdd9b05059919fc6d281a6d9427cd239ade15d9ed1469711d10f0"
+                                },
+                                {
+                                  "bytes": "24a59b2c70ffdd9b05059919fc6d281a6d9427cd239ade15d9ed1469711d10f0"
+                                },
+                                {
+                                  "bytes": "147afd0d2c07f85eaa70d3d673a1db77003ee4ab5d0bd821ad0ea66801bda534"
+                                },
+                                {
+                                  "bytes": "147afd0d2c07f85eaa70d3d673a1db77003ee4ab5d0bd821ad0ea66801bda534"
+                                },
+                                {
+                                  "bytes": "2efdede6144d26513da58fab51b1e2756cbcc5ed29f9f56c231e43c0c451170b"
+                                },
+                                {
+                                  "bytes": "2efdede6144d26513da58fab51b1e2756cbcc5ed29f9f56c231e43c0c451170b"
+                                },
+                                {
+                                  "bytes": "27a77c9a37fa7fc9e205bf22ef8123199a834ebf1e0f756de5bb587a8ae2280e"
+                                },
+                                {
+                                  "bytes": "27a77c9a37fa7fc9e205bf22ef8123199a834ebf1e0f756de5bb587a8ae2280e"
+                                },
+                                {
+                                  "bytes": "02550c437ec27e059f2e0f8a6f3ef0b19f76b2aaf418c6258e00c6a6013bcc03"
+                                },
+                                {
+                                  "bytes": "02550c437ec27e059f2e0f8a6f3ef0b19f76b2aaf418c6258e00c6a6013bcc03"
+                                },
+                                {
+                                  "bytes": "2e512ab7918b5c42e16201af79869aad6231f2ff0d7988d362bf8c9e71d3ee4d"
+                                },
+                                {
+                                  "bytes": "2e512ab7918b5c42e16201af79869aad6231f2ff0d7988d362bf8c9e71d3ee4d"
+                                },
+                                {
+                                  "bytes": "23246d93d74982acb736c0208daf955e4c3cba5aec87506e76efe2fb6c598da4"
+                                },
+                                {
+                                  "bytes": "23246d93d74982acb736c0208daf955e4c3cba5aec87506e76efe2fb6c598da4"
+                                },
+                                {
+                                  "bytes": "1e01f044649095495c9a65a993d8797d3d684a047875a15498dfcbc14e12e0c7"
+                                },
+                                {
+                                  "bytes": "1e01f044649095495c9a65a993d8797d3d684a047875a15498dfcbc14e12e0c7"
+                                },
+                                {
+                                  "bytes": "16b3a2ff965b9474bf814cc1a3a55859cbbc83d94ce5628632461871c6447a16"
+                                },
+                                {
+                                  "bytes": "16b3a2ff965b9474bf814cc1a3a55859cbbc83d94ce5628632461871c6447a16"
+                                },
+                                {
+                                  "bytes": "1bdaee57fd2490bdbcd7328fe96f98dcd62dab5d2818e47d12d8327cc59d4215"
+                                },
+                                {
+                                  "bytes": "1bdaee57fd2490bdbcd7328fe96f98dcd62dab5d2818e47d12d8327cc59d4215"
+                                },
+                                {
+                                  "bytes": "23b3e23c0bc898db86d462d5e7a3c7e7a3f1f4f9409dfc3744feb2fb4cae15a5"
+                                },
+                                {
+                                  "bytes": "23b3e23c0bc898db86d462d5e7a3c7e7a3f1f4f9409dfc3744feb2fb4cae15a5"
+                                },
+                                {
+                                  "bytes": "0fbab90226f7d74293653c4b391c3f0b05ea7de7a0ab705187b5684e7a4e7360"
+                                },
+                                {
+                                  "bytes": "0fbab90226f7d74293653c4b391c3f0b05ea7de7a0ab705187b5684e7a4e7360"
+                                },
+                                {
+                                  "bytes": "2c1ef457f50de669d0f5cdb2df763a914d545f1e840e6fb927923564fd7d5706"
+                                },
+                                {
+                                  "bytes": "2c1ef457f50de669d0f5cdb2df763a914d545f1e840e6fb927923564fd7d5706"
+                                },
+                                {
+                                  "bytes": "1469b5586ace72e4c51bb7f05fa6b10ea8f9a525c96e36458f159b4794ac7c35"
+                                },
+                                {
+                                  "bytes": "1469b5586ace72e4c51bb7f05fa6b10ea8f9a525c96e36458f159b4794ac7c35"
+                                },
+                                {
+                                  "bytes": "301938ee9324c6d0ffcb658fdd9258c9b3b0e7e68f9412e4182161a317b5baaa"
+                                },
+                                {
+                                  "bytes": "301938ee9324c6d0ffcb658fdd9258c9b3b0e7e68f9412e4182161a317b5baaa"
+                                },
+                                {
+                                  "bytes": "0d68b5b4e8b531a6f5ad342e0f11bd42525dc6c265072eee22e239875117d443"
+                                },
+                                {
+                                  "bytes": "0d68b5b4e8b531a6f5ad342e0f11bd42525dc6c265072eee22e239875117d443"
+                                },
+                                {
+                                  "bytes": "00c3222bf7dc82141f65a1e6d03628238e268e1d8c51edc5d844f169c25e17f4"
+                                },
+                                {
+                                  "bytes": "00c3222bf7dc82141f65a1e6d03628238e268e1d8c51edc5d844f169c25e17f4"
+                                },
+                                {
+                                  "bytes": "0bb9c7421a3701d4bee94bcd238b3f28bc21f258a3f314cfdcd92ce70e13c9f2"
+                                },
+                                {
+                                  "bytes": "0bb9c7421a3701d4bee94bcd238b3f28bc21f258a3f314cfdcd92ce70e13c9f2"
+                                },
+                                {
+                                  "bytes": "1dcc4363be3bc5ee79d8b75711b0de7c95ad80c5d9d42f9ca7b102818c374577"
+                                },
+                                {
+                                  "bytes": "1dcc4363be3bc5ee79d8b75711b0de7c95ad80c5d9d42f9ca7b102818c374577"
+                                },
+                                {
+                                  "bytes": "18bfbee711f72eb823d4f5c713124ab2c65aa75cbfc03cc296d353b9046a5265"
+                                },
+                                {
+                                  "bytes": "18bfbee711f72eb823d4f5c713124ab2c65aa75cbfc03cc296d353b9046a5265"
+                                },
+                                {
+                                  "bytes": "0f1bb2627068b413a1ff607e926b79da818024163fd3a106fbe1eea991cb5605"
+                                },
+                                {
+                                  "bytes": "0f1bb2627068b413a1ff607e926b79da818024163fd3a106fbe1eea991cb5605"
+                                },
+                                {
+                                  "bytes": "06a86b14d6504bbae040952899e939ed167adcc9e6d5d3f29aba6ba735434d83"
+                                },
+                                {
+                                  "bytes": "06a86b14d6504bbae040952899e939ed167adcc9e6d5d3f29aba6ba735434d83"
+                                },
+                                {
+                                  "bytes": "0eeb69dc4e64bdd7357441ada53bba615db22a5e5f6c38f80d9671c18411b9bc"
+                                },
+                                {
+                                  "bytes": "0eeb69dc4e64bdd7357441ada53bba615db22a5e5f6c38f80d9671c18411b9bc"
+                                },
+                                {
+                                  "bytes": "2c13a15877fdbbba5da345a1968e2bb4789ecd562344291799fb0e28b5886411"
+                                },
+                                {
+                                  "bytes": "2c13a15877fdbbba5da345a1968e2bb4789ecd562344291799fb0e28b5886411"
+                                },
+                                {
+                                  "bytes": "112ded08aaf309fcb8029432ecb60e5d9667195786094368f6342f31e2fb98e2"
+                                },
+                                {
+                                  "bytes": "112ded08aaf309fcb8029432ecb60e5d9667195786094368f6342f31e2fb98e2"
+                                },
+                                {
+                                  "bytes": "2506aa865236788b903bec5dc8d07649bb2a50e675f375cc84cbaa5af2a13b09"
+                                },
+                                {
+                                  "bytes": "2506aa865236788b903bec5dc8d07649bb2a50e675f375cc84cbaa5af2a13b09"
+                                },
+                                {
+                                  "bytes": "1213761ff3f86bc202edd697d61a4b5b888aee5b85155c6efb73cce81b7872e7"
+                                },
+                                {
+                                  "bytes": "1213761ff3f86bc202edd697d61a4b5b888aee5b85155c6efb73cce81b7872e7"
+                                },
+                                {
+                                  "bytes": "0388dde9a6288ff4d775d54dc4c46ec0dcec1280426520cc516884eec97f3f9d"
+                                },
+                                {
+                                  "bytes": "0388dde9a6288ff4d775d54dc4c46ec0dcec1280426520cc516884eec97f3f9d"
+                                },
+                                {
+                                  "bytes": "28f9767aaab3e050702f04620d4703694c1e3a945af37e10b9dc20b23b153535"
+                                },
+                                {
+                                  "bytes": "28f9767aaab3e050702f04620d4703694c1e3a945af37e10b9dc20b23b153535"
+                                },
+                                {
+                                  "bytes": "1b716bb4f7c7efaa1210f9e2d899e47a45dfdb9df61d112c155e8a7b0df478c1"
+                                },
+                                {
+                                  "bytes": "1b716bb4f7c7efaa1210f9e2d899e47a45dfdb9df61d112c155e8a7b0df478c1"
+                                },
+                                {
+                                  "bytes": "228f271a2f5291accc4673fb47f4930abe123c4ecf83dc40ded50b672da840a9"
+                                },
+                                {
+                                  "bytes": "228f271a2f5291accc4673fb47f4930abe123c4ecf83dc40ded50b672da840a9"
+                                },
+                                {
+                                  "bytes": "07bd3caca6983523f03e565072b864dadf8ab4d2c15e7640d860486cda5f96e4"
+                                },
+                                {
+                                  "bytes": "07bd3caca6983523f03e565072b864dadf8ab4d2c15e7640d860486cda5f96e4"
+                                },
+                                {
+                                  "bytes": "032092ca4228b611feb11f754778389ca049fb3e6b95c5186716e4d12af4202f"
+                                },
+                                {
+                                  "bytes": "032092ca4228b611feb11f754778389ca049fb3e6b95c5186716e4d12af4202f"
+                                },
+                                {
+                                  "bytes": "0d438d8b23d2a0a7d719552aea4afa0dee6a858b87e21e7d3a4c357319ce0a90"
+                                },
+                                {
+                                  "bytes": "0d438d8b23d2a0a7d719552aea4afa0dee6a858b87e21e7d3a4c357319ce0a90"
+                                },
+                                {
+                                  "bytes": "23017d765398b66c6879cb0a670e4dfaf476349a219153a43c0eeb03a9df62e1"
+                                },
+                                {
+                                  "bytes": "23017d765398b66c6879cb0a670e4dfaf476349a219153a43c0eeb03a9df62e1"
+                                },
+                                {
+                                  "bytes": "28366a76bbd917530c78463010cca9af73afb3df7c4bbf98046bc0c547af6af8"
+                                },
+                                {
+                                  "bytes": "28366a76bbd917530c78463010cca9af73afb3df7c4bbf98046bc0c547af6af8"
+                                },
+                                {
+                                  "bytes": "25dd9433d36a34d4caf46a541e34cdb213f9412aa9c075c53b786c532106dcf3"
+                                },
+                                {
+                                  "bytes": "25dd9433d36a34d4caf46a541e34cdb213f9412aa9c075c53b786c532106dcf3"
+                                },
+                                {
+                                  "bytes": "2db208980e7e7dffc6d9f099f4058d411d509f5f7a3b66eb5c4b617d31e770c6"
+                                },
+                                {
+                                  "bytes": "2db208980e7e7dffc6d9f099f4058d411d509f5f7a3b66eb5c4b617d31e770c6"
+                                },
+                                {
+                                  "bytes": "0d52a4d76be2edc96e893745fe3518c9eab8405da593bc3db521dadd4ca11591"
+                                },
+                                {
+                                  "bytes": "0d52a4d76be2edc96e893745fe3518c9eab8405da593bc3db521dadd4ca11591"
+                                },
+                                {
+                                  "bytes": "0e3f0659258613520f2a7370b3c7dd6f338998b2e4fde4c8ac5b7a55a2a9c0fb"
+                                },
+                                {
+                                  "bytes": "0e3f0659258613520f2a7370b3c7dd6f338998b2e4fde4c8ac5b7a55a2a9c0fb"
+                                },
+                                {
+                                  "bytes": "2399d7478eef4fd19b4e94b5a713f006e340512beec0a0dcf1d4cb1e66e50961"
+                                },
+                                {
+                                  "bytes": "2399d7478eef4fd19b4e94b5a713f006e340512beec0a0dcf1d4cb1e66e50961"
+                                },
+                                {
+                                  "bytes": "1d263cb0b11860e5f96cb2dd4e0fd9cff3b287783a516cf3fa90a76c54a2b01e"
+                                },
+                                {
+                                  "bytes": "1d263cb0b11860e5f96cb2dd4e0fd9cff3b287783a516cf3fa90a76c54a2b01e"
+                                },
+                                {
+                                  "bytes": "23c9da1f22b05ad67e160afa80f299b0633a9db06b51b8b0fcb2dcaa92b1103b"
+                                },
+                                {
+                                  "bytes": "23c9da1f22b05ad67e160afa80f299b0633a9db06b51b8b0fcb2dcaa92b1103b"
+                                },
+                                {
+                                  "bytes": "07e59570543797da4724a956417a0a4d84d3ed5d6ff4758831a07c5b54fc491e"
+                                },
+                                {
+                                  "bytes": "07e59570543797da4724a956417a0a4d84d3ed5d6ff4758831a07c5b54fc491e"
+                                },
+                                {
+                                  "bytes": "0363c38bf454400ebeaeafcd38e490b874573246e8471be767249b8b40795109"
+                                },
+                                {
+                                  "bytes": "0363c38bf454400ebeaeafcd38e490b874573246e8471be767249b8b40795109"
+                                },
+                                {
+                                  "bytes": "1d164e5658573774d1a997e4c22a425c3cbee908fad01b36080a9ae5e9c2c50d"
+                                },
+                                {
+                                  "bytes": "1d164e5658573774d1a997e4c22a425c3cbee908fad01b36080a9ae5e9c2c50d"
+                                },
+                                {
+                                  "bytes": "06b1b95b31b3f1d59e0845f1dfc62e927797ffc41233471191f74e735224a63e"
+                                },
+                                {
+                                  "bytes": "06b1b95b31b3f1d59e0845f1dfc62e927797ffc41233471191f74e735224a63e"
+                                },
+                                {
+                                  "bytes": "0e5bb4750733ca89e93b898541c1a532e8a36f607cda14becf4a422ee749f6a7"
+                                },
+                                {
+                                  "bytes": "0e5bb4750733ca89e93b898541c1a532e8a36f607cda14becf4a422ee749f6a7"
+                                },
+                                {
+                                  "bytes": "06f2a1d723239d3ecd0c407baaa2184ece04e85821ec80568570bc3c6174892a"
+                                },
+                                {
+                                  "bytes": "06f2a1d723239d3ecd0c407baaa2184ece04e85821ec80568570bc3c6174892a"
+                                },
+                                {
+                                  "bytes": "293aa0e1600022f00ecc178e5c8c0bd0a371b88b98690f320ba7cb732f03c84e"
+                                },
+                                {
+                                  "bytes": "293aa0e1600022f00ecc178e5c8c0bd0a371b88b98690f320ba7cb732f03c84e"
+                                },
+                                {
+                                  "bytes": "1bb312be1bcf5af8be7c8c970c13dffeb2bb57755e3ea035e895b511aca2961e"
+                                },
+                                {
+                                  "bytes": "1bb312be1bcf5af8be7c8c970c13dffeb2bb57755e3ea035e895b511aca2961e"
+                                },
+                                {
+                                  "bytes": "235ceff4ee0ea50d0c11f7d8a1ff137d3ecf51ddea722ecf82ddde2a61a3e72c"
+                                },
+                                {
+                                  "bytes": "235ceff4ee0ea50d0c11f7d8a1ff137d3ecf51ddea722ecf82ddde2a61a3e72c"
+                                },
+                                {
+                                  "bytes": "2d971a97feaf712193ec467a251713e6a66cd643270dfc41af27c260ee05ca5a"
+                                },
+                                {
+                                  "bytes": "2d971a97feaf712193ec467a251713e6a66cd643270dfc41af27c260ee05ca5a"
+                                },
+                                {
+                                  "bytes": "067a6febfdb56a3c13abb1523695bd522ab047485bf5a1f8d461580a4cd38bf3"
+                                },
+                                {
+                                  "bytes": "067a6febfdb56a3c13abb1523695bd522ab047485bf5a1f8d461580a4cd38bf3"
+                                },
+                                {
+                                  "bytes": "23c04426a20b2d85cfe7958ee524484f3ec88cdd4848e54412482c48a431c718"
+                                },
+                                {
+                                  "bytes": "23c04426a20b2d85cfe7958ee524484f3ec88cdd4848e54412482c48a431c718"
+                                },
+                                {
+                                  "bytes": "2d373bf14259527dcc4b51e0bc265c258dca13227146f25dc6c32987db141b84"
+                                },
+                                {
+                                  "bytes": "2d373bf14259527dcc4b51e0bc265c258dca13227146f25dc6c32987db141b84"
+                                },
+                                {
+                                  "bytes": "1572cf7d43d3a0a459f14902eb73d8466c38ede1ef92dce71bbec760b2444ff0"
+                                },
+                                {
+                                  "bytes": "1572cf7d43d3a0a459f14902eb73d8466c38ede1ef92dce71bbec760b2444ff0"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "next_index"
+                            },
+                            "val": {
+                              "u128": "0"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+              "key": "ledger_key_contract_instance",
+              "durability": "persistent",
+              "val": {
+                "contract_instance": {
+                  "executable": {
+                    "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  "storage": null
+                }
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_code": {
+              "ext": "v0",
+              "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "code": ""
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      }
+    ]
+  },
+  "events": []
+}

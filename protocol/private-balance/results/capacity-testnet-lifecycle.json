@@ -1,0 +1,38 @@
+{
+  "observedAt": "2026-09-13T01:20:07.438Z",
+  "poolContractId": "CAYCV26VCDNUEM6HHKQYHKDJ3O43CK5DCBT3TMMHFVEXE7CIFVWRY4R7",
+  "wasmSha256": "88547981e9fe10861ba0e152a2185efd94ce5679e81822949bc9e39eb71ac39c",
+  "r1csSha256": "b59eaddeb2ec6eac403d2c2adee693ea2446abb094edcdd6f309456e1d77ae2f",
+  "scope": "Isolated synthetic Testnet XLM deposit, self-transfer and full-input exit through actual Wasm; no browser UI or USDC claim.",
+  "actions": [
+    {
+      "method": "deposit",
+      "ledger": 4647770,
+      "minimumResourceFeeStroops": "7592212",
+      "confirmed": true,
+      "archiveAdvance": 1,
+      "leafAdvance": 3
+    },
+    {
+      "method": "transfer",
+      "ledger": 4647776,
+      "minimumResourceFeeStroops": "7862967",
+      "confirmed": true,
+      "archiveAdvance": 1,
+      "leafAdvance": 3
+    },
+    {
+      "method": "full_input_exit",
+      "ledger": 4647785,
+      "minimumResourceFeeStroops": "7959352",
+      "confirmed": true,
+      "archiveAdvance": 1,
+      "leafAdvance": 0
+    }
+  ],
+  "passed": true,
+  "freshSeedScanSpent": true,
+  "runnerSourceSha256": "916a31e95aaf6ab6069d109575997fcc518c1b3146b1c1b2a3fb73c5a419cc62",
+  "runnerNote": "Recorded with the identical transaction/scanner body in release-artifacts; the maintained runner adds an explicit Testnet flag and changes import/output paths.",
+  "maintainedRunnerSha256": "1d89e773c4f98fc50f0386ed6a789f90e401636a34b7588b01d25e5ac85a4dbc"
+}

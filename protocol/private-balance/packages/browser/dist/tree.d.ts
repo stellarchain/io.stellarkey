@@ -1,0 +1,42 @@
+export declare const TREE_ARITY = 3;
+export declare const TREE_INNER_DEPTH = 17;
+export declare const TREE_OUTER_DEPTH = 47;
+export declare const TREE_DEPTH: number;
+export declare const TREE_CAPACITY: bigint;
+export declare const TREE_FRONTIER_WIDTH: number;
+export declare const TREE_FRONTIER_SIZE: number;
+export type MerkleChildren = readonly [Uint8Array, Uint8Array, Uint8Array];
+export type MerkleSiblings = readonly [Uint8Array, Uint8Array];
+export declare function hashMerkleNode(children: MerkleChildren): Uint8Array;
+export declare const EMPTY_ROOTS: readonly Uint8Array[];
+export interface MerkleTree {
+    nextIndex: bigint;
+    frontier: Uint8Array[];
+    currentRoot: Uint8Array;
+}
+export interface MerklePathWitness {
+    leaf: Uint8Array;
+    leafIndex: bigint;
+    siblings: [Uint8Array, Uint8Array][];
+    positions: number[];
+    root: Uint8Array;
+}
+export type MerkleHash = (children: MerkleChildren) => Uint8Array | Promise<Uint8Array>;
+export declare function getEmptyRoots(): Promise<Uint8Array[]>;
+export declare function createEmptyTree(): Promise<MerkleTree>;
+export declare function appendFrontier(tree: MerkleTree, leaf: Uint8Array, hash?: MerkleHash): Promise<void>;
+export declare function refreshTreeRoot(tree: MerkleTree, hash?: MerkleHash): Promise<Uint8Array>;
+export declare function appendCommitment(tree: MerkleTree, leaf: Uint8Array): Promise<Uint8Array>;
+export declare function appendCommitments(tree: MerkleTree, leaves: Uint8Array[]): Promise<Uint8Array>;
+export declare class MerkleNodeStore {
+    private readonly nodes;
+    private _nextIndex;
+    private _currentRoot;
+    private constructor();
+    static empty(): Promise<MerkleNodeStore>;
+    static fromCommitments(commitments: readonly Uint8Array[]): Promise<MerkleNodeStore>;
+    get nextIndex(): bigint;
+    get currentRoot(): Uint8Array;
+    append(leaf: Uint8Array): Promise<Uint8Array>;
+    getPath(leafIndex: bigint): Promise<MerklePathWitness>;
+}

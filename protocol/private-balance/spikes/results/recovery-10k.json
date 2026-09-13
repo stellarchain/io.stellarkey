@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "scope": "backend-free-seed-recovery-mvp",
+  "passed": true,
+  "completedAt": "2026-08-30T07:40:39.725Z",
+  "sources": {
+    "events": false,
+    "mirror": false,
+    "indexer": false
+  },
+  "dataset": {
+    "deterministicActions": 10000,
+    "canonicalPages": 313,
+    "pageCapacity": 32,
+    "ownedActions": 10
+  },
+  "checks": {
+    "everyRecordHashLinked": true,
+    "everyPageHashVerified": true,
+    "finalTreeRootMatched": true,
+    "exactOwnedBalanceRecovered": true,
+    "exactOwnedActivityRecovered": true
+  },
+  "recovery": {
+    "expectedBalance": "487",
+    "recoveredBalance": "487",
+    "recoveredActivityCount": 10,
+    "finalRecordHash": "67219ee2d010ad8da46f1b46886e5954c32c33da2de1862ac610969a61e5d605",
+    "finalTreeRoot": "2075b374ad7c4f9a48a2e2f6d874a7c6d77edf25443099023890ab6926a9ab00",
+    "elapsedMs": 183385,
+    "peakRssBytes": 244613120
+  },
+  "limitations": [
+    "This local scanner gate is paired with the controlled-Core archive gate; it does not claim that 10,000 actions were submitted on chain.",
+    "This is minimal MVP evidence, not Gate D beta approval or Gate E mainnet approval."
+  ]
+}

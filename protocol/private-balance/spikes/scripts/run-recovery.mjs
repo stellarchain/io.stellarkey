@@ -1,0 +1,485 @@
+#!/usr/bin/env node
+
+import { createHash } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { registerHooks } from 'node:module';
+import path from 'node:path';
+import process from 'node:process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { Aes128Gcm, CipherSuite, HkdfSha256 } from '@hpke/core';
+import { DhkemX25519HkdfSha256 } from '@hpke/dhkem-x25519';
+import { StrKey } from '@stellar/stellar-sdk';
+import {
+  ActionKind,
+  appendCommitments,
+  computeCommitment,
+  computeAssetField,
+  computeDummyNullifier,
+  computeContextField,
+  computeContextHash,
+  computeGenesisRecordHash,
+  computeRecordHash,
+  createEmptyTree,
+  deriveHpkeAad,
+  deriveHpkeInfo,
+  deriveOutgoingAad,
+  deriveKeysFromSeed,
+  deriveDiversifiedAddressKeys,
+  deriveX25519SharedSecret,
+  encodeOutgoingPlaintext,
+  encodeNotePlaintext,
+  sealOutgoingEnvelope,
+  toViewingKey,
+} from '@stellarkey/private-balance';
+
+import {
+  buildRecoveryGateEvidence,
+  parseRecoveryGateArguments,
+} from './recovery-gate-lib.mjs';
+
+const PROJECT_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../..',
+);
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    let resolved;
+    try {
+      resolved = nextResolve(specifier, context);
+    } catch (error) {
+      if (
+        error?.code !== 'ERR_MODULE_NOT_FOUND' ||
+        !specifier.startsWith('.') ||
+        path.extname(specifier)
+      ) {
+        throw error;
+      }
+      resolved = nextResolve(`${specifier}.ts`, context);
+    }
+    return resolved.url.endsWith('.ts')
+      ? { ...resolved, format: 'module-typescript' }
+      : resolved;
+  },
+});
+const suite = new CipherSuite({
+  kem: new DhkemX25519HkdfSha256(),
+  kdf: new HkdfSha256(),
+  aead: new Aes128Gcm(),
+});
+
+function bytes(value, length = 32) {
+  return new Uint8Array(length).fill(value);
+}
+
+function u64Field(value) {
+  const result = new Uint8Array(32);
+  new DataView(result.buffer).setBigUint64(24, BigInt(value), false);
+  return result;
+}
+
+function hex(value) {
+  return Buffer.from(value).toString('hex');
+}
+
+function equalBytes(left, right) {
+  return left.length === right.length && left.every((byte, index) => byte === right[index]);
+}
+
+function deterministicEkm(actionIndex, outputIndex, actionNonce) {
+  return createHash('sha256')
+    .update('StellarKey recovery gate HPKE EKM v1\0', 'utf8')
+    .update(`${actionIndex}:${outputIndex}`, 'utf8')
+    .update(actionNonce)
+    .digest();
+}
+
+function deterministicOutgoingNonce(actionIndex, outputIndex, actionNonce) {
+  return createHash('sha256')
+    .update('StellarKey recovery gate outgoing nonce v1\0', 'utf8')
+    .update(`${actionIndex}:${outputIndex}`, 'utf8')
+    .update(actionNonce)
+    .digest()
+    .subarray(0, 12);
+}
+
+async function deterministicOutputPackage({
+  recipientPublicKey,
+  recipientPublicKeyBytes,
+  recipientPrivateKey,
+  diversifier,
+  noteBytes,
+  contextHash,
+  commitment,
+  actionNonce,
+  actionIndex,
+  outputIndex,
+  outgoingViewingKey,
+  outgoingPlaintext,
+  deploymentBindingHash,
+  assetField,
+}) {
+  const sender = await suite.createSenderContext({
+    recipientPublicKey,
+    info: deriveHpkeInfo(2, contextHash),
+    ekm: deterministicEkm(actionIndex, outputIndex, actionNonce),
+  });
+  const ciphertext = new Uint8Array(await sender.seal(
+    noteBytes,
+    deriveHpkeAad(contextHash, commitment, actionNonce, outputIndex),
+  ));
+  const enc = new Uint8Array(sender.enc);
+  const sharedSecret = await deriveX25519SharedSecret(recipientPrivateKey, enc);
+  const viewTag = createHash('sha256')
+    .update('StellarKey private view tag v1', 'utf8')
+    .update(sharedSecret)
+    .update(contextHash)
+    .update(enc)
+    .update(recipientPublicKeyBytes)
+    .digest()[0];
+  const envelope = new Uint8Array(181);
+  envelope[0] = viewTag;
+  envelope.set(diversifier, 1);
+  envelope.set(enc, 5);
+  envelope.set(ciphertext, 37);
+  const outgoingEnvelope = await sealOutgoingEnvelope(
+    outgoingViewingKey,
+    enc,
+    outgoingPlaintext,
+    deriveOutgoingAad(
+      deploymentBindingHash,
+      contextHash,
+      assetField,
+      commitment,
+      actionNonce,
+      outputIndex,
+    ),
+    deterministicOutgoingNonce(actionIndex, outputIndex, actionNonce),
+  );
+  return { cm: commitment, recipientEnvelope: envelope, outgoingEnvelope };
+}
+
+function ownedActionIndexes(actionCount) {
+  const ownedCount = Math.min(10, actionCount);
+  return new Set(Array.from(
+    { length: ownedCount },
+    (_, index) => Math.floor(index * actionCount / ownedCount),
+  ));
+}
+
+function assertRecoveredResult({ result, finalRecordHash, tree, expectedBalance, ownedIndexes }) {
+  if (!equalBytes(result.lastRecordHash, finalRecordHash)) {
+    throw new Error('Recovered transcript head mismatch.');
+  }
+  if (!equalBytes(result.tree.currentRoot, tree.currentRoot)) {
+    throw new Error('Recovered tree root mismatch.');
+  }
+  if (result.notes.some(note => note.status !== 'unspent')) {
+    throw new Error('Fresh recovery unexpectedly marked an owned note spent.');
+  }
+  const recoveredBalance = result.notes.reduce(
+    (total, note) => total + BigInt(note.value),
+    0n,
+  );
+  if (recoveredBalance !== expectedBalance) {
+    throw new Error('Recovered balance mismatch.');
+  }
+  const recoveredIndexes = result.activities.map(activity => activity.actionIndex);
+  const expectedIndexes = [...ownedIndexes].map(BigInt);
+  if (
+    recoveredIndexes.length !== expectedIndexes.length ||
+    recoveredIndexes.some((value, index) => value !== expectedIndexes[index]) ||
+    result.activities.some(activity => activity.actionKind !== 'deposit' || activity.direction !== 'inflow')
+  ) {
+    throw new Error('Recovered owned activity mismatch.');
+  }
+  return recoveredBalance;
+}
+
+export async function runRecoveryGate(argv = process.argv.slice(2)) {
+  const options = parseRecoveryGateArguments(argv);
+  const startedAt = performance.now();
+  let peakRssBytes = process.memoryUsage().rss;
+  const sampleMemory = () => {
+    peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
+  };
+
+  const networkId = bytes(1);
+  const realmId = bytes(2);
+  const poolId = bytes(3);
+  const assetId = bytes(4);
+  const asset = { kind: 1, payload: assetId };
+  const assetIndex = 0;
+  const assetContractId = StrKey.encodeContract(assetId);
+  const assetField = computeAssetField(asset);
+  const accountPublicKey = bytes(5);
+  const deploymentBindingHash = bytes(6);
+  const externalAccountPublicKey = bytes(9);
+  const contextHash = computeContextHash(2, networkId, realmId, poolId);
+  const contextField = computeContextField(contextHash);
+  const walletSeed = bytes(7);
+  const externalSeed = bytes(8);
+  const walletKeys = await deriveKeysFromSeed(
+    walletSeed,
+    2,
+    networkId,
+    realmId,
+    poolId,
+    accountPublicKey,
+    contextField,
+  );
+  const externalKeys = await deriveKeysFromSeed(
+    externalSeed,
+    2,
+    networkId,
+    realmId,
+    poolId,
+    externalAccountPublicKey,
+    contextField,
+  );
+  walletSeed.fill(0);
+  externalSeed.fill(0);
+  const diversifier = new Uint8Array(4);
+  const walletAddressKeys = await deriveDiversifiedAddressKeys(
+    walletKeys.baseOwnerCommitment,
+    walletKeys.hpkePrivateKey,
+    diversifier,
+  );
+  const externalAddressKeys = await deriveDiversifiedAddressKeys(
+    externalKeys.baseOwnerCommitment,
+    externalKeys.hpkePrivateKey,
+    diversifier,
+  );
+  const walletHpkeKey = await suite.kem.deserializePublicKey(walletKeys.hpkePublicKey);
+  const externalHpkeKey = await suite.kem.deserializePublicKey(externalKeys.hpkePublicKey);
+  const ownedIndexes = ownedActionIndexes(options.actionCount);
+  const tree = await createEmptyTree();
+  const records = [];
+  let priorRecordHash = computeGenesisRecordHash(contextHash, deploymentBindingHash);
+  let expectedBalance = 0n;
+
+  process.stderr.write(`Generating ${options.actionCount} deterministic canonical actions...\n`);
+  for (let actionIndex = 0; actionIndex < options.actionCount; actionIndex += 1) {
+    const owned = ownedIndexes.has(actionIndex);
+    const value = BigInt(actionIndex % 97 + 1);
+    const rho = u64Field(actionIndex + 1);
+    const ownerCommitment = owned
+      ? walletKeys.ownerCommitment
+      : externalKeys.ownerCommitment;
+    const actionNonce = u64Field(options.actionCount + actionIndex + 1);
+    const note = {
+      protocolVersion: 2,
+      flags: 0,
+      value,
+      diversifier,
+      ownerCommitment,
+      rho,
+      memoLength: 0,
+      memo: new Uint8Array(32),
+      assetIndex,
+      reserved: new Uint8Array(11),
+    };
+    const commitment = computeCommitment(contextField, assetField, ownerCommitment, value, rho);
+    const recipientHpkePublicKey = owned
+      ? walletKeys.hpkePublicKey
+      : externalKeys.hpkePublicKey;
+    const outgoingPlaintext = encodeOutgoingPlaintext({
+      protocolVersion: 2,
+      flags: 0,
+      value,
+      diversifier,
+      ownerCommitment,
+      recipientHpkePublicKey,
+      memoLength: 0,
+      memo: new Uint8Array(32),
+      assetIndex,
+      reserved: new Uint8Array(11),
+    });
+    const senderKeys = owned ? walletKeys : externalKeys;
+    const output = await deterministicOutputPackage({
+      recipientPublicKey: owned ? walletHpkeKey : externalHpkeKey,
+      recipientPublicKeyBytes: recipientHpkePublicKey,
+      recipientPrivateKey: owned
+        ? walletAddressKeys.hpkePrivateKey
+        : externalAddressKeys.hpkePrivateKey,
+      diversifier,
+      noteBytes: encodeNotePlaintext(note),
+      contextHash,
+      commitment,
+      actionNonce,
+      actionIndex,
+      outputIndex: 0,
+      outgoingViewingKey: senderKeys.outgoingViewingKey,
+      outgoingPlaintext,
+      deploymentBindingHash,
+      assetField,
+    });
+    outgoingPlaintext.fill(0);
+
+    const dummyOutputs = [];
+    for (let outputIndex = 1; outputIndex < 3; outputIndex += 1) {
+      const dummyRho = u64Field(
+        options.actionCount + actionIndex * 2 + outputIndex,
+      );
+      const dummyCommitment = computeCommitment(
+        contextField,
+        assetField,
+        externalKeys.ownerCommitment,
+        0n,
+        dummyRho,
+      );
+      const dummyNoteBytes = encodeNotePlaintext({
+        protocolVersion: 2,
+        flags: 1,
+        value: 0n,
+        diversifier,
+        ownerCommitment: externalKeys.ownerCommitment,
+        rho: dummyRho,
+        memoLength: 0,
+        memo: new Uint8Array(32),
+        assetIndex,
+        reserved: new Uint8Array(11),
+      });
+      const dummyOutgoingPlaintext = encodeOutgoingPlaintext({
+        protocolVersion: 2,
+        flags: 1,
+        value: 0n,
+        diversifier,
+        ownerCommitment: externalKeys.ownerCommitment,
+        recipientHpkePublicKey: externalKeys.hpkePublicKey,
+        memoLength: 0,
+        memo: new Uint8Array(32),
+        assetIndex,
+        reserved: new Uint8Array(11),
+      });
+      dummyOutputs.push(await deterministicOutputPackage({
+        recipientPublicKey: externalHpkeKey,
+        recipientPublicKeyBytes: externalKeys.hpkePublicKey,
+        recipientPrivateKey: externalAddressKeys.hpkePrivateKey,
+        diversifier,
+        noteBytes: dummyNoteBytes,
+        contextHash,
+        commitment: dummyCommitment,
+        actionNonce,
+        actionIndex,
+        outputIndex,
+        outgoingViewingKey: senderKeys.outgoingViewingKey,
+        outgoingPlaintext: dummyOutgoingPlaintext,
+        deploymentBindingHash,
+        assetField,
+      }));
+      dummyNoteBytes.fill(0);
+      dummyOutgoingPlaintext.fill(0);
+    }
+    const outputs = [output, ...dummyOutputs];
+    const nullifierSecret0 = u64Field(options.actionCount * 2 + actionIndex * 2 + 1);
+    const nullifierSecret1 = u64Field(options.actionCount * 2 + actionIndex * 2 + 2);
+    const nullifiers = [
+      computeDummyNullifier(contextField, nullifierSecret0),
+      computeDummyNullifier(contextField, nullifierSecret1),
+    ];
+    nullifierSecret0.fill(0);
+    nullifierSecret1.fill(0);
+    const treeRootAfter = await appendCommitments(tree, outputs.map(item => item.cm));
+    const depositSource = {
+      kind: 0,
+      payload: owned ? accountPublicKey : externalAccountPublicKey,
+    };
+    const action = {
+      protocolVersion: 2,
+      kind: ActionKind.Deposit,
+      assetIndex,
+      asset,
+      actionNonce,
+      anchorRoot: new Uint8Array(32),
+      nullifiers,
+      outputs,
+      publicValue: value,
+      depositSource,
+    };
+    const record = {
+      actionIndex: BigInt(actionIndex),
+      ledgerSequence: actionIndex + 1,
+      startingLeafIndex: BigInt(actionIndex * 3),
+      actionKind: ActionKind.Deposit,
+      assetIndex,
+      asset,
+      actionNonce,
+      anchorRoot: action.anchorRoot,
+      treeRootAfter,
+      nullifiers: action.nullifiers,
+      outputs,
+      publicValue: value,
+      depositSource,
+    };
+    records.push(record);
+    priorRecordHash = computeRecordHash(record, 2, priorRecordHash);
+    if (owned) expectedBalance += value;
+    if ((actionIndex + 1) % 1_000 === 0) {
+      sampleMemory();
+      process.stderr.write(`Generated ${actionIndex + 1}/${options.actionCount}\n`);
+    }
+  }
+
+  sampleMemory();
+  process.stderr.write('Scanning immutable records with events, mirror, and indexer disabled...\n');
+  const { scanArchiveRecords } = await import(
+    '../../../../src/features/private-balance/runtime/scanner.ts'
+  );
+  const result = await scanArchiveRecords({
+    records,
+    viewingKey: toViewingKey(walletKeys),
+    context: {
+      protocolVersion: 2,
+      networkId,
+      realmId,
+      poolId,
+      contextHash,
+      contextField,
+      deploymentBindingHash,
+      addressPrefix: 'tskpay_',
+      assets: [{ index: assetIndex, contractId: assetContractId }],
+      accountAddress: { kind: 0, payload: accountPublicKey },
+    },
+    expectedPriorRecordHash: computeGenesisRecordHash(contextHash, deploymentBindingHash),
+  });
+  sampleMemory();
+  const recoveredBalance = assertRecoveredResult({
+    result,
+    finalRecordHash: priorRecordHash,
+    tree,
+    expectedBalance,
+    ownedIndexes,
+  });
+  const elapsedMs = Math.ceil(performance.now() - startedAt);
+  const evidence = buildRecoveryGateEvidence({
+    actionCount: options.actionCount,
+    recordBatchSize: 200,
+    ownedActionCount: ownedIndexes.size,
+    recoveredActivityCount: result.activities.length,
+    recoveredBalance,
+    expectedBalance,
+    finalRecordHash: hex(result.lastRecordHash),
+    finalTreeRoot: hex(result.tree.currentRoot),
+    elapsedMs,
+    peakRssBytes,
+    completedAt: new Date().toISOString(),
+  });
+  const outputPath = path.resolve(PROJECT_ROOT, options.outputPath);
+  mkdirSync(path.dirname(outputPath), { recursive: true });
+  writeFileSync(outputPath, `${JSON.stringify(evidence, null, 2)}\n`);
+  walletKeys.ask.fill(0);
+  walletKeys.nk.fill(0);
+  walletKeys.hpkePrivateKey.fill(0);
+  externalKeys.ask.fill(0);
+  externalKeys.nk.fill(0);
+  externalKeys.hpkePrivateKey.fill(0);
+  return evidence;
+}
+
+const invokedPath = process.argv[1]
+  ? pathToFileURL(path.resolve(process.argv[1])).href
+  : null;
+if (invokedPath === import.meta.url) {
+  const evidence = await runRecoveryGate();
+  process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
+}

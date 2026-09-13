@@ -1,0 +1,565 @@
+"use client";
+
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { SectionHeader } from "@/components/ui";
+import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
+import { useLiveNow } from "@/hooks/useLiveNow";
+import { useWalletContacts } from "@/hooks/useWallet";
+import { fmtMinor } from "@/lib/merchant/money";
+import type { CustomerRecord, LoyaltyCard } from "@/lib/merchant/types";
+import {
+  AlertContent,
+  Avatar,
+  Button,
+  ErrorText,
+  FieldLabelRow,
+  HashValue,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  useRetainedForExit,
+} from "../ui";
+import { useMerchantAction } from "./useMerchantAction";
+import { IconCheck, IconChevronDown, IconGift, IconUserPlus } from "../icons";
+import { IconCheckCircle, IconReceipt, IconTag } from "./icons";
+
+/** Loyalty is drawn in purple; green stays money-in and merchant identity. */
+export const LOYALTY_HUE = "#BF5AF2";
+
+/**
+ * A quiet, collapsed explanation. The screen states the fact in one line and
+ * keeps the mechanism one tap away — nothing is softened, only folded up.
+ * Default closed, a real button, a real region: `aria-expanded` and
+ * `aria-controls` point at each other so a screen reader gets the same deal.
+ */
+export function Disclosure({
+  summary,
+  label = "How this works",
+  children,
+}: {
+  summary: React.ReactNode;
+  label?: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const regionId = `${React.useId()}-disclosure`;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={regionId}
+        className="flex min-h-[44px] w-full items-center gap-3 rounded-xl px-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+      >
+        <span className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-neutral-400">
+          {summary}
+        </span>
+        <span className="flex shrink-0 items-center gap-1 text-[12px] font-semibold text-[#0A84FF]">
+          {label}
+          <IconChevronDown
+            size={13}
+            className={`transition-transform ${open ? "rotate-180" : ""}`}
+          />
+        </span>
+      </button>
+      <div
+        id={regionId}
+        hidden={!open}
+        className="px-1 pb-1 text-[12.5px] leading-relaxed text-neutral-400"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function relativeTime(ts: number, now: number): string {
+  const minutes = Math.round((now - ts) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+  const days = Math.round(hours / 24);
+  if (days < 31) return `${days} ${days === 1 ? "day" : "days"} ago`;
+  const months = Math.round(days / 30);
+  return `${months} ${months === 1 ? "month" : "months"} ago`;
+}
+
+export function fmtDay(ts: number): string {
+  return new Date(ts).toLocaleDateString("en-US", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/** What to call someone the shop may only know by their address. */
+export function customerTitle(customer: CustomerRecord): string {
+  return customer.name ?? "Unnamed customer";
+}
+
+/** The compact loyalty read-out used in a list row. Never colour alone. */
+export function LoyaltyBadge({ loyalty }: { loyalty: LoyaltyCard | null }) {
+  if (!loyalty) {
+    return <span className="shrink-0 text-[11px] text-neutral-600">No card</span>;
+  }
+  const full = loyalty.stamps >= loyalty.target;
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${
+        full ? "bg-[#30D158]/15 text-[#30D158]" : "bg-[#BF5AF2]/15 text-[#BF5AF2]"
+      }`}
+    >
+      {full ? <IconCheckCircle size={11} /> : <IconGift size={11} />}
+      {full ? "Reward ready" : `${loyalty.stamps}/${loyalty.target}`}
+    </span>
+  );
+}
+
+export function CustomerDetailModal({
+  customer,
+  onClose,
+}: {
+  customer: CustomerRecord | null;
+  onClose: () => void;
+}) {
+  // The record stays rendered through the exit so the card does not blank mid-animation.
+  const shown = useRetainedForExit(customer);
+  const [busy, setBusy] = useState(false);
+  return (
+    <Modal
+      open={customer !== null}
+      onClose={onClose}
+      wide
+      busy={busy}
+      busyReason="Wait for the customer record to be forgotten before closing."
+    >
+      {shown && (
+        <CustomerDetail
+          key={shown.address}
+          customer={shown}
+          onClose={onClose}
+          onBusyChange={setBusy}
+        />
+      )}
+    </Modal>
+  );
+}
+
+function CustomerDetail({
+  customer,
+  onClose,
+  onBusyChange,
+}: {
+  customer: CustomerRecord;
+  onClose: () => void;
+  onBusyChange: (busy: boolean) => void;
+}) {
+  const {
+    customerHistory,
+    forgetCustomer,
+    redeemLoyaltyReward,
+    startLoyaltyCard,
+    updateCustomerNote,
+  } = useMerchantRecords();
+  const { settings } = useMerchantConfiguration();
+  const { addContact } = useWalletContacts();
+  const rewardAction = useMerchantAction();
+  const cardAction = useMerchantAction();
+  const noteAction = useMerchantAction();
+  const contactAction = useMerchantAction();
+  const forgetAction = useMerchantAction();
+  const cardHeading = useRef<HTMLHeadingElement>(null);
+  const cardFocus = useRef<{ removedFocused: boolean; current: (() => boolean) | null }>({ removedFocused: false, current: null });
+  const startButtonRef = useCallback((node: HTMLButtonElement | null) => {
+    if (!node) return;
+    // Capture actual focus at removal, not at invocation or promise completion.
+    return () => { cardFocus.current.removedFocused = document.activeElement === node; };
+  }, []);
+
+  useLayoutEffect(() => {
+    const moved = () => { cardFocus.current.removedFocused = false; };
+    document.addEventListener("focusin", moved);
+    document.addEventListener("pointerdown", moved, true);
+    return () => {
+      document.removeEventListener("focusin", moved);
+      document.removeEventListener("pointerdown", moved, true);
+    };
+  }, []);
+
+  const [note, setNote] = useState(customer.note ?? "");
+  const [contactName, setContactName] = useState(customer.name ?? "");
+  const [confirmingForget, setConfirmingForget] = useState(false);
+  const now = useLiveNow();
+
+  /* Only Forget rewrites the record; the shell stays open while it runs. */
+  const forgetting = forgetAction.pending;
+  useEffect(() => {
+    onBusyChange(forgetting);
+    return () => onBusyChange(false);
+  }, [forgetting, onBusyChange]);
+
+  const history = customerHistory(customer.address);
+
+  const loyalty = customer.loyalty;
+  const full = loyalty !== null && loyalty.stamps >= loyalty.target;
+  const noteDirty = note.trim() !== (customer.note ?? "").trim();
+
+  useLayoutEffect(() => {
+    const handoff = cardFocus.current;
+    if (!loyalty || !handoff.current) return;
+    const current = handoff.current;
+    handoff.current = null;
+    if (handoff.removedFocused && document.activeElement === document.body && current()) {
+      cardHeading.current?.focus({ preventScroll: true });
+    }
+    handoff.removedFocused = false;
+  }, [loyalty, cardAction.pending]);
+
+  async function redeem() {
+    await rewardAction.run(() => redeemLoyaltyReward(customer.address),
+      "Reward redeemed and added to the loyalty audit.", "The reward could not be redeemed. Try again.");
+  }
+
+  async function startCard() {
+    await cardAction.run(() => startLoyaltyCard(customer.address, 10),
+      "Loyalty card opened. New eligible payments earn one stamp.", "The loyalty card could not be opened. Try again.",
+      current => { cardFocus.current.current = current; });
+  }
+
+  async function saveNote() {
+    await noteAction.run(() => updateCustomerNote(customer.address, note),
+      "Customer note saved on this device.", "The note could not be saved. Try again.");
+  }
+
+  async function saveToContacts() {
+    const name = contactName.trim();
+    await contactAction.run(() => addContact({ name, address: customer.address }), "Contact saved.",
+      name ? "The contact could not be saved. Try again." : "Enter a name before saving this address to Contacts.");
+  }
+
+  async function forget() {
+    await forgetAction.run(() => forgetCustomer(customer.address),
+      "Local customer record forgotten. Ledger payments are unchanged.", "The customer could not be forgotten. Try again.",
+      () => {
+        setConfirmingForget(false);
+        onClose();
+      });
+  }
+
+  /*
+    The row already said who this is, when they were last in and what they have
+    spent, so the card does not say it again: the header carries the name, the
+    figures carry the money, and the punch card — the one thing that exists
+    nowhere else — gets the only coloured surface on the screen.
+  */
+  return (
+    <>
+      <ModalHeader
+        title={customerTitle(customer)}
+        subtitle={`Customer since ${fmtDay(customer.firstSeenAt)}`}
+        onClose={onClose}
+      />
+
+      <ModalBody gap={5}>
+        {/* Who they are on the ledger */}
+        <div className="flex items-center gap-3 border-b border-white/[0.08] pb-4">
+          <Avatar
+            seed={customer.address}
+            size={40}
+            label={(customer.name ?? customer.address).slice(0, 1).toUpperCase()}
+          />
+          <div className="min-w-0 flex-1">
+            <HashValue value={customer.address} className="text-[12px] text-neutral-300" />
+            <p className="mt-1 text-[11.5px] leading-relaxed text-neutral-500">
+              Public ledger data. Everything else here is local and optional.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            className="input min-w-0 flex-1 text-base sm:text-[14px]"
+            value={contactName}
+            onChange={(event) => setContactName(event.target.value.slice(0, 24))}
+            placeholder="Name this address"
+            aria-label="Contact name"
+            enterKeyHint="done"
+            autoCapitalize="words"
+          />
+          <Button
+            variant="secondary"
+            className="shrink-0"
+            focusableWhenDisabled
+            loading={contactAction.pending}
+            loadingLabel="Saving contact"
+            onClick={() => void saveToContacts()}
+          >
+            <IconUserPlus size={13} />
+            {customer.name ? "Update" : "Save Contact"}
+          </Button>
+        </div>
+        <ErrorText message={contactAction.error} />
+
+        {/* The money first; the rest of the record is one quiet line under it. */}
+        <div>
+          <div className="grid grid-cols-3">
+            <Figure label="Lifetime" value={fmtMinor(customer.lifetimeMinor, settings.currency)} tone="money" />
+            <Figure label="Average" value={fmtMinor(customer.averageMinor, settings.currency)} divider />
+            <Figure label="Visits" value={String(customer.orderCount)} divider />
+          </div>
+          <p className="mt-2.5 px-1 text-[11.5px] text-neutral-500">
+            Pays in <span className="mono text-neutral-300">{customer.preferredAsset.code}</span> ·
+            last seen {relativeTime(customer.lastSeenAt, now)}
+          </p>
+        </div>
+
+        {/* The punch card: the distinctive thing here, so it gets the room */}
+        {loyalty === null ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-neutral-400">
+              No loyalty card. Open one and the till stamps it as this address pays.
+            </p>
+            <Button ref={startButtonRef} variant="secondary" focusableWhenDisabled loading={cardAction.pending} loadingLabel="Opening loyalty card" onClick={startCard}>
+              Start a Card
+            </Button>
+          </div>
+        ) : (
+          <section
+            aria-labelledby="loyalty-heading"
+            className="rounded-2xl border border-[#BF5AF2]/25 bg-[#BF5AF2]/[0.07] p-4"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3
+                id="loyalty-heading"
+                ref={cardHeading}
+                tabIndex={-1}
+                className="flex items-center gap-2 text-[13.5px] font-semibold text-white"
+              >
+                <span style={{ color: LOYALTY_HUE }}>
+                  <IconGift size={15} />
+                </span>
+                Loyalty card
+              </h3>
+              <LoyaltyBadge loyalty={loyalty} />
+            </div>
+
+            <div
+              className="mt-4 grid grid-cols-5 gap-2.5 sm:grid-cols-10"
+              role="img"
+              aria-label={`${loyalty.stamps} of ${loyalty.target} stamps collected`}
+            >
+              {Array.from({ length: loyalty.target }, (_, i) => {
+                const stamped = i < loyalty.stamps;
+                return (
+                  <span
+                    key={i}
+                    aria-hidden="true"
+                    className="flex aspect-square items-center justify-center rounded-full text-[var(--color-oncolor)]"
+                    style={
+                      stamped
+                        ? { background: LOYALTY_HUE }
+                        : {
+                            border: "1px dashed rgba(235,235,245,0.25)",
+                            color: "rgba(235,235,245,0.3)",
+                          }
+                    }
+                  >
+                    {stamped ? (
+                      <IconCheck size={14} />
+                    ) : (
+                      <span className="mono text-[11px]">{i + 1}</span>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+              <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-neutral-400">
+                {full
+                  ? "The card is full — the next drink is on the shop."
+                  : `${loyalty.target - loyalty.stamps} more ${
+                      loyalty.target - loyalty.stamps === 1 ? "visit" : "visits"
+                    } to the reward.`}
+                {loyalty.redeemedCount > 0 &&
+                  ` Redeemed ${loyalty.redeemedCount} ${
+                    loyalty.redeemedCount === 1 ? "time" : "times"
+                  } before.`}
+              </p>
+              <Button focusableWhenDisabled disabled={!full} loading={rewardAction.pending} loadingLabel="Redeeming reward" onClick={redeem}>
+                Redeem
+              </Button>
+            </div>
+            <ErrorText message={rewardAction.error} />
+            {loyalty.events.length > 0 && (
+              <p className="mono mt-3 border-t border-[#BF5AF2]/15 pt-3 text-[10.5px] text-neutral-500">
+                {loyalty.events.length} audited {loyalty.events.length === 1 ? "event" : "events"}
+                {loyalty.events.at(-1)?.actorName
+                  ? ` · last action by ${loyalty.events.at(-1)?.actorName}`
+                  : " · latest stamp earned automatically"}
+              </p>
+            )}
+          </section>
+        )}
+        <ErrorText message={cardAction.error} />
+
+        {/* History */}
+        <section aria-labelledby="history-heading" className="space-y-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 id="history-heading" className="text-[13.5px] font-semibold text-white">
+              On this device
+            </h3>
+            <span className="mono text-[11px] text-neutral-500">{history.length} records</span>
+          </div>
+
+          {history.length === 0 ? (
+            <p className="px-1 text-[12.5px] leading-relaxed text-neutral-400">
+              No ticket here yet. The figures above are this device&apos;s running summary; the
+              tickets belong to whichever terminal rang them up.
+            </p>
+          ) : (
+            <div className="list-group">
+              {history.map((entry, index) => (
+                <div
+                  key={entry.id}
+                  className={`flex items-center gap-3.5 px-4 py-3.5 ${
+                    index > 0 ? "ios-sep" : ""
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="row-icon"
+                    style={{
+                      background:
+                        entry.kind === "order"
+                          ? "rgba(10,132,255,0.16)"
+                          : "rgba(94,92,230,0.16)",
+                      color: entry.kind === "order" ? "#0A84FF" : "#5E5CE6",
+                    }}
+                  >
+                    {entry.kind === "order" ? <IconReceipt size={16} /> : <IconTag size={16} />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[15.5px] font-normal leading-tight text-white">
+                      {entry.label}
+                    </span>
+                    <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
+                      {entry.sub} · {relativeTime(entry.at, now)}
+                    </span>
+                  </span>
+                  <span className="mono shrink-0 text-[14.5px] font-medium text-white">
+                    {fmtMinor(entry.amountMinor, entry.currency)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Note */}
+        <div className="space-y-1.5">
+          <FieldLabelRow htmlFor="customer-note" label="Note" meta={`${note.trim().length}/140`} className="!pb-0" />
+          <textarea
+            id="customer-note"
+            className="input min-h-[76px] resize-y text-base sm:text-[14px]"
+            value={note}
+            onChange={(e) => setNote(e.target.value.slice(0, 140))}
+            placeholder="Oat flat white, no sugar."
+          />
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[11.5px] text-neutral-500">Kept on this device.</p>
+            <Button variant="secondary" focusableWhenDisabled disabled={!noteDirty} loading={noteAction.pending} loadingLabel="Saving note" onClick={saveNote}>
+              Save Note
+            </Button>
+          </div>
+          <ErrorText message={noteAction.error} />
+        </div>
+
+        {/* The honesty about Forget, folded up rather than shouted */}
+        <div className="border-t border-white/[0.08] pt-2">
+          <Disclosure summary="Forget erases only what this device holds.">
+            It erases the name, note, counters and card this device holds. It cannot erase the
+            payments — those are on a public ledger and were never ours to withdraw.
+          </Disclosure>
+        </div>
+
+        <Button variant="danger" className="w-full" onClick={() => setConfirmingForget(true)}>
+          Forget this customer
+        </Button>
+      </ModalBody>
+
+      {/* Composed rather than ConfirmModal so the confirming button keeps focus
+          across its pending and rejected states, as the feedback journey expects. */}
+      <Modal
+        open={confirmingForget}
+        onClose={() => setConfirmingForget(false)}
+        presentation="alert"
+        busy={forgetAction.pending}
+        busyReason="Wait for the record to be forgotten."
+      >
+        <AlertContent
+          title={`Forget ${customerTitle(customer)}?`}
+          message="The name, note, counters and card go. The payments stay on the ledger — they were never ours to withdraw."
+          actions={
+            <ModalFooter
+              secondary={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={forgetAction.pending}
+                  onClick={() => setConfirmingForget(false)}
+                >
+                  Keep record
+                </Button>
+              }
+              primary={
+                <Button
+                  type="button"
+                  variant="danger"
+                  focusableWhenDisabled
+                  loading={forgetAction.pending}
+                  loadingLabel="Forgetting customer"
+                  onClick={() => void forget()}
+                >
+                  Forget
+                </Button>
+              }
+            />
+          }
+        >
+          <ErrorText message={forgetAction.error} />
+        </AlertContent>
+      </Modal>
+    </>
+  );
+}
+
+/** A figure on its own, separated by a hairline rather than boxed in a panel. */
+function Figure({
+  label,
+  value,
+  tone = "ink",
+  divider = false,
+}: {
+  label: string;
+  value: string;
+  tone?: "ink" | "money";
+  divider?: boolean;
+}) {
+  return (
+    <div className={`min-w-0 px-3 py-0.5 ${divider ? "border-l border-white/[0.08]" : ""}`}>
+      <SectionHeader className="truncate">{label}</SectionHeader>
+      <p
+        className={`mono mt-0.5 truncate text-[16px] font-semibold ${
+          tone === "money" ? "text-[#30D158]" : "text-white"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}

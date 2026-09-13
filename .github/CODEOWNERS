@@ -1,0 +1,11 @@
+# Default review owner for the current repository. Update this when ownership moves to an organisation team.
+* @florincm
+
+# Security- and release-critical surfaces require the same explicit review.
+/.github/ @florincm
+/scripts/ @florincm
+/src/lib/crypto.ts @florincm
+/src/lib/vault.ts @florincm
+/src/lib/submission.ts @florincm
+/src/lib/hardware.ts @florincm
+/public/.well-known/ @florincm

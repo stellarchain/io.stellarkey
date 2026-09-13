@@ -1,0 +1,12 @@
+{
+  "name": "private-balance-spikes-browser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --no-warnings --test --test-force-exit test/*.test.mjs"
+  },
+  "dependencies": {
+    "@hpke/core": "1.9.0"
+  }
+}

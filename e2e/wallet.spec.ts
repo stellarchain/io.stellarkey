@@ -1,0 +1,365 @@
+import { expect, test } from "@playwright/test";
+import {
+  importTestWallet,
+  installNetworkFixtures,
+  installQuietEventSource,
+  observePageFailures,
+  testPassword,
+  testPayer,
+} from "./fixtures";
+
+test.beforeEach(async ({ context }) => {
+  await installQuietEventSource(context);
+  await installNetworkFixtures(context);
+});
+
+test("onboarding exposes recovery and hardware paths without runtime errors", async ({ page }) => {
+  const failures = observePageFailures(page);
+  await page.goto("/app", { waitUntil: "domcontentloaded" });
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: "domcontentloaded" });
+
+  await expect(page.getByRole("heading", { name: "Own your keys. Own your money." })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect Trezor" })).toBeVisible();
+  await expect(page.getByText("Restore From Backup", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Connect Trezor" }).click();
+  await expect(page.getByText("Connect your Trezor", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect with Trezor Connect" })).toBeVisible();
+
+  expect(failures.pageErrors).toEqual([]);
+  expect(failures.consoleErrors).toEqual([]);
+});
+
+test("corrupt vault data enters explicit recovery without overwriting the payload", async ({ page }) => {
+  const corrupt = "{corrupt-wallet-record";
+  await page.goto("/app", { waitUntil: "domcontentloaded" });
+  await page.evaluate((raw) => localStorage.setItem("stellarkey.vault.v1", raw), corrupt);
+  await page.reload({ waitUntil: "domcontentloaded" });
+
+  await expect(page.getByRole("heading", { name: "Wallet data needs recovery" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Export recovery data" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("stellarkey.vault.v1")))
+    .toBe(corrupt);
+});
+
+test("network settings verify, persist, and reset direct endpoints", async ({ page }) => {
+  await importTestWallet(page);
+
+  async function authorizeEndpointChange() {
+    const approval = page.getByRole("dialog", { name: "Confirm security change" });
+    await expect(approval).toBeVisible();
+    await approval.getByLabel("Wallet Password").fill(testPassword);
+    await approval.getByRole("button", { name: "Authorize" }).click();
+    await expect(approval).toBeHidden();
+  }
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button").filter({
+    has: page.getByText("Network", { exact: true }),
+  }).click();
+  await expect(page.getByRole("heading", { name: "Network" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Test & Save Horizon" }).click();
+  await authorizeEndpointChange();
+  await expect.poll(() => page.evaluate(() =>
+    localStorage.getItem("wallet.endpoint.horizon.testnet.v1"),
+  )).toBe("https://horizon-testnet.stellar.org");
+
+  await page.getByRole("button", { name: "Test & Save RPC" }).click();
+  await authorizeEndpointChange();
+  await expect.poll(() => page.evaluate(() =>
+    localStorage.getItem("wallet.endpoint.rpc.testnet.v1"),
+  )).toBe("https://soroban-testnet.stellar.org");
+
+  await page.getByRole("button", { name: "Reset to Defaults" }).click();
+  await authorizeEndpointChange();
+  await expect.poll(() => page.evaluate(() => ({
+    horizon: localStorage.getItem("wallet.endpoint.horizon.testnet.v1"),
+    rpc: localStorage.getItem("wallet.endpoint.rpc.testnet.v1"),
+  }))).toEqual({ horizon: null, rpc: null });
+});
+
+test("signing security requires the password to weaken policy and can rotate the vault password", async ({ page }) => {
+  await importTestWallet(page, { requirePasswordForSigning: true });
+  await expect.poll(() => page.evaluate(() => {
+    const raw = localStorage.getItem("stellarkey.vault.v1");
+    return raw ? JSON.parse(raw).requirePasswordForSigning : null;
+  })).toBe(true);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const policy = page.getByRole("switch", {
+    name: "Require password before signing transactions",
+  });
+  await expect(policy).toBeChecked();
+  await policy.click();
+
+  const disable = page.getByRole("dialog", { name: "Turn Off Password Confirmation?" });
+  await disable.getByLabel("Current Wallet Password").fill("wrong password");
+  await disable.getByRole("button", { name: "Turn Off" }).click();
+  await expect(disable.getByText("Incorrect password.", { exact: true })).toBeVisible();
+  await expect(policy).toBeChecked();
+
+  await disable.getByLabel("Current Wallet Password").fill(testPassword);
+  await disable.getByRole("button", { name: "Turn Off" }).click();
+  await expect(disable).toBeHidden();
+  await expect(policy).not.toBeChecked();
+
+  await page.getByRole("button", { name: /Change Wallet Password/ }).click();
+  const change = page.getByRole("dialog", { name: "Change Wallet Password" });
+  const replacement = "Violet-Glacier-Orbit-2026!";
+  await change.getByLabel("Current Password").fill(testPassword);
+  await change.getByLabel("New Password", { exact: true }).fill(replacement);
+  await change.getByLabel("Confirm New Password").fill(replacement);
+  await change.getByRole("button", { name: "Change Password" }).click();
+  await expect(change).toBeHidden();
+
+  await page.getByRole("button", { name: "Lock Wallet" }).click();
+  await page.getByPlaceholder("Enter password").fill(testPassword);
+  await page.getByRole("button", { name: "Unlock Vault" }).click();
+  await expect(page.getByText("Incorrect password.", { exact: true })).toBeVisible();
+  await page.getByPlaceholder("Enter password").fill(replacement);
+  await page.getByRole("button", { name: "Unlock Vault" }).click();
+  await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const restoredPolicy = page.getByRole("switch", {
+    name: "Require password before signing transactions",
+  });
+  await restoredPolicy.click();
+  await expect(restoredPolicy).toBeChecked();
+  await page.getByRole("button", { name: "Home", exact: true }).click();
+
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const send = page.getByRole("dialog", { name: "Send Payment" });
+  await send.getByPlaceholder("0.00").fill("1");
+  await send.getByRole("textbox", { name: "Recipient Address or Federation" }).fill(testPayer);
+  await send.getByRole("button", { name: "Review Transfer" }).click();
+  await send.getByRole("button", { name: "Confirm Send" }).click();
+
+  const approval = page.getByRole("dialog", { name: "Confirm transaction" });
+  await expect(approval.getByText("Send payment", { exact: true })).toBeVisible();
+  await approval.getByLabel("Wallet Password").fill("wrong password");
+  await approval.getByRole("button", { name: "Authorize" }).click();
+  await expect(approval.getByText("Incorrect password.", { exact: true })).toBeVisible();
+  await approval.getByLabel("Wallet Password").fill(replacement);
+  await approval.getByRole("button", { name: "Authorize" }).click();
+  await expect(approval).toBeHidden();
+  // The one Send dialog reports a stage-aware title once the payment lands.
+  const sent = page.getByRole("dialog", { name: "Payment Sent", exact: true });
+  await expect(sent.getByText("Payment Confirmed", { exact: true }).first()).toBeVisible();
+});
+
+test("unlock, send review, swap review, and watch-only safety stay operable", async ({ page }) => {
+  const failures = observePageFailures(page);
+  await importTestWallet(page);
+
+  await page.evaluate(() => {
+    localStorage.setItem("wallet.passkey-prf.v1", JSON.stringify({
+      version: 1,
+      credentialId: "AQ",
+      prfSalt: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      wrappedMasterKey: { iv: "local-test-iv", ciphertext: "local-test-ciphertext" },
+      createdAt: new Date().toISOString(),
+    }));
+  });
+
+  await page.getByRole("button", { name: "Lock Wallet" }).click();
+  await expect(page.getByRole("button", { name: "Unlock with Face ID / Touch ID" })).toBeVisible();
+  await expect(page.getByPlaceholder("Enter password")).toBeVisible();
+  await page.getByPlaceholder("Enter password").fill(testPassword);
+  await page.getByRole("button", { name: "Unlock Vault" }).click();
+  await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const send = page.getByRole("dialog", { name: "Send Payment" });
+  await send.getByPlaceholder("0.00").fill("1");
+  await send.getByRole("textbox", { name: "Recipient Address or Federation" }).fill(testPayer);
+  await send.getByRole("button", { name: "Review Transfer" }).click();
+  await expect(send.getByRole("button", { name: "Confirm Send", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.getByRole("dialog", { name: "Send Payment" }).getByRole("button", { name: "Close" }).click();
+  // A typed recipient and amount are unsaved input: closing asks first.
+  const discard = page.getByRole("dialog", { name: "Discard changes?", exact: true });
+  await discard.getByRole("button", { name: "Discard", exact: true }).click();
+  await expect(send).toBeHidden();
+
+  await page.getByRole("button", { name: "DEX Swap", exact: true }).click();
+  const payAmount = page.getByLabel("You pay amount");
+  const receiveAmount = page.getByLabel("You receive amount");
+  await payAmount.fill("1");
+  await expect(receiveAmount).toHaveValue("0.25");
+  await receiveAmount.fill("2");
+  await expect(payAmount).toHaveValue("8");
+  await expect(page.getByRole("button", { name: "Review Swap" })).toBeEnabled();
+  await page.getByRole("button", { name: "Review Swap" }).click();
+  await expect(page.getByText("Review Swap Details & Routing", { exact: true })).toBeVisible();
+  await expect(page.getByText("Maximum paid", { exact: true }).last()).toBeVisible();
+  await receiveAmount.fill("3");
+  await expect(page.getByRole("button", { name: "Review Swap" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Confirm Swap" })).toBeHidden();
+  await receiveAmount.fill("2");
+  await expect(payAmount).toHaveValue("8");
+  await page.getByRole("button", { name: "Review Swap" }).click();
+  await page.getByRole("button", { name: "Confirm Swap" }).click();
+  await expect(page.getByRole("heading", { name: "Swap complete" })).toBeVisible();
+  await expect(page.getByText("Transaction hash", { exact: true })).toBeVisible();
+  await expect(page.getByText("Receive asset issuer", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Done", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View Activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Swap Again", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Swap Again", exact: true }).click();
+  await expect(page.getByLabel("You pay amount")).toHaveValue("");
+  await expect(page.getByLabel("You receive amount")).toHaveValue("");
+
+  await page.getByRole("button", { name: "+ Add", exact: true }).click();
+  const add = page.getByRole("dialog", { name: "Add Account" });
+  await add.getByRole("button", { name: "Watch", exact: true }).click();
+  await add.getByPlaceholder("G...").fill(testPayer);
+  await add.getByRole("button", { name: "Track Address" }).click();
+  await expect(add).toBeHidden();
+  await page.getByRole("button", { name: "Home", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+
+  const width = await page.evaluate(() => ({
+    client: document.documentElement.clientWidth,
+    scroll: document.documentElement.scrollWidth,
+  }));
+  expect(width.scroll).toBeLessThanOrEqual(width.client);
+  expect(failures.pageErrors).toEqual([]);
+  expect(failures.consoleErrors).toEqual([]);
+});
+
+test("market range changes retain chart geometry and never relabel stale points", async ({ page }) => {
+  const requestCount = new Map<string, number>();
+  let releaseMonth: (() => void) | null = null;
+  const monthPending = new Promise<void>((resolve) => {
+    releaseMonth = resolve;
+  });
+  await page.route("https://api.coingecko.com/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (!url.pathname.endsWith("/market_chart")) {
+      await route.fallback();
+      return;
+    }
+    const days = url.searchParams.get("days");
+    requestCount.set(days ?? "missing", (requestCount.get(days ?? "missing") ?? 0) + 1);
+    if (days === "30") await monthPending;
+    const start = ({ "1": 0.21, "7": 0.24, "30": 0.31, "365": 0.41 } as const)[
+      days as "1" | "7" | "30" | "365"
+    ] ?? 0.24;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        prices: [
+          [1_700_000_000_000, start],
+          [1_700_086_400_000, start + 0.02],
+        ],
+      }),
+    });
+  });
+  await importTestWallet(page);
+
+  const sevenDaySummary = page.getByLabel("7D market price summary");
+  await expect(sevenDaySummary).toBeVisible();
+  await expect(page.getByText(/^Rate updated ·/)).toHaveCount(0);
+  const chart = page.locator("section").filter({ has: page.getByText("XLM Market", { exact: true }) });
+  await expect(chart.getByRole("button", { name: /refresh|retry/i })).toHaveCount(0);
+  const startMetric = sevenDaySummary.getByText("Start", { exact: true });
+  const before = await startMetric.boundingBox();
+  expect(before).not.toBeNull();
+
+  await page.getByRole("button", { name: "1M", exact: true }).click();
+  await expect(page.getByRole("button", { name: "1M", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByText("Updating", { exact: true })).toBeVisible();
+  await expect(sevenDaySummary).toBeVisible();
+  await expect(page.getByLabel("1M market price summary")).toBeHidden();
+  const during = await startMetric.boundingBox();
+  expect(during?.y).toBe(before?.y);
+
+  releaseMonth?.();
+  await expect(page.getByLabel("1M market price summary")).toBeVisible();
+  await expect(page.getByText("Stellar Lumens · 1-month range", { exact: true })).toBeVisible();
+
+  for (const [range, label] of [
+    ["1D", "Stellar Lumens · 24-hour range"],
+    ["1Y", "Stellar Lumens · 1-year range"],
+    ["7D", "Stellar Lumens · 7-day range"],
+  ] as const) {
+    await page.getByRole("button", { name: range, exact: true }).click();
+    await expect(page.getByLabel(`${range} market price summary`)).toBeVisible();
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
+  }
+  expect(Object.fromEntries(requestCount)).toEqual({ "1": 1, "7": 1, "30": 1, "365": 1 });
+});
+
+test("network fees include the selected local-currency equivalent", async ({ page }) => {
+  await importTestWallet(page);
+  const currency = page.getByTitle(/Click to cycle currency/);
+  await currency.click();
+  await currency.click();
+  await expect(currency).toContainText("GBP");
+
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const send = page.getByRole("dialog", { name: "Send Payment" });
+  await send.getByPlaceholder("0.00").fill("1");
+  await send.getByRole("textbox", { name: "Recipient Address or Federation" }).fill(testPayer);
+  await send.getByRole("button", { name: "Review Transfer" }).click();
+
+  const equivalents = send.locator("[data-xlm-fee-fiat]");
+  await expect(equivalents.first()).toHaveText(/^≈ £0\.00000195 Rate updated · /);
+  await expect(equivalents.first()).toHaveAttribute("title", /^Rate updated · /);
+  await expect(equivalents).toHaveCount(2);
+});
+
+test("expired chart ranges retain labelled data through failure, explicit retry, and late completion", async ({ page }) => {
+  const startedAt = 1_800_000_000_000;
+  await page.clock.setFixedTime(startedAt);
+  let sevenRequests = 0;
+  let failSeven = false;
+  let holdMonth = false;
+  let releaseMonth: (() => void) | undefined;
+  const monthPending = new Promise<void>((resolve) => { releaseMonth = resolve; });
+  await page.route("https://api.coingecko.com/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (!url.pathname.endsWith("/market_chart")) return route.fallback();
+    const days = url.searchParams.get("days");
+    if (days === "7") sevenRequests++;
+    if (days === "30" && holdMonth) await monthPending;
+    await route.fulfill({
+      status: days === "7" && failSeven ? 503 : 200,
+      contentType: "application/json",
+      body: JSON.stringify({ prices: [[startedAt - 60_000, 0.24], [startedAt, 0.25]] }),
+    });
+  });
+  await importTestWallet(page);
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+  await page.getByRole("button", { name: "1D", exact: true }).click();
+  await expect(page.getByLabel("1D market price summary")).toBeVisible();
+  const fetched = sevenRequests;
+  await page.clock.setFixedTime(startedAt + 3600_000);
+  failSeven = true;
+  await page.getByRole("button", { name: "7D", exact: true }).click();
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+  await expect(page.getByText("Chart refresh unavailable · Showing previous data", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry chart" })).toHaveCount(0);
+  expect(sevenRequests).toBeGreaterThan(fetched);
+  failSeven = false;
+  await page.getByRole("button", { name: "7D", exact: true }).click();
+  await expect(page.getByText("Chart refresh unavailable · Showing previous data", { exact: true })).toBeHidden();
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+
+  holdMonth = true;
+  await page.getByRole("button", { name: "1M", exact: true }).click();
+  await expect(page.getByText("Updating", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+  await page.getByRole("button", { name: "1Y", exact: true }).click();
+  await expect(page.getByLabel("1Y market price summary")).toBeVisible();
+  releaseMonth?.();
+  await expect(page.getByLabel("1M market price summary")).toBeHidden();
+  await expect(page.getByRole("button", { name: "1Y", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Updating", { exact: true })).toBeHidden();
+});

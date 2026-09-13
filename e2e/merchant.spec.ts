@@ -1,0 +1,823 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { MuxedAccount, Networks, TransactionBuilder } from "@stellar/stellar-sdk";
+import {
+  chromium,
+  test,
+  type Browser,
+  type BrowserContext,
+  type Locator,
+  type Page,
+  type Route,
+} from "@playwright/test";
+
+const port = Number(process.env.E2E_PORT ?? 3187);
+const origin = `http://127.0.0.1:${port}`;
+const account = "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57";
+const secret = "SADQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQP54X";
+const payer = "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL";
+const usdcIssuer = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
+const password = "Correct-Horse-2026!";
+
+type HorizonPayment = {
+  id: string;
+  type: "payment";
+  transaction_hash: string;
+  transaction_successful: true;
+  created_at: string;
+  paging_token: string;
+  to: string;
+  to_muxed?: string;
+  to_muxed_id?: string;
+  from: string;
+  asset_type: "native";
+  amount: string;
+  transaction: { memo?: string; memo_type?: string; successful: true };
+};
+
+function accountBody(publicKey: string) {
+  return {
+    id: publicKey,
+    account_id: publicKey,
+    sequence: "1000000000",
+    subentry_count: 1,
+    num_sponsoring: 0,
+    num_sponsored: 0,
+    thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+    signers: [{ key: publicKey, weight: 1, type: "ed25519_public_key" }],
+    balances: [
+      {
+        asset_type: "native",
+        balance: "1000.0000000",
+        selling_liabilities: "0.0000000",
+      },
+      {
+        asset_type: "credit_alphanum4",
+        asset_code: "USDC",
+        asset_issuer: usdcIssuer,
+        balance: "1000.0000000",
+        selling_liabilities: "0.0000000",
+        limit: "1000000.0000000",
+      },
+    ],
+  };
+}
+
+function json(route: Route, body: unknown, status = 200) {
+  return route.fulfill({
+    status,
+    contentType: "application/json",
+    body: JSON.stringify(body),
+  });
+}
+
+async function installNetworkFixtures(
+  context: BrowserContext,
+  incoming: HorizonPayment[],
+  acceptedTransactions: Set<string>,
+) {
+  await context.route("https://api.coingecko.com/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/exchange_rates")) {
+      await json(route, {
+        rates: {
+          usd: { value: 1 },
+          eur: { value: 0.92 },
+          gbp: { value: 0.78 },
+          jpy: { value: 150 },
+          cad: { value: 1.35 },
+          aud: { value: 1.5 },
+          chf: { value: 0.88 },
+        },
+      });
+      return;
+    }
+    await json(route, { stellar: { usd: 0.25 }, "usd-coin": { usd: 1 } });
+  });
+
+  await context.route("https://horizon-testnet.stellar.org/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const pathname = url.pathname;
+
+    if (request.method() === "POST" && pathname === "/transactions") {
+      const form = new URLSearchParams(request.postData() ?? "");
+      const xdr = form.get("tx");
+      assert.ok(xdr, "Horizon submission must contain an envelope");
+      const transaction = TransactionBuilder.fromXdr(xdr, Networks.TESTNET);
+      const hash = Buffer.from(transaction.hash()).toString("hex");
+      acceptedTransactions.add(hash);
+      await json(route, { hash, successful: true, ledger: 100_010 });
+      return;
+    }
+
+    const transactionMatch = pathname.match(/^\/transactions\/([0-9a-f]{64})$/i);
+    if (transactionMatch) {
+      const hash = transactionMatch[1].toLowerCase();
+      await json(
+        route,
+        acceptedTransactions.has(hash) ? { hash, successful: true, ledger: 100_010 } : {},
+        acceptedTransactions.has(hash) ? 200 : 404,
+      );
+      return;
+    }
+
+    const paymentsMatch = pathname.match(/^\/accounts\/([^/]+)\/payments$/);
+    if (paymentsMatch) {
+      const cursor = url.searchParams.get("cursor");
+      const records = incoming.filter(
+        (payment) => cursor === null || BigInt(payment.paging_token) > BigInt(cursor),
+      );
+      await json(route, { _embedded: { records } });
+      return;
+    }
+
+    const operationsMatch = pathname.match(/^\/accounts\/([^/]+)\/operations$/);
+    if (operationsMatch) {
+      await json(route, { _embedded: { records: [] } });
+      return;
+    }
+
+    const accountMatch = pathname.match(/^\/accounts\/([^/]+)$/);
+    if (accountMatch) {
+      await json(route, accountBody(accountMatch[1]));
+      return;
+    }
+
+    if (pathname === "/ledgers") {
+      await json(route, {
+        _embedded: { records: [{ base_reserve_in_stroops: "5000000", sequence: 100_000 }] },
+      });
+      return;
+    }
+
+    if (pathname === "/fee_stats") {
+      await json(route, {
+        fee_charged: { mode: "100", p50: "100", p90: "100", p95: "100" },
+        max_fee: { mode: "100" },
+      });
+      return;
+    }
+
+    await json(route, { _embedded: { records: [] } });
+  });
+}
+
+async function assertMobileSurface(page: Page, label: string) {
+  const measurements = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    viewport: document.querySelector('meta[name="viewport"]')?.getAttribute("content") ?? "",
+  }));
+  assert.ok(
+    measurements.scrollWidth <= measurements.clientWidth,
+    `${label} overflows horizontally: ${measurements.scrollWidth} > ${measurements.clientWidth}`,
+  );
+  assert.doesNotMatch(measurements.viewport, /maximum-scale=1/);
+  assert.doesNotMatch(measurements.viewport, /user-scalable=no/);
+}
+
+async function enterKeypadAmount(page: Page, keys: string[]) {
+  for (const key of keys) {
+    await page.getByRole("button", { name: key, exact: true }).first().click();
+  }
+  await page.getByRole("button", { name: "Add to Ticket" }).click();
+}
+
+async function openOtherTender(page: Page) {
+  await page.getByRole("button", { name: "More ticket actions" }).click();
+  await page.getByRole("menuitem", { name: /Other Tender/ }).click();
+  return page.getByRole("dialog", { name: /Other Tender/ });
+}
+
+async function readVisibleChargeRequest(chargeDialog: Locator) {
+  const subtitle = chargeDialog.getByText(/^Order \d+ · .+$/).first();
+  await subtitle.waitFor();
+  const subtitleText = (await subtitle.textContent()) ?? "";
+  const reference = subtitleText.split(" · ").at(-1)?.trim() ?? "";
+  const qr = chargeDialog.locator('img[alt^="Payment request for "]');
+  await qr.waitFor();
+  const alt = (await qr.getAttribute("alt")) ?? "";
+  const amount = /^Payment request for ([0-9.]+) XLM$/.exec(alt)?.[1] ?? "";
+  const destinationTitle = await chargeDialog
+    .getByText("To", { exact: true })
+    .locator("..")
+    .getByRole("button")
+    .getAttribute("title");
+  const destination = destinationTitle?.split("\n", 1)[0]?.trim() ?? "";
+  const routingId = destination ? MuxedAccount.fromAddress(destination, "0").id() : "";
+  assert.ok(reference, "charge dialog must expose its immutable memo reference");
+  assert.ok(amount, "charge dialog must expose its native amount in the QR description");
+  assert.ok(routingId, "charge dialog must expose a muxed payment route");
+  return { charge: { reference, routingId, destination }, quote: { amount } };
+}
+
+async function raiseCryptoCharge(page: Page, keys: string[]) {
+  await enterKeypadAmount(page, keys);
+  await page.getByRole("button", { name: "Charge", exact: true }).click();
+  const tip = page.getByRole("dialog", { name: /Add a tip/ });
+  await tip.getByRole("button", { name: "No tip" }).click();
+  const chargeDialog = page.getByRole("dialog", { name: /^Charge/ });
+  await chargeDialog.getByText("Watching for payment", { exact: true }).waitFor();
+  const { charge, quote } = await readVisibleChargeRequest(chargeDialog);
+  return { chargeDialog, charge, quote };
+}
+
+function incomingPayment(
+  id: string,
+  route: { routingId: string; destination: string },
+  amount: string,
+  ledger: number,
+): HorizonPayment {
+  return {
+    id,
+    type: "payment",
+    transaction_hash: createHash("sha256").update(id).digest("hex"),
+    transaction_successful: true,
+    created_at: new Date().toISOString(),
+    paging_token: String((BigInt(ledger) << BigInt(32)) + BigInt(1)),
+    to: account,
+    to_muxed: route.destination,
+    to_muxed_id: route.routingId,
+    from: payer,
+    asset_type: "native",
+    amount,
+    transaction: { successful: true },
+  };
+}
+
+async function openStaffSettings(page: Page) {
+  await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+  await page.getByText("Staff & Terminals", { exact: true }).click();
+  await page.getByRole("heading", { name: "Staff & This Device" }).waitFor();
+}
+
+async function openMerchantMode(page: Page) {
+  const tabs = page.getByRole("navigation", { name: "Tabs" });
+  const merchantTab = tabs.getByRole("button", { name: "Merchant" });
+  if (await merchantTab.isVisible().catch(() => false)) {
+    await merchantTab.click();
+    return;
+  }
+
+  const settingsTab = tabs.getByRole("button", { name: "Settings" });
+  const openTill = page.getByRole("button", { name: /^Open Till/ });
+  const merchantDestination = merchantTab.or(openTill).first();
+
+  // After restoring a backup, the server-rendered tab shell can become visible
+  // just before React attaches its handlers. Retry the navigation itself so a
+  // click received by that non-interactive shell cannot make this helper flaky.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await settingsTab.click();
+    try {
+      await merchantDestination.waitFor({
+        state: "visible",
+        timeout: attempt === 2 ? 15_000 : 3_000,
+      });
+    } catch (cause) {
+      if (attempt === 2) throw cause;
+      continue;
+    }
+
+    if (await merchantTab.isVisible().catch(() => false)) {
+      await merchantTab.click();
+      return;
+    }
+    await openTill.click();
+    return;
+  }
+}
+
+async function returnToTill(page: Page) {
+  await openMerchantMode(page);
+  const till = page.getByRole("button", { name: "Till", exact: true });
+  if (await till.count()) await till.click();
+  await page.getByText(/Shift 1 · Front counter/).waitFor();
+}
+
+async function authorizeMerchantExitToHome(page: Page) {
+  await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Home" }).click();
+  const authorization = page.getByRole("dialog", { name: "Confirm security change" });
+  await authorization.getByLabel("Wallet Password").fill(password);
+  await authorization.getByRole("button", { name: "Authorize" }).click();
+  await authorization.waitFor({ state: "hidden" });
+}
+
+async function readIndexedMerchantArchive(page: Page): Promise<string | null> {
+  return page.evaluate(async () => new Promise<string | null>((resolve, reject) => {
+    const open = indexedDB.open("wallet.local.v1", 1);
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const request = open.result
+        .transaction("encrypted-records", "readonly")
+        .objectStore("encrypted-records")
+        .getAll();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const stored = request.result as Array<{ key: string; value: string }>;
+        const metaKey = "merchant.records.v1:meta";
+        const metaRaw = stored.find((record) => record.key === metaKey)?.value ?? null;
+        if (!metaRaw) {
+          resolve(stored.find((record) => record.key === "merchant.primary.v1")?.value ?? null);
+          return;
+        }
+        const meta = JSON.parse(metaRaw) as {
+          revision: number;
+          writerId: string | null;
+          updatedAt: number;
+        };
+        const records = stored
+          .filter((record) =>
+            record.key === metaKey || record.key.startsWith("merchant.records.v1:data:"))
+          .sort((left, right) => left.key.localeCompare(right.key));
+        resolve(JSON.stringify({
+          kind: "stellarkey-merchant-record-archive",
+          version: 1,
+          revision: meta.revision,
+          writerId: meta.writerId,
+          updatedAt: meta.updatedAt,
+          records: Object.fromEntries(records.map((record) => [record.key, record.value])),
+        }));
+      };
+    };
+  }));
+}
+
+test.describe.configure({ timeout: 120_000 });
+
+test(
+  "merchant journeys remain exact, persisted, operable, and mobile-safe",
+  async () => {
+    const incoming: HorizonPayment[] = [];
+    const acceptedTransactions = new Set<string>();
+    const consoleErrors: string[] = [];
+    const pageErrors: string[] = [];
+    let browser: Browser | null = null;
+    let diagnosticPage: Page | null = null;
+
+    try {
+      browser = await chromium.launch({ headless: true });
+      const context = await browser.newContext({
+        viewport: { width: 393, height: 852 },
+        deviceScaleFactor: 3,
+        isMobile: true,
+        hasTouch: true,
+        acceptDownloads: true,
+        permissions: ["clipboard-read", "clipboard-write"],
+      });
+      await context.addInitScript(() => {
+        class QuietEventSource extends EventTarget {
+          static readonly CONNECTING = 0;
+          static readonly OPEN = 1;
+          static readonly CLOSED = 2;
+          readonly url: string;
+          readonly withCredentials = false;
+          readyState = QuietEventSource.OPEN;
+          onopen: ((event: Event) => void) | null = null;
+          onmessage: ((event: MessageEvent) => void) | null = null;
+          onerror: ((event: Event) => void) | null = null;
+
+          constructor(url: string | URL) {
+            super();
+            this.url = String(url);
+          }
+
+          close() {
+            this.readyState = QuietEventSource.CLOSED;
+          }
+        }
+        Object.defineProperty(window, "EventSource", { configurable: true, value: QuietEventSource });
+        class TestWakeLockSentinel extends EventTarget {
+          released = false;
+
+          async release() {
+            if (this.released) return;
+            this.released = true;
+            this.dispatchEvent(new Event("release"));
+          }
+        }
+        Object.defineProperty(navigator, "wakeLock", {
+          configurable: true,
+          value: {
+            request: async (kind: string) => {
+              if (kind !== "screen") throw new Error("Unexpected wake-lock type");
+              return new TestWakeLockSentinel();
+            },
+          },
+        });
+      });
+      await installNetworkFixtures(context, incoming, acceptedTransactions);
+
+      const page = await context.newPage();
+      diagnosticPage = page;
+      page.setDefaultTimeout(10_000);
+      page.on("console", (message) => {
+        if (message.type() === "error") consoleErrors.push(message.text());
+      });
+      page.on("pageerror", (error) => pageErrors.push(error.message));
+
+      await page.goto(`${origin}/app`, { waitUntil: "domcontentloaded" });
+      await page.evaluate(() => localStorage.clear());
+      await page.reload({ waitUntil: "domcontentloaded" });
+
+      // First run: import a deterministic key and complete every merchant setup step.
+      await page.getByRole("button", { name: "Import Existing Wallet" }).click();
+      await page.getByPlaceholder("S... or apple banana cherry...").fill(secret);
+      await page.getByPlaceholder("Enter password").fill(password);
+      await page.getByPlaceholder("Repeat password").fill(password);
+      await page.getByRole("button", { name: "Unlock & Import" }).click();
+      await page.getByText("Your Assets", { exact: true }).waitFor();
+
+      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+      await page.getByRole("switch", { name: "Merchant Mode" }).click();
+      const setup = page.getByRole("dialog", { name: /Set Up Merchant Mode/ });
+      await setup.getByLabel("Shop Name").fill("North Star Coffee");
+      await setup.getByRole("button", { name: "Continue" }).click();
+      await setup.getByText("Trustline held", { exact: true }).waitFor();
+      await setup.getByRole("button", { name: "Continue" }).click();
+      await setup.getByText("Step 3 of 4", { exact: false }).waitFor();
+      await setup.getByRole("button", { name: "Continue" }).click();
+      await setup.getByRole("textbox", { name: "Staff PIN", exact: true }).fill("2468");
+      await setup.getByRole("textbox", { name: "Confirm staff PIN", exact: true }).fill("2468");
+      await setup.getByRole("button", { name: "Open the Till" }).click();
+      await setup.waitFor({ state: "hidden" });
+      await page.getByText("Till locked · no open shift", { exact: true }).waitFor();
+      await assertMobileSurface(page, "first merchant till");
+      const persistedRecord = {
+        value: await readIndexedMerchantArchive(page),
+        legacy: await page.evaluate(() => localStorage.getItem("wallet.merchant.v2")),
+      };
+      assert.equal(persistedRecord.legacy, null);
+      assert.match(persistedRecord.value ?? "", /stellarkey-merchant-record-archive/);
+      assert.doesNotMatch(persistedRecord.value ?? "", /North Star Coffee/);
+
+      // Merchant Settings is a summary hierarchy. Scoped edits open one mobile-safe sheet,
+      // and the destructive Merchant Mode action requires a separate confirmation.
+      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+      await page.getByRole("button", { name: /Tax Rates/ }).click();
+      const ratesSettings = page.getByRole("dialog", { name: /Tax Rates/ });
+      await ratesSettings.waitFor();
+      await assertMobileSurface(page, "tax rate settings sheet");
+      await ratesSettings.getByRole("button", { name: "Close" }).click();
+      await ratesSettings.waitFor({ state: "hidden" });
+
+      await page.getByRole("button", { name: /Payment Setup/ }).click();
+      const paymentSettings = page.getByRole("dialog", { name: /Payment Setup/ });
+      await paymentSettings.waitFor();
+      await paymentSettings.getByRole("button", { name: "Close" }).click();
+      await paymentSettings.waitFor({ state: "hidden" });
+
+      await page.getByRole("button", { name: "Turn Off Merchant Mode", exact: true }).click();
+      const turnOff = page.getByRole("dialog", { name: /Turn Off Merchant Mode/ });
+      await turnOff.waitFor();
+      await turnOff.getByRole("button", { name: "Cancel", exact: true }).click();
+      await turnOff.waitFor({ state: "hidden" });
+      await openMerchantMode(page);
+
+      await page.getByRole("button", { name: "Open Shift", exact: true }).first().click();
+      const opening = page.getByRole("dialog", { name: /Open Shift/ });
+      await opening.getByLabel("Opening float").fill("100");
+      await opening.getByRole("button", { name: "Open Shift", exact: true }).click();
+      await page.getByText(/Shift 1 · Front counter/).waitFor();
+      await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+
+      // Cash settlement is persisted with exact received and change values.
+      await enterKeypadAmount(page, ["1", "00"]);
+      const cashTender = await openOtherTender(page);
+      await cashTender.getByRole("button", { name: /Exact/ }).click();
+      await cashTender.getByRole("button", { name: "Take € 1.00 cash" }).click();
+      await page.getByText("Cash saved as exact money.", { exact: true }).waitFor();
+      await page.getByText("Unlock an authorized staff member to continue.", { exact: true }).waitFor();
+
+      // Reload locks the vault but does not lose the shift, till, or settled order.
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.getByPlaceholder("Enter password").fill(password);
+      await page.getByRole("button", { name: "Unlock Vault" }).click();
+      await openMerchantMode(page);
+      await openStaffSettings(page);
+      await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+      const reloadedOwnerPin = page.getByRole("dialog", { name: "Imported Account" });
+      await reloadedOwnerPin.getByLabel("PIN for Imported Account").fill("2468");
+      await reloadedOwnerPin.getByRole("button", { name: "Select", exact: true }).click();
+      await openMerchantMode(page);
+      await page.getByText(/Shift 1 · Front counter/).waitFor();
+      await page.getByRole("button", { name: "Orders", exact: true }).click();
+      await page.getByRole("button", { name: "Open the receipt for order #1001" }).waitFor();
+      await assertMobileSurface(page, "reloaded orders");
+
+      // Staff is a local till role. Add a server and switch with its real PIN.
+      await openStaffSettings(page);
+      await page.getByRole("button", { name: "Lock", exact: true }).click();
+      const addStaffButton = page.getByRole("button", { name: "Add Staff" });
+      assert.equal(
+        await addStaffButton.isDisabled(),
+        true,
+        "staff creation must stay unavailable until an owner PIN session is active",
+      );
+      await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+      const ownerPin = page.getByRole("dialog", { name: "Imported Account" });
+      await ownerPin.getByLabel("PIN for Imported Account").fill("2468");
+      await ownerPin.getByRole("button", { name: "Select", exact: true }).click();
+
+      // Shared devices default to locking after every sale; this long journey
+      // selects the equally supported inactivity policy so later tasks stay under
+      // the explicitly selected operator until the test leaves the page.
+      await page.getByRole("button", { name: /Operator Locking/ }).click();
+      const locking = page.getByRole("dialog", { name: "Operator Locking" });
+      await locking.getByRole("button", { name: "Inactivity", exact: true }).click();
+      await locking.getByRole("button", { name: "Done", exact: true }).click();
+      await addStaffButton.click();
+      const addStaff = page.getByRole("dialog", { name: /Add Staff/ });
+      await addStaff.getByLabel("Staff name").fill("Counter Server");
+      await addStaff.getByLabel("New staff PIN", { exact: true }).fill("1357");
+      await addStaff.getByLabel("Confirm new staff PIN").fill("1357");
+      await addStaff.getByRole("button", { name: "Add Staff", exact: true }).click();
+      await addStaff.waitFor({ state: "hidden" });
+      await page.getByRole("button", { name: "Edit Counter Server" }).click();
+      const editServer = page.getByRole("dialog", { name: "Counter Server" });
+      await editServer.getByRole("switch", { name: "See reports" }).click();
+      await editServer.getByRole("button", { name: "Save", exact: true }).click();
+      await editServer.waitFor({ state: "hidden" });
+      await page.getByRole("button", { name: "Add Operator" }).click();
+      const operatorPicker = page.getByRole("dialog", { name: "Add Operator" });
+      await operatorPicker.getByRole("button", { name: /Counter Server/ }).click();
+      const serverPin = page.getByRole("dialog", { name: "Counter Server" });
+      await serverPin.getByLabel("PIN for Counter Server").fill("1357");
+      await serverPin.getByRole("button", { name: "Join shift", exact: true }).click();
+      await page.getByText("Counter Server", { exact: true }).first().waitFor();
+      await returnToTill(page);
+
+      // A real Horizon payment settles a high-value crypto order and creates a customer record.
+      const crypto = await raiseCryptoCharge(page, ["3", "00", "0"]);
+      incoming.push(incomingPayment("pay1002", crypto.charge, crypto.quote.amount, 100_001));
+      const paidCrypto = page.getByRole("dialog").filter({ hasText: "Paid in full" });
+      await paidCrypto.getByText("Paid in full", { exact: true }).waitFor({ timeout: 12_000 });
+      await paidCrypto.getByRole("button", { name: "Close", exact: true }).click();
+
+      await page.getByRole("button", { name: "Customers", exact: true }).click();
+      await page.getByRole("button", { name: "Open the card for Unnamed customer" }).click();
+      const customer = page.getByRole("dialog", { name: "Unnamed customer" });
+      await customer.getByLabel("Contact name").fill("Ada Customer");
+      await customer.getByRole("button", { name: "Save Contact" }).click();
+      const namedCustomer = page.getByRole("dialog", { name: "Ada Customer" });
+      await namedCustomer.getByRole("button", { name: "Start a Card" }).click();
+      await namedCustomer.getByLabel("Note").fill("Prefers the quiet table.");
+      await namedCustomer.getByRole("button", { name: "Save Note" }).click();
+      await namedCustomer.getByText("Loyalty card", { exact: true }).waitFor();
+      await namedCustomer.getByRole("button", { name: "Close", exact: true }).click();
+
+      // The server's €20 ceiling turns the €30 refund into an approval request.
+      await page.getByRole("button", { name: "Orders", exact: true }).click();
+      await page.getByRole("button", { name: "Open the receipt for order #1002" }).click();
+      const order = page.getByRole("dialog", { name: /Order #1002/ });
+      await order.getByRole("button", { name: "Issue a Refund" }).click();
+      await order.getByRole("button", { name: "Refund € 30.00" }).click();
+      await page.getByText("Sent € 30.00 for approval", { exact: true }).waitFor();
+      await order.getByRole("button", { name: "Close", exact: true }).click();
+
+      // Switch back to the owner; approval still signs through the unlocked vault.
+      await openStaffSettings(page);
+      await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+      const approvalOwnerPin = page.getByRole("dialog", { name: "Imported Account" });
+      await approvalOwnerPin.getByLabel("PIN for Imported Account").fill("2468");
+      await approvalOwnerPin.getByRole("button", { name: "Select", exact: true }).click();
+      await page.getByRole("button", { name: "Approve" }).click();
+      const signingApproval = page.getByRole("dialog", { name: "Confirm transaction" });
+      await signingApproval.getByLabel("Wallet Password").fill(password);
+      await signingApproval.getByRole("button", { name: "Authorize" }).click();
+      await page.getByText("Approved & confirmed", { exact: true }).waitFor({ timeout: 12_000 });
+      await returnToTill(page);
+
+      // Split settlement retains both the cash leg and the exact crypto remainder.
+      await enterKeypadAmount(page, ["4", "00"]);
+      const split = await openOtherTender(page);
+      await split.getByRole("button", { name: "Split", exact: true }).click();
+      await split.getByLabel("First part amount").fill("2.00");
+      await split.getByRole("button", { name: "Record Split" }).click();
+      const splitCharge = page.getByRole("dialog", { name: /^Charge/ });
+      await splitCharge.getByText("Watching for payment", { exact: true }).waitFor();
+      const splitState = await readVisibleChargeRequest(splitCharge);
+      incoming.push(
+        incomingPayment("pay1003", splitState.charge, splitState.quote.amount, 100_002),
+      );
+      const paidSplit = page.getByRole("dialog").filter({ hasText: "Paid in full" });
+      await paidSplit.getByText("Paid in full", { exact: true }).waitFor({ timeout: 12_000 });
+      await paidSplit.getByRole("button", { name: "Close", exact: true }).click();
+
+      // Invoice: draft, issue, and external payment are all real persisted transitions.
+      await page.getByRole("button", { name: "Invoices", exact: true }).click();
+      await page.getByRole("button", { name: "New Invoice" }).first().click();
+      const composer = page.getByRole("dialog", { name: /New Invoice/ });
+      await composer.getByLabel("Customer").fill("Praça Hotel");
+      await composer.getByRole("button", { name: /Free-Text Line/ }).click();
+      await composer.getByLabel("Line description").fill("Wholesale beans");
+      await composer.getByLabel("Unit price").fill("42.00");
+      await composer.getByRole("button", { name: "Save Draft" }).click();
+      const invoiceRow = page.getByRole("button", { name: /INV-.*Praça Hotel/ });
+      await invoiceRow.click();
+      const invoice = page.getByRole("dialog", { name: /INV-/ });
+      await invoice.getByRole("button", { name: "Issue invoice" }).click();
+      await invoice.getByRole("button", { name: "Record Payment" }).click();
+      await invoice.getByLabel(/Amount · EUR/).fill("42.00");
+      await invoice.getByLabel("Evidence Note").fill("Bank transfer checked");
+      await invoice.getByRole("button", { name: "Record Payment", exact: true }).last().click();
+      await invoice.getByText("Paid", { exact: true }).first().waitFor();
+      await invoice.getByRole("button", { name: "Close", exact: true }).click();
+
+      // Counter code publishes an immutable, exact reusable request.
+      await page.getByRole("button", { name: "Counter codes", exact: true }).click();
+      await page.getByRole("button", { name: "New Code" }).first().click();
+      const code = page.getByRole("dialog", { name: /New Counter Code/ });
+      await code.getByLabel("Title").fill("Retail shelf");
+      await code.getByLabel("Shop Price").fill("5.00");
+      await code.getByRole("button", { name: "Publish Code" }).click();
+      await page.getByText("Retail shelf", { exact: true }).waitFor();
+
+      // Tax Records is a summary-first mobile hub. Export configuration lives in one focused
+      // sheet, the real browser download remains truthful, and closing restores the hub action.
+      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+      await page.getByText("Tax Records", { exact: true }).click();
+      await page.getByRole("heading", { name: "Tax Records" }).waitFor();
+      await assertMobileSurface(page, "Tax Records hub");
+      const exportReport = page.getByRole("button", { name: /Export Report/ });
+      await exportReport.click();
+      const exportSheet = page.getByRole("dialog", { name: /Export Report/ });
+      await exportSheet.waitFor();
+      await assertMobileSurface(page, "Tax Records export sheet");
+      await exportSheet.getByLabel("Export format").waitFor();
+      await exportSheet.getByLabel("From").waitFor();
+      await exportSheet.getByLabel("To").waitFor();
+      const downloadPromise = page.waitForEvent("download");
+      await exportSheet.getByRole("button", { name: "Export file", exact: true }).click();
+      const download = await downloadPromise;
+      assert.match(download.suggestedFilename(), /^merchant-.*\.csv$/);
+      await exportSheet.getByRole("button", { name: "Close" }).click();
+      await exportSheet.waitFor({ state: "hidden" });
+      const exportReportElement = await exportReport.elementHandle();
+      assert.ok(exportReportElement);
+      await page.waitForFunction(
+        (element) => document.activeElement === element,
+        exportReportElement,
+      );
+      assert.equal(
+        await exportReport.evaluate((element) => document.activeElement === element),
+        true,
+        "closing the export sheet must restore the Tax Records action",
+      );
+
+      // The install handoff appears only after the browser says installation is available.
+      await page.evaluate(() => {
+        const promptEvent = new Event("beforeinstallprompt");
+        Object.defineProperty(promptEvent, "prompt", {
+          value: async () => {
+            (window as Window & { __merchantInstallPrompted?: boolean }).__merchantInstallPrompted = true;
+          },
+        });
+        window.dispatchEvent(promptEvent);
+      });
+      await page.getByRole("button", { name: "Back to Merchant settings" }).click();
+      await authorizeMerchantExitToHome(page);
+      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+      await page.getByText("Install App", { exact: true }).click();
+      await page.getByRole("heading", { name: "Back up before installing" }).waitFor();
+      await page.getByRole("button", { name: "Close" }).click();
+      await page.evaluate(async () => {
+        const rawVault = localStorage.getItem("stellarkey.vault.v1");
+        if (!rawVault) throw new Error("Expected a persisted vault before marking backup health.");
+        const vault = JSON.parse(rawVault) as {
+          wrappedMasterKey: unknown;
+          wrappedMerchantKey: unknown;
+          mnemonic?: unknown;
+          accounts: Array<Record<string, unknown>>;
+          archivedAccounts?: Array<Record<string, unknown>>;
+        };
+        const credentialState = {
+          wrappedMasterKey: vault.wrappedMasterKey,
+          wrappedMerchantKey: vault.wrappedMerchantKey,
+          mnemonic: vault.mnemonic ?? null,
+          accounts: [...vault.accounts, ...(vault.archivedAccounts ?? [])]
+            .map((account) => ({
+              id: account.id,
+              publicKey: account.publicKey,
+              index: account.index ?? null,
+              path: account.path ?? null,
+              secret: account.secret ?? null,
+              watchOnly: account.watchOnly === true,
+              hardware: account.hardware ?? null,
+            }))
+            .sort((left, right) => {
+              const leftId = String(left.id);
+              const rightId = String(right.id);
+              return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+            }),
+        };
+        const digest = await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(JSON.stringify(credentialState)),
+        );
+        const vaultId = [...new Uint8Array(digest)]
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("");
+        localStorage.setItem(
+          "wallet.backup-health.v1",
+          JSON.stringify({
+            version: 3,
+            vaultId,
+            lastExportedAt: new Date().toISOString(),
+            lastExportedBackupSha256: "00".repeat(32),
+            lastVerifiedAt: null,
+            lastVerifiedBackupSha256: null,
+          }),
+        );
+        window.dispatchEvent(new Event("wallet:backup-health-changed"));
+      });
+      await page.getByText("Install App", { exact: true }).click();
+      assert.equal(
+        await page.evaluate(
+          () => (window as Window & { __merchantInstallPrompted?: boolean }).__merchantInstallPrompted,
+        ),
+        true,
+      );
+
+      // Offline and reconnect states reflect the browser, then clear without a reload.
+      await returnToTill(page);
+      await context.setOffline(true);
+      await page.getByText("Offline — confirmation is paused", { exact: true }).waitFor();
+      await context.setOffline(false);
+      await page.getByText("Back online — reconciliation resumed", { exact: true }).waitFor();
+
+      // A blind count closes the exact shift and emits the immutable Z report.
+      await page.getByRole("button", { name: "Shift 1", exact: true }).click();
+      const shift = page.getByRole("dialog", { name: /Shift 1/ });
+      await shift.getByRole("button", { name: "Count drawer & close" }).click();
+      const blindCount = page.getByRole("dialog", { name: "Blind cash count" });
+      await blindCount.getByLabel("What is in the drawer").fill("103.00");
+      await blindCount.getByRole("button", { name: "Commit Count & Issue Z" }).click();
+      await page.getByRole("dialog", { name: "Z-report 1" }).getByText(/Z-1 issued · shift closed/).waitFor();
+      await assertMobileSurface(page, "closed shift report");
+
+      // A full encrypted backup must preserve the exact IndexedDB merchant archive,
+      // survive a complete wallet-owned storage wipe, and restore the operational UI.
+      await page.getByRole("dialog", { name: "Z-report 1" }).getByRole("button", { name: "Done" }).click();
+      const archiveBeforeBackup = await readIndexedMerchantArchive(page);
+      assert.ok(archiveBeforeBackup, "merchant history must exist in IndexedDB before backup");
+
+      await authorizeMerchantExitToHome(page);
+      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+      await page.getByRole("button", { name: /Backup & Recovery/ }).click();
+      await page.getByRole("dialog", { name: /Backup & Recovery/ }).getByRole("button", { name: "Back Up Wallet" }).click();
+      await page.getByRole("button", { name: /Encrypted Backup File/ }).click();
+      await page.getByPlaceholder("Wallet Password").fill(password);
+      await page.getByRole("button", { name: "Verify & Continue" }).click();
+      const backupDownload = page.waitForEvent("download");
+      await page.getByRole("button", { name: "Download Encrypted Backup" }).click();
+      const backupPath = await (await backupDownload).path();
+      assert.ok(backupPath, "browser backup download must produce a readable file");
+      const backupJson = await readFile(backupPath);
+      await page.getByRole("button", { name: "Done" }).click();
+
+      await page.getByRole("button", { name: "Reset Wallet" }).click();
+      const reset = page.getByRole("dialog", { name: "Erase this wallet?" });
+      await reset.getByRole("button", { name: "Erase everything" }).click();
+      await page.getByRole("heading", { name: "Own your keys. Own your money." }).waitFor();
+      assert.equal(await readIndexedMerchantArchive(page), null);
+
+      await page.locator('input[type="file"]').setInputFiles({
+        name: "wallet-backup.json",
+        mimeType: "application/json",
+        buffer: backupJson,
+      });
+      await page.getByPlaceholder("Enter password").fill(password);
+      await page.getByRole("button", { name: "Decrypt & Restore" }).click();
+      await page.getByRole("button", { name: "Unlock Vault" }).waitFor();
+      await page.getByPlaceholder("Enter password").fill(password);
+      await page.getByRole("button", { name: "Unlock Vault" }).click();
+      await page.getByText("Your Assets", { exact: true }).waitFor();
+
+      const restoredArchive = await readIndexedMerchantArchive(page);
+      assert.equal(restoredArchive, archiveBeforeBackup);
+      await openMerchantMode(page);
+      await page.getByRole("button", { name: "Choose staff" }).click();
+      await page.getByRole("heading", { name: "Staff & This Device" }).waitFor();
+      await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+      const restoredArchiveOwnerPin = page.getByRole("dialog", { name: "Imported Account" });
+      await restoredArchiveOwnerPin.getByLabel("PIN for Imported Account").fill("2468");
+      await restoredArchiveOwnerPin.getByRole("button", { name: "Select", exact: true }).click();
+      await openMerchantMode(page);
+      await page.getByRole("button", { name: "Orders", exact: true }).click();
+      await page.getByRole("button", { name: "Open the receipt for order #1001" }).waitFor();
+
+      assert.deepEqual(pageErrors, [], `Unhandled page errors:\n${pageErrors.join("\n")}`);
+      assert.deepEqual(consoleErrors, [], `Console errors:\n${consoleErrors.join("\n")}`);
+    } catch (cause) {
+      const body = await diagnosticPage?.locator("body").innerText().catch(() => "");
+      const message = cause instanceof Error ? cause.stack ?? cause.message : String(cause);
+      throw new Error(
+        `${message}\n\nVisible page:\n${body?.slice(0, 2_500) ?? ""}\n\nConsole:\n${consoleErrors.join("\n")}`,
+      );
+    } finally {
+      await browser?.close();
+    }
+  },
+);

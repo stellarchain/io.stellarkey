@@ -1,0 +1,109 @@
+import { encodeDomain, encodeU16Be, encodeU32Be, encodeU64Be, encodeU128Be } from './encoding.js';
+import { equalBytes, sha256Bytes } from './hash.js';
+import { appendFrontier, refreshTreeRoot } from './tree.js';
+export const DOMAIN_ARCHIVE_RECORD = 'SKSB_ARCHIVE_RECORD_V1';
+export const DOMAIN_ARCHIVE_GENESIS = 'SKSB_ARCHIVE_GENESIS_V1';
+function encodeOptionalAddress(addr, out) {
+    if (!addr) {
+        out.push(0);
+        for (let index = 0; index < 33; index += 1)
+            out.push(0);
+        return;
+    }
+    if ((addr.kind !== 0 && addr.kind !== 1) || addr.payload.length !== 32) {
+        throw new Error('Invalid canonical address');
+    }
+    out.push(1, addr.kind, ...addr.payload);
+}
+function requireLength(name, bytes, length) {
+    if (bytes.length !== length)
+        throw new Error(`${name} must be ${length} bytes`);
+}
+function requireRecordWidths(record) {
+    if (![1, 2, 3, 4].includes(record.actionKind))
+        throw new Error('Invalid archive action kind');
+    const boundary = record.actionKind === 1 || record.actionKind === 3 || record.actionKind === 4;
+    if (boundary !== (record.asset !== undefined && record.assetIndex !== undefined)) {
+        throw new Error('Archive boundary asset shape is invalid');
+    }
+    if (record.asset && (record.asset.kind !== 1 || record.asset.payload.length !== 32)) {
+        throw new Error('Archive asset must be a canonical contract address');
+    }
+    if (record.assetIndex !== undefined
+        && (!Number.isInteger(record.assetIndex) || record.assetIndex < 0 || record.assetIndex > 0xffff_ffff)) {
+        throw new Error('Archive asset index must be an unsigned 32-bit integer');
+    }
+    if (record.outputs.length !== 3) {
+        throw new Error('Archive record must contain exactly three outputs');
+    }
+    for (const [name, bytes, length] of [
+        ['Action nonce', record.actionNonce, 32],
+        ['Anchor root', record.anchorRoot, 32],
+        ['Tree root', record.treeRootAfter, 32],
+        ['Nullifier 0', record.nullifiers[0], 32],
+        ['Nullifier 1', record.nullifiers[1], 32],
+        ['Output 0 commitment', record.outputs[0].cm, 32],
+        ['Output 0 envelope', record.outputs[0].recipientEnvelope, 181],
+        ['Output 0 outgoing envelope', record.outputs[0].outgoingEnvelope, 157],
+        ['Output 1 commitment', record.outputs[1].cm, 32],
+        ['Output 1 envelope', record.outputs[1].recipientEnvelope, 181],
+        ['Output 1 outgoing envelope', record.outputs[1].outgoingEnvelope, 157],
+        ['Output 2 commitment', record.outputs[2].cm, 32],
+        ['Output 2 envelope', record.outputs[2].recipientEnvelope, 181],
+        ['Output 2 outgoing envelope', record.outputs[2].outgoingEnvelope, 157],
+    ])
+        requireLength(name, bytes, length);
+}
+export function computeRecordHash(record, protocolVersion, priorRecordHash) {
+    requireRecordWidths(record);
+    requireLength('Prior record hash', priorRecordHash, 32);
+    const bytes = [];
+    encodeDomain(DOMAIN_ARCHIVE_RECORD, bytes);
+    encodeU16Be(protocolVersion, bytes);
+    encodeU128Be(record.actionIndex, bytes);
+    encodeU32Be(record.ledgerSequence, bytes);
+    encodeU128Be(record.startingLeafIndex, bytes);
+    bytes.push(record.actionKind);
+    encodeOptionalAddress(record.asset, bytes);
+    encodeU32Be(record.assetIndex ?? 0, bytes);
+    bytes.push(...record.actionNonce, ...record.anchorRoot, ...record.treeRootAfter);
+    bytes.push(...record.nullifiers[0], ...record.nullifiers[1]);
+    bytes.push(...record.outputs[0].cm, ...record.outputs[0].recipientEnvelope, ...record.outputs[0].outgoingEnvelope);
+    for (let index = 1; index < 3; index += 1) {
+        bytes.push(...record.outputs[index].cm, ...record.outputs[index].recipientEnvelope, ...record.outputs[index].outgoingEnvelope);
+    }
+    encodeU64Be(record.publicValue, bytes);
+    encodeOptionalAddress(record.depositSource, bytes);
+    encodeOptionalAddress(record.publicRecipient, bytes);
+    bytes.push(...priorRecordHash);
+    return sha256Bytes(Uint8Array.from(bytes));
+}
+export function computeGenesisRecordHash(contextHash, deploymentBindingHash) {
+    requireLength('Context hash', contextHash, 32);
+    requireLength('Deployment binding hash', deploymentBindingHash, 32);
+    const bytes = [];
+    encodeDomain(DOMAIN_ARCHIVE_GENESIS, bytes);
+    bytes.push(...contextHash, ...deploymentBindingHash);
+    return sha256Bytes(Uint8Array.from(bytes));
+}
+export async function applyArchiveRecord(tree, record) {
+    requireRecordWidths(record);
+    if (record.startingLeafIndex !== tree.nextIndex)
+        throw new Error('Archive leaf position mismatch');
+    const nextTree = {
+        nextIndex: tree.nextIndex,
+        frontier: tree.frontier.map(node => node.slice()),
+        currentRoot: tree.currentRoot.slice(),
+    };
+    if (record.actionKind !== 4) {
+        for (const output of record.outputs)
+            await appendFrontier(nextTree, output.cm);
+    }
+    const root = record.actionKind === 4 ? nextTree.currentRoot.slice() : await refreshTreeRoot(nextTree);
+    if (!equalBytes(root, record.treeRootAfter))
+        throw new Error('Archive tree root mismatch');
+    tree.nextIndex = nextTree.nextIndex;
+    tree.frontier = nextTree.frontier;
+    tree.currentRoot = nextTree.currentRoot;
+    return root;
+}

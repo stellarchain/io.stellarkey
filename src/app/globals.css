@@ -1,0 +1,1396 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Helvetica Neue", Inter, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  --color-bg: #000000;
+  --color-panel: #1c1c1e;
+  --color-raised: #2c2c2e;
+  --color-line: rgba(84, 84, 88, 0.65);
+  --color-line-strong: rgba(255, 255, 255, 0.32);
+  --color-ink: #ffffff;
+  --color-muted: rgba(235, 235, 245, 0.66);
+  --color-faint: rgba(235, 235, 245, 0.66);
+  --color-accent: #0a84ff;
+  --color-accent-2: #64d2ff;
+  --color-pos: #30d158;
+  --color-neg: #ff453a;
+  --color-warn: #ff9f0a;
+}
+
+:root {
+  --app-safe-area-top: 0px;
+  --motion-duration-fast: 120ms;
+  --motion-duration-standard: 180ms;
+  --motion-duration-emphasized: 220ms;
+  --motion-duration-sheet-in: 380ms;
+  --motion-duration-sheet-out: 260ms;
+  --motion-duration-progress: 700ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-enter: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* The app is client-rendered, so a pre-paint script (see the root layout) sets
+   data-theme to the resolved theme. Dark is the base; light overrides the color
+   variables. Every color utility in the app resolves through these variables
+   (Tailwind v4), so flipping them re-themes the whole surface without touching
+   component classes. */
+:root {
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Semantic tokens */
+  --color-bg: #f2f2f7;
+  --color-panel: #ffffff;
+  --color-raised: #ffffff;
+  --color-line: rgba(60, 60, 67, 0.29);
+  --color-line-strong: rgba(60, 60, 67, 0.5);
+  --color-ink: #000000;
+  --color-muted: #515155;
+  --color-faint: #57575c;
+  --color-accent: #0055b8;
+  --color-accent-2: #0055b8;
+  --color-pos: #16652b;
+  --color-neg: #b42318;
+  --color-warn: #854d0e;
+
+  /* App-surface tokens (used by the custom component classes below). */
+  --color-elevated: rgba(255, 255, 255, 0.92);
+  --color-fill: rgba(118, 118, 128, 0.12);
+  --color-fill-strong: rgba(120, 120, 128, 0.2);
+  --color-hairline: rgba(0, 0, 0, 0.1);
+  --color-hairline-strong: rgba(0, 0, 0, 0.16);
+  --color-control-thumb: #ffffff;
+  --color-switch-off: #e9e9ea;
+  --color-primary-fill: #006edb;
+  --color-primary-fill-hover: #005fbe;
+  --color-scrim: 248, 248, 250;
+  --shadow-strong: rgba(0, 0, 0, 0.16);
+  --shadow-medium: rgba(0, 0, 0, 0.1);
+  --scrim-sheet: rgba(0, 0, 0, 0.18);
+  --scrim-alert: rgba(0, 0, 0, 0.24);
+  --scrim-dialog: rgba(0, 0, 0, 0.3);
+  --color-grabber: rgba(60, 60, 67, 0.3);
+  --shadow-hover: rgba(0, 0, 0, 0.1);
+  --color-hover: rgba(0, 0, 0, 0.04);
+  --color-glass: rgba(255, 255, 255, 0.68);
+  --color-glass-sheen: rgba(255, 255, 255, 0.5);
+
+  /* Tailwind base palette, flipped. text-white -> dark ink, bg-white/x -> a
+     dark tint, border-white/x -> a dark hairline, bg-black -> light. */
+  --color-white: #000000;
+  --color-neutral-50: #1c1c1e;
+  --color-neutral-100: #1c1c1e;
+  --color-neutral-200: #2c2c2e;
+  --color-neutral-300: #3a3a3c;
+  --color-neutral-400: #515155;
+  --color-neutral-500: #57575c;
+  --color-neutral-600: #aeaeb2;
+  --color-neutral-700: #c7c7cc;
+  --color-neutral-800: #e5e5ea;
+  --color-neutral-900: #f2f2f7;
+  --color-neutral-950: #ffffff;
+
+  /* On-colour foreground: stays light so text/icons on a filled accent, positive,
+     negative or warning surface keep their contrast when white is flipped. */
+  --color-oncolor: #ffffff;
+}
+
+/* Small action text needs the elevated accent on raised dark panels. */
+:root:not([data-theme="light"]) .text-\[\#0A84FF\],
+:root:not([data-theme="light"]) .text-accent {
+  color: #409cff;
+}
+
+/* Small secondary labels need contrast on translucent raised review surfaces. */
+:root:not([data-theme="light"]) .text-neutral-400 {
+  color: #b0b0b6;
+}
+
+/* Small negative text also appears on tinted and raised dark review panels. */
+:root:not([data-theme="light"]) .text-\[\#FF453A\],
+:root:not([data-theme="light"]) .text-\[\#FF6961\],
+:root:not([data-theme="light"]) .text-neg,
+:root:not([data-theme="light"]) .btn-danger {
+  color: #ff8a80;
+}
+
+/* Foreground utilities share the semantic light-theme contrast values.
+   Filled accents keep their existing fill and explicit on-colour foreground. */
+:root[data-theme="light"] .text-\[\#0A84FF\],
+:root[data-theme="light"] .text-\[\#007AFF\],
+:root[data-theme="light"] .text-\[\#64AFFF\],
+:root[data-theme="light"] .text-\[\#64D2FF\],
+:root[data-theme="light"] .text-\[\#7FBEFF\],
+:root[data-theme="light"] .text-\[\#A7D4FF\],
+:root[data-theme="light"] .btn-ghost {
+  color: var(--color-accent);
+}
+
+:root[data-theme="light"] .text-\[\#FF9F0A\],
+:root[data-theme="light"] .text-\[\#FFB340\],
+:root[data-theme="light"] .text-\[\#FFD60A\] {
+  color: var(--color-warn);
+}
+
+:root[data-theme="light"] .text-\[\#FF453A\],
+:root[data-theme="light"] .text-\[\#FF6961\],
+:root[data-theme="light"] .text-\[\#FF8A80\],
+:root[data-theme="light"] .btn-danger {
+  color: var(--color-neg);
+}
+
+:root[data-theme="light"] .text-\[\#30D158\],
+:root[data-theme="light"] .text-emerald-300,
+:root[data-theme="light"] .text-emerald-400,
+:root[data-theme="light"] .text-emerald-500 {
+  color: var(--color-pos);
+}
+
+:root[data-theme="light"] .text-\[\#5E5CE6\],
+:root[data-theme="light"] .text-\[\#BF5AF2\] {
+  color: #6336a6;
+}
+
+:root[data-theme="light"] .text-neutral-500 {
+  color: var(--color-neutral-500);
+}
+
+/* Runtime tokens also serve custom component classes. Light overrides above
+   have higher specificity; utilities retain variable references to these values. */
+:root {
+  --color-bg: #000000;
+  --color-panel: #1c1c1e;
+  --color-raised: #2c2c2e;
+  --color-line: rgba(84, 84, 88, 0.65);
+  --color-line-strong: rgba(255, 255, 255, 0.32);
+  --color-ink: #ffffff;
+  --color-muted: rgba(235, 235, 245, 0.66);
+  --color-faint: rgba(235, 235, 245, 0.66);
+  --color-accent: #0a84ff;
+  --color-accent-2: #64d2ff;
+  --color-pos: #30d158;
+  --color-neg: #ff453a;
+  --color-warn: #ff9f0a;
+  --color-elevated: rgba(44, 44, 46, 0.72);
+  --color-fill: rgba(118, 118, 128, 0.18);
+  --color-fill-strong: rgba(118, 118, 128, 0.24);
+  --color-hairline: rgba(255, 255, 255, 0.08);
+  --color-hairline-strong: rgba(255, 255, 255, 0.14);
+  --color-control-thumb: rgba(99, 99, 102, 0.75);
+  --color-switch-off: #39393d;
+  --color-primary-fill: #006edb;
+  --color-primary-fill-hover: #005fbe;
+  --color-scrim: 18, 18, 20;
+  --color-oncolor: #ffffff;
+  --shadow-strong: rgba(0, 0, 0, 0.9);
+  --shadow-medium: rgba(0, 0, 0, 0.7);
+  --scrim-sheet: rgba(0, 0, 0, 0.45);
+  --scrim-alert: rgba(0, 0, 0, 0.55);
+  --scrim-dialog: rgba(0, 0, 0, 0.75);
+  --color-grabber: rgba(255, 255, 255, 0.28);
+  --shadow-hover: rgba(0, 0, 0, 0.35);
+  --color-hover: rgba(255, 255, 255, 0.04);
+  --color-glass: rgba(30, 30, 32, 0.55);
+  --color-glass-sheen: rgba(255, 255, 255, 0.1);
+}
+
+.app-safe-top {
+  padding-top: var(--app-safe-area-top);
+}
+
+.app-safe-dashboard {
+  padding-top: 0;
+}
+
+.app-safe-top-pad-14 {
+  padding-top: calc(3.5rem + var(--app-safe-area-top));
+}
+
+.app-safe-top-pad-12 {
+  padding-top: calc(3rem + var(--app-safe-area-top));
+}
+
+.app-safe-sticky-top {
+  top: var(--app-safe-area-top);
+}
+
+/* Sticky controls inside a scrollport already positioned below the safe area. */
+.app-scroll-sticky-top {
+  top: 0;
+}
+
+/* Keep the status-bar safe area inside the mobile header so content cannot scroll behind it. */
+.app-mobile-sticky-header {
+  top: 0;
+  padding-top: var(--app-safe-area-top);
+  background: var(--color-bg);
+}
+
+@media (display-mode: standalone) {
+  :root {
+    --app-safe-area-top: env(safe-area-inset-top, 0px);
+  }
+
+  .app-safe-overlay {
+    padding-top: calc(1rem + var(--app-safe-area-top));
+  }
+
+  .app-safe-toast {
+    top: calc(4.5rem + var(--app-safe-area-top));
+  }
+}
+
+@media (display-mode: standalone) and (min-width: 768px) {
+  .app-safe-dashboard {
+    padding-top: var(--app-safe-area-top);
+  }
+
+  .app-safe-toast {
+    top: auto;
+    bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+html {
+  background: var(--color-bg);
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  color: var(--color-ink);
+  min-height: 100vh;
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: clip;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(110px);
+}
+body::before {
+  background:
+    radial-gradient(42% 38% at 22% 16%, rgba(10, 132, 255, 0.14), transparent 70%),
+    radial-gradient(46% 40% at 80% 12%, rgba(94, 92, 230, 0.11), transparent 70%);
+  animation: drift-a 34s ease-in-out infinite alternate;
+}
+body::after {
+  background:
+    radial-gradient(40% 34% at 72% 84%, rgba(48, 209, 88, 0.07), transparent 70%),
+    radial-gradient(36% 32% at 14% 88%, rgba(100, 210, 255, 0.06), transparent 70%);
+  animation: drift-b 41s ease-in-out infinite alternate;
+}
+
+@keyframes drift-a {
+  from {
+    transform: translate3d(-3%, -2%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(4%, 3%, 0) scale(1.08);
+  }
+}
+@keyframes drift-b {
+  from {
+    transform: translate3d(3%, 2%, 0) scale(1.05);
+  }
+  to {
+    transform: translate3d(-4%, -3%, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  body::after {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+  /* Overlays keep a brief crossfade so open and close remain understandable. */
+  .modal-overlay,
+  .modal-dialog,
+  .modal-sheet,
+  .modal-alert,
+  .modal-fullscreen,
+  .menu-pop,
+  .toast-enter {
+    animation: fadeIn var(--motion-duration-fast) linear both !important;
+  }
+  .modal-overlay.closing,
+  .modal-dialog.closing,
+  .modal-sheet.closing,
+  .modal-alert.closing,
+  .modal-fullscreen.closing,
+  .menu-pop.closing,
+  .toast-leave {
+    animation: fadeOut var(--motion-duration-fast) linear both !important;
+  }
+  .modal-sheet[data-dragging="true"],
+  .modal-sheet[data-sheet-interacted="true"]:not(.closing) {
+    animation: none !important;
+  }
+}
+
+::selection {
+  background: rgba(10, 132, 255, 0.4);
+}
+
+.skip-link {
+  position: fixed;
+  top: calc(var(--app-safe-area-top) + 8px);
+  left: 12px;
+  z-index: 100;
+  transform: translateY(-180%);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #000000;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 650;
+  transition: transform 0.18s ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 4px solid rgba(10, 132, 255, 0.45);
+}
+
+/* iOS system blue is excellent as text on black, but white text needs a
+   slightly deeper fill to retain WCAG AA contrast at compact UI sizes. */
+.bg-\[\#0A84FF\] {
+  background-color: #006edb;
+}
+
+/* Tailwind's neutral-500 falls below AA on the wallet's raised dark panels. */
+.text-neutral-500 {
+  color: #9e9ea4;
+}
+
+/* Keep every scroll surface usable while removing browser scrollbar chrome. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* iOS zooms focused controls below 16px even when the surrounding UI is compact. */
+@media (max-width: 767px) {
+  :is(input:not([type]), input[type="text"], input[type="search"], input[type="password"], input[type="number"], input[type="email"], input[type="tel"], input[type="url"], select, textarea, [contenteditable="true"]) {
+    font-size: 16px !important;
+  }
+}
+
+/* A finger needs a real target even when the visual icon stays compact. This
+   only applies on touch-first devices, so dense mouse/trackpad layouts keep
+   their desktop rhythm. */
+@media (hover: none) and (pointer: coarse) {
+  /* iOS can restore focus to the first link when launching an installed PWA,
+     which would otherwise expose this keyboard-only control over the status bar. */
+  .skip-link {
+    display: none;
+  }
+
+  :is(button, [role="button"], [role="menuitem"]):not([role="switch"]):not(.tap-reset) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* Inline text targets (copyable values, label-row links) sit inside rows that
+     already meet the 44 pt target, so they keep their text height. */
+  .tap-reset {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* Non-button controls (links, labels, custom rows) opt into the same finger
+     target. Pointer layouts keep their compact height. */
+  .tap {
+    min-height: 44px;
+  }
+  .tap-square {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+@layer components {
+  /* ---------- Typography helpers ---------- */
+
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .display-h {
+    font-weight: 700;
+    letter-spacing: -0.022em;
+    line-height: 1.05;
+    text-wrap: balance;
+  }
+
+  .balance-display {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: center;
+    column-gap: 0.5rem;
+    row-gap: 0.25rem;
+  }
+
+  .balance-display-value {
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: clamp(2rem, 11vw, 3.375rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.04em;
+    line-height: 1;
+  }
+
+  .balance-display-unit {
+    font-family: var(--font-mono);
+    font-size: clamp(1rem, 5vw, 1.5rem);
+    font-weight: 400;
+    color: var(--color-muted);
+  }
+
+  .balance-display[data-density="medium"] .balance-display-value {
+    font-size: clamp(1.625rem, 8.8vw, 2.75rem);
+  }
+
+  .balance-display[data-density="long"] .balance-display-value {
+    font-size: clamp(1.25rem, 6.9vw, 2.125rem);
+    letter-spacing: -0.045em;
+  }
+
+  .balance-display[data-density="long"] .balance-display-unit {
+    flex-basis: 100%;
+    font-size: 0.875rem;
+  }
+
+  .eyebrow {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--color-muted);
+  }
+
+  .section-title {
+    font-size: 15px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    color: var(--color-faint);
+  }
+
+  /* ---------- Surfaces ---------- */
+
+  .panel,
+  .list-group {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    background: var(--color-panel);
+    border-radius: 20px;
+    box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+    overflow: hidden;
+  }
+
+  .panel-inset {
+    background: rgba(118, 118, 128, 0.18);
+    border-radius: 14px;
+  }
+
+  /* The funded home view is two semantic vertical stacks on mobile. On wide
+     screens, subgrid lets their first panels share one intrinsic row, so the
+     balance and market cards align without a brittle fixed height. */
+  .dashboard-home-grid,
+  .dashboard-home-column,
+  .dashboard-home-primary {
+    min-width: 0;
+  }
+
+  @media (min-width: 64rem) {
+    .dashboard-home-column {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    @supports (grid-template-rows: subgrid) {
+      .dashboard-home-grid {
+        grid-template-rows: auto auto;
+      }
+
+      .dashboard-home-column {
+        display: grid;
+        grid-row: span 2;
+        grid-template-rows: subgrid;
+        gap: normal;
+      }
+    }
+  }
+
+  /* ---------- Buttons ---------- */
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 14px;
+    font-size: 16px;
+    font-weight: 590;
+    letter-spacing: -0.01em;
+    min-height: 44px;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition:
+      transform 0.25s cubic-bezier(0.32, 0.72, 0, 1),
+      filter 0.2s ease,
+      background-color 0.2s ease,
+      opacity 0.2s ease;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .btn:active:not(:disabled):not([aria-disabled="true"]) {
+    transform: scale(0.97);
+  }
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    color: #ffffff;
+    background: var(--color-primary-fill);
+  }
+  .btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--color-primary-fill-hover);
+  }
+
+  /* Tinted text buttons use the iOS elevated accents so 16px text clears 4.5:1 on raised surfaces. */
+  .btn-ghost {
+    color: #409cff;
+    background: rgba(10, 132, 255, 0.12);
+  }
+  .btn-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: rgba(10, 132, 255, 0.2);
+  }
+
+  .btn-danger {
+    color: #ff6961;
+    background: rgba(255, 69, 58, 0.12);
+  }
+  .btn-danger:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: rgba(255, 69, 58, 0.2);
+  }
+
+  .btn-secondary {
+    color: var(--color-ink);
+    background: var(--color-fill);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+
+  .btn-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--color-fill-strong);
+  }
+
+  /* The compact size used inside sheets and beside inline content. Defined once
+     so a small button is one height everywhere instead of six ad-hoc overrides. */
+  .btn-sm {
+    padding: 8px 14px;
+    font-size: 13px;
+    border-radius: 12px;
+  }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    color: var(--color-accent);
+    transition:
+      background-color var(--motion-duration-standard) var(--motion-ease-standard),
+      color var(--motion-duration-standard) var(--motion-ease-standard),
+      opacity var(--motion-duration-standard) var(--motion-ease-standard),
+      transform var(--motion-duration-standard) var(--motion-ease-enter);
+    cursor: pointer;
+  }
+  .icon-btn:hover {
+    background: rgba(118, 118, 128, 0.24);
+  }
+  .icon-btn:active {
+    transform: scale(0.92);
+    opacity: 0.6;
+  }
+  .icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ---------- Inputs ---------- */
+
+  .input {
+    width: 100%;
+    background: var(--color-fill);
+    border: none;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 16px;
+    color: var(--color-ink);
+    outline: none;
+    transition:
+      box-shadow 0.2s ease,
+      background-color 0.2s ease;
+  }
+  .input::placeholder {
+    color: var(--color-faint);
+  }
+  .input:focus {
+    box-shadow: 0 0 0 3.5px rgba(10, 132, 255, 0.35);
+  }
+  .input-mono {
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+  }
+
+  .label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-faint);
+    margin-bottom: 8px;
+  }
+
+  .field-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-faint);
+    padding-bottom: 6px;
+  }
+
+  .search-field {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(118, 118, 128, 0.24);
+    border-radius: 12px;
+    padding: 8px 12px;
+    color: var(--color-faint);
+  }
+  .search-field input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: 16px;
+    color: var(--color-ink);
+  }
+  .search-field input::placeholder {
+    color: var(--color-faint);
+  }
+
+  /* ---------- Menus / chips ---------- */
+
+  .menu {
+    background: var(--color-elevated);
+    -webkit-backdrop-filter: blur(32px) saturate(180%);
+    backdrop-filter: blur(32px) saturate(180%);
+    border-radius: 16px;
+    box-shadow:
+      inset 0 0 0 0.5px var(--color-hairline-strong),
+      0 24px 60px -18px var(--shadow-strong);
+    overflow: hidden;
+  }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    white-space: nowrap;
+    padding: 12px 16px;
+    font-size: 15px;
+    font-weight: 480;
+    color: var(--color-ink);
+    cursor: pointer;
+    transition: background-color 0.14s ease;
+    background: transparent;
+    border: none;
+  }
+  .menu-item:hover {
+    background: var(--color-hover);
+  }
+  .menu-item.danger {
+    color: var(--color-neg);
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: var(--color-muted);
+    border-radius: 999px;
+    padding: 5px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background-color var(--motion-duration-standard) var(--motion-ease-standard),
+      color var(--motion-duration-standard) var(--motion-ease-standard);
+    background: rgba(118, 118, 128, 0.24);
+  }
+  .chip:hover {
+    color: var(--color-ink);
+    background: rgba(118, 118, 128, 0.38);
+  }
+
+  .badge-net {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: rgba(118, 118, 128, 0.24);
+    color: var(--color-muted);
+  }
+  .badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+  }
+
+  /* ---------- Navigation bar ---------- */
+
+  .nav-blur {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: linear-gradient(
+      to bottom,
+      var(--color-bg) 0 var(--app-safe-area-top),
+      rgba(var(--color-scrim), 0.82) var(--app-safe-area-top) 100%
+    );
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    box-shadow: inset 0 -0.5px 0 rgba(84, 84, 88, 0.65);
+  }
+
+  /* ---------- Tab bar (floating Liquid Glass) ---------- */
+
+  .tab-bar {
+    position: fixed;
+    left: 50%;
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 50;
+    display: flex;
+    width: calc(100vw - 24px);
+    max-width: 400px;
+    align-items: stretch;
+    gap: 2px;
+    padding: 7px;
+    border-radius: 999px;
+    background-color: var(--color-glass);
+    background-image: linear-gradient(180deg, var(--color-glass-sheen), transparent 42%);
+    -webkit-backdrop-filter: blur(44px) saturate(200%);
+    backdrop-filter: blur(44px) saturate(200%);
+    box-shadow:
+      inset 0 0 0 0.5px var(--color-hairline-strong),
+      inset 0 1px 0 var(--color-glass-sheen),
+      0 18px 50px -14px var(--shadow-strong);
+  }
+  .tab-item {
+    display: flex;
+    flex: 1 1 0%;
+    min-width: 0;
+    min-height: 44px;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 7px 4px 5px;
+    border-radius: 999px;
+    color: var(--color-faint);
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    transition: color 0.18s ease, transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .tab-item:active {
+    transform: scale(0.9);
+  }
+  .tab-item span {
+    font-size: 10px;
+    font-weight: 590;
+  }
+  .tab-item.active {
+    color: var(--color-accent);
+  }
+
+  /* ---------- Segmented control ---------- */
+
+  .seg {
+    position: relative;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    background: var(--color-fill-strong);
+    border-radius: 9px;
+    padding: 2px;
+  }
+  .seg-thumb {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    border-radius: 7px;
+    background: var(--color-control-thumb);
+    box-shadow:
+      0 3px 8px rgba(0, 0, 0, 0.18),
+      inset 0 0.5px 0 rgba(255, 255, 255, 0.16);
+    transition:
+      left 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+      width 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    z-index: 0;
+  }
+  .seg button {
+    position: relative;
+    z-index: 1;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 590;
+    border-radius: 7px;
+    color: var(--color-muted);
+    transition: color 0.2s ease;
+  }
+  .seg button.on {
+    color: var(--color-ink);
+  }
+
+  /* ---------- Overlays & popovers ---------- */
+
+  .modal-overlay {
+    animation: overlayIn var(--motion-duration-standard) var(--motion-ease-standard) both;
+  }
+  .modal-overlay.closing {
+    animation: overlayOut var(--motion-duration-standard) var(--motion-ease-standard) both;
+  }
+  .modal-dialog {
+    animation: dialogIn var(--motion-duration-emphasized) var(--motion-ease-enter) both;
+  }
+  /* Panel and dim finish together: one exit duration for both. */
+  .modal-dialog.closing {
+    animation: dialogOut var(--motion-duration-standard) var(--motion-ease-standard) both;
+  }
+  /* Compact widths: the sheet rises from the bottom edge and slides back down. */
+  .modal-sheet {
+    animation: sheetIn var(--motion-duration-sheet-in) var(--motion-ease-enter) both;
+    touch-action: pan-y pinch-zoom;
+  }
+  .modal-sheet.closing {
+    animation: sheetOut var(--motion-duration-sheet-out) var(--motion-ease-standard) both;
+  }
+  .modal-overlay[data-presentation="sheet"].closing {
+    animation-duration: var(--motion-duration-sheet-out);
+  }
+  .modal-sheet[data-dragging="true"],
+  .modal-sheet[data-sheet-interacted="true"]:not(.closing) {
+    animation: none;
+  }
+  .modal-grabber {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: 0;
+    touch-action: pinch-zoom;
+  }
+  .modal-grabber::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 36px;
+    height: 5px;
+    margin-left: -18px;
+    border-radius: 3px;
+    background: var(--color-grabber);
+  }
+  [data-sheet-handle] {
+    touch-action: pinch-zoom;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  /* Confirmations: the centred iOS alert settles from slightly above scale. */
+  .modal-alert {
+    animation: alertIn var(--motion-duration-emphasized) var(--motion-ease-enter) both;
+  }
+  .modal-alert.closing {
+    animation: alertOut var(--motion-duration-standard) var(--motion-ease-standard) both;
+  }
+  .modal-fullscreen {
+    animation: overlayIn var(--motion-duration-standard) var(--motion-ease-standard) both;
+  }
+  .modal-fullscreen.closing {
+    animation: overlayOut var(--motion-duration-standard) var(--motion-ease-standard) both;
+  }
+  .menu-pop {
+    animation: menuPop var(--motion-duration-standard) var(--motion-ease-enter) both;
+    transform-origin: var(--pop-origin, top);
+  }
+  .menu-pop.closing {
+    animation: menuOut var(--motion-duration-fast) var(--motion-ease-standard) both;
+    pointer-events: none;
+  }
+  .toast-enter {
+    animation: toastIn var(--motion-duration-emphasized) var(--motion-ease-enter) both;
+  }
+  .toast-leave {
+    animation: toastOut var(--motion-duration-standard) var(--motion-ease-standard) both;
+    pointer-events: none;
+  }
+
+  /* ---------- List rows ---------- */
+
+  .ios-sep {
+    position: relative;
+  }
+  .ios-sep::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 64px;
+    right: 0;
+    height: 1px;
+    /* One device-pixel hairline: iOS's separator colour, subtle in light. */
+    background: var(--color-line);
+    transform: scaleY(0.5);
+    transform-origin: top;
+  }
+  .ios-sep-flush::before {
+    left: 16px;
+  }
+
+  .row-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    color: #ffffff;
+  }
+
+  .chevron {
+    color: var(--color-faint);
+    flex-shrink: 0;
+  }
+
+  /* ---------- Misc ---------- */
+
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+    border-top-color: currentColor;
+    animation: spin 0.7s linear infinite;
+  }
+
+  .fade-up {
+    animation: fadeUp var(--motion-duration-emphasized) var(--motion-ease-enter) both;
+  }
+
+  .shake {
+    animation: shake 0.4s ease;
+  }
+
+  .row-hover {
+    transition: background-color 0.15s ease;
+  }
+  .row-hover:hover {
+    background: var(--color-hover);
+  }
+
+  .link {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+  .link:hover {
+    text-decoration: underline;
+  }
+
+  .brand-mark {
+    background: linear-gradient(180deg, #1f9aff, #0a84ff);
+    box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35);
+  }
+
+  .gold-bubble {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: var(--color-accent);
+    color: #ffffff;
+  }
+
+  .zoom-slow {
+    transition: transform 0.65s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .zoom-slow:hover {
+    transform: scale(1.04);
+  }
+
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--color-fill);
+    border-radius: 10px;
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.07),
+      transparent
+    );
+    animation: shimmer 1.6s infinite;
+  }
+}
+
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes overlayIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes overlayOut {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes dialogIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+}
+@keyframes dialogOut {
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+}
+@keyframes sheetIn {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+}
+@keyframes sheetOut {
+  to {
+    transform: translate3d(0, 100%, 0);
+  }
+}
+@keyframes alertIn {
+  from {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+@keyframes alertOut {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes menuOut {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+@keyframes toastOut {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes menuPop {
+  from {
+    opacity: 0;
+    transform: translateY(var(--pop-shift, -4px)) scale(0.97);
+  }
+}
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
+}
+
+/* macOS & iPadOS fine pointer micro-interactions */
+@media (hover: hover) and (pointer: fine) {
+  .row-hover {
+    transition: background-color 0.16s ease, transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .row-hover:hover {
+    background: var(--color-hover);
+    transform: translateY(-0.5px);
+  }
+  .btn:hover:not(:disabled):not([aria-disabled="true"]) {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px var(--shadow-hover);
+  }
+}
+
+/* ————— Private Payments 2.0 shared motion ————— */
+
+/* Success moment: circle pops in, then the check stroke draws itself. */
+@keyframes success-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.success-circle {
+  animation: success-pop 0.24s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+@keyframes success-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.success-check {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: success-draw 0.3s ease-out 0.12s forwards;
+}
+/* With animations disabled the draw never runs — show the finished check. */
+@media (prefers-reduced-motion: reduce) {
+  .success-check {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* One calm flash to teach where a fresh pending payment now lives. */
+@keyframes row-pulse {
+  from {
+    background-color: rgba(10, 132, 255, 0.16);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+.row-pulse {
+  animation: row-pulse 1.6s ease-out 1;
+}
+
+/* Feature-discovery pill: a light sweep, a few seconds apart. */
+@keyframes pill-sweep {
+  0%,
+  70% {
+    background-position: -160% 0;
+  }
+  100% {
+    background-position: 260% 0;
+  }
+}
+.new-pill {
+  background-image: linear-gradient(
+    105deg,
+    rgba(10, 132, 255, 0.22) 40%,
+    rgba(100, 210, 255, 0.5) 50%,
+    rgba(10, 132, 255, 0.22) 60%
+  );
+  background-size: 220% 100%;
+  animation: pill-sweep 3.2s ease-in-out infinite;
+}
+
+/* First-send confetti pieces (spawned by PrivateSuccess). */
+@keyframes confetti-fall {
+  from {
+    transform: translate3d(0, -12vh, 0) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: translate3d(var(--confetti-drift, 0px), 105vh, 0)
+      rotate(var(--confetti-spin, 540deg));
+    opacity: 0.9;
+  }
+}
+.confetti-piece {
+  position: fixed;
+  top: 0;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 90;
+  animation: confetti-fall var(--confetti-duration, 2.2s) ease-in forwards;
+}
+
+/* Pointer layouts use the compact macOS control height. */
+@media (hover: hover) and (pointer: fine) {
+  .btn {
+    min-height: 40px;
+    padding: 8px 18px;
+    font-size: 15px;
+  }
+}
+
+/* One keyboard focus ring for every control; fields keep their glow. */
+:where(button, a, [role="button"], [role="tab"], [role="menuitem"], [role="switch"], summary):focus-visible {
+  outline: 2px solid #0A84FF;
+  outline-offset: 2px;
+}
+
+/* Native date and number fields take the app's dark chrome; no spinners. */
+.input[type="date"],
+.input[type="datetime-local"],
+.input[type="time"] {
+  color-scheme: dark;
+}
+.input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.input::-webkit-outer-spin-button,
+.input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Dialog action rows stay reachable: they pin to the scrolling panel's bottom
+   edge above the safe area, fading the content that scrolls beneath them. */
+.modal-footer-pinned {
+  position: sticky;
+  bottom: env(safe-area-inset-bottom, 0px);
+  z-index: 5;
+  background: linear-gradient(to bottom, rgba(var(--color-scrim), 0) 0, rgba(var(--color-scrim), 0.98) 14px);
+  /* Cover the body gutters with ink, not layout: shadows never add scrollable overflow. */
+  box-shadow: -16px 0 0 0 rgba(var(--color-scrim), 0.98), 16px 0 0 0 rgba(var(--color-scrim), 0.98);
+}
+@media (min-width: 640px) {
+  .modal-footer-pinned {
+    box-shadow: -24px 0 0 0 rgba(var(--color-scrim), 0.98), 24px 0 0 0 rgba(var(--color-scrim), 0.98);
+  }
+}
+
+/* One checkbox: a rounded square that fills with the accent when checked. */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1.5px solid var(--color-line-strong);
+  background: var(--color-fill);
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard), border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+input[type="checkbox"]::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  color: #ffffff;
+  transform: scale(0);
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M2 6.5l2.6 2.6L10 3.5'/%3E%3C/svg%3E") center / contain no-repeat;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M2 6.5l2.6 2.6L10 3.5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+input[type="checkbox"]:checked {
+  background: #0A84FF;
+  border-color: #0A84FF;
+}
+input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+input[type="checkbox"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid #0A84FF;
+  outline-offset: 2px;
+}

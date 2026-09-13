@@ -1,0 +1,661 @@
+{
+  "schemaVersion": 3,
+  "revision": "00efbc4a2c54532bb155212a9311d3dff9dade9f",
+  "generatedAt": "2026-09-02T22:05:39.722Z",
+  "environment": {
+    "node": "v26.7.0",
+    "platform": "darwin",
+    "osRelease": "25.5.0",
+    "cpu": "Apple M3 Max",
+    "stellarCli": "27.0.0",
+    "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)"
+  },
+  "x25519": {
+    "trials": 3,
+    "samplesPerTrial": 120,
+    "warmups": 20,
+    "sharedSecretSha256": "7abd7d93e9549667e21ee0ff394ce158bb86cc8c564c8d6d4f12fd1761bc33e1",
+    "nativeJwk": {
+      "p50Microseconds": 371.708,
+      "p95Microseconds": 474.958,
+      "trialResults": [
+        {
+          "p50Microseconds": 371.042,
+          "p95Microseconds": 651.083
+        },
+        {
+          "p50Microseconds": 371.708,
+          "p95Microseconds": 474.958
+        },
+        {
+          "p50Microseconds": 395.125,
+          "p95Microseconds": 532.042
+        }
+      ]
+    },
+    "nativePkcs8Prototype": {
+      "p50Microseconds": 84.792,
+      "p95Microseconds": 186.291,
+      "trialResults": [
+        {
+          "p50Microseconds": 82.958,
+          "p95Microseconds": 205.125
+        },
+        {
+          "p50Microseconds": 84.792,
+          "p95Microseconds": 186.291
+        },
+        {
+          "p50Microseconds": 94.291,
+          "p95Microseconds": 228.541
+        }
+      ]
+    },
+    "portable": {
+      "p50Microseconds": 812.459,
+      "p95Microseconds": 929.625,
+      "trialResults": [
+        {
+          "p50Microseconds": 766.791,
+          "p95Microseconds": 923.5
+        },
+        {
+          "p50Microseconds": 812.459,
+          "p95Microseconds": 929.625
+        },
+        {
+          "p50Microseconds": 833.875,
+          "p95Microseconds": 957.708
+        }
+      ]
+    },
+    "diversifiedAddress": {
+      "p50Microseconds": 695.25,
+      "p95Microseconds": 2107.792,
+      "trialResults": [
+        {
+          "p50Microseconds": 669.042,
+          "p95Microseconds": 2678.042
+        },
+        {
+          "p50Microseconds": 695.25,
+          "p95Microseconds": 2107.792
+        },
+        {
+          "p50Microseconds": 726.875,
+          "p95Microseconds": 2070.542
+        }
+      ]
+    },
+    "pkcs8MedianImprovementPercent": 77.19
+  },
+  "scanPath": {
+    "trials": 3,
+    "samplesPerTrial": 120,
+    "warmups": 20,
+    "corpusSize": 128,
+    "corpus": "Deterministic distinct diversifiers and X25519 ephemeral public keys; all variants process the same candidates.",
+    "toolVersions": {
+      "node": "v26.7.0",
+      "hpke": "1.8.0",
+      "nobleCurves": "2.3.0"
+    },
+    "variants": {
+      "current": {
+        "p50Microseconds": 1141.833,
+        "p95Microseconds": 3068.542,
+        "trialResults": [
+          {
+            "p50Microseconds": 1109.208,
+            "p95Microseconds": 3457.459
+          },
+          {
+            "p50Microseconds": 1141.833,
+            "p95Microseconds": 3068.542
+          },
+          {
+            "p50Microseconds": 3130.125,
+            "p95Microseconds": 6941
+          }
+        ]
+      },
+      "reordered": {
+        "p50Microseconds": 990.083,
+        "p95Microseconds": 3430.333,
+        "trialResults": [
+          {
+            "p50Microseconds": 929.291,
+            "p95Microseconds": 3265.084
+          },
+          {
+            "p50Microseconds": 990.083,
+            "p95Microseconds": 3430.333
+          },
+          {
+            "p50Microseconds": 2723.416,
+            "p95Microseconds": 6675.25
+          }
+        ]
+      },
+      "webcrypto": {
+        "p50Microseconds": 249.875,
+        "p95Microseconds": 1153.75,
+        "trialResults": [
+          {
+            "p50Microseconds": 243.167,
+            "p95Microseconds": 1103.959
+          },
+          {
+            "p50Microseconds": 249.875,
+            "p95Microseconds": 1153.75
+          },
+          {
+            "p50Microseconds": 957.375,
+            "p95Microseconds": 3666.625
+          }
+        ]
+      },
+      "ideal": {
+        "p50Microseconds": 64.25,
+        "p95Microseconds": 270.875,
+        "trialResults": [
+          {
+            "p50Microseconds": 62.584,
+            "p95Microseconds": 443.917
+          },
+          {
+            "p50Microseconds": 64.25,
+            "p95Microseconds": 270.875
+          },
+          {
+            "p50Microseconds": 302.417,
+            "p95Microseconds": 1814.583
+          }
+        ]
+      }
+    },
+    "ratios": {
+      "currentOverReordered": 1.153,
+      "currentOverWebcrypto": 4.57,
+      "currentOverIdeal": 17.772
+    }
+  },
+  "scanBatch": {
+    "trials": 9,
+    "candidatesPerTrial": 128,
+    "variants": {
+      "1": {
+        "p50MicrosecondsPerEnvelope": 241.349,
+        "p95MicrosecondsPerEnvelope": 975.43,
+        "pairedSequentialP50MicrosecondsPerEnvelope": 309.555,
+        "pairedMedianThroughputRatio": 1.166,
+        "trialResults": [
+          {
+            "sequentialMicrosecondsPerEnvelope": 636.291,
+            "candidateMicrosecondsPerEnvelope": 975.43,
+            "throughputRatio": 0.652
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 326.473,
+            "candidateMicrosecondsPerEnvelope": 241.349,
+            "throughputRatio": 1.353
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 269.708,
+            "candidateMicrosecondsPerEnvelope": 221.731,
+            "throughputRatio": 1.216
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 281.073,
+            "candidateMicrosecondsPerEnvelope": 241.029,
+            "throughputRatio": 1.166
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 173.956,
+            "candidateMicrosecondsPerEnvelope": 191.702,
+            "throughputRatio": 0.907
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 302.23,
+            "candidateMicrosecondsPerEnvelope": 302.082,
+            "throughputRatio": 1
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 805.094,
+            "candidateMicrosecondsPerEnvelope": 390.918,
+            "throughputRatio": 2.059
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 639.98,
+            "candidateMicrosecondsPerEnvelope": 723.862,
+            "throughputRatio": 0.884
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 309.555,
+            "candidateMicrosecondsPerEnvelope": 233.26,
+            "throughputRatio": 1.327
+          }
+        ]
+      },
+      "4": {
+        "p50MicrosecondsPerEnvelope": 122.408,
+        "p95MicrosecondsPerEnvelope": 723.334,
+        "pairedSequentialP50MicrosecondsPerEnvelope": 304.532,
+        "pairedMedianThroughputRatio": 1.699,
+        "trialResults": [
+          {
+            "sequentialMicrosecondsPerEnvelope": 791.062,
+            "candidateMicrosecondsPerEnvelope": 595.123,
+            "throughputRatio": 1.329
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 357.533,
+            "candidateMicrosecondsPerEnvelope": 122.408,
+            "throughputRatio": 2.921
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 194.727,
+            "candidateMicrosecondsPerEnvelope": 114.602,
+            "throughputRatio": 1.699
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 184.664,
+            "candidateMicrosecondsPerEnvelope": 120.999,
+            "throughputRatio": 1.526
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 171.981,
+            "candidateMicrosecondsPerEnvelope": 121.02,
+            "throughputRatio": 1.421
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 304.532,
+            "candidateMicrosecondsPerEnvelope": 158.034,
+            "throughputRatio": 1.927
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 1076.641,
+            "candidateMicrosecondsPerEnvelope": 107.715,
+            "throughputRatio": 9.995
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 901.035,
+            "candidateMicrosecondsPerEnvelope": 723.334,
+            "throughputRatio": 1.246
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 255.415,
+            "candidateMicrosecondsPerEnvelope": 135.043,
+            "throughputRatio": 1.891
+          }
+        ]
+      },
+      "8": {
+        "p50MicrosecondsPerEnvelope": 109.314,
+        "p95MicrosecondsPerEnvelope": 870.321,
+        "pairedSequentialP50MicrosecondsPerEnvelope": 300.274,
+        "pairedMedianThroughputRatio": 2.323,
+        "trialResults": [
+          {
+            "sequentialMicrosecondsPerEnvelope": 425.603,
+            "candidateMicrosecondsPerEnvelope": 127.575,
+            "throughputRatio": 3.336
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 389.234,
+            "candidateMicrosecondsPerEnvelope": 109.314,
+            "throughputRatio": 3.561
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 249.476,
+            "candidateMicrosecondsPerEnvelope": 107.391,
+            "throughputRatio": 2.323
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 209.042,
+            "candidateMicrosecondsPerEnvelope": 139.292,
+            "throughputRatio": 1.501
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 168.794,
+            "candidateMicrosecondsPerEnvelope": 98.713,
+            "throughputRatio": 1.71
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 300.274,
+            "candidateMicrosecondsPerEnvelope": 99.882,
+            "throughputRatio": 3.006
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 1288.428,
+            "candidateMicrosecondsPerEnvelope": 505.357,
+            "throughputRatio": 2.55
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 738.608,
+            "candidateMicrosecondsPerEnvelope": 870.321,
+            "throughputRatio": 0.849
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 168.421,
+            "candidateMicrosecondsPerEnvelope": 85.701,
+            "throughputRatio": 1.965
+          }
+        ]
+      },
+      "16": {
+        "p50MicrosecondsPerEnvelope": 97.726,
+        "p95MicrosecondsPerEnvelope": 353.936,
+        "pairedSequentialP50MicrosecondsPerEnvelope": 252.553,
+        "pairedMedianThroughputRatio": 2.282,
+        "trialResults": [
+          {
+            "sequentialMicrosecondsPerEnvelope": 205.157,
+            "candidateMicrosecondsPerEnvelope": 119.856,
+            "throughputRatio": 1.712
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 255.672,
+            "candidateMicrosecondsPerEnvelope": 97.726,
+            "throughputRatio": 2.616
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 208.359,
+            "candidateMicrosecondsPerEnvelope": 95.067,
+            "throughputRatio": 2.192
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 400.159,
+            "candidateMicrosecondsPerEnvelope": 104.028,
+            "throughputRatio": 3.847
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 223.73,
+            "candidateMicrosecondsPerEnvelope": 92.232,
+            "throughputRatio": 2.426
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 252.553,
+            "candidateMicrosecondsPerEnvelope": 83.611,
+            "throughputRatio": 3.021
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 775.209,
+            "candidateMicrosecondsPerEnvelope": 353.936,
+            "throughputRatio": 2.19
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 289.876,
+            "candidateMicrosecondsPerEnvelope": 292.031,
+            "throughputRatio": 0.993
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 194.762,
+            "candidateMicrosecondsPerEnvelope": 85.352,
+            "throughputRatio": 2.282
+          }
+        ]
+      },
+      "32": {
+        "p50MicrosecondsPerEnvelope": 103.643,
+        "p95MicrosecondsPerEnvelope": 237.124,
+        "pairedSequentialP50MicrosecondsPerEnvelope": 325.298,
+        "pairedMedianThroughputRatio": 2.597,
+        "trialResults": [
+          {
+            "sequentialMicrosecondsPerEnvelope": 363.535,
+            "candidateMicrosecondsPerEnvelope": 116.16,
+            "throughputRatio": 3.13
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 543.809,
+            "candidateMicrosecondsPerEnvelope": 177.491,
+            "throughputRatio": 3.064
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 190.651,
+            "candidateMicrosecondsPerEnvelope": 88.266,
+            "throughputRatio": 2.16
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 254.556,
+            "candidateMicrosecondsPerEnvelope": 103.643,
+            "throughputRatio": 2.456
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 226.664,
+            "candidateMicrosecondsPerEnvelope": 87.296,
+            "throughputRatio": 2.597
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 1129.63,
+            "candidateMicrosecondsPerEnvelope": 79.884,
+            "throughputRatio": 14.141
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 1162.085,
+            "candidateMicrosecondsPerEnvelope": 237.124,
+            "throughputRatio": 4.901
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 325.298,
+            "candidateMicrosecondsPerEnvelope": 150.112,
+            "throughputRatio": 2.167
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 163.174,
+            "candidateMicrosecondsPerEnvelope": 72.581,
+            "throughputRatio": 2.248
+          }
+        ]
+      },
+      "64": {
+        "p50MicrosecondsPerEnvelope": 102.553,
+        "p95MicrosecondsPerEnvelope": 259.484,
+        "pairedSequentialP50MicrosecondsPerEnvelope": 337.458,
+        "pairedMedianThroughputRatio": 3.013,
+        "trialResults": [
+          {
+            "sequentialMicrosecondsPerEnvelope": 308.999,
+            "candidateMicrosecondsPerEnvelope": 102.553,
+            "throughputRatio": 3.013
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 342.788,
+            "candidateMicrosecondsPerEnvelope": 94.097,
+            "throughputRatio": 3.643
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 211.737,
+            "candidateMicrosecondsPerEnvelope": 86.451,
+            "throughputRatio": 2.449
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 337.458,
+            "candidateMicrosecondsPerEnvelope": 193.028,
+            "throughputRatio": 1.748
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 801.239,
+            "candidateMicrosecondsPerEnvelope": 113.126,
+            "throughputRatio": 7.083
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 245.641,
+            "candidateMicrosecondsPerEnvelope": 94.349,
+            "throughputRatio": 2.604
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 2034.6,
+            "candidateMicrosecondsPerEnvelope": 167.606,
+            "throughputRatio": 12.139
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 1355.26,
+            "candidateMicrosecondsPerEnvelope": 259.484,
+            "throughputRatio": 5.223
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 207.21,
+            "candidateMicrosecondsPerEnvelope": 77.15,
+            "throughputRatio": 2.686
+          }
+        ]
+      }
+    },
+    "selectionPolicy": "fixed conservative 8-output cap from repeated exploratory runs; paired median must exceed 1.20x sequential",
+    "bestBatchSize": 64,
+    "bestPairedMedianThroughputRatio": 3.013,
+    "selectedBatchSize": 8,
+    "sequentialP50MicrosecondsPerEnvelope": 300.274,
+    "selectedP50MicrosecondsPerEnvelope": 109.314,
+    "throughputRatio": 2.323,
+    "acceptanceThreshold": 1.2
+  },
+  "circuit": {
+    "baseline": {
+      "constraints": 23437,
+      "publicInputs": 13,
+      "privateInputs": 152,
+      "sourceRevision": "cc45d237493a06b0257966da23413bad2c2579aa"
+    },
+    "laneFree": {
+      "constraints": 22909,
+      "delta": -528
+    },
+    "singleTotalRange": {
+      "constraints": 22846,
+      "delta": -63
+    },
+    "derivedOutputRoles": {
+      "constraints": 22844,
+      "privateInputs": 150,
+      "delta": -2
+    },
+    "prePublicInputReduction": {
+      "constraints": 14876,
+      "publicInputs": 13,
+      "privateInputs": 124
+    },
+    "ternaryDepth17": {
+      "constraints": 14574,
+      "publicInputs": 11,
+      "privateInputs": 124,
+      "capacityLeaves": 129140163,
+      "groth16Domain": 16384
+    },
+    "reductionPercent": 37.82,
+    "method": "Each source variant was compiled sequentially with Circom 2.2.3 and --O2; the final R1CS is read directly by snarkjs."
+  },
+  "associationSet": {
+    "additionalPathConstraints": 4573,
+    "publicInputs": 1,
+    "privateInputs": 53,
+    "projectedActionConstraints": 19147,
+    "projectedIncreasePercent": 31.38,
+    "source": "protocol/private-balance/spikes/circom/association-path.circom",
+    "method": "Compiled a standalone depth-17 ternary membership path with Circom 2.2.3 and --O2; policy predicates and association-root lifecycle logic are intentionally excluded."
+  },
+  "contractCosts": {
+    "verifier": {
+      "baselineInstructions": 39614514,
+      "currentInstructions": 29287953,
+      "reductionPercent": 26.07,
+      "method": "Parsed the maximum Soroban test budget from all three current proof vectors. The baseline used the prior 13-signal verifier loop; the current implementation uses one MSM and the accepted 11-signal statement."
+    },
+    "poolWasm": {
+      "reviewMisidentifiedBytes": 154609,
+      "reviewMisidentifiedArtifact": "protocol/private-balance/circuits/build/action_js/action.wasm (Circom witness generator)",
+      "baselineRevision": "69335bd893e6c2739043ddae9434161b2c22a6ce",
+      "baselineRawBytes": 93504,
+      "baselineOptimizedBytes": 80245,
+      "currentRawBytes": 66377,
+      "currentOptimizedBytes": 57042,
+      "rawReductionPercent": 29.01,
+      "optimizedReductionPercent": 28.92,
+      "method": "Built baseline revision 69335bd893e6c2739043ddae9434161b2c22a6ce and the current private-balance-pool source with the same pinned CLI, Cargo version, locked dependencies, unoptimized build mode, and isolated target directories; then optimized each resulting Wasm with the same command."
+    }
+  },
+  "decisions": {
+    "1": {
+      "status": "accept",
+      "reason": "The reproducible scan corpus measures current, reordered, WebCrypto and ideal paths over 128 distinct envelopes."
+    },
+    "2": {
+      "status": "reject",
+      "reason": "Caching one private-key handle across distinct diversified addresses is invalid because every diversifier produces a distinct RFC 9180 private scalar."
+    },
+    "3": {
+      "status": "accept",
+      "reason": "The RFC 9180-compatible WebCrypto path is byte-identical to the existing implementation and measured 4.57x current; view-tag-first hashing removes Poseidon work from misses."
+    },
+    "4": {
+      "status": "accept",
+      "reason": "The configured bounded batch 8 delivered 2.32x the paired median of its adjacent sequential controls on the deterministic corpus."
+    },
+    "5": {
+      "status": "accept",
+      "reason": "One BN254 MSM plus the accepted 11-signal statement reduced the measured verifier budget by 26.07 percent while every proof vector and adversarial rejection retained its verdict."
+    },
+    "6": {
+      "status": "accept",
+      "reason": "Passing the eleven-signal vector already verified by the contract into archival removes a duplicate derivation without removing archive payload checks."
+    },
+    "7": {
+      "status": "accept",
+      "reason": "Precomputing the immutable asset field is accepted and byte-identical; the separate host-hash backend proposal is rejected until actual Wasm simulation demonstrates a gain."
+    },
+    "8": {
+      "status": "accept",
+      "reason": "Ten thousand-case differential tests match BigUint; like-for-like builds reduced raw pool Wasm from 93504 to 66377 bytes and optimized Wasm from 80245 to 57042 bytes."
+    },
+    "9": {
+      "status": "accept",
+      "reason": "The documented length-IV claim is false for same-arity hashes; an enforceable domain-slot invariant is required."
+    },
+    "10": {
+      "status": "accept",
+      "reason": "The custom KEM, shared multi-asset pool, and capacity-domain proposals now have explicit repository-tested rejection records before artifact bindings move."
+    },
+    "11": {
+      "status": "accept",
+      "reason": "The safe variant compiled to 14574 constraints and 11 public inputs; one inverse constraint is retained because an otherwise-unused public actionField would receive a zero proof-binding IC coefficient."
+    },
+    "12": {
+      "status": "reject",
+      "reason": "A custom variable-base KEM is not justified by scan latency alone and lacks an independently reviewed specification."
+    },
+    "13": {
+      "status": "reject",
+      "reason": "A shared multi-asset pool conflicts with the implemented asset-pinned isolation and reintroduces shared spam and recovery costs."
+    },
+    "14": {
+      "status": "accept",
+      "reason": "The archive stores one persistent entry per record, so retired paging constants are removed from the constructor, deployment binding, manifest, and runtime head validation."
+    },
+    "15": {
+      "status": "reject",
+      "reason": "Soroban native Poseidon2 fixes the length-IV capacity and exposes no capacity-domain argument; a guest permutation would discard host acceleration without a measured safety need."
+    },
+    "16": {
+      "status": "accept",
+      "reason": "The accepted public-input and deployment-binding changes require complete proving-key, verifier, contract, vector, client, and manifest regeneration from an authenticated transcript."
+    },
+    "17": {
+      "status": "accept",
+      "reason": "The current client self-submits and therefore exposes its inner transaction source. A fee-bump changes only the fee source and does not remove that link, so the limitation is explicitly accepted until a third-party submission service is specified and operated."
+    },
+    "18": {
+      "status": "defer",
+      "reason": "Cross-origin isolation cannot be accepted without a subresource audit and physical-browser proving measurements."
+    },
+    "19": {
+      "status": "reject",
+      "reason": "A compiled additional depth-17 membership path costs 4573 constraints (31.38 percent of the current action) before policy logic; no association curator, appeals model, or user requirement is specified."
+    },
+    "20": {
+      "status": "accept",
+      "reason": "The ZK pool and Horizon stealth path are both live and need an explicit division of responsibility rather than accidental overlap."
+    }
+  }
+}

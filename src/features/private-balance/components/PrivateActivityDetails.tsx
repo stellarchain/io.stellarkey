@@ -1,0 +1,214 @@
+'use client';
+
+import { useState, type ReactNode } from 'react';
+import { AccountMark } from '@/components/AccountMark';
+import { IconExternal } from '@/components/icons';
+import { SectionHeader, Button, ModalBody, Notice } from '@/components/ui';
+import { NETWORKS, privateBalanceExplorerTxHash } from '@/lib/stellar';
+import type { NetworkKey } from '@/lib/types';
+import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
+import { fmtAmount } from '@/lib/format';
+import { activityKindLabel } from '../copy';
+import { formatPrivateBalanceAmount } from '../runtime/selectors';
+import type { PrivatePendingAction, ShieldedActivityRecord } from '../runtime/types';
+import { hasExposedPrivateSpend } from '../runtime/proof-exposure';
+import { HumanizedErrorNotice } from './PrivateBalanceStatus';
+import { isInternalPendingAction } from './PrivateBalanceStatusLine';
+import { useReportToOwner } from './useReportToOwner';
+
+export type PrivateActivitySelection =
+  | { type: 'verified'; activity: ShieldedActivityRecord }
+  | { type: 'pending'; action: PrivatePendingAction };
+
+function DetailRow({ name, value }: { name: string; value: ReactNode }) {
+  return (
+    <div className="ios-sep flex min-h-12 items-center justify-between gap-4 px-4 py-3 text-[13px]">
+      <dt className="text-neutral-400">{name}</dt>
+      <dd className="min-w-0 text-right font-semibold text-neutral-100">{value}</dd>
+    </div>
+  );
+}
+
+function memoText(memoHex: string | undefined): string | null {
+  if (!memoHex) return null;
+  const bytes = Uint8Array.from(memoHex.match(/../g) ?? [], byte => Number.parseInt(byte, 16));
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+export function PrivateActivityDetails({
+  selection,
+  network,
+  poolContractId,
+  privacyMode = false,
+  onBusyChange,
+}: {
+  selection: PrivateActivitySelection;
+  network: NetworkKey;
+  poolContractId: string | null;
+  privacyMode?: boolean;
+  /** A status check in flight keeps the owning dialog from closing. */
+  onBusyChange?(busy: boolean): void;
+}) {
+  const { asset, refreshSync } = usePrivateBalanceRuntimeData();
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState<unknown>(null);
+  useReportToOwner(onBusyChange, checking, false);
+  const pending = selection.type === 'pending';
+  const unsignedExposure = pending && hasExposedPrivateSpend(selection.action) && !selection.action.signedEnvelopeXdr;
+  const activity = selection.type === 'verified' ? selection.activity : null;
+  // A chained send's consolidation step or a verified self-transfer. An
+  // optional helper fee can still leave the balance during consolidation.
+  const internal = pending
+    ? isInternalPendingAction(selection.action)
+    : activity !== null && activity.direction === 'internal';
+  const kind = activity ? activity.actionKind : pending ? selection.action.kind : 'transfer';
+  const inflow = activity !== null && activity.direction === 'inflow';
+  // An outgoing transfer can recover recipient/memo details from its encrypted
+  // outgoing envelopes as well as the local journal. Absence is not proof of erasure.
+  const sentTransfer = kind === 'transfer' && !internal && !inflow;
+  const title = unsignedExposure ? 'Status unknown' : internal
+    ? pending
+      ? 'Preparing balance…'
+      : activityKindLabel('transfer', 'internal')
+    : activity
+      ? activityKindLabel(activity.actionKind, activity.direction)
+      : 'Confirming…';
+  const decimals = asset?.decimals ?? 7;
+  const code = asset?.code ?? 'Asset';
+  const pendingAmountStroops = pending ? selection.action.amountStroops : undefined;
+  const knownAmount = activity
+    ? `${fmtAmount(formatPrivateBalanceAmount(BigInt(activity.amount), decimals))} ${code}`
+    : pendingAmountStroops
+      ? `${fmtAmount(formatPrivateBalanceAmount(BigInt(pendingAmountStroops), decimals))} ${code}`
+      : null;
+  const amount = knownAmount === null
+    ? 'Unavailable until verified'
+    : privacyMode
+      ? '••••••'
+      : knownAmount;
+  const localRecipient = activity?.recipientFingerprint ??
+    (pending ? selection.action.recipientFingerprint : undefined);
+  const localMemo = memoText(activity?.memoHex ?? (pending ? selection.action.memoHex : undefined));
+  const explorerTransactionHash = privateBalanceExplorerTxHash(
+    kind,
+    activity?.transactionHash ?? (pending ? selection.action.transactionHash : undefined),
+  );
+
+  // "Check Status" uses common canonical history. An exposed proof can outlive
+  // its original envelope; absence must not be presented as cancellation.
+  const checkStatus = async () => {
+    setChecking(true);
+    setCheckError(null);
+    try {
+      await refreshSync();
+    } catch (cause: unknown) {
+      setCheckError(cause ?? new Error('Private payments stopped safely.'));
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <ModalBody>
+      <div>
+        <SectionHeader>Private activity</SectionHeader>
+        <h3 className="mt-1 text-[20px] font-bold text-white">{title}</h3>
+      </div>
+      <dl className="list-group">
+        {/* Canonical outflows include any helper fee, not just the recipient's payment. */}
+        {internal && pending ? null : (
+          <DetailRow name={activity?.direction === 'outflow' ? 'Net private balance change' : 'Amount'} value={amount} />
+        )}
+        <DetailRow name="Verification" value={unsignedExposure ? 'Status unknown' : pending ? 'Confirming…' : 'Verified locally'} />
+        {activity ? <DetailRow name="Action index" value={activity.actionIndex.toLocaleString()} /> : null}
+        {activity?.timestamp ? <DetailRow name="Time" value={new Date(activity.timestamp).toLocaleString()} /> : null}
+        {/* Sent metadata may be locally saved or recovered from outgoing
+            envelopes. Other recipients are this wallet or publicly recorded. */}
+        {internal ? null : kind === 'deposit' ? (
+          <DetailRow name="Recipient" value="Your private balance" />
+        ) : kind === 'withdraw' ? (
+          <DetailRow name="Recipient" value="Shown on the public record" />
+        ) : inflow ? (
+          <DetailRow name="Recipient" value="You" />
+        ) : (
+          <DetailRow
+            name="Recipient"
+            value={localRecipient ? (
+              <span className="inline-flex items-center gap-2">
+                <AccountMark publicKey={localRecipient} size={16} />
+                <span className="mono">{localRecipient}</span>
+              </span>
+            ) : (
+              'Unavailable in recovered history'
+            )}
+          />
+        )}
+        {/* Private memos exist only on transfers. A sent transfer with
+            recovered recipient metadata but no memo had none; an inflow's memo shows
+            when it was decrypted into this activity, and is never claimed
+            lost — the note plaintext carries it through seed recovery. */}
+        {sentTransfer ? (
+          <DetailRow
+            name="Memo"
+            value={localMemo ?? (localRecipient ? 'None' : 'Unavailable in recovered history')}
+          />
+        ) : kind === 'transfer' && inflow && localMemo ? (
+          <DetailRow name="Memo" value={localMemo} />
+        ) : null}
+      </dl>
+      {unsignedExposure ? (
+        <Notice tone="warn">
+          A spend proof was shared before a signed transaction was recorded. A party holding it can still execute this exact payment.
+          Inputs remain reserved while its outcome is unknown; cancellation or transaction expiry does not revoke the proof.
+        </Notice>
+      ) : null}
+      <Notice>
+        {internal
+          ? 'This step combines notes in your private balance. The amounts stay encrypted.'
+          : kind === 'deposit'
+            ? 'Adding funds is public on Stellar; the private balance it creates stays encrypted, and your recovery phrase alone restores it.'
+            : kind === 'withdraw'
+              ? 'This withdrawal is public on Stellar like any payment — its amount, recipient, and timing appear on the public record.'
+              : inflow
+                ? 'Received payments travel encrypted with the payment itself, so your recovery phrase alone restores them — amount and memo included. The public record cannot prove the hidden amount.'
+                : 'When included, sent recipient and memo details can be recovered from archived encrypted outgoing records using your recovery phrase. Missing details here do not prove those records never existed. The public record cannot prove the hidden recipient or amount.'}
+      </Notice>
+      {checkError !== null ? <HumanizedErrorNotice cause={checkError} /> : null}
+      {pending ? (
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full"
+          loading={checking}
+          onClick={() => void checkStatus()}
+        >
+          {checking ? 'Checking…' : 'Check Status'}
+        </Button>
+      ) : null}
+      {explorerTransactionHash ? (
+        <a
+          href={NETWORKS[network].explorerTxUrl(explorerTransactionHash)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-secondary flex tap w-full items-center justify-center gap-2"
+        >
+          View Transaction <IconExternal size={14} />
+        </a>
+      ) : null}
+      {poolContractId ? (
+        <a
+          href={NETWORKS[network].explorerAccountUrl(poolContractId)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-secondary flex tap w-full items-center justify-center gap-2"
+        >
+          View Public Record <IconExternal size={14} />
+        </a>
+      ) : null}
+    </ModalBody>
+  );
+}

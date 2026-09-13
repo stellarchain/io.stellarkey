@@ -1,0 +1,104 @@
+/*
+  Content-Security-Policy: frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Permitted-Cross-Domain-Policies: none
+  Origin-Agent-Cluster: ?1
+
+/
+  Cache-Control: no-cache, must-revalidate
+
+/app
+  Cache-Control: no-cache, must-revalidate
+
+/about
+  Cache-Control: no-cache, must-revalidate
+
+/privacy
+  Cache-Control: no-cache, must-revalidate
+
+/terms
+  Cache-Control: no-cache, must-revalidate
+
+/security
+  Cache-Control: no-cache, must-revalidate
+
+/private
+  Cache-Control: no-cache, must-revalidate
+
+/support
+  Cache-Control: no-cache, must-revalidate
+
+/changelog
+  Cache-Control: no-cache, must-revalidate
+
+/404.html
+  Cache-Control: no-cache, must-revalidate
+
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/manifest.webmanifest
+  Cache-Control: no-cache, must-revalidate
+
+/robots.txt
+  Cache-Control: no-cache, must-revalidate
+
+/sitemap.xml
+  Cache-Control: no-cache, must-revalidate
+
+/release.json
+  Cache-Control: no-cache, must-revalidate
+
+/.well-known/security.txt
+  Cache-Control: no-cache, must-revalidate
+
+/apple-touch-icon.png
+  Cache-Control: no-cache, must-revalidate
+
+/favicon.ico
+  Cache-Control: no-cache, must-revalidate
+
+/apple-icon1.png
+  Cache-Control: no-cache, must-revalidate
+
+/apple-icon2.png
+  Cache-Control: no-cache, must-revalidate
+
+/icon.svg
+  Cache-Control: no-cache, must-revalidate
+
+/icon-192.png
+  Cache-Control: no-cache, must-revalidate
+
+/icon-512.png
+  Cache-Control: no-cache, must-revalidate
+
+/icon-maskable-192.png
+  Cache-Control: no-cache, must-revalidate
+
+/icon-maskable-512.png
+  Cache-Control: no-cache, must-revalidate
+
+/icon-maskable-1024.png
+  Cache-Control: no-cache, must-revalidate
+
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Service-Worker-Allowed: /
+  Content-Security-Policy: default-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'
+  X-Content-Type-Options: nosniff
+
+/protocol/private-balance/v1/circuit.zkey.pc
+  Cache-Control: public, max-age=31536000, immutable
+  Content-Type: application/octet-stream
+
+/protocol/private-balance/v1/circuit.wasm
+  Cache-Control: public, max-age=31536000, immutable
+
+/protocol/private-balance/v1/verification-key.json
+  Cache-Control: public, max-age=31536000, immutable

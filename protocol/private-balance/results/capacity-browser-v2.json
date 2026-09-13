@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-13T00:47:13.296Z",
+  "protocolVersion": 2,
+  "syntheticOnly": true,
+  "witnessSource": "experiments/capacity-v2/fixtures.mjs:fullCrossFixture",
+  "artifacts": {
+    "d/snarkjs.min.js": "3bf5b5123047ed9187baa7d4c11285019f09fbed88a28693984ed9dd0508466a",
+    "circuits/build/action_js/action.wasm": "185a6d8c684b9a1d4fbe878bf19ea1906afaf3f1137376b90235890b7ac128ed",
+    "circuits/build/action_dev.zkey": "6082d74328d861e5a2247083ec9e83f642b61fa89aef8b297f235d43ec1f07f0",
+    "circuits/build/verification_key.json": "960b480dd4a10580e9e55e284eabdae072a359623b7530dd3bf40a399d64accf"
+  },
+  "results": [
+    {
+      "name": "chromium-default-workers",
+      "engineVersion": "151.0.7922.34",
+      "physicalPhone": false,
+      "host": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpu": "Apple M3 Max"
+      },
+      "samples": [
+        {
+          "fullProveMs": 2069.2000000476837,
+          "verifyMs": 12.199999928474426
+        },
+        {
+          "fullProveMs": 1926.5,
+          "verifyMs": 11.300000071525574
+        },
+        {
+          "fullProveMs": 1948.8999999761581,
+          "verifyMs": 11.699999928474426
+        }
+      ],
+      "artifactFetchMs": 18.40000009536743,
+      "observedJsHeapMaxBytes": 29400000,
+      "memoryCaveat": "Sampled JS heap only, not total or peak process/Wasm memory; main-thread work can delay sampling.",
+      "crossOriginIsolated": false,
+      "hardwareConcurrency": 16,
+      "proverSingleThread": false,
+      "verified": true
+    },
+    {
+      "name": "webkit-iphone-emulation-default-workers",
+      "engineVersion": "26.5",
+      "physicalPhone": false,
+      "host": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpu": "Apple M3 Max"
+      },
+      "samples": [
+        {
+          "fullProveMs": 3137,
+          "verifyMs": 21
+        },
+        {
+          "fullProveMs": 2893,
+          "verifyMs": 15
+        },
+        {
+          "fullProveMs": 2959,
+          "verifyMs": 14
+        }
+      ],
+      "artifactFetchMs": 49,
+      "observedJsHeapMaxBytes": null,
+      "memoryCaveat": "Sampled JS heap only, not total or peak process/Wasm memory; main-thread work can delay sampling.",
+      "crossOriginIsolated": false,
+      "hardwareConcurrency": 8,
+      "proverSingleThread": false,
+      "verified": true
+    },
+    {
+      "name": "chromium-single-thread",
+      "engineVersion": "151.0.7922.34",
+      "physicalPhone": false,
+      "host": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpu": "Apple M3 Max"
+      },
+      "samples": [
+        {
+          "fullProveMs": 14954.799999952316,
+          "verifyMs": 75.80000007152557
+        },
+        {
+          "fullProveMs": 14650.299999952316,
+          "verifyMs": 13.100000023841858
+        },
+        {
+          "fullProveMs": 13804.100000023842,
+          "verifyMs": 11.199999928474426
+        }
+      ],
+      "artifactFetchMs": 18,
+      "observedJsHeapMaxBytes": 29400000,
+      "memoryCaveat": "Sampled JS heap only, not total or peak process/Wasm memory; main-thread work can delay sampling.",
+      "crossOriginIsolated": false,
+      "hardwareConcurrency": 16,
+      "proverSingleThread": true,
+      "verified": true
+    },
+    {
+      "name": "webkit-iphone-emulation-single-thread",
+      "engineVersion": "26.5",
+      "physicalPhone": false,
+      "host": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpu": "Apple M3 Max"
+      },
+      "samples": [
+        {
+          "fullProveMs": 14215,
+          "verifyMs": 118
+        },
+        {
+          "fullProveMs": 13859,
+          "verifyMs": 18
+        },
+        {
+          "fullProveMs": 12836,
+          "verifyMs": 12
+        }
+      ],
+      "artifactFetchMs": 26,
+      "observedJsHeapMaxBytes": null,
+      "memoryCaveat": "Sampled JS heap only, not total or peak process/Wasm memory; main-thread work can delay sampling.",
+      "crossOriginIsolated": false,
+      "hardwareConcurrency": 8,
+      "proverSingleThread": true,
+      "verified": true
+    }
+  ]
+}

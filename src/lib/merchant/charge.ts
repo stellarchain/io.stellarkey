@@ -1,0 +1,168 @@
+import { buildSep7PayUri } from "../payuri";
+import { NETWORKS } from "../stellar";
+import type { NetworkKey } from "../stellar";
+import { randomHex } from "../crypto";
+import { assetAmountFor, unitPriceE6 } from "./money";
+import type {
+  AcceptedAsset,
+  Charge,
+  ChargeQuote,
+  MerchantSettings,
+  Minor,
+  Order,
+} from "./types";
+import {
+  createMerchantRoutingId,
+  merchantPaymentTransport,
+  type MerchantPaymentTransport,
+} from "./routing";
+
+export { orderReference, referencePrefix } from "./payment-reference";
+
+export function isNative(asset: AcceptedAsset): boolean {
+  return asset.code === "XLM" && !asset.issuer;
+}
+
+export function assetKey(asset: AcceptedAsset): string {
+  return isNative(asset) ? "native" : `${asset.code}:${asset.issuer ?? ""}`;
+}
+
+export function sameAsset(a: AcceptedAsset, b: AcceptedAsset): boolean {
+  return assetKey(a) === assetKey(b);
+}
+
+/** First occurrence wins; identity always includes the issuer for credit assets. */
+export function uniqueAssets(assets: Iterable<AcceptedAsset>): AcceptedAsset[] {
+  const seen = new Set<string>();
+  const unique: AcceptedAsset[] = [];
+  for (const asset of assets) {
+    const key = assetKey(asset);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(asset);
+  }
+  return unique;
+}
+
+export interface QuoteInput {
+  asset: AcceptedAsset;
+  /** Shop currency per one whole unit of the asset, e.g. 0.2532 for XLM in EUR. */
+  currencyPerUnit: number;
+}
+
+/**
+ * A charge holds one quote per accepted asset for its whole life. Nothing on
+ * Stellar can lock a rate, so this is a promise the shop makes for the expiry
+ * window and absorbs the movement on — which is why the window is short and why
+ * pricing in a stablecoin is the safe default.
+ */
+export function buildQuotes(
+  amountMinor: Minor,
+  inputs: QuoteInput[],
+  now = Date.now(),
+): ChargeQuote[] {
+  return inputs.map(({ asset, currencyPerUnit }) => {
+    const unitPriceMinorE6 = unitPriceE6(currencyPerUnit);
+    return {
+      asset,
+      unitPriceMinorE6,
+      amount: assetAmountFor(amountMinor, unitPriceMinorE6),
+      quotedAt: now,
+    };
+  });
+}
+
+export interface CreateChargeInput {
+  order: Order;
+  settings: MerchantSettings;
+  network: NetworkKey;
+  destination: string;
+  quotes: QuoteInput[];
+  /** Defaults to the order total; a split charge uses only its outstanding leg. */
+  amountMinor?: Minor;
+  now?: number;
+  id?: string;
+  routingId?: string;
+}
+
+export function createCharge({
+  order,
+  settings,
+  network,
+  destination,
+  quotes,
+  amountMinor,
+  now = Date.now(),
+  id,
+  routingId,
+}: CreateChargeInput): Charge {
+  if (!destination) throw new Error("Merchant Mode needs a receiving account before it can charge.");
+  if (quotes.length === 0) throw new Error("No accepted asset has a price right now.");
+  const chargeAmount = amountMinor ?? order.totals.totalMinor;
+  if (!Number.isSafeInteger(chargeAmount) || chargeAmount <= 0 || chargeAmount > order.totals.totalMinor) {
+    throw new Error("A charge must be a positive minor-unit amount within the order total.");
+  }
+  return {
+    id: id ?? `chg_${now.toString(36)}_${randomHex(12)}`,
+    orderId: order.id,
+    reference: order.reference,
+    routingId: routingId ?? createMerchantRoutingId(),
+    network,
+    destination,
+    amountMinor: chargeAmount,
+    currency: order.currency,
+    quotes: buildQuotes(chargeAmount, quotes, now),
+    status: "awaiting",
+    createdAt: now,
+    expiresAt: now + settings.chargeExpirySeconds * 1000,
+    payment: null,
+  };
+}
+
+export function quoteFor(charge: Charge, asset: AcceptedAsset): ChargeQuote | null {
+  return charge.quotes.find((q) => sameAsset(q.asset, asset)) ?? null;
+}
+
+/**
+ * The SEP-7 request a customer's wallet reads. `network_passphrase` is always
+ * set: without it a testnet request and a mainnet one are indistinguishable.
+ */
+function chargePayUriForTransport(
+  charge: Charge,
+  quote: ChargeQuote,
+  shopName: string | undefined,
+  transport: MerchantPaymentTransport,
+): string {
+  const target = merchantPaymentTransport(charge.destination, charge.routingId, transport);
+  return buildSep7PayUri({
+    ...target,
+    amount: quote.amount,
+    assetCode: isNative(quote.asset) ? undefined : quote.asset.code,
+    assetIssuer: isNative(quote.asset) ? undefined : (quote.asset.issuer ?? undefined),
+    msg: shopName ? `${shopName} · ${charge.reference}` : undefined,
+    networkPassphrase: NETWORKS[charge.network].networkPassphrase,
+  });
+}
+
+export function chargePayUri(charge: Charge, quote: ChargeQuote, shopName?: string): string {
+  return chargePayUriForTransport(charge, quote, shopName, "muxed");
+}
+
+export function chargeCompatibilityPayUri(
+  charge: Charge,
+  quote: ChargeQuote,
+  shopName?: string,
+): string {
+  return chargePayUriForTransport(charge, quote, shopName, "memo-id");
+}
+
+export function secondsRemaining(charge: Charge, now = Date.now()): number {
+  return Math.max(0, Math.ceil((charge.expiresAt - now) / 1000));
+}
+
+/** Charges still worth watching Horizon for. */
+export function liveCharges(charges: Charge[], network: NetworkKey, now = Date.now()): Charge[] {
+  return charges.filter(
+    (c) => c.network === network && c.status === "awaiting" && now < c.expiresAt,
+  );
+}

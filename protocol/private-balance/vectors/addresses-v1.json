@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "input": {
+    "diversifier": "00000000",
+    "deploymentBindingHash": "4242424242424242424242424242424242424242424242424242424242424242",
+    "ownerCommitment": "0bb0f4bf7faea0bec6891be5f5a8363045c67c7e3abb0ec4c7ef160046e21152",
+    "hpkePublicKey": "d64a5c0046638b99f392a90c4ef079e3c377523e96649c636e65a2181a3b4763"
+  },
+  "expected": {
+    "testnet": "tskpay_4g8Tt13VSvQHNipaxPx3SKxdMxFVuE85mX45UQpP72XdWxQL5WWSVyTe6cBtfr5z2USM747gevvtoePZv1NbgQx4L4mbzrv2dvKnUd3YbN3Thf8BPrYTeH9p6",
+    "mainnet": "skpay_4g8Tt13VSvQHNipaxPx3SKxdMxFVuE85mX45UQpP72XdWxQL5WWSVyTe6cBtfr5z2USM747gevvtoePZv1NbgQx4L4mbzrv2dvKnUd3YbN3Thf8BPrYU7NKof"
+  }
+}

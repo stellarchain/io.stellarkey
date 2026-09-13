@@ -1,0 +1,460 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+import { emptyStore } from "../src/lib/merchant/defaults.ts";
+import {
+  availableRefundMinor,
+  recordRefundSubmission,
+} from "../src/lib/merchant/refunds.ts";
+import {
+  addStaffMember,
+  assertCanReviewRefundRequest,
+  canReleaseRefund,
+  createPaymentRefundRequest,
+  createRefundRequest,
+  decideRefundRequest,
+  defaultPermissionsFor,
+  pinAttemptFor,
+  requireActiveOwner,
+  requireRefundAuthorization,
+  storePinAttempt,
+  nextPinAttempt,
+  updateStaffMember,
+} from "../src/lib/merchant/permissions.ts";
+
+const PIN_DIGEST =
+  "pbkdf2-sha256$v1$600000$AAECAwQFBgcICQoLDA0ODw==$AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+const PAYMENT_ID = "payment-settled";
+const TILL = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+const PAYER = "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBL";
+
+function member(id, role, overrides = {}) {
+  return {
+    id,
+    name: id,
+    role,
+    permissions: defaultPermissionsFor(role),
+    pinDigest: PIN_DIGEST,
+    pinSetAt: 1,
+    active: true,
+    ...overrides,
+  };
+}
+
+function staffedStore() {
+  const owner = member("owner", "owner");
+  const server = member("server", "server");
+  return {
+    ...emptyStore(),
+    settings: { ...emptyStore().settings, enabled: true },
+    staff: [owner, server],
+    activeStaffId: owner.id,
+  };
+}
+
+function withSettledPayment(store, order) {
+  const payment = {
+    id: PAYMENT_ID,
+    transactionHash: "c".repeat(64),
+    ledger: 123,
+    from: PAYER,
+    destination: TILL,
+    amount: "10.0000000",
+    asset: { code: "XLM", issuer: null },
+    memo: "M1204",
+    createdAt: new Date(1_000).toISOString(),
+    lane: "memo",
+  };
+  return {
+    ...store,
+    orders: [order],
+    charges: [
+      {
+        id: "charge-settled",
+        orderId: order.id,
+        reference: "M1204",
+        network: "testnet",
+        destination: TILL,
+        amountMinor: order.totals.totalMinor,
+        currency: "EUR",
+        quotes: [],
+        status: "paid",
+        createdAt: 1,
+        expiresAt: 10_000,
+        payment,
+      },
+    ],
+  };
+}
+
+test("role defaults expose deliberate least-privilege ceilings", () => {
+  assert.equal(defaultPermissionsFor("owner").refundCeilingMinor, null);
+  assert.equal(defaultPermissionsFor("owner").exportRecords, true);
+  assert.equal(defaultPermissionsFor("manager").refundCeilingMinor, 10_000);
+  assert.equal(defaultPermissionsFor("server").refundCeilingMinor, 2_000);
+  assert.equal(defaultPermissionsFor("server").seeReports, false);
+  assert.equal(defaultPermissionsFor("accountant").takePayment, false);
+  assert.equal(defaultPermissionsFor("accountant").exportRecords, true);
+});
+
+test("refund ceilings distinguish direct release from approval", () => {
+  const server = member("server", "server");
+  assert.equal(canReleaseRefund(server, 2_000), true);
+  assert.equal(canReleaseRefund(server, 2_001), false);
+  assert.equal(canReleaseRefund(member("disabled", "server", { active: false }), 100), false);
+  assert.equal(canReleaseRefund(member("owner", "owner"), 1_000_000), true);
+  assert.equal(
+    canReleaseRefund(
+      member("none", "server", {
+        permissions: { ...defaultPermissionsFor("server"), refundCeilingMinor: 0 },
+      }),
+      1,
+    ),
+    false,
+  );
+});
+
+test("only an active owner can manage staff and the last owner is protected", () => {
+  const store = staffedStore();
+  assert.throws(
+    () => updateStaffMember(store, "server", "owner", { name: "Changed" }),
+    /owner/i,
+  );
+  assert.throws(
+    () => updateStaffMember(store, "owner", "owner", { active: false }),
+    /last active owner/i,
+  );
+  assert.throws(
+    () => updateStaffMember(store, "owner", "owner", { role: "manager" }),
+    /last active owner/i,
+  );
+
+  const updated = updateStaffMember(store, "owner", "server", {
+    name: "Front counter",
+    permissions: { ...defaultPermissionsFor("server"), refundCeilingMinor: 500 },
+  });
+  assert.equal(updated.staff.find((entry) => entry.id === "server").name, "Front counter");
+  assert.equal(updated.staff.find((entry) => entry.id === "server").permissions.refundCeilingMinor, 500);
+  assert.equal(store.staff.find((entry) => entry.id === "server").name, "server");
+});
+
+test("staff creation validates identity, credential, and uniqueness", () => {
+  const store = staffedStore();
+  const added = addStaffMember(store, "owner", {
+    id: "books",
+    name: "  Bea  ",
+    role: "accountant",
+    pinDigest: PIN_DIGEST,
+    now: 20,
+  });
+  assert.equal(added.staff[0].id, "books");
+  assert.equal(added.staff[0].name, "Bea");
+  assert.equal(added.staff[0].permissions.exportRecords, true);
+  assert.throws(
+    () => addStaffMember(added, "owner", { id: "books", name: "Duplicate", role: "server", pinDigest: PIN_DIGEST, now: 21 }),
+    /already exists/i,
+  );
+  assert.throws(
+    () => addStaffMember(store, "owner", { id: "bad", name: "Bad", role: "server", pinDigest: "1234", now: 21 }),
+    /credential/i,
+  );
+});
+
+test("five wrong PINs impose a timed lockout and success clears failures", () => {
+  let state = { failures: 0, blockedUntil: 0, lockoutLevel: 0 };
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const result = nextPinAttempt(state, false, 1_000 + attempt);
+    state = result.state;
+    assert.equal(result.blocked, false);
+  }
+  const fifth = nextPinAttempt(state, false, 2_000);
+  assert.equal(fifth.blocked, true);
+  assert.equal(fifth.state.blockedUntil, 32_000);
+
+  const stillBlocked = nextPinAttempt(fifth.state, true, 31_999);
+  assert.equal(stillBlocked.blocked, true);
+  assert.deepEqual(stillBlocked.state, fifth.state);
+
+  const success = nextPinAttempt(fifth.state, true, 32_000);
+  assert.equal(success.blocked, false);
+  assert.deepEqual(success.state, { failures: 0, blockedUntil: 0, lockoutLevel: 0 });
+});
+
+test("PIN lockout state persists in the merchant store and backs off exponentially", () => {
+  let store = staffedStore();
+  let state = pinAttemptFor(store, "server");
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    state = nextPinAttempt(state, false, 1_000 + attempt).state;
+  }
+  store = storePinAttempt(store, "server", state);
+  assert.deepEqual(pinAttemptFor(store, "server"), state);
+  assert.equal(state.blockedUntil, 31_004);
+  assert.equal(state.lockoutLevel, 1);
+
+  let afterExpiry = state;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    afterExpiry = nextPinAttempt(afterExpiry, false, 32_000 + attempt).state;
+  }
+  assert.equal(afterExpiry.blockedUntil, 92_004);
+  assert.equal(afterExpiry.lockoutLevel, 2);
+});
+
+test("owner and refund authorization are bound to the active operator at mutation time", () => {
+  const store = staffedStore();
+  assert.equal(requireActiveOwner(store, "owner").id, "owner");
+  assert.throws(
+    () => requireActiveOwner({ ...store, activeStaffId: "server" }, "owner"),
+    /active owner/i,
+  );
+  assert.throws(() => requireActiveOwner(store, "server"), /active owner/i);
+
+  const serverStore = { ...store, activeStaffId: "server", onShiftStaffIds: ["server"] };
+  assert.equal(requireRefundAuthorization(serverStore, "server", 2_000).id, "server");
+  assert.throws(
+    () => requireRefundAuthorization({ ...serverStore, activeStaffId: null }, "server", 2_000),
+    /active operator/i,
+  );
+  assert.throws(
+    () => requireRefundAuthorization(serverStore, "server", 2_001),
+    /approval/i,
+  );
+});
+
+test("over-ceiling refunds become immutable pending requests", () => {
+  const store = staffedStore();
+  const order = {
+    id: "order-1",
+    number: 1204,
+    status: "paid",
+    totals: { totalMinor: 5_000 },
+  };
+  const withOrder = withSettledPayment(store, order);
+  const { store: requested, request } = createRefundRequest(withOrder, {
+    id: "request-1",
+    orderId: order.id,
+    amountMinor: 2_001,
+    reason: "customer_request",
+    note: "Customer changed their mind",
+    requestedById: "server",
+    now: 10_000,
+  });
+
+  assert.equal(request.status, "pending");
+  assert.equal(request.orderNumber, 1204);
+  assert.equal(request.requestedBy, "server");
+  assert.equal(request.reviewedById, null);
+  assert.equal(request.refundId, null);
+  assert.equal(requested.refundRequests[0], request);
+  assert.throws(
+    () => createRefundRequest(requested, { id: "request-2", orderId: order.id, amountMinor: 2_001, reason: "customer_request", requestedById: "server", now: 10_001 }),
+    /already pending/i,
+  );
+
+  const secondAmount = createRefundRequest(requested, {
+    id: "request-3",
+    orderId: order.id,
+    amountMinor: 2_999,
+    reason: "other",
+    requestedById: "server",
+    now: 10_002,
+  });
+  assert.equal(secondAmount.store.refundRequests.length, 2);
+  assert.throws(
+    () => createRefundRequest(secondAmount.store, {
+      id: "request-4",
+      orderId: order.id,
+      amountMinor: 2_001,
+      reason: "other",
+      requestedById: "server",
+      now: 10_003,
+    }),
+    /remain refundable/i,
+  );
+});
+
+test("an over-ceiling duplicate-payment refund requests approval without reserving the order", () => {
+  const store = staffedStore();
+  const order = { id: "order-1", number: 1204, status: "paid", totals: { totalMinor: 5_000 } };
+  const reconciliation = {
+    id: "payment-duplicate",
+    network: "mainnet",
+    payment: { id: "payment-duplicate" },
+    outcome: "duplicate",
+    chargeId: "charge-1",
+    orderId: order.id,
+    amountMinor: 2_500,
+    observedAt: 1,
+    resolution: null,
+  };
+  const requested = createPaymentRefundRequest(
+    {
+      ...withSettledPayment(store, order),
+      paymentReconciliations: [reconciliation],
+    },
+    {
+      id: "request-duplicate",
+      paymentId: reconciliation.id,
+      requestedById: "server",
+      note: "Paid Twice",
+      now: 10,
+    },
+  );
+
+  assert.equal(requested.request.sourcePaymentId, reconciliation.id);
+  assert.equal(requested.request.amountMinor, 2_500);
+  assert.equal(requested.request.reason, "duplicate");
+  assert.equal(availableRefundMinor(requested.store, order.id), 5_000);
+});
+
+test("a qualified reviewer can decline or record a signed refund result", () => {
+  const store = staffedStore();
+  const order = { id: "order-1", number: 1204, status: "paid", totals: { totalMinor: 5_000 } };
+  const { store: pending } = createRefundRequest(
+    withSettledPayment(store, order),
+    {
+      id: "request-1",
+      orderId: order.id,
+      amountMinor: 2_500,
+      reason: "other",
+      requestedById: "server",
+      now: 10,
+    },
+  );
+
+  assert.throws(
+    () => decideRefundRequest(pending, { requestId: "request-1", reviewerId: "server", decision: "approved", now: 20, refundId: "refund-1" }),
+    /ceiling/i,
+  );
+  assert.throws(
+    () => decideRefundRequest(pending, { requestId: "request-1", reviewerId: "owner", decision: "approved", now: 20 }),
+    /signed refund/i,
+  );
+
+  assert.equal(
+    assertCanReviewRefundRequest(pending, {
+      requestId: "request-1",
+      reviewerId: "owner",
+    }).id,
+    "request-1",
+  );
+  assert.throws(
+    () => decideRefundRequest(pending, {
+      requestId: "request-1",
+      reviewerId: "owner",
+      decision: "approved",
+      now: 20,
+      refundId: "refund-1",
+    }),
+    /persisted signed refund/i,
+  );
+
+  const refund = {
+    id: "refund-1",
+    orderId: order.id,
+    kind: "order",
+    sourcePaymentId: PAYMENT_ID,
+    network: "testnet",
+    amountMinor: 2_500,
+    asset: { code: "XLM", issuer: null },
+    amount: "1.0000000",
+    destination: PAYER,
+    reason: "other",
+    note: null,
+    transactionHash: "a".repeat(64),
+    submissionStatus: "accepted",
+    createdAt: 19,
+  };
+  const withRefund = recordRefundSubmission(pending, refund);
+  const approved = decideRefundRequest(withRefund, {
+    requestId: "request-1",
+    reviewerId: "owner",
+    decision: "approved",
+    now: 20,
+    refundId: "refund-1",
+  });
+  assert.deepEqual(approved.refundRequests[0], {
+    ...withRefund.refundRequests[0],
+    status: "approved",
+    reviewedById: "owner",
+    reviewedAt: 20,
+    refundId: "refund-1",
+  });
+
+  const failedRefund = recordRefundSubmission(pending, {
+    ...refund,
+    id: "refund-failed",
+    transactionHash: "b".repeat(64),
+    submissionStatus: "failed",
+  });
+  assert.throws(
+    () => decideRefundRequest(failedRefund, {
+      requestId: "request-1",
+      reviewerId: "owner",
+      decision: "approved",
+      now: 20,
+      refundId: "refund-failed",
+    }),
+    /failed|did not move/i,
+  );
+
+  const declined = decideRefundRequest(pending, {
+    requestId: "request-1",
+    reviewerId: "owner",
+    decision: "declined",
+    now: 21,
+  });
+  assert.equal(declined.refundRequests[0].status, "declined");
+  assert.equal(declined.refundRequests[0].refundId, null);
+});
+
+test("staff and refund production surfaces use persisted merchant actions", () => {
+  const staffPage = readFileSync(
+    new URL("../src/components/merchant/StaffTerminalsPage.tsx", import.meta.url),
+    "utf8",
+  );
+  const requests = readFileSync(
+    new URL("../src/components/merchant/RefundRequestsPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  const orderDetail = readFileSync(
+    new URL("../src/components/merchant/OrderDetailModal.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.doesNotMatch(staffPage, /merchant\/mock|MOCK_STAFF|would be saved/);
+  assert.doesNotMatch(requests, /merchant\/mock|MOCK_REFUND|Queued as an outbound/);
+  assert.match(staffPage, /await switchStaff\(/);
+  // A pending operator switch keeps the sheet up: the shell's one busy policy holds every exit.
+  assert.match(staffPage, /busy=\{operatorPending\}/);
+  assert.match(staffPage, /onBusyChange=\{setOperatorPending\}/);
+  assert.match(staffPage, /On This Shift/);
+  assert.match(staffPage, /Current operator/);
+  assert.match(staffPage, /Add Operator/);
+  assert.match(staffPage, /Lock after every sale/);
+  assert.match(staffPage, /After inactivity/);
+  assert.match(staffPage, /await lockStaffSession\(/);
+  assert.match(staffPage, /await endStaffSession\(/);
+  assert.doesNotMatch(staffPage, /ariaLabel="Staff member to switch to"/);
+  assert.match(staffPage, /await resetStaffPin\(/);
+  assert.match(staffPage, /aria-label="Staff name"/);
+  assert.match(staffPage, /label="Active on this till"/);
+  assert.match(requests, /await approveRefundRequest\(/);
+  assert.match(orderDetail, /submitRefund: submitMerchantRefund/);
+});
+
+test("staff who are on shift must leave the roster before being deactivated", () => {
+  const owner = member("owner", "owner");
+  const server = member("server", "server");
+  const store = {
+    ...emptyStore(),
+    staff: [owner, server],
+    activeStaffId: owner.id,
+    onShiftStaffIds: [owner.id, server.id],
+  };
+
+  assert.throws(
+    () => updateStaffMember(store, owner.id, server.id, { active: false }),
+    /end their operator session/i,
+  );
+});

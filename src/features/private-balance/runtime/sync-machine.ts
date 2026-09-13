@@ -1,0 +1,618 @@
+import { isPrivateIndex, comparePrivateIndices, privateBatchLength, stringifyPrivateIndices } from './indices';
+import { reconcilePrivateSpendRecovery } from './spend-recovery';
+import {
+  computeGenesisRecordHash,
+  type ArchiveRecordModel,
+  type MerkleTree,
+} from '@stellarkey/private-balance';
+import { MAX_ARCHIVE_RECORD_BATCH, type ArchiveHeadState } from './archive-client';
+import {
+  clearPrivateBalanceCommitmentCache,
+  loadPrivateBalanceCommitments,
+  recordVerifiedPrivateBalanceCommitments,
+  type PrivateBalancePublicCacheDriver,
+} from './public-cache';
+import {
+  clearPrivateBalanceMerkleCache,
+  loadPrivateBalanceMerkleCheckpoint,
+  rebuildPrivateBalanceMerkleCache,
+  recordVerifiedPrivateBalanceMerkleBatch,
+  requirePrivateBalanceMerkleCheckpoint,
+  type ExpectedPrivateBalanceMerkleCheckpoint,
+  type PrivateBalanceMerkleCacheDriver,
+} from './merkle-cache';
+import {
+  commitPrivateBalanceState,
+  loadPrivateBalanceState,
+  type PrivateRecordDriver,
+  type PrivateStorageContext,
+} from './storage';
+import type {
+  PrivateBalanceDurableState,
+  PrivatePendingAction,
+  ShieldedActivityRecord,
+  ShieldedNoteRecord,
+} from './types';
+import { privateOutgoingHistoryMode } from './outgoing-history';
+
+interface ArchiveReader {
+  readHead(): Promise<ArchiveHeadState>;
+  readRecords(startActionIndex: bigint, count: number): Promise<ArchiveRecordModel[]>;
+  readLedgerCloseTimes?(sequences: readonly number[]): Promise<Record<number, number>>;
+}
+
+interface ScanWorker {
+  scanPage(input: {
+    records: ArchiveRecordModel[];
+    expectedPriorRecordHash: Uint8Array;
+    expectedFirstActionIndex?: bigint;
+    initialTree?: MerkleTree;
+    existingNotes?: ShieldedNoteRecord[];
+    ledgerClosedAt?: Readonly<Record<number, number>>;
+  }): Promise<{
+    notes: ShieldedNoteRecord[];
+    activities: ShieldedActivityRecord[];
+    tree: MerkleTree;
+    lastRecordHash: Uint8Array;
+    spentNullifierHexes: string[];
+    nullifiersByCommitment: Map<string, string>;
+  }>;
+}
+
+export interface SyncPrivateBalanceProgress {
+  actionIndex: bigint;
+  actionCount: bigint;
+  firstActionIndex: bigint;
+}
+
+export interface SyncPrivateBalanceInput {
+  archive: ArchiveReader;
+  corroborateHead?(): Promise<ArchiveHeadState>;
+  worker: ScanWorker;
+  contextHash: Uint8Array;
+  deploymentBindingHash: Uint8Array;
+  manifestHash: string;
+  storageContext: PrivateStorageContext;
+  storageKey: Uint8Array;
+  storageDriver?: PrivateRecordDriver;
+  publicCacheDriver?: PrivateBalancePublicCacheDriver & PrivateBalanceMerkleCacheDriver;
+  onProgress?(progress: SyncPrivateBalanceProgress): void;
+  now?: () => number;
+}
+
+export const MAX_CONTRACT_ADVANCE_RESUMES = 3;
+
+export class PrivateContractAdvancedDuringSyncError extends Error {
+  constructor() {
+    super('Private Balance contract advanced during sync; retry from the verified checkpoint');
+    this.name = 'PrivateContractAdvancedDuringSyncError';
+  }
+}
+
+function hex(bytes: Uint8Array): string {
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function hex32(value: string, name: string): Uint8Array {
+  if (!/^[0-9a-f]{64}$/.test(value)) throw new Error(`${name} must be 32-byte lowercase hex`);
+  return Uint8Array.from(value.match(/../g) ?? [], byte => Number.parseInt(byte, 16));
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) difference |= left[index] ^ right[index];
+  return difference === 0;
+}
+
+function reconstructTree(state: PrivateBalanceDurableState): MerkleTree | undefined {
+  const checkpoint = state.checkpoint;
+  if (!checkpoint) return undefined;
+  return {
+    nextIndex: checkpoint.nextLeafIndex,
+    frontier: checkpoint.treeFrontier.map((node, index) =>
+      hex32(node, `Checkpoint tree frontier ${index}`)),
+    currentRoot: hex32(checkpoint.treeRoot, 'Checkpoint tree root'),
+  };
+}
+
+function stateMerkleCheckpoint(
+  state: PrivateBalanceDurableState,
+): ExpectedPrivateBalanceMerkleCheckpoint | null {
+  if (!state.checkpoint) return null;
+  return {
+    deploymentBindingHash: state.checkpoint.deploymentBindingHash,
+    cursor: state.checkpoint.lastActionIndex + 1n,
+    transcriptHead: state.checkpoint.lastRecordHash,
+    commitmentCount: state.checkpoint.nextLeafIndex,
+    root: state.checkpoint.treeRoot,
+    frontier: [...state.checkpoint.treeFrontier],
+  };
+}
+
+function headMerkleCheckpoint(
+  head: ArchiveHeadState,
+  deploymentBindingHash: Uint8Array,
+): ExpectedPrivateBalanceMerkleCheckpoint | null {
+  if (head.meta.actionCount === 0n) return null;
+  return {
+    deploymentBindingHash: hex(deploymentBindingHash),
+    cursor: head.meta.actionCount,
+    transcriptHead: hex(head.meta.transcriptHead),
+    commitmentCount: head.tree.nextIndex,
+    root: hex(head.tree.currentRoot),
+    frontier: head.tree.frontier.map(hex),
+  };
+}
+
+function sameMerkleCheckpoint(
+  left: ExpectedPrivateBalanceMerkleCheckpoint | null,
+  right: ExpectedPrivateBalanceMerkleCheckpoint | null,
+): boolean {
+  return stringifyPrivateIndices(left) === stringifyPrivateIndices(right);
+}
+
+async function readAllArchiveCommitments(
+  archive: ArchiveReader,
+  actionCount: bigint,
+): Promise<Uint8Array[]> {
+  const commitments: Uint8Array[] = [];
+  let nextLeafIndex = 0n;
+  for (let cursor = 0n; cursor < actionCount;) {
+    const count = privateBatchLength(actionCount - cursor, MAX_ARCHIVE_RECORD_BATCH);
+    const records = await archive.readRecords(cursor, count);
+    if (records.length !== count) {
+      throw new Error('Private Balance archive returned an incomplete Merkle rebuild batch');
+    }
+    for (const [offset, record] of records.entries()) {
+      if (
+        record.actionIndex !== cursor + BigInt(offset) ||
+        record.startingLeafIndex !== nextLeafIndex ||
+        record.outputs.length !== 3
+      ) {
+        throw new Error('Private Balance archive Merkle rebuild records are not sequential');
+      }
+      if (record.actionKind !== 4) {
+        commitments.push(...record.outputs.map(output => output.cm));
+        nextLeafIndex += 3n;
+      }
+    }
+    cursor += BigInt(records.length);
+  }
+  return commitments;
+}
+
+function mergeActivities(
+  current: ShieldedActivityRecord[],
+  additions: ShieldedActivityRecord[],
+): ShieldedActivityRecord[] {
+  const byId = new Map(current.map(activity => [activity.id, activity]));
+  for (const activity of additions) byId.set(activity.id, activity);
+  return [...byId.values()].sort((left, right) => comparePrivateIndices(left.actionIndex, right.actionIndex));
+}
+
+export function attachLocalActivityMetadata(
+  activities: ShieldedActivityRecord[],
+  pendingActions: Array<Pick<
+    PrivatePendingAction,
+    'actionField' | 'transactionHash' | 'recipientFingerprint' | 'memoHex' | 'outgoingHistoryMode'
+  >>,
+): ShieldedActivityRecord[] {
+  const journalByAction = new Map(pendingActions.map(action => [action.actionField, action]));
+  return activities.map(activity => {
+    const journal = journalByAction.get(activity.id);
+    // Keep what the incoming scanner recovered, including older recoverable
+    // envelopes. Only this proof's local journal promotion is minimized.
+    if (!journal || privateOutgoingHistoryMode(journal.outgoingHistoryMode) === 'minimized') return activity;
+    return {
+      ...activity,
+      ...(journal.transactionHash ? { transactionHash: journal.transactionHash } : {}),
+      ...(activity.actionKind === 'transfer' && journal.recipientFingerprint
+        ? { recipientFingerprint: journal.recipientFingerprint }
+        : {}),
+      ...(activity.actionKind === 'transfer' && journal.memoHex
+        ? { memoHex: journal.memoHex }
+        : {}),
+    };
+  });
+}
+
+function reconcilePendingActions(
+  pendingActions: PrivatePendingAction[],
+  notes: ShieldedNoteRecord[],
+  activities: ShieldedActivityRecord[],
+): { pendingActions: PrivatePendingAction[]; notes: ShieldedNoteRecord[] } {
+  const verifiedActionFields = new Set(activities.map(activity => activity.id));
+  const reconciled = reconcileCanonicallySpentInputs(pendingActions.filter(action => !verifiedActionFields.has(action.actionField)), notes);
+  return { pendingActions: reconciled.holds, notes: reconciled.notes };
+}
+
+/** An absent action, clock or envelope failure cannot revoke a proof. A
+ * canonically spent input does: no proof using that input can execute again. */
+function reconcileCanonicallySpentInputs<T extends { reservedNoteIds: string[] }>(
+  holds: T[], notes: ShieldedNoteRecord[],
+): { holds: T[]; notes: ShieldedNoteRecord[] } {
+  const notesById = new Map(notes.map(note => [note.id, note]));
+  const releasedNoteIds = new Set<string>();
+  const reconciled = holds.filter(action => {
+    if (action.reservedNoteIds.length === 0) return true;
+    const reserved = action.reservedNoteIds.map(noteId => {
+      const note = notesById.get(noteId);
+      if (!note) throw new Error('Pending Private Balance action references a missing note');
+      if (note.status !== 'reserved' && note.status !== 'spent') throw new Error('Private proof hold lost its reserved input without a canonical spend');
+      return note.status === 'reserved';
+    });
+    if (reserved.every(Boolean)) return true;
+    // At least one input nullifier was consumed by a foreign action, so this
+    // action can never land; release its surviving reserved inputs with it.
+    for (const [index, noteId] of action.reservedNoteIds.entries()) {
+      if (reserved[index]) releasedNoteIds.add(noteId);
+    }
+    return false;
+  });
+  return {
+    holds: reconciled,
+    notes: releasedNoteIds.size === 0
+      ? notes
+      : notes.map(note => releasedNoteIds.has(note.id)
+        ? { ...note, status: 'unspent' as const, reservedAt: undefined }
+        : note),
+  };
+}
+
+function sameHead(left: ArchiveHeadState, right: ArchiveHeadState): boolean {
+  return (
+    right.latestLedger >= left.latestLedger &&
+    right.meta.actionCount === left.meta.actionCount &&
+    equalBytes(right.meta.transcriptHead, left.meta.transcriptHead) &&
+    right.tree.nextIndex === left.tree.nextIndex &&
+    equalBytes(right.tree.currentRoot, left.tree.currentRoot)
+  );
+}
+
+export interface IncomingPrivateTransferSummary {
+  count: number;
+  totalAmountStroops: string;
+}
+
+/**
+ * Collapses the inbound private transfers verified beyond the previous
+ * checkpoint into one event. Consolidations classify as 'internal' and own
+ * deposits as 'deposit', so neither can appear here.
+ */
+export function diffIncomingPrivateTransfers(
+  previousLastVerifiedActionIndex: bigint,
+  activities: readonly ShieldedActivityRecord[],
+): IncomingPrivateTransferSummary {
+  if (!isPrivateIndex(previousLastVerifiedActionIndex)) {
+    throw new Error('Private Balance incoming diff index is invalid');
+  }
+  let count = 0;
+  let totalAmountStroops = 0n;
+  for (const activity of activities) {
+    if (
+      activity.actionIndex <= previousLastVerifiedActionIndex ||
+      activity.actionKind !== 'transfer' ||
+      activity.direction !== 'inflow'
+    ) {
+      continue;
+    }
+    count += 1;
+    totalAmountStroops += BigInt(activity.amount);
+  }
+  return { count, totalAmountStroops: totalAmountStroops.toString() };
+}
+
+/**
+ * Runs the canonical sync, resuming from the committed checkpoint a bounded
+ * number of times when the contract advances mid-scan instead of surfacing
+ * the transient failure.
+ */
+export async function syncPrivateBalance(
+  input: SyncPrivateBalanceInput,
+): Promise<PrivateBalanceDurableState> {
+  for (let resumes = 0; ; resumes += 1) {
+    try {
+      return await syncPrivateBalanceOnce(input);
+    } catch (error) {
+      if (
+        !(error instanceof PrivateContractAdvancedDuringSyncError) ||
+        resumes >= MAX_CONTRACT_ADVANCE_RESUMES
+      ) {
+        throw error;
+      }
+    }
+  }
+}
+
+async function syncPrivateBalanceOnce(
+  input: SyncPrivateBalanceInput,
+): Promise<PrivateBalanceDurableState> {
+  if (input.contextHash.length !== 32 || input.deploymentBindingHash.length !== 32) {
+    throw new Error('Private Balance sync context is invalid');
+  }
+  hex32(input.manifestHash, 'Manifest hash');
+  const now = input.now ?? Date.now;
+  let state = await loadPrivateBalanceState(
+    input.storageContext,
+    input.storageKey,
+    input.storageDriver,
+  );
+  if (!state) throw new Error('Private Balance has not been configured for this account');
+  if (
+    state.checkpoint &&
+    state.checkpoint.deploymentBindingHash !== hex(input.deploymentBindingHash)
+  ) {
+    throw new Error('Private Balance checkpoint deployment binding changed');
+  }
+
+  const readHead = input.corroborateHead ?? (() => input.archive.readHead());
+  const initialHead = await readHead();
+  if (state.checkpoint && initialHead.latestLedger < state.checkpoint.latestLedger) {
+    throw new Error('Private Balance RPC endpoint moved behind the verified checkpoint');
+  }
+  if (
+    state.checkpoint &&
+    state.checkpoint.lastActionIndex >= initialHead.meta.actionCount
+  ) {
+    throw new Error('Private Balance checkpoint is ahead of the contract head');
+  }
+  if (!state.checkpoint && initialHead.meta.actionCount === 0n && state.notes.length > 0) {
+    throw new Error('Private Balance notes exist without a chain checkpoint');
+  }
+
+  const expectedStateMerkle = stateMerkleCheckpoint(state);
+  const expectedHeadMerkle = headMerkleCheckpoint(initialHead, input.deploymentBindingHash);
+  let merkleCheckpoint: ExpectedPrivateBalanceMerkleCheckpoint | null;
+  try {
+    merkleCheckpoint = await loadPrivateBalanceMerkleCheckpoint(
+      input.storageContext,
+      input.publicCacheDriver,
+    );
+  } catch {
+    await clearPrivateBalanceMerkleCache(input.storageContext, input.publicCacheDriver);
+    merkleCheckpoint = null;
+  }
+  if (
+    !sameMerkleCheckpoint(merkleCheckpoint, expectedHeadMerkle) &&
+    !sameMerkleCheckpoint(merkleCheckpoint, expectedStateMerkle) &&
+    !(merkleCheckpoint === null && expectedStateMerkle === null)
+  ) {
+    let commitments: Uint8Array[];
+    try {
+      commitments = await loadPrivateBalanceCommitments(
+        input.storageContext,
+        input.publicCacheDriver,
+      );
+    } catch {
+      commitments = [];
+    }
+    let rebuildTarget = expectedHeadMerkle && BigInt(commitments.length) >= expectedHeadMerkle.commitmentCount
+      ? expectedHeadMerkle
+      : expectedStateMerkle && BigInt(commitments.length) >= expectedStateMerkle.commitmentCount
+        ? expectedStateMerkle
+        : null;
+    if (!rebuildTarget && expectedHeadMerkle) {
+      commitments = await readAllArchiveCommitments(
+        input.archive,
+        initialHead.meta.actionCount,
+      );
+      rebuildTarget = expectedHeadMerkle;
+      await clearPrivateBalanceCommitmentCache(
+        input.storageContext,
+        input.publicCacheDriver,
+      );
+      await recordVerifiedPrivateBalanceCommitments(
+        input.storageContext,
+        0n,
+        commitments,
+        input.publicCacheDriver,
+      );
+    }
+    if (!rebuildTarget) {
+      throw new Error('Private Balance Merkle cache cannot be rebuilt for the verified head');
+    }
+    await rebuildPrivateBalanceMerkleCache(
+      input.storageContext,
+      rebuildTarget,
+      commitments.slice(0, privateBatchLength(rebuildTarget.commitmentCount, commitments.length)),
+      input.publicCacheDriver,
+    );
+    merkleCheckpoint = rebuildTarget;
+  }
+
+  let tree = reconstructTree(state);
+  let nextActionIndex = state.checkpoint ? state.checkpoint.lastActionIndex + 1n : 0n;
+  let expectedPriorRecordHash = state.checkpoint
+    ? hex32(state.checkpoint.lastRecordHash, 'Checkpoint record hash')
+    : computeGenesisRecordHash(input.contextHash, input.deploymentBindingHash);
+  let notes = state.notes.map(note => ({ ...note }));
+  let activities = state.activities.map(activity => ({ ...activity }));
+  const firstActionIndex = nextActionIndex;
+
+  while (nextActionIndex < initialHead.meta.actionCount) {
+    const batchCount = privateBatchLength(initialHead.meta.actionCount - nextActionIndex, MAX_ARCHIVE_RECORD_BATCH);
+    input.onProgress?.({
+      actionIndex: nextActionIndex,
+      actionCount: initialHead.meta.actionCount,
+      firstActionIndex,
+    });
+    const records = await input.archive.readRecords(nextActionIndex, batchCount);
+    if (records.length !== batchCount) {
+      throw new Error('Private Balance archive returned an incomplete record batch');
+    }
+    for (let offset = 0; offset < records.length; offset += 1) {
+      if (records[offset].actionIndex !== nextActionIndex + BigInt(offset)) {
+        throw new Error('Private Balance archive records are not sequential');
+      }
+    }
+
+    let ledgerClosedAt: Record<number, number> | undefined;
+    if (input.archive.readLedgerCloseTimes) {
+      try {
+        // RPC close times are unix seconds; note and activity timestamps are
+        // stored in milliseconds. Sequences outside retention stay absent, so
+        // the scanner keeps its zero-timestamp fallback for them.
+        const closeTimes = await input.archive.readLedgerCloseTimes(
+          records.map(record => record.ledgerSequence),
+        );
+        ledgerClosedAt = Object.fromEntries(
+          Object.entries(closeTimes)
+            .filter(([, seconds]) => Number.isSafeInteger(seconds) && seconds > 0)
+            .map(([sequence, seconds]) => [sequence, seconds * 1000]),
+        );
+      } catch {
+        // Timestamps are cosmetic; a failed lookup never fails the sync.
+      }
+    }
+    const scanned = await input.worker.scanPage({
+      records,
+      expectedPriorRecordHash,
+      expectedFirstActionIndex: nextActionIndex,
+      initialTree: tree,
+      existingNotes: notes,
+      ...(ledgerClosedAt ? { ledgerClosedAt } : {}),
+    });
+    const lastRecord = records[records.length - 1];
+    if (!equalBytes(scanned.tree.currentRoot, lastRecord.treeRootAfter)) {
+      throw new Error('Private Balance worker returned an inconsistent archive result');
+    }
+    await recordVerifiedPrivateBalanceCommitments(
+      input.storageContext,
+      records[0].startingLeafIndex,
+      records.flatMap(record => record.actionKind === 4 ? [] : record.outputs.map(output => output.cm)),
+      input.publicCacheDriver,
+    );
+    const batchCursor = lastRecord.actionIndex + 1n;
+    if ((merkleCheckpoint?.cursor ?? 0n) < batchCursor) {
+      const priorCursor = records[0].actionIndex;
+      if ((merkleCheckpoint?.cursor ?? 0n) !== priorCursor) {
+        throw new Error('Private Balance Merkle cache cursor is not contiguous with archive sync');
+      }
+      const commitments = records.flatMap(record => record.actionKind === 4 ? [] : record.outputs.map(output => output.cm));
+      await recordVerifiedPrivateBalanceMerkleBatch(input.storageContext, {
+        deploymentBindingHash: input.deploymentBindingHash,
+        priorCursor,
+        cursor: batchCursor,
+        transcriptHead: scanned.lastRecordHash,
+        startIndex: records[0].startingLeafIndex,
+        commitments,
+        expectedRoot: scanned.tree.currentRoot,
+        expectedFrontier: scanned.tree.frontier,
+      }, input.publicCacheDriver);
+      merkleCheckpoint = {
+        deploymentBindingHash: hex(input.deploymentBindingHash),
+        cursor: batchCursor,
+        transcriptHead: hex(scanned.lastRecordHash),
+        commitmentCount: records[0].startingLeafIndex + BigInt(commitments.length),
+        root: hex(scanned.tree.currentRoot),
+        frontier: scanned.tree.frontier.map(hex),
+      };
+    }
+    tree = scanned.tree;
+    notes = scanned.notes;
+    activities = mergeActivities(
+      activities,
+      attachLocalActivityMetadata(scanned.activities, state.pendingActions),
+    );
+    expectedPriorRecordHash = scanned.lastRecordHash;
+    nextActionIndex = lastRecord.actionIndex + 1n;
+
+    const reconciled = reconcilePendingActions(state.pendingActions, notes, activities);
+    const pendingActions = reconciled.pendingActions;
+    const buildHolds = reconcileCanonicallySpentInputs(state.buildReservations, reconciled.notes);
+    notes = buildHolds.notes;
+    const checkpointTime = now();
+    const nextState: PrivateBalanceDurableState = {
+      ...state,
+      revision: state.revision + 1,
+      lastValidatedManifestHash: input.manifestHash,
+      account: {
+        setupState: 'ready',
+        syncStatus: 'syncing',
+        lastVerifiedActionIndex: lastRecord.actionIndex,
+        updatedAt: checkpointTime,
+      },
+      notes,
+      activities,
+      checkpoint: {
+        nextLeafIndex: scanned.tree.nextIndex,
+        lastActionIndex: lastRecord.actionIndex,
+        lastRecordHash: hex(scanned.lastRecordHash),
+        treeRoot: hex(scanned.tree.currentRoot),
+        treeFrontier: scanned.tree.frontier.map(hex),
+        deploymentBindingHash: hex(input.deploymentBindingHash),
+        manifestHash: input.manifestHash,
+        latestLedger: initialHead.latestLedger,
+        updatedAt: checkpointTime,
+      },
+      pendingActions,
+      spendRecovery: reconcilePrivateSpendRecovery(state.spendRecovery, notes, activities),
+      buildReservations: buildHolds.holds,
+    };
+    await commitPrivateBalanceState(
+      input.storageContext,
+      input.storageKey,
+      nextState,
+      state.revision,
+      input.storageDriver,
+    );
+    state = nextState;
+  }
+
+  const finalHead = await readHead();
+  if (!sameHead(initialHead, finalHead)) {
+    throw new PrivateContractAdvancedDuringSyncError();
+  }
+  if (initialHead.meta.actionCount > 0n) {
+    if (
+      !state.checkpoint ||
+      state.checkpoint.lastActionIndex !== initialHead.meta.actionCount - 1n ||
+      !equalBytes(expectedPriorRecordHash, initialHead.meta.transcriptHead) ||
+      !tree ||
+      tree.nextIndex !== initialHead.tree.nextIndex ||
+      !equalBytes(tree.currentRoot, initialHead.tree.currentRoot)
+    ) {
+      throw new Error('Private Balance reconstructed state does not match the contract head');
+    }
+    await requirePrivateBalanceMerkleCheckpoint(
+      input.storageContext,
+      expectedHeadMerkle!,
+      input.publicCacheDriver,
+    );
+  } else if (merkleCheckpoint !== null) {
+    throw new Error('Private Balance Merkle checkpoint exists for an empty pool');
+  }
+
+  const completedAt = now();
+  const currentState: PrivateBalanceDurableState = {
+    ...state,
+    spendRecovery: reconcilePrivateSpendRecovery(state.spendRecovery, state.notes, state.activities),
+    revision: state.revision + 1,
+    lastValidatedManifestHash: input.manifestHash,
+    account: {
+      setupState: 'ready',
+      syncStatus: 'current',
+      lastVerifiedActionIndex: initialHead.meta.actionCount === 0n
+        ? null
+        : initialHead.meta.actionCount - 1n,
+      updatedAt: completedAt,
+    },
+    checkpoint: state.checkpoint
+      ? {
+          ...state.checkpoint,
+          manifestHash: input.manifestHash,
+          latestLedger: finalHead.latestLedger,
+          updatedAt: completedAt,
+        }
+      : null,
+  };
+  await commitPrivateBalanceState(
+    input.storageContext,
+    input.storageKey,
+    currentState,
+    state.revision,
+    input.storageDriver,
+  );
+  return currentState;
+}

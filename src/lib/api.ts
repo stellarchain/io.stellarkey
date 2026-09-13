@@ -1,0 +1,1525 @@
+"use client";
+
+import {
+  Account,
+  Asset,
+  Keypair,
+  Operation,
+  StrKey,
+  TransactionBuilder,
+  extractBaseAddress,
+  BASE_FEE,
+  type Transaction,
+  type FeeBumpTransaction,
+} from "@stellar/stellar-sdk";
+import type { ActivityItem, AssetBalance } from "./types";
+import { NETWORKS, type NetworkKey } from "./stellar";
+import { getAccountHistoryHorizonUrl, getHorizonUrl } from "./stellar-endpoints";
+import { isValidPaymentAddress, isValidPublicAddress } from "./vault";
+import { normalizeAmount } from "./format";
+import { signHardwareTx, type HardwareSigner } from "./hardware";
+import { getHorizonJson, HorizonRequestError } from "./horizon";
+import {
+  buildStellarMemo,
+  calculateMinimumBalance,
+  stroopsToAmount,
+  toStellarAsset,
+  type StellarMemoInput,
+} from "./stellar-domain";
+import type {
+  CanonicalLookupStatus,
+  PreparedSubmissionIdentity,
+  SubmissionPreparedCallback,
+  SubmissionResult,
+} from "./submission";
+import { withAbortDeadline } from "./wallet-refresh";
+import { fetchNativePrice, isMarketObservationFresh, type MarketSample } from "./prices";
+import { createSharedMarketRequests } from "./market-requests";
+
+const MAX_TRUST_LIMIT = "922337203685.4775807";
+const MARKET_REQUEST_TIMEOUT_MS = 8_000;
+export const ACCOUNT_ACTIVITY_RETENTION_MS = 365 * 24 * 60 * 60 * 1_000;
+
+export async function getJson<T>(url: string, init?: RequestInit): Promise<T | null> {
+  try {
+    return await getHorizonJson<T>(url, init);
+  } catch (error) {
+    if (error instanceof HorizonRequestError && error.kind === "not_found") return null;
+    throw error;
+  }
+}
+
+interface RawBalance {
+  asset_type: string;
+  asset_code?: string;
+  asset_issuer?: string;
+  balance: string;
+  selling_liabilities?: string;
+  limit?: string;
+  is_authorized?: boolean;
+  is_authorized_to_maintain_liabilities?: boolean;
+  is_clawback_enabled?: boolean;
+}
+
+interface RawAccountSnapshot {
+  balances?: RawBalance[];
+  subentry_count?: number;
+  num_sponsoring?: number;
+  num_sponsored?: number;
+}
+
+export interface AccountSnapshot {
+  balances: AssetBalance[];
+  reserveInputs: {
+    subentryCount: number;
+    numSponsoring: number;
+    numSponsored: number;
+  };
+}
+
+function parseBalances(balances: RawBalance[] | undefined): AssetBalance[] {
+  if (!balances) return [];
+  const list: AssetBalance[] = [];
+  let nativeBal: AssetBalance | null = null;
+
+  for (const b of balances) {
+    const isNative = b.asset_type === "native";
+    const item: AssetBalance = {
+      key: isNative ? "native" : `${b.asset_code}:${b.asset_issuer}`,
+      code: isNative ? "XLM" : b.asset_code ?? "UNKNOWN",
+      issuer: isNative ? null : b.asset_issuer ?? null,
+      balance: b.balance,
+      sellingLiabilities: b.selling_liabilities ?? "0",
+      limit: b.limit ?? null,
+      isNative,
+      isAuthorized: isNative ? true : b.is_authorized === true,
+      isAuthorizedToMaintainLiabilities:
+        !isNative && b.is_authorized_to_maintain_liabilities === true,
+      isClawbackEnabled: !isNative && b.is_clawback_enabled === true,
+    };
+    if (isNative) nativeBal = item;
+    else list.push(item);
+  }
+
+  return nativeBal ? [nativeBal, ...list] : list;
+}
+
+export async function fetchAccountSnapshot(
+  publicKey: string,
+  network: NetworkKey,
+  signal?: AbortSignal,
+): Promise<AccountSnapshot> {
+  const account = await getJson<RawAccountSnapshot>(
+    `${getHorizonUrl(network)}/accounts/${publicKey}`,
+    { signal },
+  );
+  return {
+    balances: parseBalances(account?.balances),
+    reserveInputs: {
+      subentryCount: account?.subentry_count ?? 0,
+      numSponsoring: account?.num_sponsoring ?? 0,
+      numSponsored: account?.num_sponsored ?? 0,
+    },
+  };
+}
+
+export async function fetchBalances(
+  publicKey: string,
+  network: NetworkKey,
+): Promise<AssetBalance[]> {
+  return (await fetchAccountSnapshot(publicKey, network)).balances;
+}
+
+const BASE_RESERVE_CACHE_MS = 5 * 60_000;
+const baseReserveCache = new Map<NetworkKey, { value: string; at: number }>();
+const baseReserveRequests = new Map<NetworkKey, Promise<string>>();
+
+export async function fetchCurrentBaseReserve(network: NetworkKey): Promise<string> {
+  const cached = baseReserveCache.get(network);
+  if (cached && Date.now() - cached.at < BASE_RESERVE_CACHE_MS) return cached.value;
+  const pending = baseReserveRequests.get(network);
+  if (pending) return pending;
+
+  const request = getHorizonJson<{
+    _embedded?: { records?: Array<{ base_reserve_in_stroops?: unknown }> };
+  }>(`${getHorizonUrl(network)}/ledgers?order=desc&limit=1`).then((ledgers) => {
+    const raw = ledgers._embedded?.records?.[0]?.base_reserve_in_stroops;
+    const value = typeof raw === "number" && Number.isSafeInteger(raw) && raw > 0
+      ? String(raw)
+      : typeof raw === "string" && /^[1-9]\d*$/.test(raw)
+        ? raw
+        : null;
+    if (value === null) {
+      throw new Error("Horizon did not return the current base reserve.");
+    }
+    baseReserveCache.set(network, { value, at: Date.now() });
+    return value;
+  }).finally(() => {
+    baseReserveRequests.delete(network);
+  });
+  baseReserveRequests.set(network, request);
+  return request;
+}
+
+export function minimumNativeBalanceForSnapshot(
+  snapshot: AccountSnapshot,
+  baseReserveStroops: string,
+): string {
+  return calculateMinimumBalance({ baseReserveStroops, ...snapshot.reserveInputs });
+}
+
+export async function fetchMinimumNativeBalance(
+  publicKey: string,
+  network: NetworkKey,
+): Promise<string> {
+  const [snapshot, baseReserveStroops] = await Promise.all([
+    fetchAccountSnapshot(publicKey, network),
+    fetchCurrentBaseReserve(network),
+  ]);
+  return minimumNativeBalanceForSnapshot(snapshot, baseReserveStroops);
+}
+
+
+export interface ClaimableBalanceItem {
+  id: string;
+  assetCode: string;
+  issuer: string | null;
+  amount: string;
+  sponsor?: string;
+}
+
+export async function fetchClaimableBalances(
+  publicKey: string,
+  network: NetworkKey,
+  signal?: AbortSignal,
+): Promise<ClaimableBalanceItem[]> {
+  const horizonUrl = getHorizonUrl(network);
+  const data = await getJson<{
+    _embedded?: {
+      records?: Array<{
+        id: string;
+        asset: string;
+        amount: string;
+        sponsor?: string;
+      }>;
+    };
+  }>(`${horizonUrl}/claimable_balances?claimant=${publicKey}&limit=20`, { signal });
+
+  const records = data?._embedded?.records ?? [];
+  return records.map((r) => {
+    const isNative = r.asset === "native";
+    const parts = r.asset.split(":");
+    const code = isNative ? "XLM" : parts[0] ?? "UNKNOWN";
+    const issuer = isNative ? null : parts[1] ?? null;
+    return {
+      id: r.id,
+      assetCode: code,
+      issuer,
+      amount: r.amount,
+      sponsor: r.sponsor,
+    };
+  });
+}
+
+export async function claimClaimableBalance(params: {
+  network: NetworkKey;
+  secretKey?: string;
+  softwareSigner?: Keypair;
+  hardwareSigner?: HardwareSigner;
+  balanceId: string;
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult> {
+  const { balanceId, ...rest } = params;
+  return claimClaimableBalances({
+    ...rest,
+    balanceIds: [balanceId],
+  });
+}
+
+export async function claimClaimableBalances(params: {
+  network: NetworkKey;
+  secretKey?: string;
+  softwareSigner?: Keypair;
+  hardwareSigner?: HardwareSigner;
+  balanceIds: string[];
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult> {
+  const { network, secretKey } = params;
+  if (params.balanceIds.length === 0) {
+    throw new SendError("Select at least one claimable balance.");
+  }
+  if (params.balanceIds.length > 100) {
+    throw new SendError("A Stellar transaction can contain at most 100 operations.");
+  }
+  const balanceIds = params.balanceIds.map((balanceId) => balanceId.trim().toLowerCase());
+  if (new Set(balanceIds).size !== balanceIds.length) {
+    throw new SendError("Duplicate claimable balances are not allowed.");
+  }
+  if (balanceIds.some((balanceId) => !/^00000000[0-9a-f]{64}$/.test(balanceId))) {
+    throw new SendError("One of the claimable balance IDs is invalid.");
+  }
+  const horizonUrl = getHorizonUrl(network);
+  const cfg = NETWORKS[network];
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
+  const source = await getJson<{ sequence: string }>(
+    `${horizonUrl}/accounts/${publicKey}`,
+  );
+  if (!source) throw new SendError("Your account does not exist on this network.");
+  const fee = await loadRecommendedBaseFee(network, params.feeStroops);
+
+  const builder = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
+    fee: String(fee),
+    networkPassphrase: cfg.networkPassphrase,
+  });
+  for (const balanceId of balanceIds) {
+    builder.addOperation(
+      Operation.claimClaimableBalance({
+        balanceId,
+      }),
+    );
+  }
+  const tx = builder.setTimeout(180).build();
+
+  try {
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
+  } catch (err) {
+    throw new SendError(explainSubmitError(err));
+  }
+}
+
+export async function mergeAccount(params: {
+  network: NetworkKey;
+  secretKey?: string;
+  softwareSigner?: Keypair;
+  hardwareSigner?: HardwareSigner;
+  destination: string;
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult> {
+  const { network, secretKey, destination } = params;
+  if (!isValidPublicAddress(destination)) {
+    throw new SendError("Destination is not a valid Stellar address.");
+  }
+  const horizonUrl = getHorizonUrl(network);
+  const cfg = NETWORKS[network];
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
+  const source = await getJson<{ sequence: string }>(
+    `${horizonUrl}/accounts/${publicKey}`,
+  );
+  if (!source) throw new SendError("Account does not exist on this network.");
+  const fee = await loadRecommendedBaseFee(network, params.feeStroops);
+
+  const tx = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
+    fee: String(fee),
+    networkPassphrase: cfg.networkPassphrase,
+  })
+    .addOperation(
+      Operation.accountMerge({
+        destination,
+      }),
+    )
+    .setTimeout(180)
+    .build();
+
+  try {
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
+  } catch (err) {
+    throw new SendError(explainSubmitError(err));
+  }
+}
+
+export interface AccountSignerInfo {
+  thresholds: {
+    low_threshold: number;
+    med_threshold: number;
+    high_threshold: number;
+  };
+  signers: Array<{
+    key: string;
+    weight: number;
+    type: string;
+  }>;
+}
+
+function isByteWeight(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 255;
+}
+
+function isSignerKeyValid(type: string, key: string): boolean {
+  try {
+    if (type === "ed25519_public_key") return StrKey.isValidEd25519PublicKey(key);
+    if (type === "ed25519_signed_payload") return StrKey.isValidSignedPayload(key);
+    if (type === "preauth_tx") return StrKey.decodePreAuthTx(key).length === 32;
+    if (type === "sha256_hash") return StrKey.decodeSha256Hash(key).length === 32;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function parseAccountSignerInfo(
+  value: unknown,
+  accountPublicKey: string,
+): AccountSignerInfo | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const thresholds = record.thresholds;
+  const signers = record.signers;
+  if (!thresholds || typeof thresholds !== "object" || !Array.isArray(signers)) return null;
+
+  const thresholdRecord = thresholds as Record<string, unknown>;
+  const low = thresholdRecord.low_threshold;
+  const medium = thresholdRecord.med_threshold;
+  const high = thresholdRecord.high_threshold;
+  if (!isByteWeight(low) || !isByteWeight(medium) || !isByteWeight(high)) return null;
+
+  const parsedSigners: AccountSignerInfo["signers"] = [];
+  const seenKeys = new Set<string>();
+  for (const value of signers) {
+    if (!value || typeof value !== "object") return null;
+    const signer = value as Record<string, unknown>;
+    if (
+      typeof signer.key !== "string" ||
+      typeof signer.type !== "string" ||
+      !isByteWeight(signer.weight) ||
+      !isSignerKeyValid(signer.type, signer.key) ||
+      seenKeys.has(signer.key)
+    ) {
+      return null;
+    }
+    seenKeys.add(signer.key);
+    parsedSigners.push({ key: signer.key, type: signer.type, weight: signer.weight });
+  }
+  if (!parsedSigners.some(
+    (signer) => signer.type === "ed25519_public_key" && signer.key === accountPublicKey,
+  )) {
+    return null;
+  }
+
+  return {
+    thresholds: { low_threshold: low, med_threshold: medium, high_threshold: high },
+    signers: parsedSigners,
+  };
+}
+
+export async function fetchAccountSignerInfo(
+  publicKey: string,
+  network: NetworkKey,
+): Promise<AccountSignerInfo | null> {
+  const horizonUrl = getHorizonUrl(network);
+  const data = await getJson<unknown>(`${horizonUrl}/accounts/${publicKey}`);
+
+  if (!data) return null;
+  return parseAccountSignerInfo(data, publicKey);
+}
+
+/**
+ * Load account authority from SDF's network Horizon, never a user-configured
+ * operational endpoint. Signer omissions are security-sensitive: a custom
+ * endpoint must not be able to hide a key during threshold reconfiguration.
+ */
+export async function fetchCanonicalAccountSignerInfo(
+  publicKey: string,
+  network: NetworkKey,
+): Promise<AccountSignerInfo | null> {
+  const data = await getJson<unknown>(
+    `${NETWORKS[network].horizonUrl}/accounts/${publicKey}`,
+  );
+  if (!data) return null;
+  return parseAccountSignerInfo(data, publicKey);
+}
+
+interface RawOperation {
+  id: string;
+  type: string;
+  created_at: string;
+  transaction_successful: boolean;
+  transaction_hash: string;
+  source_account?: string;
+  account?: string;
+  funder?: string;
+  starting_balance?: string;
+  from?: string;
+  to?: string;
+  amount?: string;
+  asset_type?: string;
+  asset_code?: string;
+  asset_issuer?: string;
+  source_asset_type?: string;
+  source_asset_code?: string;
+  source_asset_issuer?: string;
+  source_amount?: string;
+  selling_asset_type?: string;
+  selling_asset_code?: string;
+  selling_asset_issuer?: string;
+  buying_asset_type?: string;
+  buying_asset_code?: string;
+  buying_asset_issuer?: string;
+  buy_amount?: string;
+  asset?: string;
+  balance_id?: string;
+  into?: string;
+}
+
+function assetCodeOf(op: RawOperation): string | null {
+  if (op.asset_type === "native") return "XLM";
+  return op.asset_code ?? null;
+}
+
+function activityAssetFields(
+  assetType?: string,
+  assetCode?: string,
+  assetIssuer?: string,
+): Pick<ActivityItem, "assetCode" | "assetIssuer"> {
+  if (assetType === "native") return { assetCode: "XLM", assetIssuer: null };
+  if (assetCode && assetIssuer) return { assetCode, assetIssuer };
+  return { assetCode: null, assetIssuer: null };
+}
+
+function claimableAssetFields(asset?: string): Pick<ActivityItem, "assetCode" | "assetIssuer"> {
+  if (asset === "native") return { assetCode: "XLM", assetIssuer: null };
+  if (!asset) return { assetCode: null, assetIssuer: null };
+  const separator = asset.indexOf(":");
+  return separator > 0 && separator < asset.length - 1
+    ? { assetCode: asset.slice(0, separator), assetIssuer: asset.slice(separator + 1) }
+    : { assetCode: null, assetIssuer: null };
+}
+
+function mapOperation(op: RawOperation, publicKey: string): ActivityItem {
+  const base = {
+    id: op.id,
+    type: op.type,
+    hash: op.transaction_hash,
+    createdAt: op.created_at,
+    successful: op.transaction_successful,
+  };
+
+  switch (op.type) {
+    case "create_account": {
+      const isMe = op.account === publicKey;
+      return {
+        ...base,
+        title: isMe ? "Account Activated" : "Created Account",
+        direction: isMe ? "in" : "out",
+        amount: op.starting_balance ?? null,
+        assetCode: "XLM",
+        assetIssuer: null,
+        counterparty: isMe ? op.funder ?? null : op.account ?? null,
+      };
+    }
+    case "payment": {
+      const isIncoming = op.to === publicKey;
+      return {
+        ...base,
+        title: isIncoming ? "Received Payment" : "Sent Payment",
+        direction: isIncoming ? "in" : "out",
+        amount: op.amount ?? null,
+        assetCode: assetCodeOf(op),
+        assetIssuer: op.asset_type === "native" ? null : op.asset_issuer ?? null,
+        counterparty: isIncoming ? op.from ?? null : op.to ?? null,
+      };
+    }
+    case "path_payment_strict_receive":
+    case "path_payment_strict_send": {
+      const isIncoming = op.to === publicKey;
+      const destinationAsset = activityAssetFields(
+        op.asset_type,
+        op.asset_code,
+        op.asset_issuer,
+      );
+      const sourceAsset = activityAssetFields(
+        op.source_asset_type,
+        op.source_asset_code,
+        op.source_asset_issuer,
+      );
+      const isSelfSwap = op.from === publicKey && op.to === publicKey;
+      const swap =
+        isSelfSwap &&
+        op.source_amount &&
+        sourceAsset.assetCode &&
+        op.amount &&
+        destinationAsset.assetCode
+          ? {
+              debit: {
+                amount: op.source_amount,
+                assetCode: sourceAsset.assetCode,
+                assetIssuer: sourceAsset.assetIssuer,
+              },
+              credit: {
+                amount: op.amount,
+                assetCode: destinationAsset.assetCode,
+                assetIssuer: destinationAsset.assetIssuer,
+              },
+            }
+          : undefined;
+      if (!isSelfSwap) {
+        return {
+          ...base,
+          title: isIncoming ? "Received Path Payment" : "Sent Path Payment",
+          direction: isIncoming ? "in" : "out",
+          amount: isIncoming ? op.amount ?? null : op.source_amount ?? null,
+          ...(isIncoming ? destinationAsset : sourceAsset),
+          counterparty: isIncoming ? op.from ?? null : op.to ?? null,
+        };
+      }
+      return {
+        ...base,
+        title: swap
+          ? `Swapped ${swap.debit.assetCode} to ${swap.credit.assetCode}`
+          : "DEX Swap",
+        direction: "neutral",
+        amount: op.amount ?? null,
+        ...destinationAsset,
+        counterparty: isSelfSwap ? null : isIncoming ? op.from ?? null : op.to ?? null,
+        ...(swap ? { swap } : {}),
+      };
+    }
+    case "claim_claimable_balance":
+      return {
+        ...base,
+        title: "Claimed Airdrop",
+        direction: "in",
+        amount: null,
+        assetCode: null,
+        assetIssuer: null,
+        counterparty: null,
+      };
+    case "create_claimable_balance":
+      return {
+        ...base,
+        title: "Created Claimable Balance",
+        direction: "out",
+        amount: op.amount ?? null,
+        ...claimableAssetFields(op.asset),
+        counterparty: null,
+      };
+    case "manage_sell_offer":
+    case "create_passive_sell_offer":
+      return {
+        ...base,
+        title: "Trade Offer",
+        direction: "neutral",
+        amount: op.amount ?? null,
+        ...activityAssetFields(
+          op.selling_asset_type,
+          op.selling_asset_code,
+          op.selling_asset_issuer,
+        ),
+        counterparty: null,
+      };
+    case "manage_buy_offer":
+      return {
+        ...base,
+        title: "Trade Offer",
+        direction: "neutral",
+        amount: op.buy_amount ?? null,
+        ...activityAssetFields(
+          op.buying_asset_type,
+          op.buying_asset_code,
+          op.buying_asset_issuer,
+        ),
+        counterparty: null,
+      };
+    case "change_trust":
+      return {
+        ...base,
+        title: "Trustline Added",
+        direction: "neutral",
+        amount: null,
+        assetCode: op.asset_code ?? null,
+        assetIssuer: op.asset_issuer ?? null,
+        counterparty: op.asset_issuer ?? null,
+      };
+    case "account_merge":
+      return {
+        ...base,
+        title: "Account Merged",
+        direction: op.into === publicKey ? "in" : "out",
+        amount: null,
+        assetCode: "XLM",
+        assetIssuer: null,
+        counterparty: op.into ?? null,
+      };
+    default:
+      return {
+        ...base,
+        title: op.type.replace(/_/g, " "),
+        direction: "neutral",
+        amount: null,
+        assetCode: null,
+        assetIssuer: null,
+        counterparty: null,
+      };
+  }
+}
+
+export async function fetchActivity(
+  publicKey: string,
+  network: NetworkKey,
+  limit = 30,
+  cursor?: string,
+  signal?: AbortSignal,
+  nowMs = Date.now(),
+): Promise<{ items: ActivityItem[]; nextCursor: string | null }> {
+  const horizonUrl = getAccountHistoryHorizonUrl(network);
+  const url = new URL(`${horizonUrl}/accounts/${publicKey}/operations`);
+  url.searchParams.set("order", "desc");
+  url.searchParams.set("limit", String(limit));
+  if (cursor) url.searchParams.set("cursor", cursor);
+
+  const data = await getJson<{ _embedded?: { records?: RawOperation[] } }>(url.toString(), {
+    signal,
+  });
+  const records = data?._embedded?.records ?? [];
+  const cutoffMs = nowMs - ACCOUNT_ACTIVITY_RETENTION_MS;
+  const retainedRecords = records.filter((record) => {
+    const createdAtMs = Date.parse(record.created_at);
+    return Number.isFinite(createdAtMs) && createdAtMs >= cutoffMs;
+  });
+  const items = retainedRecords.map((op) => mapOperation(op, publicKey));
+  const reachedCutoff = retainedRecords.length !== records.length;
+  const nextCursor = !reachedCutoff && records.length === limit
+    ? records[records.length - 1].id
+    : null;
+  return { items, nextCursor };
+}
+
+export async function fundWithFriendbot(
+  publicKey: string,
+  network: NetworkKey,
+): Promise<void> {
+  const cfg = NETWORKS[network];
+  if (!cfg.friendbotUrl) {
+    throw new Error("Friendbot is only available on testnet.");
+  }
+  const res = await fetch(`${cfg.friendbotUrl}?addr=${encodeURIComponent(publicKey)}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Friendbot funding failed: ${text || res.statusText}`);
+  }
+}
+
+export function minimalAccount(publicKey: string, sequence: string) {
+  return new Account(publicKey, sequence);
+}
+
+export class SendError extends Error {}
+
+interface SubmitFailureBody {
+  title?: string;
+  detail?: string;
+  extras?: {
+    result_codes?: {
+      transaction?: string;
+      operations?: string[];
+    };
+  };
+}
+
+export function explainSubmitError(err: unknown): string {
+  if (err && typeof err === "object" && "body" in err) {
+    const b = err.body as SubmitFailureBody | null | undefined;
+    const txCode = b?.extras?.result_codes?.transaction;
+    const opCodes = b?.extras?.result_codes?.operations ?? [];
+    if (txCode === "tx_bad_seq") return "Sequence number mismatch. Please retry.";
+    if (txCode === "tx_insufficient_fee") return "Fee was too low for network conditions.";
+    if (txCode === "tx_insufficient_balance") return "Insufficient balance to cover payment and reserve.";
+    if (opCodes.includes("op_underfunded")) return "Insufficient balance for this payment.";
+    if (opCodes.includes("op_low_reserve")) return "The amount is below Stellar's current minimum balance requirement.";
+    if (opCodes.includes("op_no_destination")) return "Destination account does not exist. Activate it with XLM first.";
+    if (opCodes.includes("op_no_trust")) return "Destination account does not trust this asset.";
+    if (opCodes.includes("op_line_full")) return "Destination trustline limit exceeded.";
+    if (b?.detail) return b.detail;
+  }
+  if (err instanceof Error) return err.message;
+  return "Transaction failed on the Stellar network.";
+}
+
+export function resolveSource(
+  secretKey: string | undefined,
+  hardwareSigner?: HardwareSigner,
+  softwareSigner?: Keypair,
+): { kp: Keypair | null; publicKey: string } {
+  if (hardwareSigner) return { kp: null, publicKey: hardwareSigner.publicKey };
+  if (softwareSigner) {
+    if (!softwareSigner.canSign()) throw new SendError("Software signing credential is unavailable.");
+    return { kp: softwareSigner, publicKey: softwareSigner.publicKey() };
+  }
+  if (!secretKey) throw new SendError("No signing credential available.");
+  const kp = Keypair.fromSecret(secretKey);
+  return { kp, publicKey: kp.publicKey() };
+}
+
+export async function signAndSubmit(
+  tx: Transaction,
+  network: NetworkKey,
+  kp: Keypair | null,
+  hardwareSigner?: HardwareSigner,
+  onPrepared?: SubmissionPreparedCallback,
+  beforeSign?: () => void,
+): Promise<SubmissionResult> {
+  if (hardwareSigner) {
+    beforeSign?.();
+    await signHardwareTx(tx, hardwareSigner);
+    // Hardware approval can take long enough for an operator or wallet session
+    // to be revoked. Recheck before the signed envelope leaves this device.
+    beforeSign?.();
+  } else if (kp) {
+    beforeSign?.();
+    tx.sign(kp);
+  } else {
+    throw new SendError("No signing credential available.");
+  }
+  return submitSignedTx(tx, network, 15_000, onPrepared, beforeSign);
+}
+
+function preparedSubmissionIdentity(
+  tx: Transaction | FeeBumpTransaction,
+  network: NetworkKey,
+  hash: string,
+): PreparedSubmissionIdentity {
+  const transaction = "innerTransaction" in tx ? tx.innerTransaction : tx;
+  const maxTime = transaction.timeBounds?.maxTime;
+  if (maxTime && maxTime !== "0") {
+    try {
+      const value = BigInt(maxTime);
+      if (value >= BigInt(0) && value <= BigInt(Number.MAX_SAFE_INTEGER)) {
+        return { hash, network, expiresAt: Number(value) };
+      }
+    } catch {
+      // Fail closed review already rejects inexact bounds; omit only for old callers.
+    }
+  }
+  return { hash, network };
+}
+
+export async function lookupCanonicalTransaction(
+  network: NetworkKey,
+  hash: string,
+  requestTimeoutMs = 15_000,
+): Promise<CanonicalLookupStatus> {
+  if (!/^[0-9a-f]{64}$/i.test(hash)) return "unavailable";
+  try {
+    const record = await getHorizonJson<{ hash?: unknown; successful?: unknown }>(
+      `${NETWORKS[network].horizonUrl}/transactions/${hash.toLowerCase()}`,
+      undefined,
+      requestTimeoutMs,
+    );
+    if (
+      typeof record.hash !== "string" ||
+      record.hash.toLowerCase() !== hash.toLowerCase()
+    ) {
+      return "unavailable";
+    }
+    if (record.successful === true) return "confirmed";
+    if (record.successful === false) return "failed";
+    return "unavailable";
+  } catch (error) {
+    if (error instanceof HorizonRequestError && error.kind === "not_found") return "not_found";
+    return "unavailable";
+  }
+}
+
+export async function lookupCanonicalLedgerCloseTime(
+  network: NetworkKey,
+  requestTimeoutMs = 15_000,
+): Promise<number | null> {
+  try {
+    const page = await getHorizonJson<{
+      _embedded?: { records?: Array<{ closed_at?: unknown }> };
+    }>(
+      `${NETWORKS[network].horizonUrl}/ledgers?order=desc&limit=1`,
+      undefined,
+      requestTimeoutMs,
+    );
+    const closedAt = page._embedded?.records?.[0]?.closed_at;
+    if (typeof closedAt !== "string") return null;
+    const milliseconds = Date.parse(closedAt);
+    return Number.isFinite(milliseconds) ? Math.floor(milliseconds / 1_000) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves a time-bound transaction without trusting the browser clock or a
+ * configurable endpoint. Canonical absence becomes definitive only once the
+ * canonical ledger close time is past the envelope's maximum time.
+ */
+export async function resolveCanonicalTransaction(
+  network: NetworkKey,
+  hash: string,
+  expiresAt: number,
+  requestTimeoutMs = 15_000,
+): Promise<CanonicalLookupStatus> {
+  const lookup = await lookupCanonicalTransaction(network, hash, requestTimeoutMs);
+  if (lookup !== "not_found") return lookup;
+  if (!Number.isSafeInteger(expiresAt) || expiresAt < 0) return "unavailable";
+  const ledgerCloseTime = await lookupCanonicalLedgerCloseTime(network, requestTimeoutMs);
+  return ledgerCloseTime !== null && ledgerCloseTime > expiresAt
+    ? "not_found"
+    : "unavailable";
+}
+
+export async function submitSignedTx(
+  tx: Transaction | FeeBumpTransaction,
+  network: NetworkKey,
+  requestTimeoutMs = 15_000,
+  onPrepared?: SubmissionPreparedCallback,
+  beforeSubmit?: () => void,
+): Promise<SubmissionResult> {
+  const horizonUrl = getHorizonUrl(network);
+  const hash = Array.from(tx.hash(), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const form = new URLSearchParams();
+  form.set("tx", tx.toXdr());
+  await onPrepared?.(preparedSubmissionIdentity(tx, network, hash));
+  // Prepared-journal callbacks can themselves queue a context change. Keep
+  // this final refusal outside the possibly-broadcast error boundary.
+  beforeSubmit?.();
+
+  try {
+    const body = await getHorizonJson<SubmitFailureBody & { hash?: unknown }>(
+      `${horizonUrl}/transactions`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+      },
+      requestTimeoutMs,
+    );
+    if (typeof body.hash === "string" && body.hash.toLowerCase() === hash) {
+      return { hash, network, status: "accepted" };
+    }
+  } catch {}
+
+  // Once the signed envelope has been handed to a configurable endpoint, even
+  // a validation-shaped 4xx is not proof that the transaction was rejected.
+  // Resolve only through the exact hash on canonical SDF Horizon; otherwise
+  // retain the prepared envelope as status_unknown so retry cannot double-pay.
+  const lookup = await lookupCanonicalTransaction(network, hash, requestTimeoutMs);
+  if (lookup === "confirmed") return { hash, network, status: "confirmed" };
+  if (lookup === "failed") {
+    throw new HorizonRequestError("Transaction was found on-chain but failed.", {
+      kind: "validation",
+    });
+  }
+  return { hash, network, status: "status_unknown" };
+}
+
+export interface ConfirmedAccountMergeInspection {
+  sourcePublicKey: string;
+  sourceAccountExists: boolean;
+}
+
+/**
+ * Treats persisted reconciliation data only as a lookup hint. The account
+ * identity is derived from the successful, hash-matched on-chain envelope and
+ * its current existence is checked before any caller mutates local state.
+ */
+export async function inspectConfirmedAccountMerge(
+  network: NetworkKey,
+  hash: string,
+  requestTimeoutMs = 15_000,
+): Promise<ConfirmedAccountMergeInspection | null> {
+  if (!/^[0-9a-f]{64}$/i.test(hash)) return null;
+  const normalizedHash = hash.toLowerCase();
+  const horizonUrl = NETWORKS[network].horizonUrl;
+  const record = await getHorizonJson<{
+    hash?: unknown;
+    successful?: unknown;
+    envelope_xdr?: unknown;
+  }>(`${horizonUrl}/transactions/${normalizedHash}`, undefined, requestTimeoutMs);
+  if (
+    record.successful !== true ||
+    typeof record.hash !== "string" ||
+    record.hash.toLowerCase() !== normalizedHash ||
+    typeof record.envelope_xdr !== "string"
+  ) {
+    return null;
+  }
+
+  let parsed: Transaction | FeeBumpTransaction;
+  try {
+    parsed = TransactionBuilder.fromXdr(
+      record.envelope_xdr,
+      NETWORKS[network].networkPassphrase,
+    );
+  } catch {
+    return null;
+  }
+  const parsedHash = Array.from(parsed.hash(), (byte) =>
+    byte.toString(16).padStart(2, "0")).join("");
+  if (parsedHash !== normalizedHash) return null;
+
+  const transaction = "innerTransaction" in parsed ? parsed.innerTransaction : parsed;
+  if (transaction.operations.length !== 1 || transaction.operations[0].type !== "accountMerge") {
+    return null;
+  }
+
+  let sourcePublicKey: string;
+  try {
+    sourcePublicKey = extractBaseAddress(transaction.operations[0].source ?? transaction.source);
+  } catch {
+    return null;
+  }
+
+  try {
+    await getHorizonJson(
+      `${horizonUrl}/accounts/${sourcePublicKey}`,
+      undefined,
+      requestTimeoutMs,
+    );
+    return { sourcePublicKey, sourceAccountExists: true };
+  } catch (error) {
+    if (error instanceof HorizonRequestError && error.kind === "not_found") {
+      return { sourcePublicKey, sourceAccountExists: false };
+    }
+    throw error;
+  }
+}
+
+export interface SendPaymentParams {
+  network: NetworkKey;
+  secretKey?: string;
+  softwareSigner?: Keypair;
+  hardwareSigner?: HardwareSigner;
+  destination: string;
+  amount: string;
+  assetCode: string;
+  issuer?: string | null;
+  memo?: StellarMemoInput;
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+  beforeSign?: () => void;
+}
+
+interface HorizonMemoRequirementAccount {
+  sequence?: unknown;
+  data?: unknown;
+  /** SDK-normalized fixtures may use data_attr; raw Horizon uses data. */
+  data_attr?: unknown;
+}
+
+export function accountRequiresMemo(account: unknown): boolean {
+  if (!account || typeof account !== "object") return false;
+  const record = account as HorizonMemoRequirementAccount;
+  const data = record.data ?? record.data_attr;
+  return Boolean(
+    data &&
+      typeof data === "object" &&
+      !Array.isArray(data) &&
+      (data as Record<string, unknown>)["config.memo_required"] === "MQ==",
+  );
+}
+
+export function assertDestinationMemoRequirement(input: {
+  destination: string;
+  muxedDestination: boolean;
+  destinationAccount: unknown;
+  hasMemo: boolean;
+}): void {
+  if (
+    !input.muxedDestination &&
+    !input.hasMemo &&
+    accountRequiresMemo(input.destinationAccount)
+  ) {
+    throw new SendError(
+      `Destination ${input.destination} requires a memo. Ask the recipient for the correct memo before sending.`,
+    );
+  }
+}
+
+export async function sendPayment(params: SendPaymentParams): Promise<SubmissionResult> {
+  const { network, secretKey, amount, assetCode, issuer, feeStroops } = params;
+  const destination = params.destination.trim();
+  const memo = buildStellarMemo(params.memo);
+
+  if (!isValidPaymentAddress(destination)) {
+    throw new SendError("Destination is not a valid Stellar address.");
+  }
+  const muxedDestination = StrKey.isValidMed25519PublicKey(destination);
+  if (muxedDestination && params.hardwareSigner?.device === "trezor") {
+    throw new SendError(
+      "Trezor cannot sign a classic payment to this muxed address. Ask the merchant for the hardware-compatible request, which uses the same route as a MEMO_ID.",
+    );
+  }
+  const destinationAccount = extractBaseAddress(destination);
+
+  const horizonUrl = getHorizonUrl(network);
+  const cfg = NETWORKS[network];
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
+  const source = await getJson<{ sequence: string }>(
+    `${horizonUrl}/accounts/${publicKey}`,
+  );
+  if (!source) throw new SendError("Your account does not exist on this network.");
+
+  const destinationRecord = await getJson<HorizonMemoRequirementAccount>(
+    `${NETWORKS[network].horizonUrl}/accounts/${destinationAccount}`,
+  );
+  const destExists = destinationRecord !== null;
+  const paymentAsset = toStellarAsset(assetCode, issuer);
+  const isNative = paymentAsset.isNative();
+
+  if (!destExists && !isNative) {
+    throw new SendError(
+      "Destination account doesn't exist yet. New accounts must be activated with XLM.",
+    );
+  }
+  if (!destExists && muxedDestination) {
+    throw new SendError(
+      "The account behind this muxed address does not exist yet. Ask for its G-address and activate that account with XLM first.",
+    );
+  }
+  if (destExists) {
+    assertDestinationMemoRequirement({
+      destination,
+      muxedDestination,
+      destinationAccount: destinationRecord,
+      hasMemo: memo !== null,
+    });
+  }
+  const fee = await loadRecommendedBaseFee(network, feeStroops);
+
+  const builder = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
+    fee: String(fee),
+    networkPassphrase: cfg.networkPassphrase,
+  });
+
+  if (!destExists) {
+    builder.addOperation(
+      Operation.createAccount({
+        destination,
+        startingBalance: normalizeAmount(amount),
+      }),
+    );
+  } else {
+    builder.addOperation(
+      Operation.payment({
+        destination,
+        amount: normalizeAmount(amount),
+        asset: paymentAsset,
+      }),
+    );
+  }
+
+  if (memo) builder.addMemo(memo);
+
+  const tx = builder.setTimeout(180).build();
+
+  try {
+    return await signAndSubmit(
+      tx,
+      network,
+      kp,
+      params.hardwareSigner,
+      params.onPrepared,
+      params.beforeSign,
+    );
+  } catch (err) {
+    throw new SendError(explainSubmitError(err));
+  }
+}
+
+export async function sendBatchPayments(params: {
+  network: NetworkKey;
+  secretKey?: string;
+  softwareSigner?: Keypair;
+  hardwareSigner?: HardwareSigner;
+  payments: Array<{
+    destination: string;
+    amount: string;
+    assetCode: string;
+    issuer?: string | null;
+  }>;
+  memo?: StellarMemoInput;
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult> {
+  const { network, secretKey, payments } = params;
+  const memo = buildStellarMemo(params.memo);
+  if (payments.length === 0) throw new SendError("No recipients provided.");
+  if (payments.length > 100) {
+    throw new SendError("A Stellar transaction can contain at most 100 operations.");
+  }
+
+  const prepared = payments.map((payment) => {
+    const destination = payment.destination.trim();
+    if (!isValidPaymentAddress(destination)) {
+      throw new SendError("One of the recipients is not a valid Stellar address.");
+    }
+    return {
+      ...payment,
+      destination,
+      destinationAccount: extractBaseAddress(destination),
+      muxedDestination: StrKey.isValidMed25519PublicKey(destination),
+      amount: normalizeAmount(payment.amount),
+      asset: toStellarAsset(payment.assetCode, payment.issuer),
+    };
+  });
+  if (params.hardwareSigner?.device === "trezor" && prepared.some((payment) => payment.muxedDestination)) {
+    throw new SendError(
+      "Trezor cannot sign classic payments to muxed addresses. Use each recipient's hardware-compatible G-address and MEMO_ID request instead.",
+    );
+  }
+
+  const horizonUrl = getHorizonUrl(network);
+  const cfg = NETWORKS[network];
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
+  const source = await getJson<{ sequence: string }>(
+    `${horizonUrl}/accounts/${publicKey}`,
+  );
+  if (!source) throw new SendError("Your account does not exist on this network.");
+  const fee = await loadRecommendedBaseFee(network, params.feeStroops);
+
+  const uniqueDestinations = [...new Set(prepared.map((payment) => payment.destinationAccount))];
+  const destinationEntries = await Promise.all(
+    uniqueDestinations.map(async (destination) => [
+      destination,
+      await getJson<HorizonMemoRequirementAccount>(
+        `${NETWORKS[network].horizonUrl}/accounts/${destination}`,
+      ),
+    ] as const),
+  );
+  const destinationRecords = new Map(destinationEntries);
+  const activatedInTransaction = new Set<string>();
+
+  const builder = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
+    fee: String(fee),
+    networkPassphrase: cfg.networkPassphrase,
+  });
+
+  for (const payment of prepared) {
+    const destinationRecord = destinationRecords.get(payment.destinationAccount) ?? null;
+    const exists = destinationRecord !== null;
+    if (!exists && !payment.asset.isNative()) {
+      throw new SendError(
+        `Destination ${payment.destination} must be activated with XLM before receiving ${payment.asset.getCode()}.`,
+      );
+    }
+    if (!exists && payment.muxedDestination) {
+      throw new SendError(
+        `The account behind ${payment.destination} must be activated through its G-address first.`,
+      );
+    }
+    if (exists) {
+      assertDestinationMemoRequirement({
+        destination: payment.destination,
+        muxedDestination: payment.muxedDestination,
+        destinationAccount: destinationRecord,
+        hasMemo: memo !== null,
+      });
+    }
+    if (!exists && !activatedInTransaction.has(payment.destinationAccount)) {
+      builder.addOperation(
+        Operation.createAccount({
+          destination: payment.destinationAccount,
+          startingBalance: payment.amount,
+        }),
+      );
+      activatedInTransaction.add(payment.destinationAccount);
+    } else {
+      builder.addOperation(
+        Operation.payment({
+          destination: payment.destination,
+          amount: payment.amount,
+          asset: payment.asset,
+        }),
+      );
+    }
+  }
+
+  if (memo) builder.addMemo(memo);
+
+  const tx = builder.setTimeout(180).build();
+
+  try {
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
+  } catch (err) {
+    throw new SendError(explainSubmitError(err));
+  }
+}
+
+export async function changeTrust(params: {
+  network: NetworkKey;
+  secretKey?: string;
+  softwareSigner?: Keypair;
+  hardwareSigner?: HardwareSigner;
+  code: string;
+  issuer: string;
+  add: boolean;
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult> {
+  const { network, secretKey, code, issuer, add } = params;
+  const horizonUrl = getHorizonUrl(network);
+  const cfg = NETWORKS[network];
+  if (!code.trim() || code.trim().length > 12) {
+    throw new SendError("Asset code must be 1–12 characters.");
+  }
+  if (!isValidPublicAddress(issuer)) {
+    throw new SendError("Issuer is not a valid Stellar address.");
+  }
+
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
+  const source = await getJson<{ sequence: string }>(
+    `${horizonUrl}/accounts/${publicKey}`,
+  );
+  if (!source) throw new SendError("Your account does not exist on this network.");
+  const fee = await loadRecommendedBaseFee(network, params.feeStroops);
+
+  const tx = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
+    fee: String(fee),
+    networkPassphrase: cfg.networkPassphrase,
+  })
+    .addOperation(
+      Operation.changeTrust({
+        asset: new Asset(code.trim(), issuer.trim()),
+        limit: add ? MAX_TRUST_LIMIT : "0",
+      }),
+    )
+    .setTimeout(180)
+    .build();
+
+  try {
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
+  } catch (err) {
+    throw new SendError(explainSubmitError(err));
+  }
+}
+
+
+/**
+ * Add multiple trustlines atomically — one transaction, N changeTrust ops.
+ * All-or-nothing: if any op fails validation on-chain, none are created.
+ */
+export async function changeTrustBatch(params: {
+  network: NetworkKey;
+  secretKey?: string;
+  softwareSigner?: Keypair;
+  hardwareSigner?: HardwareSigner;
+  assets: Array<{ code: string; issuer: string }>;
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult & { added: number }> {
+  const { network, secretKey, assets } = params;
+  const horizonUrl = getHorizonUrl(network);
+  const cfg = NETWORKS[network];
+
+  if (assets.length === 0) throw new SendError("No assets selected.");
+  if (assets.length > 100) throw new SendError("Maximum 100 trustlines per transaction.");
+
+  const seen = new Set<string>();
+  for (const a of assets) {
+    const code = a.code.trim();
+    if (!code || code.length > 12) {
+      throw new SendError(`Invalid asset code: "${a.code}" (1–12 characters).`);
+    }
+    if (!isValidPublicAddress(a.issuer)) {
+      throw new SendError(`Invalid issuer for ${code}.`);
+    }
+    const key = `${code}:${a.issuer}`;
+    if (seen.has(key)) throw new SendError(`Duplicate asset selected: ${code}.`);
+    seen.add(key);
+  }
+
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
+  const source = await getJson<{ sequence: string }>(
+    `${horizonUrl}/accounts/${publicKey}`,
+  );
+  if (!source) throw new SendError("Your account does not exist on this network.");
+  const fee = await loadRecommendedBaseFee(network, params.feeStroops);
+
+  const builder = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
+    fee: String(fee),
+    networkPassphrase: cfg.networkPassphrase,
+  });
+
+  for (const a of assets) {
+    builder.addOperation(
+      Operation.changeTrust({
+        asset: new Asset(a.code.trim(), a.issuer.trim()),
+        limit: MAX_TRUST_LIMIT,
+      }),
+    );
+  }
+
+  const tx = builder.setTimeout(180).build();
+
+  try {
+    const result = await signAndSubmit(
+      tx,
+      network,
+      kp,
+      params.hardwareSigner,
+      params.onPrepared,
+    );
+    return { ...result, added: assets.length };
+  } catch (err) {
+    throw new SendError(explainSubmitError(err));
+  }
+}
+
+export interface FeeStats {
+  lastLedgerBaseFee: number;
+  minAcceptedFee: number;
+  modeAcceptedFee: number;
+  p90AcceptedFee: number;
+  p99AcceptedFee: number;
+}
+
+export const MAX_BASE_FEE_STROOPS = 100_000;
+
+interface HorizonFeeStatsPayload {
+  last_ledger_base_fee?: unknown;
+  fee_charged?: {
+    min?: unknown;
+    mode?: unknown;
+    p90?: unknown;
+    p99?: unknown;
+  } | null;
+}
+
+function boundedFeeStroops(value: unknown, fallback: number): number {
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return fallback;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= Number(BASE_FEE) && parsed <= MAX_BASE_FEE_STROOPS
+    ? parsed
+    : fallback;
+}
+
+export function parseFeeStats(data: HorizonFeeStatsPayload): FeeStats {
+  return {
+    lastLedgerBaseFee: boundedFeeStroops(data.last_ledger_base_fee, 100),
+    minAcceptedFee: boundedFeeStroops(data.fee_charged?.min, 100),
+    modeAcceptedFee: boundedFeeStroops(data.fee_charged?.mode, 100),
+    p90AcceptedFee: boundedFeeStroops(data.fee_charged?.p90, 150),
+    p99AcceptedFee: boundedFeeStroops(data.fee_charged?.p99, 300),
+  };
+}
+
+export function selectRecommendedBaseFee(
+  stats: Pick<FeeStats, "p90AcceptedFee"> | null,
+  requestedFee?: number,
+): number {
+  const candidate = requestedFee ?? stats?.p90AcceptedFee ?? Number(BASE_FEE);
+  if (!Number.isFinite(candidate) || !Number.isInteger(candidate)) return Number(BASE_FEE);
+  return Math.max(Number(BASE_FEE), Math.min(MAX_BASE_FEE_STROOPS, candidate));
+}
+
+export function networkFeeXlm(baseFeeStroops: number, operationCount: number): string {
+  if (!Number.isSafeInteger(operationCount) || operationCount < 0 || operationCount > 100) {
+    throw new Error("Stellar operation count must be a whole number between 0 and 100.");
+  }
+  const boundedBaseFee = selectRecommendedBaseFee(null, baseFeeStroops);
+  return stroopsToAmount(BigInt(boundedBaseFee) * BigInt(operationCount));
+}
+
+export async function loadRecommendedBaseFee(
+  network: NetworkKey,
+  requestedFee?: number,
+): Promise<number> {
+  if (requestedFee !== undefined) return selectRecommendedBaseFee(null, requestedFee);
+  try {
+    return selectRecommendedBaseFee(await fetchFeeStats(network));
+  } catch {
+    return Number(BASE_FEE);
+  }
+}
+
+export async function fetchFeeStats(network: NetworkKey): Promise<FeeStats | null> {
+  const horizonUrl = getHorizonUrl(network);
+  const data = await getJson<HorizonFeeStatsPayload>(`${horizonUrl}/fee_stats`);
+
+  if (!data) return null;
+  return parseFeeStats(data);
+}
+
+export async function fetchXlmPrice(signal?: AbortSignal): Promise<MarketSample> {
+  return fetchNativePrice(signal);
+}
+
+export type PriceRange = "1D" | "7D" | "1M" | "1Y";
+
+const RANGE_DAYS: Record<PriceRange, number> = { "1D": 1, "7D": 7, "1M": 30, "1Y": 365 };
+
+export interface PriceSeries {
+  range: PriceRange;
+  observedAt: number;
+  points: Array<{ t: number; p: number }>;
+  changePct: number;
+  current: number;
+}
+
+interface CoinGeckoChartResp {
+  prices?: Array<[number, number]>;
+}
+
+const chartCache = new Map<PriceRange, PriceSeries>();
+const chartRequests = createSharedMarketRequests<PriceSeries | null>();
+
+export async function fetchXlmSeries(
+  range: PriceRange,
+  signal?: AbortSignal,
+): Promise<PriceSeries | null> {
+  if (signal?.aborted) return null;
+  const cached = chartCache.get(range);
+  if (cached && isMarketObservationFresh(cached.observedAt)) return cached;
+  try {
+    return await chartRequests(range, async sharedSignal => {
+      const series = await withAbortDeadline(async (signal) => {
+        const res = await fetch(
+          `https://api.coingecko.com/api/v3/coins/stellar/market_chart?vs_currency=usd&days=${RANGE_DAYS[range]}`,
+          { signal },
+        );
+        if (!res.ok) return null;
+        const json = (await res.json()) as CoinGeckoChartResp;
+        if (!Array.isArray(json.prices) || json.prices.length < 2 || signal.aborted) return null;
+        if (json.prices.some((point, index, points) => !Array.isArray(point) || point.length !== 2 ||
+          !point.every((value) => typeof value === "number" && Number.isFinite(value) && value > 0) ||
+          (index > 0 && point[0] <= points[index - 1][0]))) return null;
+        const points = json.prices.map(([t, p]) => ({ t, p }));
+        const first = points[0].p;
+        const last = points[points.length - 1].p;
+        return {
+          range,
+          observedAt: Date.now(),
+          points,
+          current: last,
+          changePct: ((last - first) / first) * 100,
+        };
+      }, {
+        timeoutMs: MARKET_REQUEST_TIMEOUT_MS,
+        label: "XLM market chart",
+        signal: sharedSignal,
+      });
+      if (sharedSignal.aborted) return null;
+      if (series) chartCache.set(range, series);
+      return series;
+    }, signal);
+  } catch {
+    return null;
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, ms);
+  return promise;
+}
+
+export async function waitForTransaction(
+  network: NetworkKey,
+  hash: string,
+  timeoutMs = 25_000,
+): Promise<boolean | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const outcome = await lookupCanonicalTransaction(network, hash);
+    if (outcome === "confirmed") return true;
+    if (outcome === "failed") return false;
+    await delay(1200);
+  }
+  return null;
+}

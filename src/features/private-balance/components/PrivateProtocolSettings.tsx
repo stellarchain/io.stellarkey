@@ -1,0 +1,348 @@
+'use client';
+
+import { useState, type ReactNode } from 'react';
+import {
+  IconCheck,
+  IconChevronDown,
+  IconFileText,
+  IconRefresh,
+  IconTrash,
+} from '@/components/icons';
+import { SectionHeader, Button, Field, ModalBody, ModalFooter, Notice, Toggle } from '@/components/ui';
+import {
+  usePrivateBalanceRuntime,
+  usePrivateBalanceRuntimeData,
+} from '@/hooks/usePrivateBalanceRuntime';
+import { HumanizedErrorNotice } from './PrivateBalanceStatus';
+import { PrivateAssetRegistryAdmin } from './PrivateAssetRegistryAdmin';
+import { PrivateOutgoingHistorySettings } from './PrivateOutgoingHistorySettings';
+import { useReportToOwner } from './useReportToOwner';
+
+function fingerprint(value: string | null): string {
+  if (!value) return 'Not recorded';
+  return value.length > 24 ? `${value.slice(0, 12)}…${value.slice(-8)}` : value;
+}
+
+function bytes(value: number | null): string {
+  if (value === null) return 'Not measured';
+  if (value < 1024) return `${value} B`;
+  return `${(value / 1024).toFixed(1)} KB`;
+}
+
+function SettingsRow({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="ios-sep flex min-h-12 items-center justify-between gap-4 px-4 py-3 text-[13px]">
+      <dt className="shrink-0 text-neutral-400">{label}</dt>
+      <dd
+        title={value}
+        className={`min-w-0 break-all text-right font-semibold text-neutral-100 ${mono ? 'font-mono text-[11px]' : ''}`}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function DisclosureButton({
+  icon,
+  title,
+  subtitle,
+  expanded,
+  controls,
+  danger = false,
+  onClick,
+}: {
+  icon: ReactNode;
+  title: string;
+  subtitle: string;
+  expanded: boolean;
+  controls: string;
+  danger?: boolean;
+  onClick(): void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      aria-controls={controls}
+      onClick={onClick}
+      className="row-hover flex min-h-16 w-full items-center gap-3.5 px-4 py-3 text-left"
+    >
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${danger ? 'bg-[#FF453A]/12 text-[#FF6961]' : 'bg-white/[0.06] text-neutral-300'}`}>
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={`block text-[13.5px] font-semibold ${danger ? 'text-[#FF6961]' : 'text-white'}`}>{title}</span>
+        <span className="mt-0.5 block text-[11.5px] leading-relaxed text-neutral-500">{subtitle}</span>
+      </span>
+      <IconChevronDown size={15} className={`shrink-0 text-neutral-600 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+    </button>
+  );
+}
+
+/**
+ * Advanced privacy renders as a step inside the Private Payments dialog. The
+ * owning shell shows its header and stays busy during verification or removal.
+ */
+export function PrivateProtocolSettingsContent({
+  onClose,
+  onRemoved,
+  onBusyChange,
+  onDirtyChange,
+}: {
+  onClose(): void;
+  onRemoved?(): void;
+  onBusyChange?(busy: boolean): void;
+  onDirtyChange?(dirty: boolean): void;
+}) {
+  const { retryRuntime } = usePrivateBalanceRuntime();
+  const {
+    phase,
+    isLeader,
+    publicAddress,
+    pendingActions,
+    outgoingHistoryMode,
+    setOutgoingHistoryMode,
+    protocolVersion,
+    deployment,
+    asset,
+    selectedRpc,
+    witnessRpc,
+    rpcWitnessEnabled,
+    checkpoint,
+    encryptedStorageBytes,
+    noteCount,
+    runFullVerification,
+    setRpcWitnessEnabled,
+    disableLocalData,
+  } = usePrivateBalanceRuntimeData();
+  const [working, setWorking] = useState<'verify' | 'remove' | null>(null);
+  // The raw cause is kept whole so the display routes through the humanizer
+  // (title + body, raw message behind collapsed Technical details).
+  const [error, setError] = useState<unknown>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const [showTechnical, setShowTechnical] = useState(false);
+  const [showRemoval, setShowRemoval] = useState(false);
+  const [confirmation, setConfirmation] = useState('');
+  useReportToOwner(onBusyChange, working !== null, false);
+  useReportToOwner(onDirtyChange, false, false);
+
+  const verify = async () => {
+    setWorking('verify');
+    setError(null);
+    setResult(null);
+    try {
+      await runFullVerification();
+      setResult('Private history checked against two different-origin network providers.');
+    } catch (cause: unknown) {
+      setError(cause ?? new Error('Private history verification stopped safely.'));
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  const remove = async () => {
+    setWorking('remove');
+    setError(null);
+    setResult(null);
+    try {
+      await disableLocalData(confirmation);
+      onRemoved?.();
+      onClose();
+    } catch (cause: unknown) {
+      setError(cause ?? new Error('Local private data was not removed.'));
+      setWorking(null);
+    }
+  };
+
+  const lastCheckpoint = checkpoint
+    ? `Action ${checkpoint.lastActionIndex}`
+    : 'Not available';
+
+  return (
+    <ModalBody gap={5}>
+        <PrivateAssetRegistryAdmin />
+
+        <PrivateOutgoingHistorySettings
+          scope={JSON.stringify([publicAddress, deployment.networkId, deployment.poolContractId, deployment.manifestHash])}
+          mode={outgoingHistoryMode}
+          disabled={working !== null || phase !== 'current' || !isLeader || pendingActions.length > 0}
+          onChange={setOutgoingHistoryMode}
+        />
+
+        <section aria-labelledby="private-maintenance-title">
+          <SectionHeader as="h3" id="private-maintenance-title" className="mb-2 px-1">Maintenance</SectionHeader>
+          <div className="list-group">
+            <button
+              type="button"
+              disabled={working !== null}
+              onClick={retryRuntime}
+              className="row-hover flex min-h-16 w-full items-center gap-3.5 px-4 py-3 text-left disabled:opacity-45"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0A84FF]/12 text-[#0A84FF]">
+                <IconRefresh size={17} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13.5px] font-semibold text-white">Refresh asset registry</span>
+                <span className="mt-0.5 block text-[11.5px] leading-relaxed text-neutral-500">
+                  Check the on-chain registry for newly admitted assets and status changes.
+                </span>
+              </span>
+              <span className="shrink-0 text-[13px] font-semibold text-[#0A84FF]">Refresh</span>
+            </button>
+            <button
+              type="button"
+              disabled={working !== null}
+              onClick={() => void verify()}
+              className="row-hover ios-sep flex min-h-16 w-full items-center gap-3.5 px-4 py-3 text-left disabled:opacity-45"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0A84FF]/12 text-[#0A84FF]">
+                <IconRefresh size={17} className={working === 'verify' ? 'animate-spin' : ''} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13.5px] font-semibold text-white">Check private history</span>
+                <span className="mt-0.5 block text-[11.5px] leading-relaxed text-neutral-500">
+                  Recheck your private history against the network from scratch.
+                </span>
+              </span>
+              <span className="shrink-0 text-[13px] font-semibold text-[#0A84FF]">
+                {working === 'verify' ? 'Checking' : 'Run'}
+              </span>
+            </button>
+          </div>
+        </section>
+
+        <div aria-live="polite" className="space-y-2">
+          {result ? (
+            <p className="flex items-center gap-2 rounded-2xl bg-[#30D158]/9 px-3.5 py-3 text-[12px] font-medium text-[#30D158]">
+              <IconCheck size={15} />
+              {result}
+            </p>
+          ) : null}
+          {error !== null ? <HumanizedErrorNotice cause={error} /> : null}
+        </div>
+
+        <section aria-labelledby="private-local-state-title">
+          <SectionHeader as="h3" id="private-local-state-title" className="mb-2 px-1">On this device</SectionHeader>
+          <dl className="list-group">
+            <SettingsRow label="Encrypted local data" value={bytes(encryptedStorageBytes)} />
+            <SettingsRow label="Primary RPC" value={selectedRpc ?? 'Not configured'} mono />
+            <SettingsRow label="Witness RPC" value={witnessRpc ?? 'Not configured'} mono />
+          </dl>
+        </section>
+
+        <section aria-labelledby="private-network-checks-title">
+          <SectionHeader as="h3" id="private-network-checks-title" className="mb-2 px-1">Network checks</SectionHeader>
+          <div className="list-group">
+            <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-semibold text-white">Use witness during routine checks</p>
+                <p className="mt-0.5 text-[11.5px] leading-relaxed text-neutral-500">
+                  Compare public ledger and contract state with a different-origin provider.
+                </p>
+              </div>
+              <Toggle
+                checked={rpcWitnessEnabled}
+                onChange={enabled => setRpcWitnessEnabled(Boolean(enabled))}
+                label="Use a second RPC witness during routine checks"
+              />
+            </div>
+            <p className="border-t border-white/[0.07] px-4 py-3 text-[11.5px] leading-relaxed text-neutral-500">
+              A second provider sees another copy of the public network access timing and pattern. It never receives recipient or amount plaintext, never signs, and never submits transactions. Seed recovery and a full history check always require the witness, even when routine checks are off.
+            </p>
+          </div>
+        </section>
+
+        <section aria-label="Advanced controls" className="list-group">
+          <DisclosureButton
+            icon={<IconFileText size={16} />}
+            title="Technical details"
+            subtitle="Versions and cryptographic identifiers"
+            expanded={showTechnical}
+            controls="private-technical-details"
+            onClick={() => setShowTechnical(value => !value)}
+          />
+          {showTechnical ? (
+            <dl id="private-technical-details" className="border-t border-white/[0.07] bg-black/10">
+              <SettingsRow label="Last checkpoint" value={lastCheckpoint} />
+              <SettingsRow label="Unspent notes" value={noteCount.toLocaleString()} />
+              <SettingsRow label="Protocol version" value={`V${protocolVersion}`} />
+              <SettingsRow label="Artifact version" value={deployment.artifactVersion ?? 'Not recorded'} />
+              <SettingsRow label="Realm" value={fingerprint(deployment.realmId)} mono />
+              <SettingsRow label="Selected asset contract" value={fingerprint(asset?.contractId ?? null)} mono />
+              <SettingsRow label="Manifest hash" value={fingerprint(deployment.manifestHash)} mono />
+              <SettingsRow label="Circuit hash" value={fingerprint(deployment.circuitHash)} mono />
+            </dl>
+          ) : null}
+        </section>
+
+        <section className="list-group">
+          <DisclosureButton
+            icon={<IconTrash size={16} />}
+            title="Remove private data from this device"
+            subtitle="Does not withdraw funds"
+            expanded={showRemoval}
+            controls="private-data-removal"
+            danger
+            onClick={() => setShowRemoval(value => !value)}
+          />
+          {showRemoval ? (
+            <div id="private-data-removal" className="space-y-3 border-t border-[#FF453A]/15 bg-[#FF453A]/[0.035] p-4">
+              <p className="text-[12px] leading-relaxed text-neutral-400">
+                This does not withdraw funds and does not delete ciphertext or activity stored on-chain. Seed-only recovery verifies the immutable record directly from Stellar.
+              </p>
+              {noteCount > 0 ? (
+                <Notice tone="warn">
+                  Your private balance is spendable from this device. Continue only after checking that recovery works.
+                </Notice>
+              ) : null}
+              <Field label="Type REMOVE PRIVATE BALANCE to Confirm">
+                <input
+                  className="input text-base sm:text-[14px]"
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  enterKeyHint="done"
+                  value={confirmation}
+                  onChange={event => setConfirmation(event.target.value)}
+                />
+              </Field>
+              <ModalFooter
+                secondary={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={working !== null}
+                    onClick={() => {
+                      setShowRemoval(false);
+                      setConfirmation('');
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                }
+                primary={
+                  <Button
+                    type="button"
+                    variant="danger"
+                    loading={working === 'remove'}
+                    disabled={working !== null || confirmation !== 'REMOVE PRIVATE BALANCE'}
+                    onClick={() => void remove()}
+                  >
+                    Remove from this device
+                  </Button>
+                }
+              />
+            </div>
+          ) : null}
+        </section>
+    </ModalBody>
+  );
+}

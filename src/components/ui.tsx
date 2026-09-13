@@ -1,0 +1,2799 @@
+"use client";
+
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { triggerHaptic } from "@/lib/haptics";
+import {
+  MODAL_EXIT_DURATION_MS,
+  MODAL_SHEET_EXIT_DURATION_MS,
+  POPOVER_EXIT_DURATION_MS,
+  REDUCED_MOTION_EXIT_DURATION_MS,
+} from "@/lib/motion";
+import { calculatePopoverPosition, type PopoverPosition } from "@/lib/popover";
+import { tabIndexAfterKey } from "@/lib/tabs";
+import { IconCheck, IconChevronDown, IconClose, IconCopy } from "./icons";
+
+/** Shared panel chrome for modal surfaces (Modal, CommandPalette). */
+export const MODAL_PANEL_CLASS =
+  "rounded-[28px] border border-white/[0.12] bg-[var(--color-elevated)] shadow-[0_25px_70px_-15px_var(--shadow-strong)] backdrop-blur-2xl";
+
+/** Shared chrome for floating popover surfaces (Select, Dropdown). */
+const POPOVER_PANEL_CLASS =
+  "menu-pop fixed z-[70] overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.12] bg-[var(--color-elevated)] p-1.5 shadow-[0_24px_60px_-18px_var(--shadow-strong)] backdrop-blur-2xl";
+
+/** Offset fixed portals only when their owning dialog establishes a containing block. */
+function fixedContainingBlockBounds(container: HTMLElement): DOMRect | null {
+  if (container === document.body) return null;
+  const style = getComputedStyle(container);
+  const backdropFilter = style.backdropFilter
+    || (style as CSSStyleDeclaration & { webkitBackdropFilter?: string }).webkitBackdropFilter
+    || "none";
+  const establishes = style.transform !== "none"
+    || style.filter !== "none"
+    || backdropFilter !== "none"
+    || style.perspective !== "none"
+    || style.willChange.split(",").some((value) => ["transform", "filter", "backdrop-filter", "perspective"].includes(value.trim()))
+    || style.contain === "strict"
+    || style.contain === "content"
+    || style.contain.split(" ").some((value) => value === "paint" || value === "layout");
+  return establishes ? container.getBoundingClientRect() : null;
+}
+
+export function Tooltip({
+  label,
+  children,
+  side = "top",
+}: {
+  label: string | null;
+  children: React.ReactElement<{ "aria-describedby"?: string }>;
+  side?: "top" | "right";
+}) {
+  const tooltipId = React.useId();
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const tooltipRef = useRef<HTMLSpanElement>(null);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const open = !!label && (hovered || focused) && !dismissed;
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+  const [position, setPosition] = useState<{
+    left: number;
+    top: number;
+    bridgeEdge: "top" | "bottom" | "left" | "right";
+  } | null>(null);
+  const describedBy = [children.props["aria-describedby"], label ? tooltipId : null]
+    .filter(Boolean)
+    .join(" ") || undefined;
+  const trigger = React.cloneElement(children, { "aria-describedby": describedBy });
+
+  if (!label && (hovered || focused || dismissed)) {
+    setHovered(false);
+    setFocused(false);
+    setDismissed(false);
+  }
+
+  function startHover() {
+    setHovered(true);
+    setDismissed(false);
+  }
+
+  function leaveHover(event: React.PointerEvent<HTMLSpanElement>) {
+    const next = event.relatedTarget;
+    if (!(next instanceof Node) || (!anchorRef.current?.contains(next) && !tooltipRef.current?.contains(next))) {
+      setHovered(false);
+    }
+  }
+
+  const updatePosition = useCallback(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+    const container = anchor.closest<HTMLElement>("[data-modal-backdrop]") ?? document.body;
+    setPortalContainer(container);
+    const tooltip = tooltipRef.current;
+    if (!tooltip) return;
+
+    const margin = 8;
+    const gap = 8;
+    const anchorRect = anchor.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const viewportLeft = viewport?.offsetLeft ?? 0;
+    const viewportTop = viewport?.offsetTop ?? 0;
+    const viewportRight = viewportLeft + (viewport?.width ?? window.innerWidth);
+    const viewportBottom = viewportTop + (viewport?.height ?? window.innerHeight);
+    let left: number;
+    let top: number;
+    let bridgeEdge: "top" | "bottom" | "left" | "right" = "bottom";
+
+    if (side === "right") {
+      left = anchorRect.right + gap;
+      bridgeEdge = "left";
+      if (left + tooltipRect.width > viewportRight - margin) {
+        left = anchorRect.left - tooltipRect.width - gap;
+        bridgeEdge = "right";
+      }
+      top = anchorRect.top + (anchorRect.height - tooltipRect.height) / 2;
+    } else {
+      left = anchorRect.left + (anchorRect.width - tooltipRect.width) / 2;
+      top = anchorRect.top - tooltipRect.height - gap;
+      if (top < viewportTop + margin) {
+        top = anchorRect.bottom + gap;
+        bridgeEdge = "top";
+      }
+    }
+
+    const bounds = fixedContainingBlockBounds(container);
+    setPosition({
+      left: Math.min(
+        Math.max(viewportLeft + margin, left),
+        Math.max(viewportLeft + margin, viewportRight - tooltipRect.width - margin),
+      ) - (bounds?.left ?? 0),
+      top: Math.min(
+        Math.max(viewportTop + margin, top),
+        Math.max(viewportTop + margin, viewportBottom - tooltipRect.height - margin),
+      ) - (bounds?.top ?? 0),
+      bridgeEdge,
+    });
+  }, [side]);
+
+  useLayoutEffect(() => {
+    if (!open || !label) return;
+    const viewport = window.visualViewport;
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    viewport?.addEventListener("resize", updatePosition);
+    viewport?.addEventListener("scroll", updatePosition);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+      viewport?.removeEventListener("resize", updatePosition);
+      viewport?.removeEventListener("scroll", updatePosition);
+    };
+  }, [label, open, portalContainer, updatePosition]);
+
+  useEffect(() => {
+    const anchor = anchorRef.current;
+    if (!open || !anchor) return;
+    // Body-portalled content can retain hover after its source becomes inert.
+    const dismissWhenInert = () => {
+      if (anchor.closest('[inert]')) setDismissed(true);
+    };
+    const observer = new MutationObserver(dismissWhenInert);
+    for (let source: HTMLElement | null = anchor; source; source = source.parentElement) {
+      observer.observe(source, { attributes: true, attributeFilter: ['inert'] });
+    }
+    dismissWhenInert();
+    return () => observer.disconnect();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      const owner = anchorRef.current?.closest<HTMLElement>("[data-modal-backdrop]") ?? null;
+      if (owner ? !isTopModal(owner) : modalStack.length > 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setDismissed(true);
+    }
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [open]);
+
+  if (!label) return trigger;
+
+  const tooltip = open && portalContainer
+    ? createPortal(
+        <span
+          ref={tooltipRef}
+          id={tooltipId}
+          role="tooltip"
+          onPointerEnter={startHover}
+          onPointerLeave={leaveHover}
+          style={{
+            position: "fixed",
+            left: position?.left ?? 0,
+            top: position?.top ?? 0,
+            visibility: position ? "visible" : "hidden",
+          }}
+          className="z-[90] w-max max-w-52 rounded-lg border border-white/[0.12] bg-[var(--color-elevated)] px-2.5 py-1.5 text-center text-[11px] font-semibold leading-tight text-white shadow-xl backdrop-blur-xl"
+        >
+          {/* Cover the visual gap without a timer or a focusable target. */}
+          <span aria-hidden="true" className="absolute" style={position?.bridgeEdge === "bottom" || position?.bridgeEdge === "top"
+            ? { left: 0, right: 0, [position.bridgeEdge === "bottom" ? "top" : "bottom"]: "100%", height: 9 }
+            : { top: 0, bottom: 0, [position?.bridgeEdge === "left" ? "right" : "left"]: "100%", width: 9 }} />
+          {label}
+        </span>,
+        portalContainer,
+      )
+    : null;
+
+  return (
+    <span
+      ref={anchorRef}
+      onPointerEnter={startHover}
+      onPointerLeave={leaveHover}
+      onFocusCapture={() => { setFocused(true); setDismissed(false); }}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
+      }}
+      className={side === "right"
+        ? "relative flex w-full justify-center"
+        : "relative inline-flex"}
+    >
+      {trigger}
+      {tooltip}
+    </span>
+  );
+}
+
+export function IOSBackButton({
+  onClick,
+  label = "Back",
+  disabled = false,
+  className = "",
+}: {
+  onClick: () => void;
+  label?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={`group flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-opacity active:opacity-60 disabled:pointer-events-none disabled:opacity-35 pointer-coarse:h-11 pointer-coarse:w-11 ${className}`}
+    >
+      <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.09] text-[#0A84FF] pointer-coarse:h-11 pointer-coarse:w-11 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_5px_18px_-8px_var(--shadow-medium)] backdrop-blur-2xl transition-colors group-hover:bg-white/[0.14]">
+        <IconChevronDown size={21} className="rotate-90" />
+      </span>
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Modal — the one dialog shell. Presentation follows the platform:     */
+/* a bottom sheet on compact widths, a centred card above them, a       */
+/* centred alert for confirmations, or a full-screen takeover.          */
+/* ------------------------------------------------------------------ */
+
+export type ModalPresentation = "auto" | "card" | "sheet" | "alert" | "fullscreen";
+type ResolvedPresentation = Exclude<ModalPresentation, "auto">;
+export type ModalCloseReason = "escape" | "backdrop" | "drag" | "close" | "back" | "programmatic";
+
+interface ModalContextValue {
+  titleId: string;
+  descriptionId: string;
+  busyReasonId: string;
+  busy: boolean;
+  busyReason: string;
+  presentation: ResolvedPresentation;
+  registerTitle(): () => void;
+  registerDescription(): () => void;
+  /** Routes a dismissal through the shell's busy/dirty policy. Returns whether it will close. */
+  requestClose(reason: ModalCloseReason, action?: () => void): boolean;
+}
+
+const ModalLabelContext = React.createContext<ModalContextValue | null>(null);
+
+/** Shell state for children that render their own chrome (ConfirmModal, custom headers). */
+export function useModalContext(): ModalContextValue | null {
+  return React.useContext(ModalLabelContext);
+}
+
+const COMPACT_VIEWPORT_QUERY = "(max-width: 639px)";
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [query]);
+  return matches;
+}
+
+/** True below the `sm` breakpoint, where dialogs present as bottom sheets. */
+export function useCompactViewport(): boolean {
+  return useMediaQuery(COMPACT_VIEWPORT_QUERY);
+}
+
+export function useReducedMotion(): boolean {
+  return useMediaQuery(REDUCED_MOTION_QUERY);
+}
+
+/* Reference-counted body scroll lock so nested overlays don't fight. */
+let scrollLockCount = 0;
+let bodyOverflowBeforeLock = "";
+let lockedScrollOwner: HTMLElement | null = null;
+let scrollOwnerOverflowBeforeLock = "";
+const modalStack: HTMLElement[] = [];
+let inertAppSurface: HTMLElement | null = null;
+let appSurfaceInertBeforeModal = false;
+let latestPointerTarget: HTMLElement | null = null;
+
+const pointerCaptureDocument = typeof document === "undefined"
+  ? null
+  : document as Document & { __stellarkeyOverlayPointerCapture?: boolean };
+if (pointerCaptureDocument && !pointerCaptureDocument.__stellarkeyOverlayPointerCapture) {
+  pointerCaptureDocument.__stellarkeyOverlayPointerCapture = true;
+  pointerCaptureDocument.addEventListener("pointerdown", (event) => {
+    const target = event.target instanceof Element
+      ? event.target.closest(
+          'button, a[href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])',
+        )
+      : null;
+    latestPointerTarget = target instanceof HTMLElement ? target : null;
+  }, true);
+  pointerCaptureDocument.addEventListener("keydown", () => {
+    // A keyboard opening owns the focused control, never an older pointer press.
+    latestPointerTarget = null;
+  }, true);
+}
+
+function syncModalInertness() {
+  if (modalStack.length > 0 && !inertAppSurface) {
+    inertAppSurface = document.querySelector<HTMLElement>("[data-app-surface]");
+    if (inertAppSurface) {
+      appSurfaceInertBeforeModal = inertAppSurface.inert;
+      inertAppSurface.inert = true;
+    }
+  }
+
+  const top = modalStack.at(-1) ?? null;
+  for (const modal of modalStack) {
+    modal.inert = modal !== top;
+  }
+
+  if (modalStack.length === 0 && inertAppSurface) {
+    inertAppSurface.inert = appSurfaceInertBeforeModal;
+    inertAppSurface = null;
+    appSurfaceInertBeforeModal = false;
+  }
+}
+
+function registerModal(modal: HTMLElement) {
+  if (!modalStack.includes(modal)) modalStack.push(modal);
+  syncModalInertness();
+}
+
+function unregisterModal(modal: HTMLElement) {
+  const index = modalStack.lastIndexOf(modal);
+  if (index >= 0) modalStack.splice(index, 1);
+  modal.inert = false;
+  syncModalInertness();
+}
+
+function isTopModal(modal: HTMLElement | null): boolean {
+  return modal !== null && modalStack.at(-1) === modal;
+}
+
+function lockBodyScroll() {
+  scrollLockCount += 1;
+  if (scrollLockCount !== 1) return;
+  bodyOverflowBeforeLock = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  lockedScrollOwner = document.querySelector<HTMLElement>("[data-app-scroll-owner]");
+  if (lockedScrollOwner) {
+    scrollOwnerOverflowBeforeLock = lockedScrollOwner.style.overflow;
+    lockedScrollOwner.style.overflow = "hidden";
+  }
+}
+function unlockBodyScroll() {
+  scrollLockCount = Math.max(0, scrollLockCount - 1);
+  if (scrollLockCount !== 0) return;
+  document.body.style.overflow = bodyOverflowBeforeLock;
+  if (lockedScrollOwner) {
+    lockedScrollOwner.style.overflow = scrollOwnerOverflowBeforeLock;
+  }
+  lockedScrollOwner = null;
+  scrollOwnerOverflowBeforeLock = "";
+}
+
+/** Shares the reference-counted Modal scroll lock with full-surface takeovers. */
+export function useBodyScrollLock(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    lockBodyScroll();
+    return unlockBodyScroll;
+  }, [active]);
+}
+
+const SHEET_DISMISS_DISTANCE_PX = 96;
+const SHEET_DISMISS_VELOCITY_PX_PER_MS = 0.5;
+const SHEET_DRAG_SLOP_PX = 8;
+const BACKDROP_TAP_SLOP_PX = 8;
+
+/**
+ * Sheet drag-to-dismiss. Touches start a drag from the grabber/header at any
+ * time, or from the body once its scroll position is at the top; anything else
+ * stays a native scroll. Mouse pointers drag from the handle only.
+ */
+function useSheetDrag({
+  enabled,
+  panelRef,
+  backdropRef,
+  onDismiss,
+}: {
+  enabled: boolean;
+  panelRef: React.RefObject<HTMLDivElement | null>;
+  backdropRef: React.RefObject<HTMLDivElement | null>;
+  onDismiss: () => boolean;
+}) {
+  useEffect(() => {
+    const panel = panelRef.current;
+    const backdrop = backdropRef.current;
+    if (!enabled || !panel || !backdrop) return;
+
+    let startY = 0;
+    let lastY = 0;
+    let lastTime = 0;
+    let velocity = 0;
+    let tracking = false;
+    let dragging = false;
+    let fromHandle = false;
+    let activePointer: number | null = null;
+    let touchOrigin: Element | null = null;
+    let clearTransition: (() => void) | null = null;
+
+    const isHandle = (target: EventTarget | null) =>
+      target instanceof Element && target.closest("[data-sheet-handle]") !== null;
+    // A press on a control inside the handle is a click, never a drag start.
+    const isControl = (target: EventTarget | null) =>
+      target instanceof Element
+      && target.closest("button, a, input, select, textarea, summary, [role=\"button\"], [role=\"tab\"], [role=\"switch\"]") !== null;
+    const insidePopup = (target: EventTarget | null) =>
+      target instanceof Element && target.closest("[data-popover-panel]") !== null;
+    const scrolledAncestor = () => {
+      for (let element = touchOrigin; element; element = element.parentElement) {
+        if (element.scrollTop > 0) return true;
+        if (element === panel) break;
+      }
+      return false;
+    };
+
+    const applyOffset = (offset: number) => {
+      const clamped = Math.max(0, offset);
+      // Once dragged, snap back without restarting the opening keyframe.
+      panel.dataset.sheetInteracted = "true";
+      panel.dataset.dragging = "true";
+      panel.style.transition = "none";
+      panel.style.transform = `translate3d(0, ${clamped}px, 0)`;
+      backdrop.style.opacity = String(Math.max(0.25, 1 - clamped / 480));
+    };
+
+    const settle = (dismiss: boolean) => {
+      clearTransition?.();
+      const closing = dismiss && onDismiss();
+      delete panel.dataset.dragging;
+      backdrop.style.opacity = "";
+      if (closing) {
+        // The exit keyframe continues from the dragged position.
+        panel.style.transition = "";
+        return;
+      }
+      panel.style.transition = "transform var(--motion-duration-standard) var(--motion-ease-standard)";
+      panel.style.transform = "";
+      const clear = () => {
+        panel.style.transition = "";
+        panel.removeEventListener("transitionend", clear);
+        clearTransition = null;
+      };
+      clearTransition = clear;
+      panel.addEventListener("transitionend", clear);
+    };
+
+    const cancel = () => {
+      tracking = false;
+      dragging = false;
+      if (activePointer !== null && panel.hasPointerCapture(activePointer)) panel.releasePointerCapture(activePointer);
+      activePointer = null;
+      settle(false);
+    };
+
+    const begin = (y: number, time: number, target: EventTarget | null) => {
+      if (insidePopup(target)) return false;
+      touchOrigin = target instanceof Element ? target : null;
+      fromHandle = isHandle(target);
+      if (!fromHandle && scrolledAncestor()) return false;
+      clearTransition?.();
+      startY = lastY = y;
+      lastTime = time;
+      velocity = 0;
+      tracking = true;
+      dragging = false;
+      return true;
+    };
+
+    /** Returns true once the gesture is owned as a drag. */
+    const move = (y: number, time: number): boolean => {
+      if (!tracking) return false;
+      const dy = y - startY;
+      if (!dragging) {
+        if (dy > SHEET_DRAG_SLOP_PX && (fromHandle || !scrolledAncestor())) {
+          dragging = true;
+        } else if (dy < -SHEET_DRAG_SLOP_PX || (!fromHandle && scrolledAncestor())) {
+          tracking = false;
+          return false;
+        } else {
+          return false;
+        }
+      }
+      velocity = (y - lastY) / Math.max(1, time - lastTime);
+      lastY = y;
+      lastTime = time;
+      applyOffset(dy);
+      return true;
+    };
+
+    const end = () => {
+      if (!tracking) return;
+      tracking = false;
+      if (!dragging) return;
+      dragging = false;
+      const dy = lastY - startY;
+      settle(dy > SHEET_DISMISS_DISTANCE_PX || velocity > SHEET_DISMISS_VELOCITY_PX_PER_MS);
+    };
+
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length !== 1) { cancel(); return; }
+      if (isControl(event.target)) return;
+      begin(event.touches[0].clientY, event.timeStamp, event.target);
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (event.touches.length !== 1) { cancel(); return; }
+      if (move(event.touches[0].clientY, event.timeStamp)) event.preventDefault();
+    };
+    const onTouchEnd = () => end();
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType === "touch" || event.button !== 0 || !isHandle(event.target) || isControl(event.target)) return;
+      if (!begin(event.clientY, event.timeStamp, event.target)) return;
+      activePointer = event.pointerId;
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== activePointer) return;
+      // A pre-capture press can end outside the panel. Hovering back must
+      // cancel that abandoned gesture, not capture an already released pointer.
+      if ((event.buttons & 1) === 0) { cancel(); return; }
+      if (!move(event.clientY, event.timeStamp)) return;
+      event.preventDefault();
+      // Capture only once the gesture is owned, so clicks on the handle still land.
+      if (!panel.hasPointerCapture(event.pointerId)) panel.setPointerCapture(event.pointerId);
+    };
+    const onPointerEnd = (event: PointerEvent) => {
+      if (event.pointerId !== activePointer) return;
+      activePointer = null;
+      if (panel.hasPointerCapture(event.pointerId)) panel.releasePointerCapture(event.pointerId);
+      end();
+    };
+    const onPointerCancel = (event: PointerEvent) => {
+      if (event.pointerId === activePointer) cancel();
+    };
+
+    panel.addEventListener("touchstart", onTouchStart, { passive: true });
+    panel.addEventListener("touchmove", onTouchMove, { passive: false });
+    panel.addEventListener("touchend", onTouchEnd);
+    panel.addEventListener("touchcancel", cancel);
+    panel.addEventListener("pointerdown", onPointerDown);
+    panel.addEventListener("pointermove", onPointerMove);
+    panel.addEventListener("pointerup", onPointerEnd);
+    panel.addEventListener("pointercancel", onPointerCancel);
+    return () => {
+      panel.removeEventListener("touchstart", onTouchStart);
+      panel.removeEventListener("touchmove", onTouchMove);
+      panel.removeEventListener("touchend", onTouchEnd);
+      panel.removeEventListener("touchcancel", cancel);
+      panel.removeEventListener("pointerdown", onPointerDown);
+      panel.removeEventListener("pointermove", onPointerMove);
+      panel.removeEventListener("pointerup", onPointerEnd);
+      panel.removeEventListener("pointercancel", onPointerCancel);
+      clearTransition?.();
+      delete panel.dataset.dragging;
+      delete panel.dataset.sheetInteracted;
+      panel.style.transform = "";
+      panel.style.transition = "";
+      backdrop.style.opacity = "";
+    };
+  }, [enabled, panelRef, backdropRef, onDismiss]);
+}
+
+type ModalExitGeometryProps = {
+  closing: boolean;
+  presentation: ResolvedPresentation;
+  panelRef: React.RefObject<HTMLDivElement | null>;
+  children: React.ReactNode;
+};
+type ModalSize = { width: number; height: number };
+
+// Capture only non-sensitive shell dimensions at React's before-mutation
+// boundary. ResizeObserver can lag behind a last-moment layout change, while
+// layout effects run after the owner has already removed its private body.
+// React currently has no hook equivalent of getSnapshotBeforeUpdate.
+class ModalExitGeometry extends React.Component<ModalExitGeometryProps, object, ModalSize | null> {
+  getSnapshotBeforeUpdate(previous: ModalExitGeometryProps): ModalSize | null {
+    if (previous.closing || !this.props.closing || this.props.presentation === "fullscreen") return null;
+    const panel = this.props.panelRef.current;
+    if (!panel) return null;
+    const width = panel.offsetWidth;
+    const height = panel.offsetHeight;
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+
+  componentDidUpdate(previous: ModalExitGeometryProps, _state: object, snapshot: ModalSize | null) {
+    const panel = this.props.panelRef.current;
+    if (!panel) return;
+    if (snapshot) {
+      panel.style.height = `${snapshot.height}px`;
+      if (this.props.presentation !== "sheet") {
+        panel.style.width = `${snapshot.width}px`;
+        panel.style.maxWidth = "none";
+      }
+    } else if (previous.closing && !this.props.closing) {
+      panel.style.removeProperty("height");
+      panel.style.removeProperty("width");
+      panel.style.removeProperty("max-width");
+    }
+  }
+
+  render() {
+    return this.props.children;
+  }
+}
+
+export function Modal({
+  open,
+  onClose,
+  children,
+  wide = false,
+  presentation = "auto",
+  anchor = "center",
+  busy = false,
+  busyReason = "Wait for the current action to finish before closing.",
+  dismissable = true,
+  dirty = false,
+  initialFocus,
+  ariaLabel,
+}: {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  wide?: boolean;
+  /** `auto` presents a sheet on compact widths and a card above them. */
+  presentation?: ModalPresentation;
+  /** Card/alert placement; `top` anchors a palette-style dialog near the top edge. */
+  anchor?: "center" | "top";
+  /** Blocks every dismissal path while work is in flight; the close control stays visible and explains why. */
+  busy?: boolean;
+  busyReason?: string;
+  /** `false` keeps Escape, backdrop and drag from closing (the dialog must be answered). */
+  dismissable?: boolean;
+  /** Unsaved edits: gestures and the close control ask before discarding. */
+  dirty?: boolean | (() => boolean);
+  /** Element to focus on open. Defaults to the dialog itself so its name is announced first. */
+  initialFocus?: React.RefObject<HTMLElement | null> | (() => HTMLElement | null);
+  /** Accessible name when no ModalHeader supplies a title. */
+  ariaLabel?: string;
+}) {
+  const [mounted, setMounted] = useState(open);
+  const [closing, setClosing] = useState(false);
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [exitGeometry, setExitGeometry] = useState<{
+    presentation: ResolvedPresentation;
+    wide: boolean;
+  } | null>(null);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const [titleCount, setTitleCount] = useState(0);
+  const [descriptionCount, setDescriptionCount] = useState(0);
+  const compact = useCompactViewport();
+  const reducedMotion = useReducedMotion();
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const restoreFocusFrameRef = useRef<number | null>(null);
+  const discardActionRef = useRef<(() => void) | null>(null);
+  const onCloseRef = useRef(onClose);
+  const busyRef = useRef(busy);
+  const dismissableRef = useRef(dismissable);
+  const dirtyRef = useRef(dirty);
+  const initialFocusRef = useRef(initialFocus);
+  const [visualViewport, setVisualViewport] = useState<{
+    offsetTop: number;
+    height: number;
+  } | null>(null);
+  const labelBaseId = React.useId();
+  const titleId = `${labelBaseId}-title`;
+  const descriptionId = `${labelBaseId}-description`;
+  const busyReasonId = `${labelBaseId}-busy`;
+
+  // Handlers and the focus frame read the latest props without re-subscribing.
+  useLayoutEffect(() => {
+    onCloseRef.current = onClose;
+    busyRef.current = busy;
+    dismissableRef.current = dismissable;
+    dirtyRef.current = dirty;
+    initialFocusRef.current = initialFocus;
+  });
+
+  const livePresentation: ResolvedPresentation =
+    presentation === "auto" ? (compact ? "sheet" : "card") : presentation;
+
+  // Stay mounted briefly after `open` flips false so the exit animation plays.
+  // The shell keeps its last size and presentation through the exit so owners
+  // may clear sensitive content immediately without collapsing the dialog.
+  // (State adjusted during render per https://react.dev/learn/you-might-not-need-an-effect)
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) {
+      setMounted(true);
+      setClosing(false);
+      setExitGeometry(null);
+      setConfirmingDiscard(false);
+    } else if (mounted) {
+      setClosing(true);
+      setConfirmingDiscard(false);
+      setExitGeometry({
+        presentation: livePresentation,
+        wide,
+      });
+    }
+  }
+
+  const resolvedPresentation = closing && exitGeometry ? exitGeometry.presentation : livePresentation;
+  const resolvedWide = closing && exitGeometry ? exitGeometry.wide : wide;
+  const isSheet = resolvedPresentation === "sheet";
+  const isAlert = resolvedPresentation === "alert";
+  const isFullscreen = resolvedPresentation === "fullscreen";
+
+  useEffect(() => {
+    if (!closing) return;
+    const duration = reducedMotion
+      ? REDUCED_MOTION_EXIT_DURATION_MS
+      : resolvedPresentation === "sheet"
+        ? MODAL_SHEET_EXIT_DURATION_MS
+        : MODAL_EXIT_DURATION_MS;
+    const t = window.setTimeout(() => {
+      setMounted(false);
+      setClosing(false);
+      setExitGeometry(null);
+    }, duration);
+    return () => window.clearTimeout(t);
+  }, [closing, reducedMotion, resolvedPresentation]);
+
+  // Scroll lock + focus restore for as long as the dialog is in the tree.
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    if (restoreFocusFrameRef.current !== null) {
+      window.cancelAnimationFrame(restoreFocusFrameRef.current);
+      restoreFocusFrameRef.current = null;
+    }
+    const activeElement = document.activeElement instanceof HTMLElement
+      && document.activeElement !== document.body
+      ? document.activeElement
+      : null;
+    // WebKit may leave focus in the parent dialog when its opener is tapped.
+    const pointerOpener = latestPointerTarget?.isConnected ? latestPointerTarget : null;
+    restoreFocusRef.current = pointerOpener ?? activeElement ?? restoreFocusRef.current;
+    const returnOwner = restoreFocusRef.current?.closest<HTMLElement>('[data-modal-backdrop]') ?? null;
+    latestPointerTarget = null;
+    lockBodyScroll();
+    return () => {
+      unlockBodyScroll();
+      const restoreTarget = restoreFocusRef.current;
+      // WebKit can discard a synchronous focus call while the portal and
+      // background inert state are being removed. Restore on the next paint,
+      // after the underlying surface is interactive again.
+      restoreFocusFrameRef.current = window.requestAnimationFrame(() => {
+        restoreFocusFrameRef.current = null;
+        // A fast action can replace its opener before this frame arrives. Its
+        // owning dialog may explicitly nominate a result as the continuation.
+        // Never redirect a newer focus choice or reach behind another modal.
+        if (document.activeElement !== document.body) return;
+        const target = restoreTarget?.isConnected
+          ? restoreTarget
+          : returnOwner?.querySelector<HTMLElement>('[data-modal-return-focus]');
+        const top = modalStack.at(-1);
+        if (!target?.isConnected || target.closest('[inert]')
+          || target.matches(':disabled')
+          || (top && !top.contains(target))) return;
+        target.focus({ preventScroll: true });
+      });
+    };
+  }, [mounted]);
+
+  useLayoutEffect(() => {
+    if (!mounted || !backdropRef.current) return;
+    const modal = backdropRef.current;
+    registerModal(modal);
+    return () => unregisterModal(modal);
+  }, [mounted]);
+
+  useLayoutEffect(() => {
+    if (!open || !mounted) return;
+    const panel = panelRef.current;
+    const backdrop = backdropRef.current;
+    // The opening owns this callback, not a later render or newer focus intent.
+    // Closing revokes it even while the exit animation retains the same shell.
+    // Focus lands on the dialog itself so assistive technology announces its
+    // name before any control; a sheet whose purpose is entry opts into a field.
+    const frame = window.requestAnimationFrame(() => {
+      if (!panel?.isConnected || !isTopModal(backdrop) || panel.contains(document.activeElement)) return;
+      const requested = initialFocusRef.current;
+      const target = typeof requested === "function" ? requested() : requested?.current ?? null;
+      const first = target && panel.contains(target) && !target.matches(":disabled, [aria-disabled='true']")
+        ? target
+        : null;
+      (first ?? panel).focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, mounted]);
+
+  // iOS keeps a separate visual viewport while the keyboard is open. Following
+  // it prevents a sheet from being centred behind the keyboard or clipped by
+  // the browser chrome.
+  useEffect(() => {
+    if (!mounted) return;
+    function update() {
+      const viewport = window.visualViewport;
+      const next = {
+        offsetTop: viewport?.offsetTop ?? 0,
+        height: viewport?.height ?? window.innerHeight,
+      };
+      setVisualViewport(current => {
+        if (current?.offsetTop === next.offsetTop && current.height === next.height) {
+          return current;
+        }
+        return next;
+      });
+    }
+    update();
+    window.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("scroll", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("scroll", update);
+    };
+  }, [mounted]);
+
+  const requestClose = useCallback((reason: ModalCloseReason, action?: () => void): boolean => {
+    if (busyRef.current) return false;
+    const gesture = reason === "escape" || reason === "backdrop" || reason === "drag";
+    if (gesture && !dismissableRef.current) return false;
+    const perform = action ?? onCloseRef.current;
+    // Back navigates within the dialog; only leaving it can discard edits.
+    const isDirty = typeof dirtyRef.current === "function" ? dirtyRef.current() : dirtyRef.current;
+    if (isDirty && reason !== "programmatic" && reason !== "back") {
+      discardActionRef.current = perform;
+      setConfirmingDiscard(true);
+      return false;
+    }
+    perform();
+    return true;
+  }, []);
+
+  const dismissFromDrag = useCallback(() => requestClose("drag"), [requestClose]);
+  useSheetDrag({ enabled: mounted && !closing && isSheet, panelRef, backdropRef, onDismiss: dismissFromDrag });
+
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (!isTopModal(backdropRef.current)) return;
+      if (e.key === "Escape") {
+        requestClose("escape");
+        return;
+      }
+      if (e.key === "Tab" && panelRef.current) {
+        const focusable = Array.from(
+          panelRef.current.querySelectorAll<HTMLElement>(
+            'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], details > summary:first-of-type, [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((element) => element.offsetParent !== null);
+        if (focusable.length === 0) {
+          e.preventDefault();
+          panelRef.current.focus();
+          return;
+        }
+        // The dialog owns Tab order outright: engines disagree about which
+        // controls native Tab reaches (mobile WebKit skips buttons), so the
+        // next stop is chosen here and wraps within the dialog.
+        e.preventDefault();
+        const index = focusable.indexOf(document.activeElement as HTMLElement);
+        const next = index === -1
+          ? (e.shiftKey ? focusable.length - 1 : 0)
+          : (index + (e.shiftKey ? -1 : 1) + focusable.length) % focusable.length;
+        focusable[next].focus();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, requestClose]);
+
+  const registerTitle = useCallback(() => {
+    setTitleCount((count) => count + 1);
+    return () => setTitleCount((count) => count - 1);
+  }, []);
+  const registerDescription = useCallback(() => {
+    setDescriptionCount((count) => count + 1);
+    return () => setDescriptionCount((count) => count - 1);
+  }, []);
+
+  const contextValue = React.useMemo<ModalContextValue>(() => ({
+    titleId,
+    descriptionId,
+    busyReasonId,
+    busy,
+    busyReason,
+    presentation: resolvedPresentation,
+    registerTitle,
+    registerDescription,
+    requestClose,
+  }), [titleId, descriptionId, busyReasonId, busy, busyReason, resolvedPresentation, registerTitle, registerDescription, requestClose]);
+
+  // Backdrop taps dismiss only when press and release both land on the dim
+  // without travelling; a drag that starts on the dim is not a dismissal.
+  const backdropPressRef = useRef<{ id: number; x: number; y: number } | null>(null);
+
+  if (!mounted || typeof document === "undefined") return null;
+
+  const backdropDismisses = !isAlert && !isFullscreen;
+  const overlayClass = isSheet
+    ? "modal-overlay app-safe-overlay fixed inset-0 z-50 flex items-end justify-center bg-[var(--scrim-sheet)] p-0"
+    : isAlert
+      ? "modal-overlay app-safe-overlay fixed inset-0 z-50 flex items-center justify-center bg-[var(--scrim-alert)] p-6 backdrop-blur-sm"
+      : isFullscreen
+        ? "modal-overlay fixed inset-0 z-50 flex items-stretch justify-center bg-[var(--color-bg)] p-0"
+        : `modal-overlay app-safe-overlay fixed inset-0 z-50 flex ${anchor === "top" ? "items-start pt-[15vh]" : "items-center"} justify-center bg-[var(--scrim-dialog)] p-4 backdrop-blur-md`;
+  const panelClass = isSheet
+    ? `modal-sheet relative max-h-[calc(100dvh-var(--app-safe-area-top)-1.5rem)] w-full min-w-0 overflow-y-auto scrollbar-none overscroll-contain rounded-t-[28px] border border-b-0 border-white/[0.12] bg-[var(--color-elevated)] pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_50px_-20px_var(--shadow-strong)] ${
+        resolvedWide ? "max-w-2xl" : "max-w-xl"
+      }`
+    : isAlert
+      ? "modal-alert relative max-h-full w-full min-w-0 max-w-[270px] sm:max-w-[300px] overflow-y-auto scrollbar-none overscroll-contain rounded-[26px] border border-white/[0.12] bg-[var(--color-elevated)] shadow-[0_25px_70px_-15px_var(--shadow-strong)] backdrop-blur-2xl"
+      : isFullscreen
+        ? "modal-fullscreen relative h-full w-full min-w-0 max-w-none overflow-y-auto scrollbar-none overscroll-contain bg-[var(--color-bg)]"
+        : `modal-dialog relative max-h-[90dvh] w-full min-w-0 overflow-y-auto md:max-h-[calc(100dvh-10rem)] scrollbar-none overscroll-contain ${MODAL_PANEL_CLASS} ${
+            resolvedWide ? "max-w-xl" : "max-w-md"
+          }`;
+  const viewportReduced = visualViewport !== null
+    && (visualViewport.offsetTop !== 0 || Math.abs(visualViewport.height - window.innerHeight) > 1);
+  // Alerts always use their overlay's padded content height, including when
+  // the visual viewport shrinks; do not override their percentage cap.
+  const heightStyle: React.CSSProperties | undefined = viewportReduced && visualViewport && !isFullscreen && !isAlert
+    ? {
+        maxHeight: isSheet
+          ? `calc(${visualViewport.height}px - 1.5rem - var(--app-safe-area-top))`
+          : `calc(${visualViewport.height}px - 2rem - var(--app-safe-area-top))`,
+      }
+    : undefined;
+
+  return createPortal(
+    <div
+      ref={backdropRef}
+      data-modal-backdrop
+      data-overlay-state={closing ? "closing" : "open"}
+      data-presentation={resolvedPresentation}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleCount > 0 ? titleId : undefined}
+      aria-label={titleCount > 0 ? undefined : ariaLabel}
+      aria-describedby={descriptionCount > 0 ? descriptionId : undefined}
+      aria-busy={busy || undefined}
+      onPointerDown={(e) => {
+        backdropPressRef.current = e.target === backdropRef.current && backdropDismisses
+          ? { id: e.pointerId, x: e.clientX, y: e.clientY }
+          : null;
+      }}
+      onPointerUp={(e) => {
+        const press = backdropPressRef.current;
+        backdropPressRef.current = null;
+        if (!press || press.id !== e.pointerId || e.target !== backdropRef.current) return;
+        if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > BACKDROP_TAP_SLOP_PX) return;
+        requestClose("backdrop");
+      }}
+      onPointerCancel={() => { backdropPressRef.current = null; }}
+      style={
+        viewportReduced && visualViewport
+          ? {
+              top: visualViewport.offsetTop,
+              bottom: "auto",
+              height: visualViewport.height,
+            }
+          : undefined
+      }
+      className={`${overlayClass}${closing ? " closing" : ""}`}
+    >
+      <ModalLabelContext.Provider value={contextValue}>
+        <ModalExitGeometry closing={closing} presentation={resolvedPresentation} panelRef={panelRef}>
+          <div
+            ref={panelRef}
+            data-modal-shell
+            inert={!open || closing}
+            tabIndex={-1}
+            style={heightStyle}
+            className={`${panelClass} outline-none${closing ? " closing" : ""}`}
+          >
+            {isSheet && <div aria-hidden="true" data-sheet-handle className="modal-grabber" />}
+            <span id={busyReasonId} className="sr-only">{busy ? busyReason : ""}</span>
+            {children}
+          </div>
+        </ModalExitGeometry>
+        <ConfirmModal
+          open={confirmingDiscard}
+          title="Discard changes?"
+          message="Your unsaved edits will be lost."
+          confirmLabel="Discard"
+          cancelLabel="Keep Editing"
+          destructive
+          onClose={() => {
+            discardActionRef.current = null;
+            setConfirmingDiscard(false);
+          }}
+          onConfirm={() => {
+            const action = discardActionRef.current;
+            discardActionRef.current = null;
+            setConfirmingDiscard(false);
+            action?.();
+          }}
+        />
+      </ModalLabelContext.Provider>
+    </div>,
+    document.body,
+  );
+}
+
+export function ModalHeader({
+  title,
+  subtitle,
+  onClose,
+  closeDisabled = false,
+  onBack,
+  backLabel = "Back",
+  action,
+  className = "",
+}: {
+  title: string;
+  subtitle?: string;
+  onClose?: () => void;
+  /** Prefer `busy` on Modal; this keeps a single header control unavailable. */
+  closeDisabled?: boolean;
+  /** Multi-step flows: a leading back control instead of a footer button. */
+  onBack?: () => void;
+  backLabel?: string;
+  /** Trailing control such as a text "Done" or "Save" action. */
+  action?: React.ReactNode;
+  /** Extra classes, e.g. a print-hiding hook. */
+  className?: string;
+}) {
+  const modal = React.useContext(ModalLabelContext);
+  const registerTitle = modal?.registerTitle;
+  const registerDescription = modal?.registerDescription;
+  const hasSubtitle = Boolean(subtitle);
+  useLayoutEffect(() => registerTitle?.(), [registerTitle]);
+  useLayoutEffect(() => (hasSubtitle ? registerDescription?.() : undefined), [hasSubtitle, registerDescription]);
+
+  const busy = modal?.busy ?? false;
+  const closeBlocked = closeDisabled || busy;
+  return (
+    <div
+      data-sheet-handle={modal?.presentation === "sheet" ? "true" : undefined}
+      className={`sticky top-0 z-10 flex items-center gap-3 border-b border-white/[0.08] bg-[var(--color-elevated)] px-4 py-4 backdrop-blur-xl sm:px-6 ${className}`}
+    >
+      {onBack && (
+        <IOSBackButton
+          label={backLabel}
+          disabled={busy}
+          className="-ml-2"
+          onClick={() => {
+            if (modal) modal.requestClose("back", onBack);
+            else onBack();
+          }}
+        />
+      )}
+      <div className="min-w-0 flex-1">
+        <h2 id={modal?.titleId} className="text-[17px] font-semibold tracking-tight text-white">{title}</h2>
+        {subtitle && (
+          <p id={modal?.descriptionId} className="mt-0.5 text-[12px] text-neutral-400">{subtitle}</p>
+        )}
+      </div>
+      {action}
+      {onClose && (
+        <button
+          type="button"
+          aria-disabled={closeBlocked || undefined}
+          aria-describedby={closeBlocked ? modal?.busyReasonId : undefined}
+          title={closeBlocked ? modal?.busyReason : undefined}
+          onClick={(event) => {
+            if (closeBlocked) {
+              event.preventDefault();
+              return;
+            }
+            if (modal) modal.requestClose("close", onClose);
+            else onClose();
+          }}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-[var(--color-oncolor)] aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:bg-white/10 aria-disabled:hover:text-neutral-400 pointer-coarse:h-11 pointer-coarse:w-11"
+          aria-label="Close"
+        >
+          <IconClose size={14} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+const MODAL_BODY_GAP: Record<3 | 4 | 5, string> = {
+  3: "space-y-3",
+  4: "space-y-4",
+  5: "space-y-5",
+};
+
+/** The one body rhythm: `p-4 sm:p-6` with a vertical stack. */
+export function ModalBody({
+  children,
+  gap = 4,
+  className = "",
+}: {
+  children: React.ReactNode;
+  gap?: 3 | 4 | 5;
+  className?: string;
+}) {
+  return <div className={`${MODAL_BODY_GAP[gap]} p-4 sm:p-6 ${className}`}>{children}</div>;
+}
+
+/**
+ * Footer actions in iOS order: the primary action trails in a row and sits on
+ * top in a stack; Cancel/Back leads. A lone primary fills the width.
+ */
+export function ModalFooter({
+  primary,
+  secondary,
+  stack = false,
+  pinned = true,
+  className = "",
+}: {
+  primary: React.ReactNode;
+  secondary?: React.ReactNode;
+  stack?: boolean;
+  /** Stay visible at the panel's bottom edge while a long body scrolls. */
+  pinned?: boolean;
+  className?: string;
+}) {
+  const pin = pinned ? "modal-footer-pinned -mb-4 mt-3 pb-4 pt-3 sm:-mb-6 sm:pb-6" : "mt-6";
+  if (!secondary) {
+    return <div className={`${pin} grid grid-cols-1 gap-3 ${className}`}>{primary}</div>;
+  }
+  return (
+    <div className={`${pin} ${stack ? "flex flex-col-reverse gap-2" : "grid grid-cols-2 gap-3"} ${className}`}>
+      {secondary}
+      {primary}
+    </div>
+  );
+}
+
+/**
+ * The confirmation alert: centred, not dismissed by tapping outside, with a
+ * specific verb on the confirming button and Cancel leading.
+ */
+export function ConfirmModal({
+  open,
+  title,
+  message,
+  confirmLabel,
+  cancelLabel = "Cancel",
+  destructive = false,
+  busy = false,
+  stack = false,
+  error = "",
+  confirmFocusableWhenDisabled = false,
+  onConfirm,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  message?: React.ReactNode;
+  confirmLabel: string;
+  cancelLabel?: string;
+  destructive?: boolean;
+  busy?: boolean;
+  /** Stack the buttons (long titles); the confirming action sits on top. */
+  stack?: boolean;
+  /** A failure from the last attempt, shown inside the alert so focus never leaves it. */
+  error?: string;
+  /** Keep the confirming button focusable while pending so focus survives the attempt. */
+  confirmFocusableWhenDisabled?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+  children?: React.ReactNode;
+}) {
+  const activeRef = useRef(open);
+  useLayoutEffect(() => { activeRef.current = open; }, [open]);
+  const cancel = () => {
+    if (!activeRef.current || busy) return;
+    activeRef.current = false;
+    onClose();
+  };
+  return (
+    <Modal open={open} onClose={cancel} presentation="alert" busy={busy}>
+      <AlertContent
+        title={title}
+        message={message}
+        actions={
+          <ModalFooter
+            pinned={false}
+            stack={stack || confirmLabel.length + cancelLabel.length > 18}
+            secondary={
+              <Button type="button" variant="ghost" disabled={busy || !open} onClick={cancel}>
+                {cancelLabel}
+              </Button>
+            }
+            primary={
+              <Button
+                type="button"
+                variant={destructive ? "danger" : "primary"}
+                loading={busy}
+                disabled={!open}
+                focusableWhenDisabled={confirmFocusableWhenDisabled}
+                onClick={() => { if (activeRef.current && !busy) onConfirm(); }}
+              >
+                {confirmLabel}
+              </Button>
+            }
+          />
+        }
+      >
+        {children}
+        {error && <div className="mt-3"><ErrorText message={error} /></div>}
+      </AlertContent>
+    </Modal>
+  );
+}
+
+/** Centred alert copy that supplies the dialog's accessible name and description. */
+export function AlertContent({
+  title,
+  message,
+  actions,
+  children,
+}: {
+  title: string;
+  message?: React.ReactNode;
+  actions?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  const modal = React.useContext(ModalLabelContext);
+  const registerTitle = modal?.registerTitle;
+  const registerDescription = modal?.registerDescription;
+  const hasMessage = Boolean(message);
+  useLayoutEffect(() => registerTitle?.(), [registerTitle]);
+  useLayoutEffect(() => (hasMessage ? registerDescription?.() : undefined), [hasMessage, registerDescription]);
+  return (
+    <div className="p-5 text-center">
+      <h2 id={modal?.titleId} className="text-[17px] font-semibold tracking-tight text-white">{title}</h2>
+      {message && (
+        <div id={modal?.descriptionId} className="mt-1.5 text-[13px] leading-relaxed text-neutral-300">{message}</div>
+      )}
+      {children && <div className="mt-4 text-left">{children}</div>}
+      {actions}
+    </div>
+  );
+}
+
+/**
+ * Keeps the last non-null value briefly after it clears so a dialog can show
+ * its content through the exit animation. Use only for non-sensitive content;
+ * private panels clear immediately and rely on the shell's geometry hold.
+ */
+export function useRetainedForExit<T>(value: T | null | undefined, holdMs = MODAL_SHEET_EXIT_DURATION_MS + 40): T | null {
+  const [retained, setRetained] = useState<T | null>(value ?? null);
+  if (value != null && value !== retained) setRetained(value);
+  useEffect(() => {
+    if (value != null) return;
+    const timer = window.setTimeout(() => setRetained(null), holdMs);
+    return () => window.clearTimeout(timer);
+  }, [value, holdMs]);
+  return value ?? retained;
+}
+
+/**
+ * Keeps a lazily mounted dialog in the tree through its exit animation.
+ * Mount on first open, stay mounted while the shell is exiting, then leave.
+ */
+export function useMountedThroughExit(open: boolean): boolean {
+  return useRetainedForExit(open ? true : null) ?? false;
+}
+
+/* ------------------------------------------------------------------ */
+/* Popover engine — shared portal positioning for Select and Dropdown. */
+/* ------------------------------------------------------------------ */
+
+function usePopover({
+  open,
+  onClose,
+  anchorRef,
+  align = "left",
+  matchAnchorWidth = true,
+  minWidth = 200,
+}: {
+  open: boolean;
+  onClose: (reason?: "escape" | "outside") => void;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  align?: "left" | "right";
+  matchAnchorWidth?: boolean;
+  minWidth?: number;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<PopoverPosition | null>(null);
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+  const [closing, setClosing] = useState(false);
+  const [wasOpen, setWasOpen] = useState(open);
+
+  // The panel stays for its fade-out; it is inert and ignores input meanwhile.
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    setClosing(!open && pos !== null);
+  }
+  useLayoutEffect(() => {
+    if (!closing) return;
+    // A closing panel owns nothing: move focus out before it turns inert so
+    // the owner's repair logic sees an unowned focus, as it did on unmount.
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && panelRef.current?.contains(active)) active.blur();
+  }, [closing]);
+  useEffect(() => {
+    if (!closing) return;
+    const timer = window.setTimeout(() => setClosing(false), POPOVER_EXIT_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [closing]);
+
+  // Position against the anchor; flip above when space below runs out.
+  // Commit the portal before paint so opening focus cannot overtake a later Tab.
+  useLayoutEffect(() => {
+    if (!open) return;
+    function update() {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+      const r = anchor.getBoundingClientRect();
+      const visualViewport = window.visualViewport;
+      const container = anchor.closest<HTMLElement>("[data-modal-backdrop]") ?? document.body;
+      setPortalContainer(container);
+      const position = calculatePopoverPosition({
+        anchor: r,
+        viewport: {
+          top: visualViewport?.offsetTop ?? 0,
+          left: visualViewport?.offsetLeft ?? 0,
+          width: visualViewport?.width ?? window.innerWidth,
+          height: visualViewport?.height ?? window.innerHeight,
+        },
+        layoutViewportHeight: window.innerHeight,
+        align,
+        matchAnchorWidth,
+        minWidth,
+      });
+      // Keep portalled controls inside their owning dialog's accessible and
+      // focus subtree, offsetting only when the dialog is a containing block.
+      const bounds = fixedContainingBlockBounds(container);
+      setPos(bounds ? {
+        ...position,
+        left: position.left - bounds.left,
+        top: position.top === undefined ? undefined : position.top - bounds.top,
+        bottom: position.bottom === undefined ? undefined : position.bottom - (window.innerHeight - bounds.bottom),
+      } : position);
+    }
+    const visualViewport = window.visualViewport;
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    visualViewport?.addEventListener("resize", update);
+    visualViewport?.addEventListener("scroll", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+      visualViewport?.removeEventListener("resize", update);
+      visualViewport?.removeEventListener("scroll", update);
+    };
+  }, [open, anchorRef, align, matchAnchorWidth, minWidth]);
+
+  // Outside-click and Escape dismissal. Escape uses capture + stopPropagation
+  // so closing a popover never closes a parent modal underneath it.
+  useEffect(() => {
+    if (!open) return;
+    function onMouseDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (panelRef.current?.contains(t) || anchorRef.current?.contains(t)) return;
+      onClose("outside");
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose("escape");
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [open, onClose, anchorRef]);
+
+  return { panelRef, pos, portalContainer, rendered: open || closing, closing };
+}
+
+function popoverStyle(pos: PopoverPosition): React.CSSProperties {
+  return {
+    top: pos.top,
+    bottom: pos.bottom,
+    left: pos.left,
+    width: pos.width,
+    maxHeight: pos.maxHeight,
+    "--pop-origin": pos.openUp ? "bottom" : "top",
+    "--pop-shift": pos.openUp ? "4px" : "-4px",
+  } as React.CSSProperties;
+}
+
+/** Continue at the trigger's logical position, never at a portalled menu's DOM position. */
+function focusAfterPopoverTrigger(anchor: HTMLElement | null, reverse = false): boolean {
+  if (!anchor || anchor.closest("[inert]")) return false;
+  const owner = anchor.closest<HTMLElement>("[data-modal-shell]") ?? document;
+  const stops = Array.from(owner.querySelectorAll<HTMLElement>(
+    'button, input, select, textarea, a[href], [tabindex]',
+  )).filter(element => element === anchor || (element.tabIndex >= 0 && !element.matches(":disabled")
+    && !element.closest("[inert], [data-popover-panel]") && element.getClientRects().length > 0));
+  const index = stops.indexOf(anchor);
+  if (index < 0) return false;
+  const nextIndex = index + (reverse ? -1 : 1);
+  const next = stops[nextIndex]
+    ?? (owner !== document ? stops[(nextIndex + stops.length) % stops.length] : null);
+  if (next && next !== anchor) {
+    next.focus({ preventScroll: true });
+    return true;
+  }
+  if (owner !== document) {
+    (owner as HTMLElement).focus({ preventScroll: true });
+    return true;
+  }
+  return false;
+}
+
+export interface SelectOption {
+  value: string;
+  label: string;
+  /** Right-aligned meta text in the panel row (balance, unit name…). */
+  sublabel?: string;
+  /** Override for the closed trigger text (defaults to label + sublabel). */
+  triggerLabel?: string;
+  disabled?: boolean;
+}
+
+export function Select({
+  id,
+  "aria-describedby": ariaDescribedBy,
+  "aria-invalid": ariaInvalid,
+  value,
+  onChange,
+  options,
+  placeholder = "Select…",
+  disabled = false,
+  size = "md",
+  className = "",
+  ariaLabel,
+  panelMinWidth,
+  preserveOptionLabels = false,
+}: {
+  id?: string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: React.AriaAttributes["aria-invalid"];
+  value: string;
+  onChange: (value: string) => void;
+  options: SelectOption[];
+  placeholder?: string;
+  disabled?: boolean;
+  size?: "md" | "sm";
+  className?: string;
+  ariaLabel?: string;
+  panelMinWidth?: number;
+  /** Keep compact identifiers (such as asset codes) complete and truncate metadata first. */
+  preserveOptionLabels?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeValue, setActiveValue] = useState<string | null>(null);
+  const activeIndex = options.findIndex(option => option.value === activeValue);
+  const listboxId = React.useId();
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const focusOnOpen = useRef(false);
+  const popupHadFocus = useRef(false);
+  const typeahead = useRef({ text: "", at: 0 });
+  const selectedIndex = options.findIndex((o) => o.value === value);
+  const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined;
+  const close = useCallback((reason?: "escape" | "outside") => {
+    popupHadFocus.current = false;
+    setActiveValue(null);
+    setOpen(false);
+    if (reason === "escape") anchorRef.current?.focus({ preventScroll: true });
+  }, []);
+  const { panelRef, pos, portalContainer, rendered, closing } = usePopover({
+    open,
+    onClose: close,
+    anchorRef,
+    matchAnchorWidth: size === "md",
+    minWidth: panelMinWidth ?? 180,
+  });
+
+  if (disabled && open) setOpen(false);
+
+  useLayoutEffect(() => {
+    if (!disabled || open || !popupHadFocus.current) return;
+    popupHadFocus.current = false;
+    // Removing a focused option transfers focus to body. Do not attempt to
+    // restore its disabled trigger, and never replace a user's newer focus.
+    if (document.activeElement === document.body) focusAfterPopoverTrigger(anchorRef.current);
+  }, [disabled, open]);
+
+  function openMenu() {
+    if (disabled) return;
+    setActiveValue(selected && !selected.disabled
+      ? selected.value : options.find(option => !option.disabled)?.value ?? null);
+    typeahead.current = { text: "", at: 0 };
+    focusOnOpen.current = true;
+    setOpen(true);
+  }
+
+  function closeMenu(refocus = false) {
+    popupHadFocus.current = false;
+    setActiveValue(null);
+    setOpen(false);
+    if (refocus) anchorRef.current?.focus({ preventScroll: true });
+  }
+
+  function choose(opt: SelectOption) {
+    if (disabled || opt.disabled) return;
+    triggerHaptic("selection");
+    onChange(opt.value);
+    closeMenu(true);
+  }
+
+  const positionReady = pos !== null;
+  useLayoutEffect(() => {
+    if (!open || !positionReady) return;
+    const currentOption = options[activeIndex];
+    const validOption = !!currentOption && !currentOption.disabled;
+    const ownedFocus = popupHadFocus.current && (document.activeElement === document.body
+      || panelRef.current?.contains(document.activeElement));
+    if (!focusOnOpen.current && !(ownedFocus && (!validOption || document.activeElement === document.body))) return;
+    focusOnOpen.current = false;
+    const option = panelRef.current?.querySelector<HTMLElement>(validOption
+      ? `[data-index="${activeIndex}"]:not([disabled])`
+      : '[role="option"]:not([disabled])');
+    const target = option ?? panelRef.current;
+    if (target !== document.activeElement) target?.focus({ preventScroll: true });
+    option?.scrollIntoView({ block: "nearest" });
+  }, [open, positionReady, activeIndex, options, panelRef]);
+
+  function focusOption(index: number) {
+    if (index < 0 || !options[index] || options[index].disabled) return;
+    const option = panelRef.current?.querySelector<HTMLElement>(`[data-index="${index}"]`);
+    option?.focus({ preventScroll: true });
+    option?.scrollIntoView({ block: "nearest" });
+  }
+
+  function onListboxKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Tab") {
+      // WebKit does not reliably resume native Tab at a trigger focused during
+      // a portalled key event. Resolve the next owned tab stop explicitly.
+      if (focusAfterPopoverTrigger(anchorRef.current, event.shiftKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeMenu();
+        return;
+      }
+      closeMenu(true);
+      return;
+    }
+    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const direction = event.key === "ArrowUp" || event.key === "End" ? -1 : 1;
+      let candidate = event.key === "Home" ? -1 : event.key === "End" ? options.length : activeIndex;
+      for (let count = 0; count < options.length; count += 1) {
+        candidate = (candidate + direction + options.length) % options.length;
+        if (!options[candidate].disabled) { focusOption(candidate); break; }
+      }
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      event.stopPropagation();
+      const option = options[activeIndex];
+      if (option) choose(option);
+    } else if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      const buffer = typeahead.current;
+      const now = event.timeStamp;
+      buffer.text = (now - buffer.at < 600 ? buffer.text : "") + event.key.toLowerCase();
+      buffer.at = now;
+      focusOption(options.findIndex(option => !option.disabled && option.label.toLowerCase().startsWith(buffer.text)));
+    }
+  }
+
+  const triggerProps: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    ref: React.RefObject<HTMLButtonElement | null>;
+  } = {
+    ref: anchorRef,
+    id,
+    type: "button",
+    disabled,
+    "aria-haspopup": "listbox",
+    "aria-expanded": open,
+    "aria-controls": open ? listboxId : undefined,
+    "aria-label": ariaLabel,
+    "aria-describedby": ariaDescribedBy,
+    "aria-invalid": ariaInvalid,
+    onClick: () => (open ? closeMenu() : openMenu()),
+    onKeyDown: (e) => {
+      if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+        e.preventDefault();
+        openMenu();
+      }
+    },
+  };
+
+  return (
+    <>
+      {size === "md" ? (
+        <button
+          {...triggerProps}
+          className={`input flex cursor-pointer items-center justify-between gap-2 !pr-3.5 text-left text-[14px] ${
+            open ? "shadow-[0_0_0_3.5px_rgba(10,132,255,0.35)]" : ""
+          } ${className}`}
+        >
+          <span className="min-w-0 flex-1 truncate">
+            {selected ? (
+              selected.triggerLabel ?? (
+                <>
+                  {selected.label}
+                  {selected.sublabel && (
+                    <span className="text-neutral-500"> · {selected.sublabel}</span>
+                  )}
+                </>
+              )
+            ) : (
+              <span className="text-neutral-400">{placeholder}</span>
+            )}
+          </span>
+          <IconChevronDown
+            size={16}
+            className={`shrink-0 text-neutral-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          />
+        </button>
+      ) : (
+        <button
+          {...triggerProps}
+          className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.08] py-1.5 pl-3 pr-2 text-[13px] font-semibold text-white transition-colors hover:bg-white/[0.14] ${className}`}
+        >
+          <span className="max-w-[160px] truncate">
+            {selected ? (selected.triggerLabel ?? selected.label) : placeholder}
+          </span>
+          <IconChevronDown
+            size={13}
+            className={`shrink-0 text-neutral-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          />
+        </button>
+      )}
+      {rendered &&
+        pos &&
+        portalContainer &&
+        createPortal(
+          <div
+            ref={panelRef}
+            id={listboxId}
+            role="listbox"
+            data-popover-panel
+            aria-label={ariaLabel}
+            tabIndex={-1}
+            onKeyDown={onListboxKeyDown}
+            onFocusCapture={(event) => {
+              popupHadFocus.current = true;
+              if (event.target === event.currentTarget) setActiveValue(null);
+            }}
+            onBlurCapture={(event) => {
+              // Removal/disable can emit a blur with no new target. Preserve
+              // ownership until the layout effect repairs that lost focus.
+              if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) popupHadFocus.current = false;
+            }}
+            inert={closing || undefined}
+            aria-hidden={closing || undefined}
+            className={`${POPOVER_PANEL_CLASS}${closing ? " closing" : ""}`}
+            style={popoverStyle(pos)}
+          >
+            {options.length === 0 && (
+              <p className="px-3 py-6 text-center text-[12.5px] text-neutral-500">
+                Nothing to choose from
+              </p>
+            )}
+            {options.map((opt, i) => {
+              const isSelected = opt.value === value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="option"
+                  id={`${listboxId}-option-${encodeURIComponent(opt.value)}`}
+                  aria-selected={isSelected}
+                  aria-disabled={opt.disabled || undefined}
+                  tabIndex={-1}
+                  data-index={i}
+                  disabled={opt.disabled}
+                  onFocus={() => setActiveValue(opt.value)}
+                  onClick={() => choose(opt)}
+                  className={`mb-0.5 flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-[13.5px] transition-colors duration-100 last:mb-0 ${
+                    i === activeIndex
+                      ? "bg-white/[0.08] text-white"
+                      : "text-neutral-300"
+                  } ${opt.disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`}
+                >
+                  <span
+                    className={`font-medium ${
+                      preserveOptionLabels ? "shrink-0 whitespace-nowrap" : "min-w-0 flex-1 truncate"
+                    }`}
+                  >
+                    {opt.label}
+                  </span>
+                  <span
+                    className={`flex items-center gap-2 ${
+                      preserveOptionLabels ? "min-w-0 flex-1 justify-end" : "shrink-0"
+                    }`}
+                  >
+                    {opt.sublabel && (
+                      <span
+                        className={`mono min-w-0 text-[11.5px] text-neutral-500 ${
+                          preserveOptionLabels ? "truncate" : "whitespace-nowrap"
+                        }`}
+                      >
+                        {opt.sublabel}
+                      </span>
+                    )}
+                    {isSelected && (
+                      <IconCheck size={14} className="shrink-0 text-[#0A84FF]" />
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>,
+          portalContainer,
+        )}
+    </>
+  );
+}
+
+type DropdownTriggerProps = {
+  ref: React.RefObject<HTMLButtonElement | null>;
+  type: "button";
+  "aria-haspopup": "menu";
+  "aria-expanded": boolean;
+  onClick: () => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
+};
+
+export function Dropdown({
+  trigger,
+  children,
+  align = "right",
+  className = "",
+}: {
+  trigger: (open: boolean, props: DropdownTriggerProps) => React.ReactNode;
+  children: (close: () => void) => React.ReactNode;
+  align?: "left" | "right";
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [restoreFocus, setRestoreFocus] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => {
+    setOpen(false);
+    setRestoreFocus(true);
+  }, []);
+  const { panelRef, pos, portalContainer, rendered, closing } = usePopover({
+    open,
+    onClose: close,
+    anchorRef,
+    align,
+    matchAnchorWidth: false,
+    minWidth: 248,
+  });
+
+  // Run before newly opened dialogs capture their return target. A menu action
+  // can therefore close its portal and open a sheet without losing the trigger.
+  useLayoutEffect(() => {
+    if (!open && restoreFocus) {
+      anchorRef.current?.focus({ preventScroll: true });
+    }
+  }, [open, restoreFocus]);
+
+  const positionReady = pos !== null;
+  useEffect(() => {
+    if (!open || !positionReady) return;
+    const frame = window.requestAnimationFrame(() => {
+      panelRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])')?.focus({
+        preventScroll: true,
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, positionReady, panelRef]);
+
+  function onMenuKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Tab") {
+      setRestoreFocus(false);
+      setOpen(false);
+      if (focusAfterPopoverTrigger(anchorRef.current, event.shiftKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+      } else anchorRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const items = Array.from(
+      panelRef.current?.querySelectorAll<HTMLElement>(
+        '[role="menuitem"]:not([disabled])',
+      ) ?? [],
+    ).filter((item) => item.offsetParent !== null);
+    if (items.length === 0) return;
+    event.preventDefault();
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? items.length - 1
+          : event.key === "ArrowUp"
+            ? (current - 1 + items.length) % items.length
+            : (current + 1) % items.length;
+    items[next]?.focus({ preventScroll: true });
+  }
+
+  const triggerProps: DropdownTriggerProps = {
+    ref: anchorRef,
+    type: "button",
+    "aria-haspopup": "menu",
+    "aria-expanded": open,
+    onClick: () => {
+      setOpen((previous) => !previous);
+    },
+    onKeyDown: (event) => {
+      if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+        event.preventDefault();
+        setOpen(true);
+      }
+    },
+  };
+
+  return (
+    <div className={`inline-block max-w-full min-w-0 text-left ${className}`}>
+      {trigger(open, triggerProps)}
+      {rendered &&
+        pos &&
+        portalContainer &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="menu"
+            data-popover-panel
+            onKeyDown={onMenuKeyDown}
+            inert={closing || undefined}
+            aria-hidden={closing || undefined}
+            className={`${POPOVER_PANEL_CLASS}${closing ? " closing" : ""}`}
+            style={popoverStyle(pos)}
+          >
+            {children(close)}
+          </div>,
+          portalContainer,
+        )}
+    </div>
+  );
+}
+
+type ClipboardFeedback = {
+  scope: object | null;
+  phase: "idle" | "pending" | "copied" | "cleared" | "error";
+  action: "copy" | "clear";
+  canClear: boolean;
+};
+
+const CLIPBOARD_FEEDBACK_MS = 2_000;
+
+// Shared by the explicit copy button and address/hash display. Never read the
+// clipboard or include a copied value in feedback. Scope tokens contain no data.
+function useClipboardFeedback(value: string, sensitive = false) {
+  const scope = React.useMemo(() => {
+    // Changes invalidate the token; the token itself retains neither input.
+    void value;
+    void sensitive;
+    return {};
+  }, [value, sensitive]);
+  const scopeRef = useRef<object | null>(null);
+  const operationRef = useRef<symbol | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const [feedback, setFeedback] = useState<ClipboardFeedback>({
+    scope: null, phase: "idle", action: "copy", canClear: false,
+  });
+
+  useLayoutEffect(() => {
+    scopeRef.current = scope;
+    return () => {
+      scopeRef.current = null;
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    };
+  }, [scope]);
+
+  const current = feedback.scope === scope;
+  // Clipboard writes cannot be aborted. Keep the control disabled until an
+  // outstanding old-value write settles, so two physical writes cannot race.
+  const pending = feedback.phase === "pending";
+  const canClear = current && feedback.canClear;
+  const copied = current && feedback.phase === "copied";
+  const failed = current && feedback.phase === "error";
+  const status = pending
+    ? feedback.action === "clear" ? "Clearing clipboard…" : "Copying to clipboard…"
+    : !current ? ""
+    : feedback.phase === "copied" ? "Copied to clipboard."
+    : feedback.phase === "cleared" ? "Clipboard cleared. Clipboard managers may retain earlier copies."
+    : failed ? feedback.action === "clear"
+      ? "Could not clear the clipboard. Try again."
+      : "Could not copy. Try again or select and copy manually."
+    : "";
+
+  async function write(event: React.MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (operationRef.current || scopeRef.current !== scope) return;
+    // WebKit pointer activation otherwise leaves focus on body. Focus only the
+    // directly activated control, never when a clipboard promise completes.
+    event.currentTarget.focus({ preventScroll: true });
+    const operation = Symbol();
+    operationRef.current = operation;
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    const action = sensitive && canClear ? "clear" : "copy";
+    setFeedback({ scope, phase: "pending", action, canClear });
+    try {
+      if (action === "clear") await navigator.clipboard.writeText("");
+      else await navigator.clipboard.writeText(value);
+      if (scopeRef.current !== scope) return;
+      triggerHaptic("selection");
+      setFeedback({ scope, phase: action === "clear" ? "cleared" : "copied", action,
+        canClear: sensitive && action === "copy" });
+      timerRef.current = window.setTimeout(() => {
+        timerRef.current = null;
+        if (scopeRef.current === scope) {
+          setFeedback(previous => previous.scope === scope ? { ...previous, phase: "idle" } : previous);
+        }
+      }, CLIPBOARD_FEEDBACK_MS);
+    } catch {
+      if (scopeRef.current === scope) setFeedback({ scope, phase: "error", action, canClear });
+    } finally {
+      if (operationRef.current === operation) {
+        operationRef.current = null;
+        // A replaced value must not inherit success or errors from the previous
+        // copy. The old OS write may complete, but it cannot approve the new UI.
+        if (scopeRef.current && scopeRef.current !== scope) {
+          setFeedback({ scope: scopeRef.current, phase: "idle", action: "copy", canClear: false });
+        }
+      }
+    }
+  }
+
+  return { pending, copied, canClear, failed, status, write };
+}
+
+function ClipboardStatus({ status, failed }: { status: string; failed: boolean }) {
+  return <span role="status" aria-live="polite" aria-atomic="true"
+    className={failed ? "mt-1 block text-[11.5px] text-red-300" : "sr-only"}>{status}</span>;
+}
+
+export function CopyButton({
+  value,
+  label,
+  className,
+  iconSize = 13,
+  sensitive = false,
+}: {
+  value: string;
+  label?: string;
+  className?: string;
+  iconSize?: number;
+  sensitive?: boolean;
+}) {
+  const { pending, copied, canClear, failed, status, write } = useClipboardFeedback(value, sensitive);
+
+  return (
+    <>
+    <button
+      type="button"
+      aria-disabled={pending || undefined}
+      aria-busy={pending || undefined}
+      onClick={(event) => void write(event)}
+      className={`${className ?? "chip"} aria-disabled:cursor-wait aria-disabled:opacity-60`}
+      aria-label={canClear ? "Clear copied secret from clipboard" : label ?? "Copy to clipboard"}
+      title={sensitive ? "Clipboard managers may retain copied recovery material." : undefined}
+    >
+      {copied || canClear ? (
+        <>
+          <IconCheck size={iconSize} className="text-[#30D158]" />
+          <span>{canClear ? "Clear clipboard" : "Copied"}</span>
+        </>
+      ) : (
+        <>
+          <IconCopy size={iconSize} />
+          {label && <span>{label}</span>}
+        </>
+      )}
+    </button>
+    <ClipboardStatus status={status} failed={failed} />
+    </>
+  );
+}
+
+/**
+ * Trezor-style hash/address display (mirrors hardware-wallet conventions):
+ * values render in monospace split into 4-character verification chunks.
+ * Default mode keeps everything on one line via a middle ellipsis
+ * (head … tail, chunked); `full` shows every chunk, wrapping only at
+ * chunk boundaries — never mid-group. Click anywhere to copy the full
+ * value; the complete string is also exposed via the hover tooltip.
+ */
+export function HashValue({
+  value,
+  head = 8,
+  tail = 8,
+  full = false,
+  className = "",
+}: {
+  value: string;
+  head?: number;
+  tail?: number;
+  full?: boolean;
+  className?: string;
+}) {
+  const { pending, copied, failed, status, write } = useClipboardFeedback(value);
+  const truncate = !full && value.length > head + tail + 4;
+  const chunkable = !/\s/.test(value);
+
+  const chunks = (s: string, prefix: string) =>
+    (s.match(/.{1,4}/g) ?? [s]).map((c, i) => <span key={`${prefix}${i}`}>{c}</span>);
+
+  if (!chunkable) {
+    return (
+      <>
+      <button
+        type="button"
+        aria-disabled={pending || undefined}
+        aria-busy={pending || undefined}
+        onClick={(event) => void write(event)}
+        title={`${value}\nClick to copy`}
+        className={`tap-reset mono inline-block max-w-full cursor-pointer text-left transition-colors aria-disabled:cursor-wait aria-disabled:opacity-60 ${
+          copied ? "!text-[#30D158]" : ""
+        } ${className}`}
+      >
+        {value}
+      </button>
+      <ClipboardStatus status={status} failed={failed} />
+      </>
+    );
+  }
+
+  return (
+    <>
+    <button
+      type="button"
+      aria-disabled={pending || undefined}
+      aria-busy={pending || undefined}
+      onClick={(event) => void write(event)}
+      data-mobile-truncate={truncate ? "true" : undefined}
+      title={`${value}\nClick to copy`}
+      className={`tap-reset mono inline-flex max-w-full cursor-pointer items-baseline gap-x-[0.45em] gap-y-0.5 text-left transition-colors aria-disabled:cursor-wait aria-disabled:opacity-60 ${
+        truncate ? "flex-nowrap whitespace-nowrap" : "flex-wrap"
+      } ${copied ? "!text-[#30D158]" : ""} ${className}`}
+    >
+      {truncate ? (
+        <>
+          {chunks(value.slice(0, head), "h")}
+          <span className={copied ? "font-bold" : "text-neutral-500"}>
+            {copied ? "✓" : "…"}
+          </span>
+          {chunks(value.slice(-tail), "t")}
+        </>
+      ) : (
+        chunks(value, "f")
+      )}
+    </button>
+    <ClipboardStatus status={status} failed={failed} />
+    </>
+  );
+}
+
+export function NetworkBadge({ network }: { network: "testnet" | "mainnet" }) {
+  const isTest = network === "testnet";
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+        isTest
+          ? "bg-[#FF9F0A]/15 text-[#FF9F0A] border border-[#FF9F0A]/30"
+          : "bg-[#30D158]/15 text-[#30D158] border border-[#30D158]/30"
+      }`}
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${
+          isTest ? "bg-[#FF9F0A]" : "bg-[#30D158]"
+        }`}
+      />
+      {isTest ? "Testnet" : "Mainnet"}
+    </span>
+  );
+}
+
+export function SegmentedControl<T extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: T;
+  options: { label: string; value: T; disabled?: boolean }[];
+  onChange: (val: T) => void;
+  /** A bare role="group" has no accessible name without this label. */
+  ariaLabel: string;
+}) {
+  // 5px of padding, not 4: it puts the control at 36px, the same height as
+  // `.search-field`, so the two line up wherever they sit side by side.
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="flex items-center rounded-xl bg-white/[0.08] p-[5px] backdrop-blur-md"
+    >
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            aria-pressed={active}
+            disabled={opt.disabled}
+            onClick={() => {
+              if (!active && !opt.disabled) {
+                triggerHaptic("selection");
+                onChange(opt.value);
+              }
+            }}
+            className={`relative flex-1 rounded-[9px] py-1.5 text-center text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 pointer-coarse:min-h-11 ${
+              opt.disabled
+                ? "cursor-not-allowed text-neutral-400"
+                : active
+                ? "bg-white/[0.18] text-white shadow-sm font-semibold"
+                : "text-neutral-300 hover:text-white"
+            }`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function Tabs<T extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  activationMode = "automatic",
+  children,
+  panelBusy = false,
+  className = "",
+  tabListClassName = "",
+  panelClassName = "",
+}: {
+  value: T;
+  options: { label: string; value: T; disabled?: boolean }[];
+  onChange: (value: T) => void;
+  ariaLabel: string;
+  /** Async/private panels require explicit Enter/Space activation after arrow navigation. */
+  activationMode?: "automatic" | "manual";
+  children: React.ReactNode;
+  panelBusy?: boolean;
+  className?: string;
+  tabListClassName?: string;
+  panelClassName?: string;
+}) {
+  const baseId = React.useId();
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [focusedValue, setFocusedValue] = useState(value);
+  const activeIndex = Math.max(0, options.findIndex((option) => option.value === value));
+  const activeValue = options[activeIndex]?.value ?? value;
+  const focusedOption = options.find(option => option.value === focusedValue && !option.disabled);
+  const tabStopValue = activationMode === "manual" ? focusedOption?.value ?? activeValue : activeValue;
+
+  const activate = (index: number) => {
+    const option = options[index];
+    if (!option || option.disabled) return;
+    tabRefs.current[index]?.focus({ preventScroll: true });
+    if (option.value !== value) {
+      triggerHaptic("selection");
+      onChange(option.value);
+    }
+  };
+
+  const move = (event: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+    const requested = tabIndexAfterKey(currentIndex, options.length, event.key);
+    if (requested === null) return;
+    event.preventDefault();
+
+    const direction = event.key === "ArrowLeft" || event.key === "End" ? -1 : 1;
+    let candidate = requested;
+    for (let visited = 0; visited < options.length; visited += 1) {
+      if (!options[candidate]?.disabled) {
+        if (activationMode === "manual") tabRefs.current[candidate]?.focus({ preventScroll: true });
+        else activate(candidate);
+        return;
+      }
+      candidate = (candidate + direction + options.length) % options.length;
+    }
+  };
+
+  return (
+    <div data-tabs-root className={className}>
+      <div
+        role="tablist"
+        aria-label={ariaLabel}
+        aria-orientation="horizontal"
+        className={`flex items-center rounded-xl bg-white/[0.08] p-[5px] backdrop-blur-md ${tabListClassName}`}
+      >
+        {options.map((option, index) => {
+          const active = option.value === value;
+          const tabId = `${baseId}-tab-${option.value}`;
+          const panelId = `${baseId}-panel-${option.value}`;
+          return (
+            <button
+              key={option.value}
+              ref={(node) => {
+                tabRefs.current[index] = node;
+              }}
+              id={tabId}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              aria-controls={panelId}
+              tabIndex={option.value === tabStopValue ? 0 : -1}
+              disabled={option.disabled}
+              data-tab-value={option.value}
+              onKeyDown={(event) => move(event, index)}
+              onFocus={() => setFocusedValue(option.value)}
+              onClick={() => activate(index)}
+              className={`relative flex-1 rounded-[9px] py-1.5 text-center text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 pointer-coarse:min-h-11 ${
+                option.disabled
+                  ? "cursor-not-allowed text-neutral-400"
+                  : active
+                    ? "bg-white/[0.18] font-semibold text-white shadow-sm"
+                    : "text-neutral-300 hover:text-white"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+      <div
+        id={`${baseId}-panel-${activeValue}`}
+        role="tabpanel"
+        aria-labelledby={`${baseId}-tab-${activeValue}`}
+        aria-busy={panelBusy || undefined}
+        tabIndex={0}
+        data-tab-panel={activeValue}
+        className={`outline-none ${panelClassName}`}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function LoadingRegion({
+  label,
+  className = "min-h-56",
+}: {
+  label: string;
+  className?: string;
+}) {
+  return (
+    <div
+      role="status"
+      aria-label={label}
+      aria-live="polite"
+      className={`flex flex-col items-center justify-center gap-3 p-6 text-center ${className}`}
+    >
+      <Spinner />
+      <span className="text-[12px] text-neutral-400">{label}…</span>
+    </div>
+  );
+}
+
+export function Spinner({ size = 16 }: { size?: number }) {
+  return (
+    <span
+      className="spinner inline-block align-middle"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
+export function Button({
+  children,
+  className = "",
+  variant = "primary",
+  loading = false,
+  loadingLabel = "Working",
+  disabled = false,
+  focusableWhenDisabled = false,
+  ...props
+}: React.ComponentProps<"button"> & {
+  variant?: "primary" | "secondary" | "danger" | "ghost";
+  loading?: boolean;
+  loadingLabel?: string;
+  /** Retain action focus across pending and saved states; activation stays blocked. */
+  focusableWhenDisabled?: boolean;
+}) {
+  const unavailable = disabled || loading;
+  const vClass =
+    variant === "primary"
+      ? "btn-primary"
+      : variant === "danger"
+        ? "btn-danger"
+        : variant === "secondary"
+          ? "btn-secondary"
+          : "btn-ghost";
+
+  return (
+    <>
+      <button
+        {...props}
+        disabled={!focusableWhenDisabled && unavailable}
+        aria-disabled={focusableWhenDisabled && unavailable ? true : props["aria-disabled"]}
+        onClick={(event) => {
+          if (unavailable) {
+            // Also cancel a submit button's native/implicit form submission.
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          props.onClick?.(event);
+        }}
+        aria-busy={loading || undefined}
+        data-loading={loading || undefined}
+        className={`btn relative ${vClass} ${className}`}
+      >
+        <span
+          className={`inline-flex min-w-0 w-full items-center justify-center gap-2 whitespace-normal break-words text-center leading-tight ${loading ? "opacity-0" : ""}`}
+        >
+          {children}
+        </span>
+        {loading && (
+          <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center">
+            <Spinner />
+          </span>
+        )}
+      </button>
+      {loading && (
+        <span role="status" aria-label={loadingLabel} aria-live="polite" className="sr-only">
+          {loadingLabel}
+        </span>
+      )}
+    </>
+  );
+}
+
+export function Field({
+  label,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  const generatedId = React.useId();
+  const hintId = `${generatedId}-hint`;
+  const errorId = `${generatedId}-error`;
+  const controlId = React.isValidElement<{ id?: string }>(children)
+    ? children.props.id ?? generatedId
+    : generatedId;
+  const control = React.isValidElement<{
+    id?: string;
+    "aria-describedby"?: string;
+    "aria-invalid"?: boolean;
+  }>(children)
+    ? React.cloneElement(children, (() => {
+        const describedBy = [
+          children.props["aria-describedby"],
+          hint ? hintId : null,
+          error ? errorId : null,
+        ].filter(Boolean).join(" ") || undefined;
+        return {
+          id: controlId,
+          "aria-describedby": describedBy,
+          ...(error ? { "aria-invalid": true } : {}),
+        };
+      })())
+    : children;
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 [&>*]:col-span-2 sm:[&>.field-hint]:col-span-1 sm:[&>label]:col-span-1">
+      <label htmlFor={controlId} className="field-label !pb-0">{label}</label>
+      {hint && (
+        <span id={hintId} className="field-hint order-3 text-[11px] text-neutral-400 sm:order-none sm:self-baseline sm:text-right">
+          {hint}
+        </span>
+      )}
+      {control}
+      {error && <p id={errorId} role="alert" className="order-4 text-[11.5px] text-[#FF453A]">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * The label line above a field. `action` holds trailing text buttons (Max,
+ * Paste) that keep their 44 pt target on touch without growing the line, and
+ * `meta` holds a plain trailing note (a counter), so side-by-side fields keep
+ * their controls on one baseline.
+ */
+export function FieldLabelRow({
+  label,
+  htmlFor,
+  id,
+  action,
+  meta,
+  className = "",
+}: {
+  label: React.ReactNode;
+  htmlFor?: string;
+  id?: string;
+  action?: React.ReactNode;
+  meta?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-wrap items-start justify-between gap-x-3 gap-y-1 pb-1.5 ${className}`}>
+      {htmlFor ? (
+        <label htmlFor={htmlFor} id={id} className="field-label min-w-0 !pb-0">{label}</label>
+      ) : (
+        <span id={id} className="field-label min-w-0 !pb-0">{label}</span>
+      )}
+      {action ? <div className="ml-auto flex shrink-0 items-center gap-1">{action}</div> : null}
+      {meta ? <span className="ml-auto shrink-0 text-[11px] text-neutral-400">{meta}</span> : null}
+    </div>
+  );
+}
+
+/** A tinted text button that lives in a field's label line. */
+export function FieldAction({ className = "", children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      {...props}
+      className={`pointer-coarse:-my-3 flex items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-[#0A84FF] transition-colors hover:bg-white/[0.06] active:bg-white/[0.08] disabled:opacity-40 ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Preset amounts beneath an amount field, with an optional MAX chip. */
+export function QuickAmountChips({
+  values = [10, 25, 50, 100],
+  onPick,
+  max,
+  onMax,
+  fill = false,
+  className = "",
+}: {
+  values?: readonly number[];
+  onPick: (value: string) => void;
+  /** The largest spendable amount; null hides the MAX chip. */
+  max?: string | null;
+  onMax?: () => void;
+  /** Stretch the chips across the row instead of scrolling. */
+  fill?: boolean;
+  className?: string;
+}) {
+  const chip = `flex shrink-0 items-center justify-center rounded-xl px-3.5 py-1 text-[13px] transition-colors ${fill ? "flex-1" : ""}`;
+  return (
+    <div role="group" aria-label="Quick amounts" className={`flex items-center gap-2 overflow-x-auto scrollbar-none ${className}`}>
+      {values.map((value) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => onPick(String(value))}
+          className={`${chip} bg-white/[0.06] font-medium text-neutral-300 hover:bg-white/[0.12] active:bg-white/[0.16]`}
+        >
+          {value}
+        </button>
+      ))}
+      {max != null && onMax ? (
+        <button
+          type="button"
+          onClick={onMax}
+          className={`${chip} border border-[#0A84FF]/30 bg-[#0A84FF]/15 font-bold text-accent-2 hover:bg-[#0A84FF]/25`}
+        >
+          MAX
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** An empty list explains what will appear and, when useful, offers the first step. */
+/**
+ * A grouped-list section header: the small uppercase label above a panel or
+ * list-group. One place for the type ramp so every section reads the same.
+ * Padding and the element tag stay per-use via `as` and `className`.
+ */
+export function SectionHeader({
+  children,
+  as: As = "p",
+  className = "",
+  ...rest
+}: {
+  children: React.ReactNode;
+  as?: "p" | "h2" | "h3" | "h4" | "span" | "div";
+  className?: string;
+} & React.HTMLAttributes<HTMLElement>) {
+  return (
+    <As className={`text-[12px] font-semibold uppercase tracking-wider text-neutral-400 ${className}`} {...rest}>
+      {children}
+    </As>
+  );
+}
+
+/**
+ * The canonical rounded icon tile: a coloured square with a centred glyph, used
+ * beside a label in list rows and section intros. Keeps the glyph on-colour
+ * (always light) so it stays legible on the tint in both appearances.
+ */
+export function IconTile({
+  icon,
+  tint,
+  className = "",
+}: {
+  icon: React.ReactNode;
+  tint: string;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--color-oncolor)] shadow-sm ${className}`}
+      style={{ background: tint }}
+    >
+      {icon}
+    </span>
+  );
+}
+
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+  className = "",
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  description?: React.ReactNode;
+  action?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-col items-center px-6 py-10 text-center ${className}`}>
+      {icon ? (
+        <span aria-hidden="true" className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white/[0.06] text-neutral-400">
+          {icon}
+        </span>
+      ) : null}
+      <p className="text-[15px] font-semibold text-white">{title}</p>
+      {description ? <p className="mt-1 max-w-[32ch] text-[13px] leading-relaxed text-neutral-400">{description}</p> : null}
+      {action ? <div className="mt-4">{action}</div> : null}
+    </div>
+  );
+}
+
+export function ErrorText({ message }: { message: string }) {
+  if (!message) return null;
+  return (
+    <div role="alert" className="rounded-xl border border-[#FF453A]/30 bg-[#FF453A]/10 p-3 text-[12px] text-[#FF453A] leading-relaxed">
+      {message}
+    </div>
+  );
+}
+
+export function Notice({
+  children,
+  tone = "info",
+  icon,
+  compact = false,
+  role,
+  id,
+  className = "",
+}: {
+  children: React.ReactNode;
+  id?: string;
+  /** info: neutral · accent: guidance · warn: caution · pos: success · danger: blocked. */
+  tone?: "info" | "accent" | "warn" | "pos" | "danger";
+  /** A leading glyph that takes the tone's colour. */
+  icon?: React.ReactNode;
+  /** Field-level size for notes that sit inside a form. */
+  compact?: boolean;
+  role?: React.AriaRole;
+  className?: string;
+}) {
+  const styles =
+    tone === "pos"
+      ? "border-[#30D158]/30 bg-[#30D158]/10 text-neutral-200"
+      : tone === "warn"
+        ? "border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-neutral-200"
+        : tone === "danger"
+          ? "border-[#FF453A]/30 bg-[#FF453A]/10 text-[#FF6961]"
+          : tone === "accent"
+            ? "border-[#0A84FF]/30 bg-[#0A84FF]/10 text-[#A7D4FF]"
+            : "border-white/10 bg-white/[0.04] text-neutral-300";
+  const iconTone =
+    tone === "pos" ? "text-[#30D158]" : tone === "warn" ? "text-[#FF9F0A]" : tone === "danger" ? "text-[#FF6961]" : tone === "accent" ? "text-[#64D2FF]" : "text-neutral-400";
+
+  return (
+    <div
+      id={id}
+      role={role}
+      className={`rounded-2xl border leading-relaxed ${compact ? "p-3.5 text-[12.5px]" : "p-4 text-[13px]"} ${icon ? "flex items-start gap-2.5" : ""} ${styles} ${className}`}
+    >
+      {icon ? <span aria-hidden="true" className={`mt-0.5 shrink-0 ${iconTone}`}>{icon}</span> : null}
+      {icon ? <div className="min-w-0 flex-1">{children}</div> : children}
+    </div>
+  );
+}
+
+export function Toggle({
+  checked,
+  on,
+  onChange,
+  disabled = false,
+  focusableWhenDisabled = false,
+  label,
+}: {
+  checked?: boolean;
+  on?: boolean;
+  onChange: (c?: boolean) => void;
+  disabled?: boolean;
+  focusableWhenDisabled?: boolean;
+  label: string;
+}) {
+  const isChecked = checked ?? on ?? false;
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={isChecked}
+      disabled={disabled && !focusableWhenDisabled}
+      aria-disabled={focusableWhenDisabled && disabled || undefined}
+      onClick={(event) => {
+        if (disabled) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        triggerHaptic("selection");
+        onChange(!isChecked);
+      }}
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent pointer-coarse:h-[31px] pointer-coarse:w-[51px] transition-colors duration-200 ease-in-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] ${
+        isChecked ? "bg-[#30D158]" : "bg-[var(--color-switch-off)]"
+      } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+    >
+      <span className="sr-only">{label}</span>
+      <span
+        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--color-oncolor)] shadow-lg ring-0 pointer-coarse:h-[27px] pointer-coarse:w-[27px] transition-transform duration-200 ease-in-out ${
+          isChecked ? "translate-x-5" : "translate-x-0"
+        }`}
+      />
+    </button>
+  );
+}
+
+export function Avatar({
+  seed,
+  size = 32,
+  label,
+}: {
+  seed: string;
+  size?: number;
+  /** Overrides the displayed initial (defaults to first char of seed). */
+  label?: string;
+}) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  const hue1 = hash % 360;
+  const hue2 = (hash + 120) % 360;
+
+  return (
+    <div
+      className="shrink-0 rounded-full flex items-center justify-center font-bold text-white shadow-inner"
+      style={{
+        width: size,
+        height: size,
+        background: `linear-gradient(135deg, hsl(${hue1}, 70%, 50%), hsl(${hue2}, 70%, 40%))`,
+        fontSize: size * 0.4,
+      }}
+    >
+      {label ?? seed.slice(0, 1)}
+    </div>
+  );
+}
+
+export function QrScannerBox({
+  onScan,
+  onClose,
+}: {
+  onScan: (val: string) => void;
+  onClose?: () => void;
+}) {
+  const [inputVal, setInputVal] = useState("");
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 space-y-3">
+      <div className="flex items-center justify-between text-[12px] font-semibold text-white">
+        <span>Enter QR Payload</span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close scanner"
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-[var(--color-oncolor)]"
+        >
+          <IconClose size={11} />
+        </button>
+      </div>
+      <div className="h-40 rounded-xl bg-black/50 border border-dashed border-white/20 flex flex-col items-center justify-center p-4 text-center">
+        <p className="text-[12px] text-neutral-400">
+          Paste the address or SEP-7 payload read by your device&apos;s QR scanner.
+        </p>
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          placeholder="Paste scanned address or URI..."
+          value={inputVal}
+          onChange={(e) => setInputVal(e.target.value)}
+          className="input mono flex-1 !h-11 text-base md:!h-8 sm:text-[13px]"
+        />
+        <Button
+          variant="secondary"
+          className="!h-11 !px-3 text-[12px] md:!h-8"
+          onClick={() => {
+            if (inputVal.trim()) {
+              triggerHaptic("success");
+              onScan(inputVal.trim());
+            }
+          }}
+        >
+          Submit
+        </Button>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "record": {
+    "protocolVersion": 2,
+    "actionIndex": "0",
+    "ledgerSequence": 100,
+    "startingLeafIndex": "0",
+    "actionKind": 1,
+    "assetIndex": 0,
+    "assetKind": 1,
+    "assetPayloadFill": 136,
+    "actionNonceFill": 17,
+    "anchorRootFill": 34,
+    "treeRootAfterFill": 51,
+    "nullifier0Fill": 1,
+    "nullifier1Fill": 2,
+    "output0CommitmentFill": 3,
+    "output0RecipientEnvelopeFill": 4,
+    "output0OutgoingEnvelopeFill": 5,
+    "output1CommitmentFill": 6,
+    "output1RecipientEnvelopeFill": 7,
+    "output1OutgoingEnvelopeFill": 8,
+    "output2CommitmentFill": 9,
+    "output2RecipientEnvelopeFill": 10,
+    "output2OutgoingEnvelopeFill": 11,
+    "publicValue": 1000,
+    "depositSourceKind": 0,
+    "depositSourcePayloadFill": 170,
+    "priorRecordHashFill": 85
+  },
+  "expectedRecordHash": "f85a4f5f87d67b4b4bb1a61fb379d052cafba10a386fcd9f85e80a7baf48d59d"
+}
