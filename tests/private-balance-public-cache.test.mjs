@@ -185,7 +185,7 @@ test('append, load and reset keep the context captured before their first await'
   for (const operation of ['append', 'load', 'reset']) {
     const driver = new MemoryDriver();
     const mutable = { ...context };
-    driver.records.set(legacyKey(), legacyRaw());
+    await append(driver, 0, [1]);
     const deferred = pauseBefore(driver, operation === 'load' ? 'readPrefix' : 'read');
     const pending = operation === 'append'
       ? publicCache.recordVerifiedPrivateBalanceCommitments(mutable, BigInt(1), [commitment(2)], driver)
@@ -205,12 +205,12 @@ test('append, load and reset keep the context captured before their first await'
   }
 });
 
-test('legacy chunks migrate once without deleting legacy or encrypted discovery records', async () => {
+test('unsupported chunks are ignored without migration or deletion of stored records', async () => {
   const driver = new MemoryDriver();
   driver.records.set(legacyKey(), legacyRaw());
   driver.records.set(`${namespace(1)}stealth-discovery`, 'synthetic-encrypted-discovery');
-  assert.equal((await loadPrivateBalanceCommitments(context, driver)).length, 1);
-  await append(driver, 1, [2]);
+  assert.equal((await loadPrivateBalanceCommitments(context, driver)).length, 0);
+  await append(driver, 0, [2]);
   assert.ok(driver.records.has(checkpointKey()), 'append must create a v2 checkpoint');
   assert.equal(driver.records.get(legacyKey()), legacyRaw());
   await publicCache.clearPrivateBalanceCommitmentCache(context, driver);
@@ -221,14 +221,13 @@ test('legacy chunks migrate once without deleting legacy or encrypted discovery 
   assert.deepEqual((await loadPrivateBalanceCommitments(context, driver)).map(value => value[0]), [3]);
 });
 
-test('a legacy import atomically rejects changes to its original raw prefix', async () => {
+test('a new cache atomically rejects concurrent records in its current namespace', async () => {
   const driver = new MemoryDriver();
-  driver.records.set(legacyKey(), legacyRaw());
   const deferred = pauseBefore(driver, 'compareAndSetMany');
-  const pending = append(driver, 1, [2]);
+  const pending = append(driver, 0, [2]);
   const rejected = assert.rejects(pending, /changed|conflict/i);
   await deferred.waiting;
-  driver.records.set(`${namespace(1)}commitments:0000000000000001`, legacyRaw());
+  driver.records.set(leafKey(1), 'unexpected-current-record');
   deferred.release(); await rejected;
   assert.equal(driver.records.has(checkpointKey()), false);
 });
@@ -236,7 +235,7 @@ test('a legacy import atomically rejects changes to its original raw prefix', as
 for (const target of ['checkpoint', 'chunk']) test(`cold rebuild rejects corrupt ${target} and never falls back to legacy`, async () => {
   const driver = new MemoryDriver();
   driver.records.set(legacyKey(), legacyRaw());
-  await append(driver, 1, [2, 3]);
+  await append(driver, 0, [1, 2, 3]);
   const key = target === 'checkpoint' ? checkpointKey() : leafKey(1);
   driver.records.set(key, '{"revision":0,"invalid":true}');
   const cold = new MemoryDriver(); cold.records = driver.records;
@@ -314,7 +313,7 @@ test('full retained validation detects an old changed leaf outside routine appen
 for (const missing of ['checkpoint', 'leaf']) test(`v2 ${missing} deletion cannot load a partial or legacy history`, async () => {
   const driver = new MemoryDriver();
   driver.records.set(legacyKey(), legacyRaw());
-  await append(driver, 1, [2, 3]);
+  await append(driver, 0, [1, 2, 3]);
   driver.records.delete(missing === 'checkpoint' ? checkpointKey() : leafKey(1));
   const cold = new MemoryDriver(); cold.records = driver.records;
   await assert.rejects(loadPrivateBalanceCommitments(context, cold), /invalid|contiguous/i);

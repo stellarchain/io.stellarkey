@@ -79,7 +79,8 @@ test('loader and service worker share verified compressed entries and repair poi
     const first = await loadCircuitArtifacts(manifest);
     assert.equal(await computeSha256(first.zkeyBuffer), manifest.artifacts.zkeySha256);
     assert.equal(networkCalls, 3);
-    assert.deepEqual(await storage.keys(), [previous, 'wallet-owned-data', cacheName]);
+    assert.deepEqual(await storage.keys(), [previous, 'stellarkey-private-artifacts-legacy',
+      'stellarkey-private-balance-artifacts-v1', 'wallet-owned-data', cacheName]);
     const persisted = storage.stores.get(cacheName).responses;
     assert.equal(persisted.size, 3, 'the service worker must not create a second copy');
     let storedBytes = 0;
@@ -125,6 +126,30 @@ function rawFixture() {
   }
   return { candidate, network: async input => new Response(files.get(new URL(normalize(input)).pathname)) };
 }
+
+test('unsupported artifact cache formats are neither read nor migrated', async () => {
+  const { candidate, network } = rawFixture();
+  const storage = new MemoryCacheStorage();
+  const unsupported = await storage.open('stellarkey-private-balance-artifacts-v1');
+  await unsupported.put(`/private-balance-artifact/sha256/${candidate.artifacts.wasmSha256}`,
+    await network('/protocol/private-balance/v1/circuit.wasm'));
+  let unsupportedReads = 0;
+  const match = unsupported.match;
+  unsupported.match = async request => { unsupportedReads += 1; return match(request); };
+  const oldFetch = globalThis.fetch;
+  const oldCaches = globalThis.caches;
+  globalThis.caches = storage;
+  globalThis.fetch = network;
+  try {
+    await loadCircuitArtifacts(candidate);
+    assert.equal(unsupportedReads, 0);
+    assert.equal(storage.stores.has('stellarkey-private-balance-artifacts-v1'), true);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = oldCaches;
+  }
+});
 
 test('raw-key fallback remains usable when CacheStorage is unavailable', async () => {
   const { candidate, network } = rawFixture();

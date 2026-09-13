@@ -1,8 +1,6 @@
 // Shared by the loader and build-time service-worker/budget generation. These
 // are public, hash-pinned proving files, never wallet or transaction records.
 export const PRIVATE_ARTIFACT_CACHE_PREFIX = 'stellarkey-private-artifacts-v2-';
-export const LEGACY_ARTIFACT_CACHE_PREFIX = 'stellarkey-private-artifacts-';
-export const LEGACY_EXPANDED_ARTIFACT_CACHE = 'stellarkey-private-balance-artifacts-v1';
 
 export function privateArtifactEntries(manifest, basePath = '/protocol/private-balance/v1') {
   const artifacts = manifest?.artifacts;

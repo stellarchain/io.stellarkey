@@ -1,8 +1,7 @@
 import { type PrivateBalanceManifest, validateManifest } from './private-balance-manifest';
 import { expandPointCompressedZkeyTransport } from './private-balance-zkey-transport';
 import {
-  PRIVATE_ARTIFACT_CACHE_PREFIX, LEGACY_ARTIFACT_CACHE_PREFIX,
-  LEGACY_EXPANDED_ARTIFACT_CACHE, privateArtifactEntries, privateArtifactRevisionSource,
+  PRIVATE_ARTIFACT_CACHE_PREFIX, privateArtifactEntries, privateArtifactRevisionSource,
 } from './private-balance-artifact-policy.mjs';
 
 export interface LoadedCircuitArtifacts {
@@ -52,16 +51,13 @@ async function defaultArtifactCache(
       async read(sha256) {
         const url = urls.get(sha256);
         if (!url) return null;
-        // Reuse the exact hash-keyed transport from an earlier worker/cache.
+        // Reuse the exact hash-keyed transport from another current-format revision.
         // The caller verifies it before copying it into the current revision.
         const names = [name, ...(await storage.keys()).filter(candidate =>
-          candidate !== name && (candidate.startsWith(LEGACY_ARTIFACT_CACHE_PREFIX) ||
-            candidate === LEGACY_EXPANDED_ARTIFACT_CACHE)).reverse()];
+          candidate !== name && candidate.startsWith(PRIVATE_ARTIFACT_CACHE_PREFIX)).reverse()];
         for (const candidate of names) {
           const source = candidate === name ? cache : await storage.open(candidate);
-          const key = candidate === LEGACY_EXPANDED_ARTIFACT_CACHE
-            ? `/private-balance-artifact/sha256/${sha256}` : url;
-          const response = await source.match(key);
+          const response = await source.match(url);
           if (response?.ok) return readArtifactResponse(response, url, limits.get(sha256)!);
         }
         return null;
@@ -84,8 +80,7 @@ async function defaultArtifactCache(
         const previous = names.filter(candidate =>
           candidate.startsWith(PRIVATE_ARTIFACT_CACHE_PREFIX) && candidate !== name).at(-1);
         await Promise.all(names.filter(candidate =>
-          candidate === LEGACY_EXPANDED_ARTIFACT_CACHE ||
-          (candidate.startsWith(LEGACY_ARTIFACT_CACHE_PREFIX) && candidate !== name && candidate !== previous)
+          candidate.startsWith(PRIVATE_ARTIFACT_CACHE_PREFIX) && candidate !== name && candidate !== previous
         ).map(candidate => storage.delete(candidate)));
       },
     };
