@@ -22,7 +22,7 @@ parents and are not counts of independent vulnerabilities.
 No major dependency upgrade, cryptographic replacement, hardware removal or
 gate waiver was made. The embedded-browser, remote Trezor core, unpatched
 elliptic and distribution-authorization limits documented below still apply.
-The 1.5.0 lockfile provenance pins were regenerated with the release metadata.
+Lockfile provenance pins are regenerated with release metadata; the version reset does not change installed dependency versions.
 Field comparison found only `release.toolchainLockSha256` in the development
 and public manifests, the public catalogue's manifest digest, and the two
 generated TypeScript pins changed. A second complete `private:check-generated`

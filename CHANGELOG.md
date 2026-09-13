@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Start a new source-history and release baseline under the maintainer's Git identity. Previous development history and release numbering are retired.
 - Build and publish releases manually from a clean, verified checkout, retaining checksum inventories, a CycloneDX SBOM, immutable releases, and local application, Rust, circuit and artifact checks.
+- Bind generated manifest provenance to the new source baseline and versioned lockfile without changing the cryptographic artifacts or Testnet deployment.
 
 ### Removed
 

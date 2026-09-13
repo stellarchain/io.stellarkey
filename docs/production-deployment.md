@@ -6,7 +6,8 @@ This runbook covers the static, backend-free StellarKey application. A productio
 
 GitHub Actions workflows are removed. Release verification, publication and any
 production deployment are separate, explicitly authorised maintainer operations.
-Never rebuild during deployment: publish and deploy the exact verified output.
+Never rebuild during deployment: publish and deploy the exact release artifact
+from the verified output.
 
 1. Install the locked dependencies with Node 22.22.2 and npm 11.19.0. Review
    dependency lifecycle execution; the repository disables install scripts.
