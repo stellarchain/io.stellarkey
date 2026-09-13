@@ -310,3 +310,22 @@ test('consensus-affecting protocol review decisions are explicit and linked', ()
     assert.match(spec, new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'));
   }
 });
+
+
+test('the manuscript dates actual V2 ledger confirmation separately from historical browser evidence', () => {
+  const paper = read('private-balance.md');
+  const evidence = JSON.parse(readSource('protocol/private-balance/results/capacity-testnet-lifecycle.json'));
+  const manifest = JSON.parse(readSource('public/protocol/private-balance/v1/manifest.json'));
+  assert.equal(evidence.passed, true);
+  assert.equal(evidence.poolContractId, manifest.poolContractId);
+  assert.equal(evidence.wasmSha256, manifest.release.contractWasmSha256);
+  assert.equal(evidence.r1csSha256, manifest.artifacts.r1csSha256);
+  assert.deepEqual(evidence.actions.map(action => action.method), ['deposit', 'transfer', 'full_input_exit']);
+  assert.deepEqual(evidence.actions.map(action => action.leafAdvance), [3, 3, 0]);
+  for (const action of evidence.actions) {
+    assert.equal(action.confirmed, true);
+    assert.ok(paper.includes(formatNumber(action.ledger)));
+    assert.ok(paper.includes(formatNumber(BigInt(action.minimumResourceFeeStroops))));
+  }
+  assert.match(paper, /command-line synthetic test.*not.*browser-wallet or USDC test/is);
+});

@@ -111,7 +111,7 @@ def generate():
         "@@BASELINE@@": baseline,
         "@@SHORT_BASELINE@@": baseline[:8],
         "@@ABSTRACT@@": convert(abstract),
-        "@@BODY@@": convert(body) + "\n" + r"\addcontentsline{toc}{section}{References}" + "\n" + r"\begin{thebibliography}{10}" + "\n"
+        "@@BODY@@": convert(body) + "\n" + r"\clearpage" + "\n" + r"\addcontentsline{toc}{section}{References}" + "\n" + r"\begin{thebibliography}{10}" + "\n"
             + "\n".join(r"\bibitem{ref" + str(index) + "}\n" + convert(reference.strip())
                         for index, reference in enumerate(references, 1))
             + "\n" + r"\end{thebibliography}",
