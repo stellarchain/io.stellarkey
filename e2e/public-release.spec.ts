@@ -234,10 +234,13 @@ test("the landing page tells the private payments story with its limits attached
 
   await expect(page.getByRole("heading", { level: 2, name: "Then it goes quiet." })).toBeVisible();
   const act = page.locator("#private");
-  await expect(act).toContainText("preview on Stellar testnet");
+  await expect(act).toContainText("Protocol V2");
+  await expect(act).toContainText("unaudited, Testnet-only");
   await expect(act).toContainText("public by design");
   await expect(act).toContainText("Privacy grows with more independent activity");
   await expect(act).toContainText("not a guarantee");
+  await expect(page.locator("#private-how")).toContainText("40,594 constraints");
+  await expect(page.locator("#private-how")).toContainText("private witness stays local");
   await expect(
     page.locator("#private-how").getByRole("link", { name: "Read exactly how it works →" }),
   ).toHaveAttribute("href", "/private");
