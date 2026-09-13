@@ -3,7 +3,7 @@
 Requested scope: fix private commitment capacity, replace the Testnet pool with
 fresh state, default to Dark, and restore/update an arXiv-style manuscript.
 The original checkout is preserved. Review branch: `release/1.5.1-review`.
-Implementation revision: `3db4acef58989f899c706a1fc256e33d5e65871c`.
+Implementation revision: `f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084`.
 The original baseline is `561f716627debab6e72c72c57b1966e572fc3456`.
 
 ## Implemented
@@ -40,7 +40,7 @@ The original baseline is `561f716627debab6e72c72c57b1966e572fc3456`.
   driver suite pass 45 tests, including fresh seed-only recovery after exits.
 - Focused Chromium/iPhone WebKit regression passes 26 checks after resolving theme
   assumptions and contrast failures. Earlier theme-specific checks passed 13 unit
-  and eight browser cases. Full application verification remains a distinct gate.
+  and eight browser cases. The six additional real withdrawal-control checks pass; full application verification remains a distinct gate.
 - Twelve integrated browser proofs verify; raw samples and artifact hashes are in
   `protocol/private-balance/results/capacity-browser-v2.json`. These are descriptive
   M3 Max smoke measurements, not physical-phone or comparative performance claims.
@@ -55,7 +55,7 @@ The original baseline is `561f716627debab6e72c72c57b1966e572fc3456`.
 
 ## Release gates and remaining external evidence
 
-Run `npm run release:verify` from the clean review worktree. Record its commit,
+The initial clean run found a legacy key-domain constant in backup inspection; the implementation now uses Protocol V2 and 37 focused vault/backup checks pass. Run `npm run release:verify` again from the clean review worktree. Record its commit,
 exit status and complete output beside that worktree. This includes generated
 artifacts, types, unit/protocol checks, lint, dependency audits, safe-reporter
 verification, private UI, the full synthetic component matrix, fixture cleanup,

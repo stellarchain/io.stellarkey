@@ -4,7 +4,7 @@
 
 Author: **DRAFT**. Contact: **support@stellarkey.io**. No affiliation is asserted.
 The September 13, 2026 draft describes application **1.5.1**, Protocol **V2**,
-with implementation revision `3db4acef58989f899c706a1fc256e33d5e65871c` on the local
+with implementation revision `f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084` on the local
 `release/1.5.1-review` branch. Publish that source revision before relying on the
 manuscript's pinned GitHub links. Nothing has been submitted to arXiv.
 
