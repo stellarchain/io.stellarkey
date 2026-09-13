@@ -8,6 +8,7 @@ export type ResolvedTheme = 'light' | 'dark';
 export const THEME_STORAGE_KEY = 'stellarkey.theme';
 export const THEME_CHANGE_EVENT = 'stellarkey:theme';
 export const THEME_PREFERENCES: readonly ThemePreference[] = ['system', 'light', 'dark'];
+export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'dark';
 
 // A failed persistence write must not undo this tab's explicit choice. The
 // preference also survives controller/settings remounts without becoming SSR
@@ -15,24 +16,25 @@ export const THEME_PREFERENCES: readonly ThemePreference[] = ['system', 'light',
 const sessionPreferences = new WeakMap<Window, ThemePreference>();
 
 function parsePreference(value: string | null): ThemePreference {
-  return value === 'light' || value === 'dark' ? value : 'system';
+  return value === 'light' || value === 'dark' || value === 'system' ? value : DEFAULT_THEME_PREFERENCE;
 }
 
 /** Runs before paint. Kept as a string so it can be inlined verbatim in <body>. */
 export const THEME_INIT_SCRIPT =
   "(function(){var p;try{p=localStorage.getItem('" + THEME_STORAGE_KEY + "');}catch(e){}" +
-  "var t=(p==='light'||p==='dark')?p:((window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark');" +
+  "var t=p==='light'?'light':(p==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');" +
   "document.documentElement.dataset.theme=t;})();";
 
 export function getStoredThemePreference(): ThemePreference {
-  if (typeof window === 'undefined') return 'system';
+  if (typeof window === 'undefined') return DEFAULT_THEME_PREFERENCE;
   const current = sessionPreferences.get(window);
   if (current !== undefined) return current;
-  let preference: ThemePreference = 'system';
+  let preference: ThemePreference = DEFAULT_THEME_PREFERENCE;
   try {
     preference = parsePreference(window.localStorage.getItem(THEME_STORAGE_KEY));
   } catch {
-    // OS-following appearance remains available without persistent storage.
+    // Keep the default when storage is unavailable; explicit session choices
+    // still work through sessionPreferences.
   }
   sessionPreferences.set(window, preference);
   return preference;

@@ -107,6 +107,14 @@
   color: #409cff;
 }
 
+/* Small negative text also appears on tinted and raised dark review panels. */
+:root:not([data-theme="light"]) .text-\[\#FF453A\],
+:root:not([data-theme="light"]) .text-\[\#FF6961\],
+:root:not([data-theme="light"]) .text-neg,
+:root:not([data-theme="light"]) .btn-danger {
+  color: #ff8a80;
+}
+
 /* Legacy foreground utilities share the semantic light-theme contrast values.
    Filled accents keep their existing fill and explicit on-colour foreground. */
 :root[data-theme="light"] .text-\[\#0A84FF\],

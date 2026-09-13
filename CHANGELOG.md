@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Default new sessions to Dark appearance while preserving saved Light, Dark and System preferences.
+
+### Fixed
+
+- Improve small negative and error text contrast on raised and tinted dark review panels.
+
 ## [1.5.0] - 2026-09-12
 
 ### Added

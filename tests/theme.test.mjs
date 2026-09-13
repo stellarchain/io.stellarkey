@@ -66,6 +66,29 @@ function browser(t, { stored = null, light = false, blockRead = false, blockWrit
   };
 }
 
+for (const options of [{ light: true }, { light: true, blockRead: true }, { light: true, stored: 'invalid' }]) {
+  test(`new appearance defaults to dark before paint and after mount (${JSON.stringify(options)})`, t => {
+    const h = browser(t, options);
+    vm.runInNewContext(theme.THEME_INIT_SCRIPT, { window: h.window, document: h.document, localStorage: h.window.localStorage });
+    assert.equal(h.document.documentElement.dataset.theme, 'dark');
+    h.start();
+    assert.equal(theme.getStoredThemePreference(), 'dark');
+    h.system(false);
+    h.system(true);
+    assert.equal(h.document.documentElement.dataset.theme, 'dark');
+  });
+}
+
+for (const stored of ['system', 'light', 'dark']) {
+  test(`dark default preserves a saved ${stored} choice`, t => {
+    const h = browser(t, { stored, light: true });
+    vm.runInNewContext(theme.THEME_INIT_SCRIPT, { window: h.window, document: h.document, localStorage: h.window.localStorage });
+    assert.equal(h.document.documentElement.dataset.theme, stored === 'dark' ? 'dark' : 'light');
+    h.start();
+    assert.equal(theme.getStoredThemePreference(), stored);
+  });
+}
+
 for (const blockRead of [false, true]) {
   test(`the real theme controller retains explicit selection with blocked writes and read blocking ${blockRead}`, t => {
     const h = browser(t, { stored: 'dark', blockWrite: true, blockRead });
@@ -83,12 +106,12 @@ for (const blockRead of [false, true]) {
   });
 }
 
-test('pre-paint appearance still follows the system when local storage is blocked', t => {
+test('pre-paint appearance uses dark when local storage is blocked', t => {
   const h = browser(t, { light: true, blockRead: true });
   vm.runInNewContext(theme.THEME_INIT_SCRIPT, {
     window: h.window, document: h.document, localStorage: h.window.localStorage,
   });
-  assert.equal(h.document.documentElement.dataset.theme, 'light');
+  assert.equal(h.document.documentElement.dataset.theme, 'dark');
 });
 
 test('theme storage events update the same snapshot consumed by mounted controls and the controller', t => {
@@ -105,8 +128,8 @@ test('theme storage events update the same snapshot consumed by mounted controls
   h.stored('unrelated', 'another.preference');
   assert.deepEqual(observed, ['light', 'dark']);
   h.stored(null, null);
-  assert.equal(theme.getStoredThemePreference(), 'system');
-  assert.deepEqual(observed, ['light', 'dark', 'system']);
+  assert.equal(theme.getStoredThemePreference(), 'dark');
+  assert.deepEqual(observed, ['light', 'dark', 'dark']);
   unsubscribe();
   theme.setThemePreference('light');
   assert.equal(observed.length, 3, 'Disposed controls no longer receive publications');
@@ -136,11 +159,11 @@ test('rapid preference changes and controller remount keep the final unpersisted
   assert.equal(h.document.documentElement.dataset.theme, 'light');
 });
 
-test('server rendering has a stable system snapshot and invalid saved preferences use system', t => {
+test('server rendering has a stable dark snapshot and invalid saved preferences use dark', t => {
   const h = browser(t, { stored: 'not-a-theme', light: true });
-  assert.equal(theme.getStoredThemePreference(), 'system');
+  assert.equal(theme.getStoredThemePreference(), 'dark');
   h.start();
-  assert.equal(h.document.documentElement.dataset.theme, 'light');
+  assert.equal(h.document.documentElement.dataset.theme, 'dark');
   globalThis.window = undefined;
-  assert.equal(theme.getStoredThemePreference(), 'system');
+  assert.equal(theme.getStoredThemePreference(), 'dark');
 });

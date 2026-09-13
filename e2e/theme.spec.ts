@@ -23,6 +23,17 @@ async function appearance(page: Page) {
   return page.getByRole('group', { name: 'Appearance', exact: true });
 }
 
+test('new users get dark appearance on a light OS and retain explicit System', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const control = await appearance(page);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(control.getByRole('button', { name: 'Dark', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await control.getByRole('button', { name: 'System', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
+
 test('appearance retains blocked-storage choices through keyboard activation and remount', async ({ page }) => {
   const control = await appearance(page);
   await page.evaluate(() => {
