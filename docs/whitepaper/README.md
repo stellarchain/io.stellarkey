@@ -5,7 +5,7 @@
 Author: **StellarKey**. Contact: **support@stellarkey.io**. No affiliation is asserted.
 The September 13, 2026 whitepaper describes the stable application baseline
 **1.5.1**, Protocol **V2**, with implementation revision
-`78cb4c111cf95e08987be986a028b68ce6569376`. Only current-format application state
+`b79c58fca32c56b36c86f912ee10d6385c4f591b`. Only current-format application state
 is supported. Nothing has been submitted to arXiv.
 
 The manuscript includes a threat model, conditional state-transition arguments,
