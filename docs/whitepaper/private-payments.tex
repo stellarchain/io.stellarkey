@@ -1,5 +1,5 @@
 % Generated from docs/private-balance.md by build.py with Pandoc 3.11.
-% Markdown SHA-256: 8a53d98773019539a40fc1ebb72bb28b4ba242e5feb9056378702588eac2beea
+% Markdown SHA-256: d14e67c6de573dcca462d8e731dd339f2f3b34e121771dbd7e195d3017c0aeac
 % Edit the maintained Markdown or this template, then regenerate the manuscript.
 \documentclass[11pt,letterpaper]{article}
 \usepackage[margin=1in]{geometry}
@@ -61,7 +61,7 @@ implementation is not approved for real value or Mainnet.
 \end{abstract}
 \vspace{0.5em}
 {\small\textbf{Implementation baseline:}
-\href{https://github.com/stellarchain/io.stellarkey/tree/3db4acef58989f899c706a1fc256e33d5e65871c}{\texttt{3db4acef}}.
+\href{https://github.com/stellarchain/io.stellarkey/tree/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084}{\texttt{f8bd09b5}}.
 The source revision and artifact identities define the implementation described here. Dated deployment,
 benchmark, and test evidence retains the scope and limitations in Sections 16--17.}
 \clearpage
@@ -912,7 +912,7 @@ agreement; it cannot prove operator independence if a user selects a
 custom primary under common control with the witness. The browser-CORS
 and five-pass state-corroboration screening behind this choice is
 preserved in
-\href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/protocol/private-balance/results/rpc-witness-validation.json}{\texttt{rpc-witness-validation.json}}.
+\href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/protocol/private-balance/results/rpc-witness-validation.json}{\texttt{rpc-witness-validation.json}}.
 A second-provider witness check is mandatory when there is no
 authenticated checkpoint, during seed recovery, and for an explicit
 full-history check. Routine witness checks are enabled by default but
@@ -1049,10 +1049,13 @@ approved, broadcast, or timed out.
 
 \subsection{Legacy records}\label{legacy-records}
 
-The published circuit, contract, three-output format, and encrypted
-archive are unchanged. Historical fee notes remain readable as ordinary
-owned outputs. Old encrypted pending records and backups retain their
-original submission route and proof-exposure holds. Legacy relayed or
+The earlier removal of peer relaying preserved its then-current circuit,
+contract and archive format. Protocol V2 separately replaces the
+deployment, circuit and index encodings. Historical fee notes remain
+readable as ordinary owned outputs within their original deployment and
+format, using a compatible implementation; they are not imported as V2
+spends. Old encrypted pending records and backups retain their original
+submission route and proof-exposure holds. Legacy relayed or
 unknown-route records are reconcile-only, without new signing,
 rebroadcast, or transaction-hash lookup.
 
@@ -1399,15 +1402,15 @@ substantially. Three samples do not support tail-latency or
 confidence-interval claims. Chromium exposed a sampled JavaScript heap
 counter; WebKit did not. Neither is a total process/\allowbreak{}Wasm
 peak-memory measurement. The reproducible harness and exact samples are
-\href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/protocol/private-balance/spikes/scripts/run-capacity-browser.mjs}{run-capacity-browser.mjs}
+\href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/protocol/private-balance/spikes/scripts/run-capacity-browser.mjs}{run-capacity-browser.mjs}
 and
-\href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/protocol/private-balance/results/capacity-browser-v2.json}{capacity-browser-v2.json}.
+\href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/protocol/private-balance/results/capacity-browser-v2.json}{capacity-browser-v2.json}.
 
 \subsection{Historical evidence and contemporary
 comparison}\label{historical-evidence-and-contemporary-comparison}
 
 The September 2 microbenchmarks in
-\href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/protocol/private-balance/results/review-validation.json}{review-validation.json}
+\href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/protocol/private-balance/results/review-validation.json}{review-validation.json}
 used an earlier 14,574-constraint, two-output design. Their Apple M3 Max
 Node.js results include 371.708 microseconds with JWK import and 84.792
 microseconds with PKCS\#8 import, a 77.19\% median improvement in the
@@ -1520,11 +1523,11 @@ transaction hash; a local file hash alone does not establish the
 on-chain executable. A separate public read on September 13 at 01:01:01
 UTC corroborated the instance executable through the SDF and Ankr RPCs
 at ledger 4,647,534. Both returned the Pool Wasm hash in \S{}16; see
-\href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/protocol/private-balance/results/capacity-v2-executable.json}{capacity-v2-executable.json}.
+\href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/protocol/private-balance/results/capacity-v2-executable.json}{capacity-v2-executable.json}.
 This read establishes an observed executable match, not a funded
 lifecycle or a locally verified consensus proof. The historical browser
 run in
-\href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/protocol/private-balance/results/mvp-e2e.json}{mvp-e2e.json},
+\href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/protocol/private-balance/results/mvp-e2e.json}{mvp-e2e.json},
 at \texttt{7424bb2}, is not a new end-to-end validation of V2. Its
 manifest was
 {\ttfamily\seqsplit{222e2028be15d94311751d38aaebadb03c9ef53cc76a19e72cdcf0b3fd01be9f}}.
@@ -1575,65 +1578,65 @@ deployment permits.
 \begin{itemize}
 \tightlist
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/protocol/private-balance/docs/protocol-v1.md}{Protocol
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/protocol/private-balance/docs/protocol-v1.md}{Protocol
   V2 specification (retained filename)}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/protocol/private-balance/docs/threat-model.md}{Threat
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/protocol/private-balance/docs/threat-model.md}{Threat
   model}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/protocol/private-balance/docs/encoding.md}{Canonical
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/protocol/private-balance/docs/encoding.md}{Canonical
   encoding}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/protocol/private-balance/circuits/circom/action.circom}{Action
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/protocol/private-balance/circuits/circom/action.circom}{Action
   circuit},
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/src/features/private-balance/worker/action-builder.ts}{witness
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/src/features/private-balance/worker/action-builder.ts}{witness
   construction}, and
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/public/protocol/private-balance/v1/manifest.json}{authenticated
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/public/protocol/private-balance/v1/manifest.json}{authenticated
   deployment manifest}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/protocol/private-balance/contracts/pool/src/contract.rs}{Pool
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/protocol/private-balance/contracts/pool/src/contract.rs}{Pool
   entrypoints} and
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/protocol/private-balance/contracts/pool/src/storage.rs}{storage/\allowbreak{}TTL
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/protocol/private-balance/contracts/pool/src/storage.rs}{storage/\allowbreak{}TTL
   behavior}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/src/features/private-balance/worker/client.ts}{Receive-address
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/src/features/private-balance/worker/client.ts}{Receive-address
   initialization} and
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/src/features/private-balance/runtime/storage.ts}{encrypted
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/src/features/private-balance/runtime/storage.ts}{encrypted
   issuance/\allowbreak{}recovery state}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/src/features/private-balance/runtime/scanner.ts}{Recipient
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/src/features/private-balance/runtime/scanner.ts}{Recipient
   and archive scanner}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/src/features/private-balance/runtime/archive-client.ts}{Public
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/src/features/private-balance/runtime/archive-client.ts}{Public
   getter validation} and
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/src/features/private-balance/runtime/archive-restoration.ts}{archive-record
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/src/features/private-balance/runtime/archive-restoration.ts}{archive-record
   restoration}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/src/features/private-balance/runtime/action-transaction.ts}{Action
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/src/features/private-balance/runtime/action-transaction.ts}{Action
   preparation},
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/src/features/private-balance/runtime/transaction-review.ts}{envelope
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/src/features/private-balance/runtime/transaction-review.ts}{envelope
   review}, and
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/src/features/private-balance/runtime/fee-policy.ts}{fee
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/src/features/private-balance/runtime/fee-policy.ts}{fee
   policy}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/src/features/private-balance/runtime/spend-recovery.ts}{Held-proof
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/src/features/private-balance/runtime/spend-recovery.ts}{Held-proof
   recovery rules}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/src/features/private-balance/runtime/provider.tsx}{Wallet/\allowbreak{}runtime
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/src/features/private-balance/runtime/provider.tsx}{Wallet/\allowbreak{}runtime
   authority and outcome watchers} and
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/src/features/private-balance/runtime/submission.ts}{submission
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/src/features/private-balance/runtime/submission.ts}{submission
   journal and polling}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/docs/private-balance-protocol-review-2026-09-02.md}{Protocol
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/docs/private-balance-protocol-review-2026-09-02.md}{Protocol
   review and measurements}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/docs/private-balance-recovery.md}{Recovery
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/docs/private-balance-recovery.md}{Recovery
   guide}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/docs/private-balance-support.md}{Safe
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/docs/private-balance-support.md}{Safe
   support guide}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/3db4acef58989f899c706a1fc256e33d5e65871c/docs/private-balance-incident-response.md}{Incident-response
+  \href{https://github.com/stellarchain/io.stellarkey/blob/f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084/docs/private-balance-incident-response.md}{Incident-response
   playbook}
 \end{itemize}
 

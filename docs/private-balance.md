@@ -4,7 +4,7 @@
 - **Contact:** support@stellarkey.io
 - **Protocol:** V2 capacity-independent full-input exits
 - **Application version:** StellarKey 1.5.1
-- **Implementation baseline:** `3db4acef58989f899c706a1fc256e33d5e65871c` (implementation revision on `release/1.5.1-review`; artifact identities in §16)
+- **Implementation baseline:** `f8bd09b5a877a0f6f16fb6cfe0c98c83192b0084` (implementation revision on `release/1.5.1-review`; artifact identities in §16)
 - **Implementation status:** Live Testnet development deployment; validation scope and dates in §17; not for real value
 - **Document revision:** 2026-09-13
 
@@ -752,8 +752,11 @@ because the replacement was approved, broadcast, or timed out.
 
 ### Legacy records
 
-The published circuit, contract, three-output format, and encrypted archive
-are unchanged. Historical fee notes remain readable as ordinary owned outputs.
+The earlier removal of peer relaying preserved its then-current circuit,
+contract and archive format. Protocol V2 separately replaces the deployment,
+circuit and index encodings. Historical fee notes remain readable as ordinary
+owned outputs within their original deployment and format, using a compatible
+implementation; they are not imported as V2 spends.
 Old encrypted pending records and backups retain their original submission
 route and proof-exposure holds. Legacy relayed or unknown-route records are
 reconcile-only, without new signing, rebroadcast, or transaction-hash lookup.
