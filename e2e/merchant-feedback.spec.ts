@@ -672,7 +672,8 @@ test('customer reward failure retains the full card and retries one redemption',
 
 for (const appearance of ['light', 'dark'] as const) {
   test(`${appearance} supplementary toasts retain accessible resting contrast`, async ({ page }) => {
-    await page.emulateMedia({ colorScheme: appearance });
+    await page.evaluate(() => { localStorage.setItem('stellarkey.theme', 'system'); window.dispatchEvent(new StorageEvent('storage', { key: 'stellarkey.theme', newValue: 'system', storageArea: localStorage })); });
+        await page.emulateMedia({ colorScheme: appearance });
     await expect(page.locator('html')).toHaveAttribute('data-theme', appearance);
     await control(page, 'First toast');
     const notification = page.locator('.app-safe-toast > div');
