@@ -3,6 +3,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { privateArtifactEntries, privateArtifactRevisionSource } from "../src/lib/private-balance-artifact-policy.mjs";
 
 const projectRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const outputRoot = path.join(projectRoot, "out");
@@ -107,26 +108,13 @@ export function renderServiceWorker({
 }
 
 export function privateArtifactsFromManifest(manifest) {
-  const artifacts = manifest?.artifacts;
-  const entries = [
-    ["/protocol/private-balance/v1/circuit.wasm", artifacts?.wasmSha256],
-    ["/protocol/private-balance/v1/circuit.zkey.pc", artifacts?.zkeyTransport?.sha256],
-    ["/protocol/private-balance/v1/circuit.zkey", artifacts?.zkeySha256],
-    ["/protocol/private-balance/v1/verification-key.json", artifacts?.vkJsonSha256],
-  ];
-  for (const [, hash] of entries) {
-    if (typeof hash !== "string" || !/^[a-f0-9]{64}$/.test(hash)) {
-      throw new Error("Private Balance manifest contains an invalid artifact hash.");
-    }
-  }
-  return entries;
+  // Select circuit.zkey.pc when declared, otherwise retain the raw-key path.
+  return privateArtifactEntries(manifest);
 }
 
 function privateArtifactRevision(manifest, entries) {
   return createHash("sha256")
-    .update(String(manifest.artifactVersion ?? ""))
-    .update("\0")
-    .update(JSON.stringify(entries))
+    .update(privateArtifactRevisionSource(manifest, entries))
     .digest("hex")
     .slice(0, 20);
 }

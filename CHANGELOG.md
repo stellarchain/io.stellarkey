@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Share compressed proving artifacts between the application and service worker, retaining two cache revisions and retiring redundant expanded-key caches after a verified replacement.
+- Measure actual proving-artifact downloads and persistent storage in release budgets without increasing their limits; allow categorized unreleased changelog notes while protecting published entries.
+
 ## [1.5.1] - 2026-09-13
 
 ### Added

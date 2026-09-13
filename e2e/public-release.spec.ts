@@ -19,6 +19,62 @@ test.beforeEach(async ({ context }) => {
   await installNetworkFixtures(context);
 });
 
+test.describe('public proving-artifact cache', () => {
+  test.use({ serviceWorkers: 'allow' });
+
+  test('verified artifact entries are shared offline and reload bypasses stale bytes', async ({ page, context }) => {
+    await page.goto('/app', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.ready;
+      if (!navigator.serviceWorker.controller) await new Promise<void>(resolve => {
+        navigator.serviceWorker.addEventListener('controllerchange', () => resolve(), { once: true });
+      });
+    });
+    // Public proving files only. No wallet is created, unlocked or inspected.
+    const result = await page.evaluate(async () => {
+      const manifest = await (await fetch('/protocol/private-balance/v1/manifest.json', { cache: 'no-store' })).json();
+      const artifacts = [
+        ['/protocol/private-balance/v1/circuit.wasm', manifest.artifacts.wasmSha256],
+        ['/protocol/private-balance/v1/circuit.zkey.pc', manifest.artifacts.zkeyTransport.sha256],
+        ['/protocol/private-balance/v1/verification-key.json', manifest.artifacts.vkJsonSha256],
+      ];
+      const sha256 = async (bytes: ArrayBuffer) => Array.from(new Uint8Array(
+        await crypto.subtle.digest('SHA-256', bytes),
+      )).map(byte => byte.toString(16).padStart(2, '0')).join('');
+      const revision = (await sha256(new TextEncoder().encode(
+        `${manifest.artifactVersion}\0${JSON.stringify(artifacts)}`,
+      ).buffer)).slice(0, 20);
+      const url = `${artifacts[0][0]}?sha256=${artifacts[0][1]}`;
+      const bytes = await (await fetch(url)).arrayBuffer();
+      const verified = await sha256(bytes) === artifacts[0][1];
+      let unverifiedEntryCount = 0;
+      for (const name of await caches.keys()) {
+        if (name.startsWith('stellarkey-private-artifacts-')) {
+          unverifiedEntryCount += (await (await caches.open(name)).keys()).length;
+        }
+      }
+      if (!verified) throw new Error('Public artifact verification failed.');
+      await (await caches.open(`stellarkey-private-artifacts-v2-${revision}`)).put(url, new Response(bytes));
+      return { unverifiedEntryCount, verified, url, byteLength: bytes.byteLength };
+    });
+    expect(result.unverifiedEntryCount).toBe(0);
+    expect(result.verified).toBe(true);
+    try {
+      await context.setOffline(true);
+      const offline = await page.evaluate(async url => {
+        const bytes = await (await fetch(url)).arrayBuffer();
+        let reloadFailed = false;
+        try { await fetch(url, { cache: 'reload' }); } catch { reloadFailed = true; }
+        return { byteLength: bytes.byteLength, reloadFailed };
+      }, result.url);
+      expect(offline.byteLength).toBe(result.byteLength);
+      expect(offline.reloadFailed).toBe(true);
+    } finally {
+      await context.setOffline(false);
+    }
+  });
+});
+
 async function expectReleaseIdentity(page: Page, placement: "footer" | "viewport") {
   const identity = page.locator("[data-build-identity]");
   await expect(identity).toHaveCount(1);

@@ -199,12 +199,16 @@ test('artifacts: content-addressed cache serves verified copies and dedupes load
     assert.equal(first.wasmBuffer.byteLength, manifest.artifacts.wasmByteLength);
     assert.equal(deduped.zkeyBuffer.byteLength, manifest.artifacts.zkeyByteLength);
     assert.equal(entries.size, 3);
+    assert.equal(entries.has(manifest.artifacts.zkeySha256), false, 'expanded proving keys must not be persisted');
+    assert.equal(entries.get(manifest.artifacts.zkeyTransport.sha256)?.byteLength,
+      manifest.artifacts.zkeyTransport.byteLength);
 
     // A warm cache answers without touching the network at all.
     globalThis.fetch = async () => { throw new Error('cache hit must not fetch'); };
     const cached = await loadCircuitArtifacts(manifest, undefined, cache);
     assert.equal(cached.wasmBuffer.byteLength, manifest.artifacts.wasmByteLength);
     assert.equal(cached.verificationKey.protocol, 'groth16');
+    assert.equal(await computeSha256(cached.zkeyBuffer), manifest.artifacts.zkeySha256);
 
     // A poisoned cache entry is re-verified, rejected, and refetched.
     entries.set(manifest.artifacts.wasmSha256, new ArrayBuffer(8));
@@ -224,6 +228,12 @@ test('artifacts: content-addressed cache serves verified copies and dedupes load
     const repaired = await loadCircuitArtifacts(manifest, undefined, cache);
     assert.equal(fetches, 1);
     assert.equal(repaired.wasmBuffer.byteLength, manifest.artifacts.wasmByteLength);
+
+    entries.set(manifest.artifacts.zkeyTransport.sha256, new ArrayBuffer(8));
+    fetches = 0;
+    const repairedKey = await loadCircuitArtifacts(manifest, undefined, cache);
+    assert.equal(fetches, 1);
+    assert.equal(await computeSha256(repairedKey.zkeyBuffer), manifest.artifacts.zkeySha256);
   } finally {
     globalThis.fetch = originalFetch;
   }
