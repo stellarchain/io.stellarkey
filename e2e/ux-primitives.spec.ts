@@ -1157,6 +1157,13 @@ test('HashValue shares generic copy feedback without moving focus or reading cli
 test('open primitives have accessible names and no blocking axe violations', async ({ page, browserName }) => {
   await page.getByRole('button', { name: 'Synthetic asset', exact: true }).click();
   await expect(page.getByRole('listbox')).toBeVisible();
+  // Audit the settled open surfaces after their finite entrance animations.
+  await page.locator('[role="dialog"], [role="listbox"]').evaluateAll(async elements => {
+    const animations = new Set(elements.flatMap(element => element.getAnimations({ subtree: true })));
+    await Promise.all([...animations]
+      .filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
+      .map(animation => animation.finished.catch(() => {})));
+  });
   const result = await new AxeBuilder({ page }).include('[role="dialog"]').include('[role="listbox"]')
     .disableRules(browserName === 'webkit' ? ['color-contrast'] : []).analyze();
   expect(result.violations.filter(item => ['critical', 'serious'].includes(item.impact ?? '')).length).toBe(0);
