@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update React and React DOM to 19.3.0 with matching React type definitions.
+- Refresh dependency-lock provenance and authenticated Private Payments manifest hashes without changing cryptographic artifacts or the Testnet deployment.
+
+### Fixed
+
+- Allow new categorized unreleased notes in changelog validation while protecting published release notes from changes.
+
 ## [1.5.0] - 2026-09-12
 
 ### Added
