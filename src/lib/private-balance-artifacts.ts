@@ -12,6 +12,10 @@ export interface LoadedCircuitArtifacts {
 }
 
 const MAX_VERIFICATION_KEY_BYTES = 1024 * 1024;
+// One public proving key in RAM avoids repeating expensive point expansion.
+// It contains no wallet secrets and is never persisted or handed to callers.
+let warmProvingKey: { key: string; buffer: ArrayBuffer } | null = null;
+let warmProvingKeyGeneration = 0;
 
 /**
  * Content-addressed artifact store: entries are keyed by their expected
@@ -137,6 +141,7 @@ async function loadCachedOrFetchPointCompressedArtifact(
   expectedSha256: string,
   expectedByteLength: number,
 ): Promise<ArrayBuffer> {
+  const generation = ++warmProvingKeyGeneration;
   const transport = await loadCachedOrFetchArtifact(
     cache,
     url,
@@ -145,15 +150,23 @@ async function loadCachedOrFetchPointCompressedArtifact(
     transportByteLength,
     false,
   );
-  const buffer = await expandPointCompressedZkeyTransport(transport, expectedByteLength);
+  const key = `${transportSha256}|${expectedSha256}|${expectedByteLength}`;
+  const cached = warmProvingKey;
+  const warm = cached?.key === key && cached.buffer.byteLength === expectedByteLength &&
+    (await computeSha256(cached.buffer)).toLowerCase() === expectedSha256.toLowerCase();
+  const buffer = warm ? cached.buffer.slice(0)
+    : await expandPointCompressedZkeyTransport(transport, expectedByteLength);
   const hash = await computeSha256(buffer);
   if (hash.toLowerCase() !== expectedSha256.toLowerCase()) {
     throw new Error(
       `Artifact hash mismatch after point expansion for ${url}: expected ${expectedSha256}, got ${hash}`,
     );
   }
+  if (!warm && generation === warmProvingKeyGeneration) {
+    warmProvingKey = { key, buffer: buffer.slice(0) };
+  }
   // Persist only the compressed transport, and only after its expansion also
-  // matches the canonical proving-key hash. Expansion is transient prover input.
+  // matches the canonical proving-key hash. Callers own independent copies.
   await persistVerifiedArtifact(cache, transportSha256, transport);
   return buffer;
 }
