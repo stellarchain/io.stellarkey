@@ -78,11 +78,13 @@ test('the tracked changelog documents the current release', () => {
   const candidate = document.releases[1];
   assert.equal(candidate.version, '1.5.1');
   assert.equal(candidate.date, '2026-09-13');
-  assert.deepEqual(candidate.categories.map(({ name }) => name), ['Added', 'Changed', 'Fixed']);
+  assert.deepEqual(candidate.categories.map(({ name }) => name), ['Added', 'Changed', 'Removed', 'Fixed']);
   const candidateNotes = candidate.categories.flatMap(({ entries }) => entries).join(' ');
   assert.match(candidateNotes, /Dark appearance/);
   assert.match(candidateNotes, /tree saturation/);
   assert.match(candidateNotes, /fresh state/);
+  assert.match(candidateNotes, /stable starting application baseline/);
+  assert.match(candidateNotes, /Unsupported encrypted state and backups are rejected/);
   const release = document.releases[2];
   assert.equal(release.version, '1.5.0');
   assert.equal(release.date, '2026-09-12');

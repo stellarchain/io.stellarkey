@@ -397,8 +397,9 @@ test("manual browser, hardware, and backend-free boundaries have a release check
   assert.match(checklist, /Trezor/);
   assert.match(checklist, /foreground-only/i);
   assert.match(checklist, /pinch zoom.*200%/i);
-  assert.match(checklist, /backup envelope version 2/i);
-  assert.match(checklist, /legacy plaintext version 1[^\n]*not supported/i);
+  assert.match(checklist, /backups use the current encrypted version 2 envelope/i);
+  assert.match(checklist, /current encrypted version 2 envelope and current-format records/i);
+  assert.match(checklist, /Unsupported formats must be rejected without migration or data deletion/i);
 });
 
 test("settings do not navigate into unimplemented product surfaces", () => {

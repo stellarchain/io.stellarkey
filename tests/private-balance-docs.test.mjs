@@ -6,10 +6,6 @@ import test from 'node:test';
 const read = name => readFileSync(new URL(`../docs/${name}`, import.meta.url), 'utf8');
 const readSource = name => readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
 const formatNumber = value => new Intl.NumberFormat('en-US', { useGrouping: true }).format(value);
-const formatMicroseconds = value => new Intl.NumberFormat('en-US', {
-  minimumFractionDigits: 3,
-  maximumFractionDigits: 3,
-}).format(value);
 const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 test('the printable whitepaper stays synchronized with the maintained paper and application release', () => {
@@ -20,7 +16,8 @@ test('the printable whitepaper stays synchronized with the maintained paper and 
   assert.ok(paper.includes(`**Application version:** StellarKey ${version}`));
   assert.ok(latex.includes(`% Markdown SHA-256: ${digest}`), 'Regenerate the printable whitepaper with docs/whitepaper/build.py');
   assert.ok(latex.includes(`pdfsubject={StellarKey ${version};`));
-  assert.ok(latex.includes('pdfauthor={DRAFT}'));
+  assert.ok(latex.includes('pdfauthor={StellarKey}'));
+  assert.match(paper, /Application baseline:\*\* Stable 1\.5\.1/);
   assert.ok(latex.includes('support@stellarkey.io'));
   assert.ok(latex.includes('\\begin{thebibliography}{10}'));
   assert.equal((latex.match(/\\bibitem\{/g) ?? []).length, 10);
@@ -42,11 +39,11 @@ test('private balance documentation states exact privacy, recovery, and support 
   assert.match(product, /no (?:application|StellarKey) backend/i);
   assert.match(product, /transaction source.*public|public.*transaction source/is);
   assert.match(product, /Direct mode.*user's public Stellar account|user's public Stellar account.*Direct mode/is);
-  assert.match(product, /Peer relaying and helper earnings have been removed/is);
-  assert.match(product, /stale relayed reviews are rejected/is);
-  assert.match(product, /obsolete relay-chain consent.*does\s+not release pending inputs/is);
+  assert.match(product, /Direct submission\s+is the only supported route/is);
+  assert.match(product, /no helper-earnings capability/is);
+  assert.match(product, /Unsupported records and encrypted backups fail validation without rewriting\s+or deleting their bytes/is);
   assert.match(product, /No public relayer address or fee/is);
-  assert.match(product, /never silently fall\s+back/is);
+  assert.match(product, /does not sign, rebroadcast, look up\s+transaction hashes or run recovery for an unsupported record/is);
   assert.match(product, /timing.*pool activity|pool activity.*timing/is);
   assert.match(product, /RPC.*IP|IP.*RPC/is);
   assert.match(recovery, /encrypted backup/i);
@@ -66,10 +63,6 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   const protocolSpec = readSource('protocol/private-balance/docs/protocol-v1.md');
   const noteCircuit = readSource('protocol/private-balance/circuits/circom/note.circom');
   const manifest = JSON.parse(readSource('public/protocol/private-balance/v1/manifest.json'));
-  const evidence = JSON.parse(readSource('protocol/private-balance/results/review-validation.json'));
-  const browserEvidence = JSON.parse(
-    readSource('protocol/private-balance/results/mvp-e2e.json'),
-  );
   const witnessEvidence = JSON.parse(
     readSource('protocol/private-balance/results/rpc-witness-validation.json'),
   );
@@ -159,9 +152,9 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.match(paper, /confirmed.*durable on-chain.*sync.*rereads.*encrypted.*checkpoint/is);
   assert.match(paper, /interruption before.*sync.*rescan/is);
   assert.doesNotMatch(paper, /stores an encrypted resume cursor/i);
-  assert.match(paper, /no\s+backward-compatible.*migration/is);
-  assert.match(paper, /Legacy relayed or unknown-route records are\s+reconcile-only/is);
-  assert.match(paper, /historical.*fee notes remain readable/is);
+  assert.match(paper, /1\.5\.1 is the starting application baseline/i);
+  assert.doesNotMatch(paper, /legacy|historical.*fee notes|retired V1/i);
+  assert.match(paper, /Signed actions also require their exact envelope\s+expiry/is);
   assert.doesNotMatch(paper, /## 13\. Optional browser peer relay/);
   assert.match(paper, /authenticated deployment\s+catalogue.*XLM.*USDC/is);
   assert.match(paper, /one live XLM\/USDC development pool on Testnet/is);
@@ -169,10 +162,6 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.match(paper, /passed.*full `snarkjs powersoftau verify`/is);
   assert.match(paper, /does not attest participants.*secret erasure/is);
   assert.match(paper, /Testnet reset.*redeploy/is);
-  assert.equal(browserEvidence.passed, true);
-  assert.ok(paper.includes(browserEvidence.sourceCommit.slice(0, 7)));
-  assert.ok(paper.includes(browserEvidence.fixtureManifestSha256));
-  assert.match(paper, /ten.*desktop Chromium.*four.*browser smoke/is);
   assert.match(paper, /iPhone.*iPad.*emulation.*not physical-device/is);
   assert.match(paper, /BLS12-381.*not selected/is);
   assert.match(paper, /recursive proofs.*not implemented/is);
@@ -188,15 +177,6 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   ].filter(Number.isInteger)) {
     assert.ok(paper.includes(`${formatNumber(byteLength)} bytes`));
   }
-  assert.ok(
-    paper.includes(`${formatMicroseconds(evidence.x25519.nativeJwk.p50Microseconds)} microseconds`),
-  );
-  assert.ok(
-    paper.includes(
-      `${formatMicroseconds(evidence.x25519.nativePkcs8Prototype.p50Microseconds)} microseconds`,
-    ),
-  );
-  assert.ok(paper.includes(`${evidence.x25519.pkcs8MedianImprovementPercent}% median improvement`));
 });
 
 test('the public private-payments page describes the live development Testnet deployment consistently', () => {
@@ -213,10 +193,10 @@ test('the whitepaper distinguishes issued receive addresses, dummy lanes, and re
   assert.equal(issuanceBound, 65_536);
   assert.ok(paper.includes(formatNumber(issuanceBound)));
   assert.match(paper, /First setup generates a random non-zero receive diversifier/);
-  assert.match(paper, /replaces a stored legacy zero-diversifier address once/);
-  assert.match(paper, /preserving an existing diversified address exactly/);
-  assert.match(paper, /records.*old diversifier.*before publishing/is);
-  assert.doesNotMatch(paper, /retains the current legacy address/i);
+  assert.match(paper, /preserves an existing supported receive address exactly/);
+  assert.match(paper, /rejects an unsupported default identity/);
+  assert.match(paper, /Only explicit rotation generates a\s+replacement/);
+  assert.match(paper, /records each issued diversifier.*before publishing/is);
   assert.match(paper, /Dummy lanes\s+share the same clear action diversifier/);
   assert.match(paper, /Scalar-field elements.*below `Fr`.*proof coordinates.*`Fq`/s);
   assert.match(paper, /wrong redundant asset index.*does not discard that note/is);
@@ -262,12 +242,11 @@ test('the whitepaper describes competing held-input recovery and the scope of cu
   assert.match(paper, /Worker readiness is distinct from wallet\/session authority/);
   assert.match(paper, /worker recovery does not automatically retry a payment/);
   assert.match(paper, /missing address is\s+not itself evidence of loading/);
-  assert.match(paper, /historical browser run.*is not a new end-to-end validation/is);
-  assert.match(paper, /does not\s+establish a successful user payment or USDC\s+action/);
-  assert.match(paper, /does not renew those dated results or constitute a security audit/);
+  assert.match(paper, /do not establish a complete browser-wallet or USDC\s+lifecycle/);
+  assert.match(paper, /does not renew measurements or constitute a\s+security audit/);
   assert.match(paper, /Detached outcome watchers also capture revocable\s+wallet\/runtime authority/);
   assert.match(paper, /serialize journal classification with canonical synchronization/);
-  assert.match(paper, /September 12.*detached-watcher follow-up.*89 passing/is);
+  assert.match(paper, /human\/device signoff remain\s+separate release evidence/);
   assert.doesNotMatch(paper, /outstanding detached-reconciliation publisher-ownership follow-up/);
 });
 
@@ -301,7 +280,6 @@ test('consensus-affecting protocol review decisions are explicit and linked', ()
     ['0006-association-sets.md', /4,573.*constraints/is, /Rejected/i],
     ['0007-stealth-subsystem.md', /complementary/is, /Accepted/i],
     ['0008-governed-asset-private-pool.md', /append-only.*asset registry/is, /Accepted/i],
-    ['0009-browser-peer-relay.md', /never.*silently.*fall.*back/is, /Superseded by direct-only submission/i],
   ];
   for (const [file, expectedDecision, status] of operationalDecisions) {
     const decision = readSource(`protocol/private-balance/docs/decisions/${file}`);

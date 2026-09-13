@@ -1325,8 +1325,8 @@ export function SettingsPage({
           </section>
 
           <Notice tone="warn" className="mt-4">
-            Passkeys and browser storage belong to this exact web origin. Keep your password and an
-            encrypted backup before moving to {BRAND_ORIGIN}; enrol a new passkey after migration.
+            Passkeys and browser storage belong to this exact web origin. Keep your password and a
+            current encrypted backup; passkeys must be enrolled separately on each origin.
           </Notice>
 
           <p className="px-2 text-[10.5px] leading-relaxed text-neutral-500">

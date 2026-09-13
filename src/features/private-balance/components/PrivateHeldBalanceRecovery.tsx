@@ -109,7 +109,7 @@ export function PrivateHeldBalanceRecovery({ scanWorking, onActivityChange }: {
     <h3 ref={headingRef} tabIndex={-1} id="held-private-recovery-title" className="text-[15px] font-semibold text-white">Recover held balance</h3>
     <Notice tone="warn">
       The original payment can still confirm first. Recovery sends the same held inputs to a fresh private address owned by this wallet, with no private helper fee.
-      The selected wallet account pays the public XLM network fee, and direct submission exposes the recovery proof to your selected RPC. For an old relayed payment, this differs from its original submission route.
+      The selected wallet account pays the public XLM network fee, and direct submission exposes the recovery proof to your selected RPC.
       Inputs stay held until a canonical ledger check resolves the outcome. Cancelling after proof sharing cannot revoke either proof.
     </Notice>
     <p role="status" className="text-[13px] text-neutral-300">

@@ -168,7 +168,7 @@ export function PrivateActivityDetails({
       ) : null}
       <Notice>
         {internal
-          ? 'This step combines notes in your private balance. Historical relayed steps may include a private helper fee; new steps have no helper fee. The amounts stay encrypted.'
+          ? 'This step combines notes in your private balance. The amounts stay encrypted.'
           : kind === 'deposit'
             ? 'Adding funds is public on Stellar; the private balance it creates stays encrypted, and your recovery phrase alone restores it.'
             : kind === 'withdraw'

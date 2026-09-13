@@ -9,7 +9,6 @@ const publicDocs = [
   'dependency-security.md',
   'merchant-mode.md',
   'private-balance-incident-response.md',
-  'private-balance-protocol-review-2026-09-02.md',
   'private-balance-recovery.md',
   'private-balance-support.md',
   'private-balance.md',
