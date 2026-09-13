@@ -7,20 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-09-13
+
 ### Added
 
-- Protocol V2 replaces the Testnet pool with exact 128-bit positions and a private 64-level commitment path.
+- Restore the maintained Private Payments whitepaper, standalone LaTeX source and PDF, with implementation-bound security arguments, reproducible evidence and contemporary related work.
 
 ### Changed
 
-- Default new sessions to Dark appearance while preserving saved Light, Dark and System preferences.
+- Default to Dark appearance when no valid preference is saved, including when browser storage is unavailable; preserve saved System, Light and Dark choices.
+- Replace the development Testnet pool with protocol version 2, using private 64-level membership paths and exact 128-bit positions and archive counters. The new XLM/USDC deployment has fresh state; this remains an unaudited Testnet preview.
 
 ### Fixed
 
-- Permit full-input withdrawals without commitment appends, including at saturation, and batch multi-note withdrawals under explicit fee and confirmation limits.
-- Authenticate independent action and leaf cursors through archive replay and durable caches.
-
 - Improve small negative and error text contrast on raised and tinted dark review panels.
+- Allow full-input private withdrawals without appending commitments, including at tree saturation. Multi-note withdrawals use explicitly reviewed batches of up to two inputs and preserve fee limits and confirmation between steps.
+- Track archive actions independently of commitment count so withdrawals that append no leaves remain recoverable and cache checkpoints stay authenticated.
 
 ## [1.5.0] - 2026-09-12
 

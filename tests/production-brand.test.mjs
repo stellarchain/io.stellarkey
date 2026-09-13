@@ -41,7 +41,7 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   assert.equal(brand.BRAND_NAME, "StellarKey");
   assert.equal(brand.BRAND_ORIGIN, "https://stellarkey.io");
   assert.equal(brand.SOURCE_REPOSITORY_URL, "https://github.com/stellarchain/io.stellarkey");
-  assert.equal(brand.APPLICATION_VERSION, "1.5.0");
+  assert.equal(brand.APPLICATION_VERSION, "1.5.1");
   assert.equal(brand.APPLICATION_VERSION, JSON.parse(read("package.json")).version);
   assert.match(nextConfig.env?.NEXT_PUBLIC_BUILD_COMMIT ?? "", /^[0-9a-f]{40}$/);
   assert.equal(brand.COPYRIGHT_OWNER, "StellarKey");
@@ -80,10 +80,10 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   assert.match(error, /Reload \{BRAND_NAME\}/);
   assert.match(error, /<main[^>]*id="app-content"/);
   assert.equal(packageJson.name, "stellarkey");
-  assert.equal(packageJson.version, "1.5.0");
+  assert.equal(packageJson.version, "1.5.1");
   assert.equal(packageLock.name, "stellarkey");
   assert.equal(packageLock.packages[""].name, "stellarkey");
-  assert.equal(packageLock.packages[""].version, "1.5.0");
+  assert.equal(packageLock.packages[""].version, "1.5.1");
   assert.match(read("src/lib/merchant/defaults.ts"), /appVersion: APPLICATION_VERSION/);
   assert.match(read("README.md"), /^# StellarKey$/m);
   assert.match(read("README.md"), /src="\.\/public\/stellarkey-logo-readme\.svg"/);
@@ -131,7 +131,7 @@ test("branded exports do not change encrypted compatibility contracts", () => {
   assert.match(read("public/sw.js"), /const CACHE_PREFIX = "stellarkey-shell-"/);
 });
 
-test("complete contact addresses are absent from tracked public source", () => {
+test("complete contact addresses are limited to the explicitly attributed manuscript", () => {
   const support = ["support", "stellarkey", "io"].join("@").replace("@io", ".io");
   const security = ["security", "stellarkey", "io"].join("@").replace("@io", ".io");
   const files = [
@@ -141,9 +141,16 @@ test("complete contact addresses are absent from tracked public source", () => {
     new URL("README.md", root),
   ];
 
+  // The manuscript's author explicitly requested a published contact address.
+  const manuscriptContactFiles = new Set([
+    'docs/private-balance.md', 'docs/whitepaper/template.tex',
+    'docs/whitepaper/private-payments.tex', 'docs/whitepaper/README.md',
+  ].map(name => new URL(name, root).pathname));
   for (const file of files) {
     const source = readFileSync(file, "utf8");
-    assert.doesNotMatch(source, new RegExp(support, "i"), `${file.pathname} exposes the support mailbox`);
+    if (!manuscriptContactFiles.has(file.pathname)) {
+      assert.doesNotMatch(source, new RegExp(support, "i"), `${file.pathname} exposes the support mailbox`);
+    }
     assert.doesNotMatch(source, new RegExp(security, "i"), `${file.pathname} exposes the security mailbox`);
   }
 });

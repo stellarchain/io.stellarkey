@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import test from 'node:test';
 
@@ -10,6 +11,20 @@ const formatMicroseconds = value => new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 3,
 }).format(value);
 const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+test('the printable whitepaper stays synchronized with the maintained paper and application release', () => {
+  const paper = read('private-balance.md');
+  const latex = read('whitepaper/private-payments.tex');
+  const version = JSON.parse(readSource('package.json')).version;
+  const digest = createHash('sha256').update(paper).digest('hex');
+  assert.ok(paper.includes(`**Application version:** StellarKey ${version}`));
+  assert.ok(latex.includes(`% Markdown SHA-256: ${digest}`), 'Regenerate the printable whitepaper with docs/whitepaper/build.py');
+  assert.ok(latex.includes(`pdfsubject={StellarKey ${version};`));
+  assert.ok(latex.includes('pdfauthor={DRAFT}'));
+  assert.ok(latex.includes('support@stellarkey.io'));
+  assert.ok(latex.includes('\\begin{thebibliography}{10}'));
+  assert.equal((latex.match(/\\bibitem\{/g) ?? []).length, 10);
+});
 
 test('private balance documentation states exact privacy, recovery, and support boundaries', () => {
   const product = read('private-balance.md');
@@ -64,15 +79,15 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   const circuit = {
     constraints: artifacts.r1csConstraints,
     publicInputs: constants.publicInputs,
-    privateInputs: 128,
-    capacityLeaves: constants.treeArity ** constants.treeDepth,
+    privateInputs: 410,
+    capacityLeaves: BigInt(constants.treeArity) ** BigInt(constants.treeDepth),
   };
   const r1csByteLength = statSync(
     new URL('../protocol/private-balance/circuits/build/action.r1cs', import.meta.url),
   ).size;
 
   assert.equal(artifacts.r1csConstraints, circuit.constraints);
-  assert.equal(constants.treeDepth, 17);
+  assert.equal(constants.treeDepth, 64);
   assert.equal(constants.treeArity, 3);
   assert.equal(constants.publicInputs, circuit.publicInputs);
   assert.deepEqual(noteInputs, ['contextField', 'assetField', 'ownerCommitment', 'value', 'rho']);
@@ -109,7 +124,7 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.match(paper, /zero-value dummy notes/i);
   assert.match(paper, /at least one output is real.*private outputs sum to.*deposited value/is);
   assert.doesNotMatch(paper, /at least one output has the deposited value/i);
-  assert.match(paper, /34-node frontier/i);
+  assert.match(paper, /128-node frontier/i);
   assert.match(paper, /authenticated incremental.*Merkle/is);
   assert.match(
     paper,
@@ -144,14 +159,15 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.match(paper, /confirmed.*durable on-chain.*sync.*rereads.*encrypted.*checkpoint/is);
   assert.match(paper, /interruption before.*sync.*rescan/is);
   assert.doesNotMatch(paper, /stores an encrypted resume cursor/i);
-  assert.match(paper, /no backward-compatible.*migration/i);
+  assert.match(paper, /no\s+backward-compatible.*migration/is);
   assert.match(paper, /Legacy relayed or unknown-route records are\s+reconcile-only/is);
   assert.match(paper, /historical.*fee notes remain readable/is);
   assert.doesNotMatch(paper, /## 13\. Optional browser peer relay/);
   assert.match(paper, /authenticated deployment\s+catalogue.*XLM.*USDC/is);
   assert.match(paper, /one live XLM\/USDC development pool on Testnet/is);
   assert.match(paper, /does not contain a deployment\s+transaction hash.*on-chain executable/is);
-  assert.match(paper, /does not run or record.*powersoftau verify/is);
+  assert.match(paper, /passed.*full `snarkjs powersoftau verify`/is);
+  assert.match(paper, /does not attest participants.*secret erasure/is);
   assert.match(paper, /Testnet reset.*redeploy/is);
   assert.equal(browserEvidence.passed, true);
   assert.ok(paper.includes(browserEvidence.sourceCommit.slice(0, 7)));
@@ -246,10 +262,13 @@ test('the whitepaper describes competing held-input recovery and the scope of cu
   assert.match(paper, /Worker readiness is distinct from wallet\/session authority/);
   assert.match(paper, /worker recovery does not automatically retry a payment/);
   assert.match(paper, /missing address is\s+not itself evidence of loading/);
-  assert.match(paper, /historical browser run is not a new end-to-end validation/);
-  assert.match(paper, /does not establish a successful user payment or USDC\s+action/);
+  assert.match(paper, /historical browser run.*is not a new end-to-end validation/is);
+  assert.match(paper, /does not\s+establish a successful user payment or USDC\s+action/);
   assert.match(paper, /does not renew those dated results or constitute a security audit/);
-  assert.match(paper, /outstanding detached-reconciliation publisher-ownership follow-up/);
+  assert.match(paper, /Detached outcome watchers also capture revocable\s+wallet\/runtime authority/);
+  assert.match(paper, /serialize journal classification with canonical synchronization/);
+  assert.match(paper, /September 12.*detached-watcher follow-up.*89 passing/is);
+  assert.doesNotMatch(paper, /outstanding detached-reconciliation publisher-ownership follow-up/);
 });
 
 test('every local whitepaper source and evidence link resolves to a file', () => {

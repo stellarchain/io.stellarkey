@@ -46,10 +46,18 @@ test('the tracked changelog documents the current release', () => {
   assert.match(source, /semver\.org\/spec\/v2\.0\.0/i);
   assert.deepEqual(
     document.releases.map(({ version }) => version),
-    ['Unreleased', '1.5.0', '1.4.1', '1.4.0', '1.3.0', '1.2.0', '1.1.0', '1.0.0']
+    ['Unreleased', '1.5.1', '1.5.0', '1.4.1', '1.4.0', '1.3.0', '1.2.0', '1.1.0', '1.0.0']
   );
   assert.deepEqual(document.releases[0].categories, []);
-  const release = document.releases[1];
+  const candidate = document.releases[1];
+  assert.equal(candidate.version, '1.5.1');
+  assert.equal(candidate.date, '2026-09-13');
+  assert.deepEqual(candidate.categories.map(({ name }) => name), ['Added', 'Changed', 'Fixed']);
+  const candidateNotes = candidate.categories.flatMap(({ entries }) => entries).join(' ');
+  assert.match(candidateNotes, /Dark appearance/);
+  assert.match(candidateNotes, /tree saturation/);
+  assert.match(candidateNotes, /fresh state/);
+  const release = document.releases[2];
   assert.equal(release.version, '1.5.0');
   assert.equal(release.date, '2026-09-12');
   assert.deepEqual(
@@ -63,7 +71,7 @@ test('the tracked changelog documents the current release', () => {
   assert.match(releaseNotes, /Testnet preview.*not a Mainnet/i);
   assert.match(releaseNotes, /js-yaml 4\.3\.2/i);
   // Keep the published historical-release assertions unchanged in scope.
-  const historicalReleases = document.releases.filter(({ version }) => version !== release.version);
+  const historicalReleases = document.releases.filter(({ version }) => version !== release.version && version !== '1.5.1');
   assert.deepEqual(
     historicalReleases[1].categories.map(({ name }) => name),
     ['Changed', 'Fixed', 'Security']
@@ -107,19 +115,19 @@ test('the tracked changelog documents the current release', () => {
   );
 });
 
-test('all authoritative release markers agree on version 1.5.0', () => {
+test('all authoritative release markers agree on version 1.5.1', () => {
   const packageJson = JSON.parse(read('package.json'));
   const packageLock = JSON.parse(read('package-lock.json'));
   const brand = read('src/lib/brand.ts');
   const security = read('SECURITY.md');
   const readme = read('README.md');
 
-  assert.equal(packageJson.version, '1.5.0');
-  assert.equal(packageLock.version, '1.5.0');
-  assert.equal(packageLock.packages[''].version, '1.5.0');
-  assert.match(brand, /APPLICATION_VERSION = "1\.5\.0"/);
+  assert.equal(packageJson.version, '1.5.1');
+  assert.equal(packageLock.version, '1.5.1');
+  assert.equal(packageLock.packages[''].version, '1.5.1');
+  assert.match(brand, /APPLICATION_VERSION = "1\.5\.1"/);
   assert.match(security, /latest `1\.5\.x` release/i);
-  assert.match(readme, /current release is `1\.5\.0`/i);
+  assert.match(readme, /current release is `1\.5\.1`/i);
   assert.match(readme, /\[changelog\]\(CHANGELOG\.md\)/i);
 });
 
