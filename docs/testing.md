@@ -1,6 +1,6 @@
 # Test strategy
 
-`npm run release:verify` requires a clean worktree and runs `verify:application`, the complete application verification suite. Manual releases also require the separate `verify:private-rust`, `verify:private-circuits` and `verify:private-artifacts` commands; the application command does not run those checks. GitHub Actions workflows are not configured. Normal browser tests own their production static server, install bounded synthetic network fixtures, and fail on unexpected page or console errors. Required private UI and component tests own an isolated development server. None of these automated gates uses a developer-owned browser session or a funded public-testnet account.
+`npm run release:verify` requires a clean worktree and runs `verify:application`, the complete application verification suite. CI and tagged releases also require separate Rust security, circuit analysis and canonical-artifact jobs; the application command does not run those checks. Their local counterparts are `verify:private-rust`, `verify:private-circuits` and `verify:private-artifacts`. Normal browser tests own their production static server, install bounded synthetic network fixtures, and fail on unexpected page or console errors. Required private UI and component tests own an isolated development server. None of these automated gates uses a developer-owned browser session or a funded public-testnet account.
 
 ## Coverage map
 

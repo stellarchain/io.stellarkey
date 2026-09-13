@@ -150,8 +150,11 @@ opens the exact source commit.
 Only a release manifest containing `"sourceTree": "clean"` and
 `"verifiable": true` represents the exact named commit. Checksums,
 `release-files.json`, the SBOM, and GitHub's immutable-release attestation identify
-the published archive and source state. Releases are built and published manually;
-there is no GitHub Actions build-provenance attestation. [CHANGELOG.md](CHANGELOG.md) provides the
+the published archive and source state. The restored release workflow also creates
+an Actions build-provenance attestation for future tagged releases, then deploys
+that exact verified archive to Cloudflare Pages. The manually published `1.0.0`
+release has no Actions build-provenance attestation and is not changed by this
+restoration. [CHANGELOG.md](CHANGELOG.md) provides the
 human-readable release history.
 
 ## Quick start
@@ -198,7 +201,8 @@ The browser matrix covers desktop Chromium, iPhone WebKit, and iPad WebKit.
 The required isolated private-component matrix uses Chromium and iPhone WebKit;
 the nested browser protocol tests run separately within application verification.
 Rust security, circuit Gate A and canonical-artifact checks remain separately required
-through the manual commands in the [release checklist](docs/release-checklist.md).
+in CI and tagged releases; the equivalent local commands remain available in the
+[release checklist](docs/release-checklist.md).
 Physical Trezor, installed-PWA, backup/restore, and mainnet checks remain manual
 because emulation cannot prove device or network behavior.
 

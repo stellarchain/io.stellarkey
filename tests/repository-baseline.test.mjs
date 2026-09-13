@@ -5,10 +5,11 @@ import test from 'node:test';
 const root = new URL('../', import.meta.url);
 const read = path => readFileSync(new URL(path, root), 'utf8');
 
-test('the 1.0.0 baseline has no GitHub workflow or update-job configuration', () => {
+test('release-history cleanup preserves CI and Cloudflare deployment workflows', () => {
   const directory = new URL('.github/workflows/', root);
-  assert.deepEqual(existsSync(directory) ? readdirSync(directory) : [], []);
-  assert.equal(existsSync(new URL('.github/dependabot.yml', root)), false);
+  assert.deepEqual(readdirSync(directory).sort(), ['ci.yml', 'private-gate-b.yml', 'release.yml']);
+  assert.equal(existsSync(new URL('.github/actions/setup-stellar-cli/action.yml', root)), true);
+  assert.equal(existsSync(new URL('.github/dependabot.yml', root)), true);
 });
 
 test('manual release verification retains independent private security gates', () => {

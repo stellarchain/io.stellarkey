@@ -44,7 +44,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   const source = read('CHANGELOG.md');
   const document = parseChangelog(source);
   assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.0.0']);
-  assert.deepEqual(document.releases[0].categories, []);
+  assert.ok(document.releases[0].categories.every(({ name }) => ['Added', 'Changed', 'Deprecated', 'Removed', 'Fixed', 'Security'].includes(name)));
   assert.equal(document.releases[1].date, '2026-09-13');
   const notes = document.releases[1].categories.flatMap(({ entries }) => entries).join(' ');
   assert.match(notes, /stable starting application baseline/);

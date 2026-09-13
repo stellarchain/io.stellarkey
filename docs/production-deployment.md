@@ -2,12 +2,16 @@
 
 This runbook covers the static, backend-free StellarKey application. A production deployment serves one already verified artifact; it never installs dependencies or rebuilds source on the hosting platform.
 
-## 1. Manual release authority and prerequisites
+## 1. Release authority and prerequisites
 
-GitHub Actions workflows are removed. Release verification, publication and any
-production deployment are separate, explicitly authorised maintainer operations.
+The GitHub Actions release workflow verifies a clean protected `v*` tag, publishes
+and attests the exact release artifact, and deploys that archive through the
+protected `production` environment. Ordinary branch pushes run CI, not deployment.
+Tagging a future release requires explicit maintainer release and hosting authority.
 Never rebuild during deployment: publish and deploy the exact release artifact
 from the verified output.
+
+The workflows install the following pinned toolchains. For local verification:
 
 1. Install the locked dependencies with Node 22.22.2 and npm 11.19.0. Review
    dependency lifecycle execution; the repository disables install scripts.
@@ -28,45 +32,48 @@ npm run verify:private-circuits
 npm run verify:private-artifacts
 npm run verify:private-model
 npm run release:verify
-node scripts/create-release-artifact.mjs --tag v1.0.0
+node scripts/create-release-artifact.mjs
 ```
 
 Run the application gate from a clean committed checkout. It owns the production
 build. Create artifacts only from that verified out/ directory. Verify SHA256SUMS
-and every entry in release-files.json before publication. For the current release:
+and every entry in release-files.json before publication. For a future release,
+update the version and changelog, complete the release checklist, create the
+corresponding protected tag, and push it to run `.github/workflows/release.yml`.
+The workflow uploads the verified files and deploys them without rebuilding.
 
-```sh
-cd release-artifacts
-shasum -a 256 --check SHA256SUMS
-cd ..
-git tag -a v1.0.0 -m "StellarKey 1.0.0"
-git push origin v1.0.0
-gh release create v1.0.0 release-artifacts/* --verify-tag --draft --title "StellarKey 1.0.0" --notes-file RELEASE_NOTES.md
-gh release edit v1.0.0 --draft=false --latest
-```
-
-Prepare the notes file outside the tracked source tree and supply its actual path.
-Attach all assets before publishing: immutable release assets cannot be changed
-later. GitHub provides an immutable-release attestation identifying the published
-tag and assets. There is no GitHub Actions build-provenance attestation, and the
-release must not claim one. Local checksums alone do not establish builder identity.
+The existing `v1.0.0` release was published manually. It has GitHub's immutable-release
+attestation but no GitHub Actions build-provenance attestation. Restoring workflows
+does not rerun its tag, attest its build retroactively, or deploy it automatically.
+Do not recreate that tag, overwrite its assets, or bypass the workflow's provenance
+check to deploy it. Any separately authorised manual deployment of `1.0.0` must
+verify its immutable-release attestation, asset checksums, file inventory and
+embedded source commit, and explicitly retain this build-provenance limitation.
 
 ### Repository security settings
 
 Before release, inspect and record the actual repository settings:
 
-- GitHub Actions and CodeQL default setup are disabled; no automatic CI, code-scan,
-  release, deployment or scheduled model workflow runs.
-- Dependabot update jobs are disabled. The dependency graph and Dependabot alerts
-  remain enabled; the local application gate still audits production and development dependencies.
+- GitHub Actions is enabled for CI, tagged releases and scheduled recovery-model
+  checks. Workflow and composite-action dependencies are pinned by commit SHA.
+- CodeQL default setup, the dependency graph, Dependabot alerts and security
+  updates are enabled. Weekly version-update proposals remain review-only;
+  never enable automatic merging as part of release-history cleanup.
 - Secret scanning and push protection remain enabled. Review any bypass separately.
 - The protected main branch uses the sole-maintainer policy: pull requests, resolved
   conversations, zero required external approvals, and no force pushes or deletion.
-  Removed Actions jobs are not required status checks. Review evidence manually.
-- Protected v* tags and immutable releases remain enabled. History reset requires a
-  specifically authorised, temporary rule adjustment, followed by read-back restoration.
-- The existing protected production environment and its secrets are not used by an
-  automatic deployment job. Keep hosting authority separate from release publication.
+  Require the `verify`, `Private Balance Gate A` and `Private Balance Rust Security`
+  checks after workflow restoration. A passing application command does not replace
+  the independent circuit and Rust checks.
+- Protected v* tags and immutable releases remain enabled. Commit-history recovery
+  does not restore retired release tags or modify published `v1.0.0` assets.
+- The existing protected production environment remains restricted to `v*` tags
+  and holds the least-privilege `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
+  secrets. It has no external-reviewer requirement under the sole-maintainer policy.
+
+These are required settings, not proof of their live state. Read back GitHub settings
+and check the intended commit's successful runs before promotion. Delete old workflow
+runs separately from workflow definitions; historical logs are not the deployment setup.
 
 The v1.0.0 release exception in the release checklist records the maintainer's
 explicit deferral of human/device and Trezor redistribution/origin sign-off.
@@ -102,7 +109,7 @@ Validate the apex-to-www or www-to-apex redirect, canonical metadata, `/.well-kn
 
 ### Cloudflare Pages setup
 
-StellarKey uses a **Direct Upload** Pages project named `stellarkey`; do not connect Cloudflare's Git integration because deployment must use the already verified GitHub release archive without rebuilding it. Publishing a GitHub release does not deploy this project.
+StellarKey uses a **Direct Upload** Pages project named `stellarkey`; do not connect Cloudflare's Git integration because deployment must use the already verified GitHub release archive without rebuilding it. The tagged release workflow deploys after publication and provenance verification; creating a release manually does not trigger deployment.
 
 1. In Cloudflare, open **Workers & Pages → Create application → Pages → Direct Upload**. Set the project name to `stellarkey`, upload any current verified `out/` directory for the one-time project creation, and leave the generated `*.pages.dev` address available as a preview origin.
 2. Open **My Profile → API Tokens → Create Token → Custom token**. Grant only **Account → Cloudflare Pages → Edit** for the account that owns the project. Copy the token once and record its rotation owner and expiry.
