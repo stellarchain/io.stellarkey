@@ -5,50 +5,11 @@ import { preparePrivateBalanceActionFlow } from '../src/features/private-balance
 import { prepareReviewedPrivateBalanceTransaction } from '../src/features/private-balance/runtime/action-transaction.ts';
 import { preparePrivateAction } from '../src/features/private-balance/worker/action-builder.ts';
 import * as storage from '../src/features/private-balance/runtime/storage.ts';
-import { broadcastPrivateBalanceAction, signReviewedPrivateBalanceAction } from '../src/features/private-balance/runtime/submission.ts';
+import { broadcastPrivateBalanceAction } from '../src/features/private-balance/runtime/submission.ts';
 import { planPrivateChainedSend, runPrivateChainedSend } from '../src/features/private-balance/runtime/chained-send.ts';
 import { disclosePrivateProof } from '../src/features/private-balance/runtime/proof-disclosure.ts';
 
-const hex = n => n.toString(16).padStart(64, '0');
-const ASSET = 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF';
 
-// Raw historical data, not a new relay action built by the application.
-async function legacyFixture(mode = 'relay', status = 'reviewed') {
-  const context = { accountId: 'synthetic-legacy', networkId: hex(1), realmId: hex(2), poolId: hex(3), deploymentBindingHash: hex(4) };
-  const key = new Uint8Array(32).fill(7);
-  let encrypted = null;
-  let refuseCommit = false;
-  const driver = {
-    read: async () => encrypted,
-    removePrefix: async () => assert.fail('Migration cannot reset private state'),
-    compareAndSet: async (_recordKey, revision, value) => {
-      if (refuseCommit || (encrypted === null ? null : JSON.parse(encrypted).revision) !== revision) return { ok: false, current: encrypted };
-      encrypted = value; return { ok: true, current: value };
-    },
-  };
-  const notes = [1, 2, 3].map(n => ({ id: hex(n), commitment: hex(n), value: '4', leafIndex: BigInt(n),
-    assetContractId: ASSET, assetIndex: 0, status: n < 3 ? 'reserved' : 'unspent', ...(n < 3 ? { reservedAt: 1 } : {}),
-    diversifier: '00000000', ownerCommitment: hex(5), actionIndex: 0n, rho: hex(6), memoHex: '', senderFingerprintHex: '', createdAt: 1 }));
-  const approval = { id: 'legacy-chain', submissionMode: 'relay',
-    contextKey: JSON.stringify([context.accountId, context.networkId, context.realmId, context.poolId, context.deploymentBindingHash, ASSET]),
-    assetContractId: ASSET, assetIndex: 0, draft: { kind: 'transfer', amount: '10', recipientAddress: 'synthetic-final' },
-    steps: 2, perStepMaxFeeStroops: '1000', cumulativeMaxFeeStroops: '2000', expiresAtSeconds: 2_000_000_000,
-    plan: { amountAtomic: '10', perStepMaxPrivateFeeAtomic: '1', cumulativeMaxPrivateFeeAtomic: '2', steps: 2,
-      inputNotes: notes.map(({ id, commitment, value }) => ({ id, commitment, value })),
-      merges: [{ left: `note:${hex(1)}`, right: `note:${hex(2)}`, output: 'merge:0', minimumOutputValue: '7', maximumOutputValue: '8' }],
-      finalInputs: ['merge:0', `note:${hex(3)}`] } };
-  const pending = { id: 'legacy-action', kind: 'transfer', assetContractId: ASSET, assetIndex: 0, status,
-    ...(mode === undefined ? {} : { submissionMode: mode }), proofExposure: 'shared', reservedNoteIds: [hex(1), hex(2)],
-    actionField: hex(10), nullifiers: [hex(30), hex(31)], outputCommitments: [hex(11), hex(32), hex(33)],
-    anchorRoot: hex(34), anchorExpiresAtLedger: 1000, proofHash: hex(35), classicFeeCapStroops: '100', resourceFeeCapStroops: '400',
-    amountStroops: '7', changeValueStroops: '0', transactionHash: hex(36), broadcastAttempts: 0, createdAt: 1, updatedAt: 2,
-    ...(status === 'signed' ? { signedEnvelopeXdr: 'NON_USABLE_SYNTHETIC_ENVELOPE', expiresAtSeconds: 2_000_000_000 } : {}) };
-  if (mode === 'relay') pending.relayChain = { approvalId: approval.id, step: 0, feeAtomic: '1', requestId: hex(21), quoteId: hex(20), sourceAccount: 'synthetic-helper', recipientAddress: 'synthetic-own', recipientOutputCommitment: hex(11), expiresAtSeconds: 1900 };
-  const state = { ...storage.createEmptyPrivateBalanceState(hex(8), 1), notes, pendingActions: [pending], issuedAddressDiversifiers: ['01020304'],
-    relayChainedApproval: { approval, authorized: [], privateFeeAtomic: '0', networkFeeStroops: '0', selfAddresses: ['synthetic-own'] } };
-  await storage.commitPrivateBalanceState(context, key, state, null, driver);
-  return { context, key, state, pending, driver, refuseCommit: () => { refuseCommit = true; } };
-}
 
 const removed = /Peer relaying has been removed/i;
 const root = new URL('../', import.meta.url);
@@ -132,20 +93,6 @@ for (const request of [{ kind: 'transfer', submissionMode: 'relay' }, { kind: 't
   });
 }
 
-for (const mode of ['relay', null]) {
-  test(`direct-only signing rejects a persisted ${mode ?? 'missing'} route before parsing or signing`, async () => {
-    const fixture = await legacyFixture(mode ?? undefined);
-    if (mode === null) {
-      delete fixture.state.pendingActions[0].submissionMode;
-      delete fixture.state.pendingActions[0].relayChain;
-      await storage.commitPrivateBalanceState(fixture.context, fixture.key, { ...fixture.state, revision: 1 }, 0, fixture.driver);
-    }
-    await assert.rejects(signReviewedPrivateBalanceAction({ context: fixture.context, storageKey: fixture.key,
-      expectedRevision: mode === null ? 1 : 0, actionId: fixture.pending.id, now: () => 1000,
-      review: { expiresAt: 2_000_000_000, transactionHash: fixture.pending.transactionHash, envelopeXdr: 'NON_USABLE_SYNTHETIC_ENVELOPE' },
-      sign: async () => assert.fail('Legacy route cannot invoke signing'), storageDriver: fixture.driver }), removed);
-  });
-}
 
 test('direct-only broadcast rejects relay mode before reading storage or networking', async () => {
   await assert.rejects(broadcastPrivateBalanceAction({ submissionMode: 'relay',
@@ -153,24 +100,6 @@ test('direct-only broadcast rejects relay mode before reading storage or network
     rpc: { sendTransaction: async () => assert.fail('No network call') } }), removed);
 });
 
-test('obsolete consent retires atomically without releasing legacy notes, addresses, or pending records', async () => {
-  assert.equal(typeof storage.retireLegacyPrivateRelayConsent, 'function');
-  const fixture = await legacyFixture();
-  const migrated = await storage.retireLegacyPrivateRelayConsent(fixture.context, fixture.key, fixture.driver);
-  assert.equal(migrated.relayChainedApproval, undefined);
-  assert.equal(migrated.revision, 1);
-  for (const field of ['notes', 'pendingActions', 'buildReservations', 'issuedAddressDiversifiers', 'activities']) assert.deepEqual(migrated[field], fixture.state[field]);
-  assert.deepEqual(await storage.loadPrivateBalanceState(fixture.context, fixture.key, fixture.driver), migrated);
-  assert.equal((await storage.retireLegacyPrivateRelayConsent(fixture.context, fixture.key, fixture.driver)).revision, 1);
-});
-
-test('obsolete consent retirement loses no holds when its compare-and-set fails', async () => {
-  assert.equal(typeof storage.retireLegacyPrivateRelayConsent, 'function');
-  const fixture = await legacyFixture();
-  fixture.refuseCommit();
-  await assert.rejects(storage.retireLegacyPrivateRelayConsent(fixture.context, fixture.key, fixture.driver), /changed|conflict/i);
-  assert.deepEqual(await storage.loadPrivateBalanceState(fixture.context, fixture.key, fixture.driver), fixture.state);
-});
 
 test('relay-only networking dependencies are absent from the manifest and installed lock graph', () => {
   const manifest = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));

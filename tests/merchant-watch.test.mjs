@@ -59,7 +59,7 @@ function awaitingStore({ split = false, expiresAt = NOW + 60_000 } = {}) {
     trackStock: true,
     stockOnHand: 2,
   };
-  const order = {
+  const order = { shiftId: null,
     id: "order-1",
     number: 1001,
     reference: "M1001",

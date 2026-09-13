@@ -19,7 +19,9 @@ test('the public explainer matches the shipped V2 circuit and proving artifacts'
     `${number(artifacts.zkeyByteLength)} bytes expanded`,
   ]) assert.ok(page.includes(fact), `Public explainer missing current fact: ${fact}`);
   assert.doesNotMatch(page, /15,114|17 levels|depth-17|129,140,163|9,264,916|154,930/);
-  assert.match(page, /no backward-compatible.*migration/is);
+  assert.match(page, /application baseline/i);
+  assert.match(page, /unsupported records are rejected without being rewritten/i);
+  assert.doesNotMatch(page, /legacy|historical fee notes|retired V1/i);
   assert.match(page, /September 13, 2026.*SDF.*Ankr/is);
   assert.match(page, /not a browser-wallet or USDC test/i);
   assert.match(page, /Mainnet.*refus|refus.*Mainnet/is);

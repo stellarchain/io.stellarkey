@@ -105,7 +105,7 @@ test('verified activity keeps encrypted local recipient and memo metadata only w
   }]), [activity]);
 });
 
-for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spent', 'legacy-held']) test(`sync commits verified progress and reconciles only canonical spends of ${holdCase} inputs`, async () => {
+for (const holdCase of ['pending', 'local-transfer-spent', 'local-withdraw-spent', 'local-held']) test(`sync commits verified progress and reconciles only canonical spends of ${holdCase} inputs`, async () => {
   const contextHash = bytes(1);
   const deploymentBindingHash = bytes(2);
   const manifestHash = hex(bytes(3));
@@ -209,7 +209,7 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
       return {
         notes: [
           note,
-          holdCase === 'legacy-held' ? spentInput : { ...spentInput, status: 'spent', reservedAt: undefined, spentInActionIndex: 0n },
+          holdCase === 'local-held' ? spentInput : { ...spentInput, status: 'spent', reservedAt: undefined, spentInActionIndex: 0n },
           survivingInput,
         ],
         activities: [{
@@ -243,7 +243,7 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
   const initial = {
     ...createEmptyPrivateBalanceState(manifestHash, 1),
     notes: [spentInput, survivingInput],
-    pendingActions: [{
+    pendingActions: [{ outgoingHistoryMode: 'recoverable',proofExposure: 'shared',submissionMode: 'direct',
       id: 'deposit-1',
       kind: 'deposit',
       assetIndex: 0,
@@ -261,7 +261,7 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
       broadcastAttempts: 0,
       createdAt: 1,
       updatedAt: 1,
-    }, {
+    }, { outgoingHistoryMode: 'recoverable',proofExposure: 'shared',submissionMode: 'direct',
       // A foreign action consumed one of the two reserved inputs, so this
       // transfer can never land and its surviving input must be released.
       id: 'foreign-loser',
@@ -285,7 +285,7 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
   };
   if (holdCase !== 'pending') {
     initial.pendingActions.pop();
-    initial.buildReservations = [{ id: 'legacy-build', kind: holdCase === 'legacy-withdraw-spent' ? 'withdraw' : 'transfer',
+    initial.buildReservations = [{ outgoingHistoryMode: 'recoverable',proofExposure: 'local', id: 'local-build', kind: holdCase === 'local-withdraw-spent' ? 'withdraw' : 'transfer',
       assetContractId: ASSET_CONTRACT_ID, reservedNoteIds: [spentInput.id, survivingInput.id], createdAt: 1, updatedAt: 1 }];
   }
   await commitPrivateBalanceState(
@@ -319,11 +319,11 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
   assert.equal(result.checkpoint.lastRecordHash, hex(recordHash));
   assert.equal(result.checkpoint.latestLedger, 500);
   assert.deepEqual(result.pendingActions, []);
-  assert.equal(result.buildReservations.length, holdCase === 'legacy-held' ? 1 : 0);
+  assert.equal(result.buildReservations.length, holdCase === 'local-held' ? 1 : 0);
   const notesById = new Map(result.notes.map(item => [item.id, item]));
-  assert.equal(notesById.get(spentInput.id).status, holdCase === 'legacy-held' ? 'reserved' : 'spent');
-  assert.equal(notesById.get(survivingInput.id).status, holdCase === 'legacy-held' ? 'reserved' : 'unspent');
-  assert.equal(notesById.get(survivingInput.id).reservedAt, holdCase === 'legacy-held' ? 1 : undefined);
+  assert.equal(notesById.get(spentInput.id).status, holdCase === 'local-held' ? 'reserved' : 'spent');
+  assert.equal(notesById.get(survivingInput.id).status, holdCase === 'local-held' ? 'reserved' : 'unspent');
+  assert.equal(notesById.get(survivingInput.id).reservedAt, holdCase === 'local-held' ? 1 : undefined);
   assert.deepEqual(
     await loadPrivateBalanceState(storageContext, storageKey, driver),
     parsePrivateIndices(stringifyPrivateIndices(result), ['leafIndex', 'actionIndex', 'spentInActionIndex', 'lastVerifiedActionIndex', 'lastActionIndex', 'nextLeafIndex']),

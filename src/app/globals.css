@@ -120,7 +120,7 @@
   color: #ff8a80;
 }
 
-/* Legacy foreground utilities share the semantic light-theme contrast values.
+/* Foreground utilities share the semantic light-theme contrast values.
    Filled accents keep their existing fill and explicit on-colour foreground. */
 :root[data-theme="light"] .text-\[\#0A84FF\],
 :root[data-theme="light"] .text-\[\#007AFF\],

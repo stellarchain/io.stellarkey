@@ -41,7 +41,7 @@ function actor(overrides = {}) {
 }
 
 function paidOrder(overrides = {}) {
-  return {
+  return { shiftId: null,
     id: "order-1001",
     number: 1001,
     reference: "MC1001",

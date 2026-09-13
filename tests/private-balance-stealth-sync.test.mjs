@@ -5,7 +5,8 @@ import {
   deriveStealthViewingKeys,
   deriveStealthRecipient,
 } from '@stellarkey/private-balance';
-import { loadStealthDiscoveryCache, createEmptyStealthDiscoveryCache, commitStealthDiscoveryCache } from '../src/features/private-balance/runtime/stealth-cache.ts';
+import { loadStealthDiscoveryCache, createEmptyStealthDiscoveryCache, commitStealthDiscoveryCache, stealthDiscoveryRecordKey } from '../src/features/private-balance/runtime/stealth-cache.ts';
+import { encryptBytesWithKey } from '../src/lib/crypto.ts';
 import { syncStealthAnnouncements } from '../src/features/private-balance/runtime/stealth-sync.ts';
 
 class MemoryDriver {
@@ -34,24 +35,24 @@ const context = {
 };
 const storageKey = bytes(5);
 
-test('legacy birthday cache resumes its cursor without rejecting older retained announcements', async () => {
+test('unsupported birthday-scoped caches are rejected without cursor migration or network reads', async () => {
   const driver = new MemoryDriver();
   const data = await fixture();
-  await commitStealthDiscoveryCache(context, storageKey, {
+  const unsupported = {
     ...createEmptyStealthDiscoveryCache(2_000), lowerBoundCreatedAt: 2_000,
-  }, null, driver);
-  const state = await syncStealthAnnouncements({
+  };
+  const recordKey = stealthDiscoveryRecordKey(context);
+  const raw = JSON.stringify({ kind: 'stellarkey-stealth-discovery-cache', version: 1, revision: 0,
+    crypto: await encryptBytesWithKey(new TextEncoder().encode(JSON.stringify(unsupported)), storageKey,
+      new TextEncoder().encode(`stellarkey-stealth-discovery-cache|1|0|${recordKey}`)) });
+  driver.records.set(recordKey, raw);
+  await assert.rejects(syncStealthAnnouncements({
     context, storageKey, keys: data.keys, network: 'testnet', storageDriver: driver,
     implementation: 'portable', now: () => 3_000,
-    reader: { async readPage(input) {
-      assert.equal(input.lowerBoundCreatedAt, 0);
-      assert.equal(input.cursor, null);
-      return { announcements: [data.firstOwned], nextCursor: data.firstOwned.pagingToken,
-        latestLedger: 100, hasMore: false };
-    } },
-  });
-  assert.equal(state.lowerBoundCreatedAt, 0);
-  assert.equal(state.payments.length, 1);
+    reader: { async readPage() { assert.fail('Unsupported cache must not start a network scan'); } },
+  }), /authenticate|invalid/i);
+  assert.equal(driver.records.get(recordKey), raw);
+  await assert.rejects(commitStealthDiscoveryCache(context, storageKey, unsupported, null, new MemoryDriver()), /invalid/i);
 });
 
 async function fixture() {

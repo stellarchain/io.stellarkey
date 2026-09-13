@@ -69,7 +69,7 @@ function paidOrder(store, { id, at, lines, discountMinor = 0, tipMinor = 0, tend
     discountMinor,
     tipMinor,
   });
-  return {
+  return { shiftId: null,
     id,
     number: Number(id.replace(/\D/g, "")) || 1,
     reference: `SALE${id}`,

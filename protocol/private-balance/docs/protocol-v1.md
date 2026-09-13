@@ -5,10 +5,10 @@
 Shielded Balance V2 is an opt-in note pool implemented by a Soroban contract, a Groth16 circuit,
 and a local browser wallet. One deployment owns one shielded tree and an append-only,
 administrator-curated asset registry. The network, realm, initial asset administrator, guardian,
-circuit hash, verification-key hash, and Poseidon2 parameter hash are deployment-bound. The
-replacement protocol described here has no backward-compatible state migration. Its prior Testnet
-deployments are retired; the authenticated catalogue publishes one development pool with XLM at
-registry index 0 and USDC at index 1, and fresh local state is required.
+circuit hash, verification-key hash, and Poseidon2 parameter hash are deployment-bound.
+StellarKey 1.5.1 is the application baseline. The authenticated catalogue publishes one
+development pool with XLM at registry index 0 and USDC at index 1. Only the current
+deployment-bound state, address, proof and backup encodings are supported.
 
 The committed proving material is development-only. It is suitable for reproducible Testnet work,
 not real value or Mainnet.
@@ -17,8 +17,8 @@ not real value or Mainnet.
 
 - Field: BN254 scalar field `Fr`, modulus
   `21888242871839275222246405745257275088548364400416034343698204186575808495617`.
-- Proof: Groth16 with 11 public inputs. The current `--O2` circuit has 15,114 constraints and fits
-  a `2^14` Powers-of-Tau transcript.
+- Proof: Groth16 with 11 public inputs. The current `--O2` circuit has 40,594 constraints and uses
+  the pinned power-17 Powers-of-Tau transcript.
 - Hash: Poseidon2 over BN254 `Fr`, width 4, rate 3, capacity 1, `x^5` S-box, 8 full rounds, 56
   partial rounds, and the implementation's length IV `N * 2^64`.
 - Encryption: RFC 9180 base mode DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM.
@@ -201,16 +201,13 @@ access pattern; that privacy tradeoff is explicit.
 
 The application prepares transfers, withdrawals, and deposits for direct submission
 from the user's Stellar account through the selected RPC. The public source and
-network fee remain visible. Relay discovery, quotes, helper approval, private fee
-construction, and Waku/Nostr transports have been removed; stale relayed reviews
-are rejected, never silently converted to direct payments.
+network fee remain visible. There is no peer submission or private helper-fee route.
 
-Historical encrypted records retain route and proof-exposure metadata for
-conservative canonical recovery. Legacy relayed or unknown-route actions cannot
-be signed or rebroadcast. Retiring obsolete chain consent never releases held
-inputs. Relay removal did not change its then-current formats. V2 separately changes
-positions, archive encoding, circuit/key material and the exit entrypoint; it is
-a fresh Testnet deployment with no migration.
+Current encrypted records explicitly bind the direct route, proof exposure,
+outgoing-history policy and issued-address history. Unsupported records are
+rejected before signing, network recovery or storage updates. Current exposed
+inputs remain held until canonical reconciliation; a timeout or envelope failure
+does not revoke a reusable spend proof. Encrypted backups use the same validation.
 
 ## 11. Replacement and ceremony rule
 
