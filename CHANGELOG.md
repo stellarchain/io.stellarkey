@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Update React and React DOM to 19.3.0 with matching React type definitions.
+- Update Playwright to 1.63.0 and Node.js type definitions to 22.20.2.
 - Refresh dependency-lock provenance and authenticated Private Payments manifest hashes without changing cryptographic artifacts or the Testnet deployment.
 
 ### Removed

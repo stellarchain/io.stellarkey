@@ -21,7 +21,7 @@
 
 Physical Trezor signing, passkey prompts, and installed iOS behavior remain manual release boundaries because a headless browser cannot prove the hardware or operating-system interaction. Follow [the release checklist](release-checklist.md) for those checks.
 
-The normal active browser matrix uses desktop Chromium, iPhone WebKit, and iPad WebKit. The base configuration also defines Firefox and desktop WebKit projects restricted to opt-in private browser-smoke tests; those live cases are skipped without a fixture and their funded runner remains blocked. The required isolated matrix uses only Chromium and iPhone WebKit. Screenshots, traces, and video are disabled. The structural-only reporter omits wallet text and raw errors. Playwright 1.62.1 can still capture ARIA context on locator failures, so these tests must use isolated non-usable synthetic fixtures with external transaction traffic blocked. `check:fixture-clean` runs before and after the production build; the build also refuses a leftover synthetic component route. Record human VoiceOver/NVDA and physical pinch zoom checks separately from automated accessibility and 200% equivalent reflow checks.
+The normal active browser matrix uses desktop Chromium, iPhone WebKit, and iPad WebKit. The base configuration also defines Firefox and desktop WebKit projects restricted to opt-in private browser-smoke tests; those live cases are skipped without a fixture and their funded runner remains blocked. The required isolated matrix uses only Chromium and iPhone WebKit. Screenshots, traces, and video are disabled. The structural-only reporter omits wallet text and raw errors. Playwright 1.63.0 can still capture ARIA context on locator failures, so these tests must use isolated non-usable synthetic fixtures with external transaction traffic blocked. `check:fixture-clean` runs before and after the production build; the build also refuses a leftover synthetic component route. Record human VoiceOver/NVDA and physical pinch zoom checks separately from automated accessibility and 200% equivalent reflow checks.
 
 Private Balance unit tests cover protocol encodings, circuit/contract parity, archive verification, encrypted storage, isolated workers, exact transaction review, durable submission recovery, bounded restoration, mirrors, public-cache root verification, coordination, and factual privacy copy. Production-hosted builds explicitly permit the exact pinned Testnet development fixture; they must reject altered manifest bytes, unapproved development fixtures, and Mainnet use. Full setup/payment/recovery journeys, archive-expiry drills, ceremony hashes, and physical-device proof memory/background behavior remain release evidence and cannot be replaced by mocked unit tests.
 
@@ -84,7 +84,7 @@ beta, or release approval and becomes disposable whenever testnet resets.
 
 The live runner at `protocol/private-balance/scripts/run-testnet-e2e.mjs` currently
 fails closed before build, fixture mutation, funding, wallet import, or navigation.
-Playwright 1.62.1 has no supported way to suppress locator-failure ARIA snapshots;
+Playwright 1.63.0 has no supported way to suppress locator-failure ARIA snapshots;
 turning off screenshots, traces, and video does not solve that capture path.
 Deleting output afterward is insufficient. This runner cannot currently produce
 new usable-wallet release evidence.
