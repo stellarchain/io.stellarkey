@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Remove internal implementation plans, obsolete task histories and raw UX evidence logs from the release source tree; retain public protocol, security, recovery and contributor documentation.
+
 ### Fixed
 
 - Share compressed proving artifacts between the application and service worker, retaining two cache revisions and retiring redundant expanded-key caches after a verified replacement.

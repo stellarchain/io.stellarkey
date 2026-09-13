@@ -40,5 +40,6 @@ and the Markdown/Python generation toolchain. Review arXiv's processed PDF and
 supply submission metadata before submitting; local compilation does not imply
 arXiv acceptance or successful processing.
 
-Validation scope and release evidence are recorded in
-[the release preparation record](../private-capacity-release-plan.md).
+Validation scope, artifact identities, dated deployment evidence and outstanding
+release requirements are recorded in sections 16 and 17 of
+[the maintained whitepaper](../private-balance.md#16-evaluation-and-reproducibility).
