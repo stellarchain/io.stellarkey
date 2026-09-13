@@ -11,9 +11,12 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 import { assertCleanRelease } from "./assert-clean-release.mjs";
+import { privateArtifactEntries } from "../src/lib/private-balance-artifact-policy.mjs";
+import { encodePointCompressedZkey } from "../protocol/private-balance/scripts/zkey-point-transport.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const defaultRoot = path.resolve(scriptDirectory, "..");
+const maximumPagesAssetBytes = 25 * 1024 * 1024;
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -43,6 +46,46 @@ function relativeFiles(root, directory = root) {
     if (!entry.isFile()) throw new Error(`Unsupported release output entry: ${absolute}`);
     return [path.relative(root, absolute).split(path.sep).join("/")];
   }).sort();
+}
+
+async function deployableFiles(outDir) {
+  const allFiles = relativeFiles(outDir);
+  const basePath = "protocol/private-balance/v1";
+  const rawPath = `${basePath}/circuit.zkey`;
+  const compressedPath = `${rawPath}.pc`;
+  if (allFiles.includes(rawPath)) {
+    const manifest = JSON.parse(readFileSync(path.join(outDir, basePath, "manifest.json"), "utf8"));
+    const { artifacts } = manifest;
+    const transport = artifacts?.zkeyTransport;
+    if (transport?.encoding !== "points-compressed" ||
+        !privateArtifactEntries(manifest, basePath).some(([name]) => name === compressedPath) ||
+        !allFiles.includes(compressedPath)) {
+      throw new Error("Release output requires the supported compressed proving-key transport before omitting the raw key.");
+    }
+    const verifiedKey = (relativePath, byteLength, hash) => {
+      if (!Number.isSafeInteger(byteLength) || byteLength < 1 ||
+          statSync(path.join(outDir, relativePath)).size !== byteLength) {
+        throw new Error(`Release proving-key size mismatch: ${relativePath}`);
+      }
+      const bytes = readFileSync(path.join(outDir, relativePath));
+      if (sha256(bytes) !== hash) throw new Error(`Release proving-key hash mismatch: ${relativePath}`);
+      return bytes;
+    };
+    const raw = verifiedKey(rawPath, artifacts.zkeyByteLength, artifacts.zkeySha256);
+    const compressed = verifiedKey(compressedPath, transport.byteLength, transport.sha256);
+    if (!(await encodePointCompressedZkey(raw)).equals(compressed)) {
+      throw new Error("Release compressed proving-key transport does not encode the canonical raw key.");
+    }
+  }
+  // Preserve canonical source/build files. Only the deployment archive omits
+  // the redundant raw key and Finder metadata; every shipped byte is inventoried.
+  const files = allFiles.filter(file => file !== rawPath && path.posix.basename(file) !== ".DS_Store");
+  for (const file of files) {
+    if (statSync(path.join(outDir, file)).size > maximumPagesAssetBytes) {
+      throw new Error(`Cloudflare Pages assets must not exceed 25 MiB: ${file}`);
+    }
+  }
+  return files;
 }
 
 function writeString(buffer, offset, length, value) {
@@ -121,10 +164,9 @@ export async function createReleaseBundle({
   }
   if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error("A full lowercase release commit is required.");
   if (!statSync(outDir).isDirectory()) throw new Error(`Static output directory is missing: ${outDir}`);
-  mkdirSync(artifactsDir, { recursive: true });
-
-  const files = relativeFiles(outDir);
+  const files = await deployableFiles(outDir);
   if (!files.includes("index.html")) throw new Error("Static release output is missing index.html.");
+  mkdirSync(artifactsDir, { recursive: true });
   const archiveName = `stellarkey-${version}.tar.gz`;
   const sbomName = `stellarkey-${version}.cdx.json`;
   const archivePath = path.join(artifactsDir, archiveName);
