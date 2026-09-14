@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-09-14
+
+### Added
+
+- Offer network-specific preferred assets in Swap before they are held, and create a missing receiving trustline in the same signed swap transaction with its additional XLM reserve and network fee shown before confirmation.
+- Create a fresh shielded address for each new receive request after explicit private intent, retain the request through tab changes, and offer warned saved-address reuse when new issuance is unavailable.
+- Show local-only deposit precision and withdrawal amount/timing advice in forms and reviews without changing amounts, delaying submission, or uploading history.
+
+### Fixed
+
+- Use opaque, theme-matched modal surfaces so underlying page content cannot show through mobile sheets, dialogs or confirmation alerts.
+- Keep the Send Payment modal open when “Use Regular Send” switches from Private to Public, carrying over the recipient without exposing the private memo or amount.
+- Explain on-chain correlation from reused shielded addresses, keep the public submitter disclosure visible, and display the runtime's actual protocol version in receive details.
+
+### Changed
+
+- Synchronize the application, release documentation and whitepaper at 1.0.3, refreshing versioned-lockfile manifest provenance without changing dependencies, cryptographic artifacts or the Testnet deployment.
+
+### Security
+
+- Record the maintainer's explicit continuation of the physical-device, VoiceOver/NVDA, passkey, Trezor and redistribution/origin sign-off deferral for 1.0.3. These checks are unperformed or unconfirmed, not passed; this exception grants no third-party license rights and does not approve real-value Private Payments.
+
 ## [1.0.2] - 2026-09-14
 
 ### Fixed

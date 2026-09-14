@@ -77,6 +77,144 @@ async function openReview(page: Page, kind: 'send' | 'withdrawal') {
   await stableShell(page);
 }
 
+async function observeSendContinuity(page: Page) {
+  return page.evaluateHandle(async () => {
+    const shell = document.querySelector<HTMLElement>('[data-modal-shell]')!;
+    const backdrop = document.querySelector<HTMLElement>('[data-modal-backdrop]')!;
+    const app = document.querySelector<HTMLElement>('[data-app-surface]')!;
+    const entrances = [...shell.getAnimations(), ...backdrop.getAnimations()];
+    await Promise.all(entrances.map(animation => animation.finished.catch(() => {})));
+    const baseline = new Map(entrances.map(animation => [animation, animation.startTime]));
+    const state = { interruptions: 0, animations: 0, stop: () => {} };
+    const onStart = (event: AnimationEvent) => {
+      if (event.target !== shell && event.target !== backdrop) return;
+      const animations = (event.target as HTMLElement).getAnimations();
+      // Ignore only late delivery of an unchanged, completed entrance.
+      if (animations.length && animations.every(animation => baseline.has(animation)
+        && animation.startTime === baseline.get(animation) && animation.playState === 'finished' && !animation.pending)) return;
+      state.animations++;
+    };
+    const observer = new MutationObserver(records => {
+      for (const record of records) {
+        if (record.target === document.body && record.attributeName === 'style'
+          && !/overflow:\s*hidden/.test(record.oldValue ?? '')) state.interruptions++;
+        if (record.target === app && record.attributeName === 'inert' && record.oldValue === null) state.interruptions++;
+        if (record.target === backdrop && record.attributeName === 'data-overlay-state'
+          && backdrop.dataset.overlayState !== 'open') state.interruptions++;
+      }
+      if (!shell.isConnected || !backdrop.isConnected || !app.closest('[inert]')
+        || document.body.style.overflow !== 'hidden') state.interruptions++;
+    });
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true,
+      attributeOldValue: true, attributeFilter: ['style', 'inert', 'data-overlay-state'] });
+    shell.addEventListener('animationstart', onStart);
+    backdrop.addEventListener('animationstart', onStart);
+    state.stop = () => {
+      observer.disconnect();
+      shell.removeEventListener('animationstart', onStart);
+      backdrop.removeEventListener('animationstart', onStart);
+    };
+    return state;
+  });
+}
+
+for (const reducedMotion of ['reduce', 'no-preference'] as const) {
+  for (const activation of ['pointer', 'Enter', 'Space'] as const) {
+    test(`regular send handoff retains the shared modal (${reducedMotion}, ${activation})`, async ({ page }) => {
+      await page.emulateMedia({ reducedMotion });
+      await page.getByRole('button', { name: 'Open shared send', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Send Payment', exact: true });
+      await expect(dialog.getByLabel('Private Recipient', { exact: true })).toBeVisible();
+      await markShell(page);
+      const continuity = await observeSendContinuity(page);
+      // Fixed non-usable fixtures only; no wallet import, signing or network.
+      const recipient = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
+      await dialog.getByLabel('Private Recipient', { exact: true }).fill(recipient);
+      await dialog.getByLabel('Amount', { exact: true }).fill('1');
+      await dialog.getByLabel('Private Memo (Optional)', { exact: true }).fill('synthetic-private-only');
+      const regular = dialog.getByRole('button', { name: 'Use Regular Send', exact: true });
+      if (activation === 'pointer') await regular.click();
+      else { await regular.focus(); await regular.press(activation === 'Space' ? ' ' : activation); }
+      const publicRecipient = dialog.getByLabel('Recipient Address or Federation', { exact: true });
+      await expect(publicRecipient).toBeVisible();
+      await expect(publicRecipient).toHaveValue(recipient);
+      await expect(publicRecipient).toBeFocused();
+      await expect(dialog.getByRole('tab', { name: 'Public', exact: true })).toHaveAttribute('aria-selected', 'true');
+      await expect(dialog.getByLabel('Memo (Optional)', { exact: true })).toHaveValue('');
+      await expect(dialog.getByLabel('Amount', { exact: true })).toHaveValue('');
+      await expect(page.getByTestId('public-send-requests')).toHaveText('0');
+      await stableShell(page);
+      await page.keyboard.press('Tab');
+      await stableShell(page);
+      for (let index = 0; index < 3; index++) {
+        await dialog.getByRole('tab', { name: 'Private', exact: true }).click();
+        await dialog.getByRole('tab', { name: 'Public', exact: true }).click();
+      }
+      await stableShell(page);
+      expect(await continuity.evaluate(({ interruptions, animations }) => ({ interruptions, animations })))
+        .toEqual({ interruptions: 0, animations: 0 });
+      await continuity.evaluate(state => state.stop());
+      await continuity.dispose();
+      const violations = await new AxeBuilder({ page }).include('[data-modal-backdrop]')
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
+      expect(violations.violations.map(({ id, impact }) => ({ id, impact }))).toEqual([]);
+      await publicRecipient.fill('');
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Open shared send', exact: true })).toBeFocused();
+      await expect.poll(() => page.evaluate(() => document.body.style.overflow !== 'hidden'
+        && !document.querySelector('main')?.closest('[inert]'))).toBe(true);
+      await page.getByRole('button', { name: 'Open shared send', exact: true }).click();
+      await dialog.getByRole('tab', { name: 'Public', exact: true }).click();
+      await expect(publicRecipient).toHaveValue('');
+    });
+  }
+}
+
+test('regular send handoff ignores late private validation across switching and closing', async ({ page }) => {
+  await page.getByRole('button', { name: 'Delay recipient validation', exact: true }).click();
+  await page.getByRole('button', { name: 'Open shared send', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Send Payment', exact: true });
+  const recipient = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
+  await expect(dialog.getByLabel('Private Recipient', { exact: true })).toBeVisible();
+  await markShell(page);
+  for (const closeBeforeCompletion of [false, true]) {
+    await dialog.getByLabel('Private Recipient', { exact: true }).fill('tskpay_synthetic-delayed-only');
+    await dialog.getByLabel('Private Recipient', { exact: true }).fill(recipient);
+    await dialog.getByRole('button', { name: 'Use Regular Send', exact: true }).click();
+    await expect(dialog.getByLabel('Recipient Address or Federation', { exact: true })).toHaveValue(recipient);
+    if (closeBeforeCompletion) {
+      await dialog.getByLabel('Recipient Address or Federation', { exact: true }).fill('');
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+    }
+    await deliver(page, 'Finish recipient validation');
+    if (closeBeforeCompletion) await expect(page.getByRole('dialog')).toHaveCount(0);
+    else {
+      await stableShell(page);
+      await expect(dialog.getByRole('tab', { name: 'Public', exact: true })).toHaveAttribute('aria-selected', 'true');
+      await dialog.getByRole('tab', { name: 'Private', exact: true }).click();
+      await expect(dialog.getByLabel('Private Recipient', { exact: true })).toHaveValue('');
+      await expect(dialog.getByText('Recipient verified,', { exact: true })).toHaveCount(0);
+    }
+  }
+  await expect(page.getByTestId('public-send-requests')).toHaveText('0');
+  await expect(page.getByTestId('recipient-preparations')).toHaveText('0');
+  await expect(page.getByTestId('direct-submissions')).toHaveText('0');
+});
+
+test('regular send handoff from a standalone private sheet still opens public Send', async ({ page }) => {
+  await page.getByRole('button', { name: 'Open synthetic private send', exact: true }).click();
+  const recipient = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
+  await page.getByLabel('Private Recipient', { exact: true }).fill(recipient);
+  await page.getByRole('button', { name: 'Use Regular Send', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Send Payment', exact: true });
+  await expect(dialog.getByLabel('Recipient Address or Federation', { exact: true })).toHaveValue(recipient);
+  await expect(dialog.getByRole('tab', { name: 'Public', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('dialog')).toHaveCount(1);
+  await expect(page.getByTestId('public-send-requests')).toHaveText('1');
+});
+
 for (const kind of ['send', 'withdrawal'] as const) {
   test(`direct ${kind} ignores old relay preferences, preserves consent and does not claim ledger confirmation`, async ({ page }) => {
     await page.getByRole('button', { name: 'Use direct preparation', exact: true }).click();

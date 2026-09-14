@@ -62,11 +62,15 @@ test('a pasted public Stellar address gets a one-tap prefilled handoff to regula
 
   assert.match(source, /isValidPublicAddress/);
   assert.match(source, /a public Stellar address — continue in the regular Send\?/);
-  // One tap: the pasted address is handed to the public send, prefilled, and
-  // the private flow closes.
+  // Embedded sends delegate mode selection to the persistent shell. Only a
+  // standalone flow dispatches the dashboard handoff and closes its own shell.
+  assert.match(source, /if \(onPublicSend\) \{[\s\S]*?onPublicSend\(trimmedRecipient\);\s*return;/);
   assert.match(source, /requestPublicSend\(trimmedRecipient\)/);
   assert.match(source, /Use Regular Send/);
   assert.match(source, /requestPublicSend\(trimmedRecipient\);[\s\S]{0,120}?flow\.close\(\)/);
+  const owner = read('src/components/SendModal.tsx');
+  assert.match(owner, /onPublicSend=\{openPublicSend\}/);
+  assert.match(owner, /setPublicPrefill\(\{ destination \}\);\s*changeMode\("public"\)/);
 });
 
 test('recent private recipients render as fingerprint chips with identity marks', () => {

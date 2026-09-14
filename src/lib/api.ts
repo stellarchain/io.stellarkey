@@ -134,9 +134,9 @@ const BASE_RESERVE_CACHE_MS = 5 * 60_000;
 const baseReserveCache = new Map<NetworkKey, { value: string; at: number }>();
 const baseReserveRequests = new Map<NetworkKey, Promise<string>>();
 
-export async function fetchCurrentBaseReserve(network: NetworkKey): Promise<string> {
+export async function fetchCurrentBaseReserve(network: NetworkKey, fresh = false): Promise<string> {
   const cached = baseReserveCache.get(network);
-  if (cached && Date.now() - cached.at < BASE_RESERVE_CACHE_MS) return cached.value;
+  if (!fresh && cached && Date.now() - cached.at < BASE_RESERVE_CACHE_MS) return cached.value;
   const pending = baseReserveRequests.get(network);
   if (pending) return pending;
 

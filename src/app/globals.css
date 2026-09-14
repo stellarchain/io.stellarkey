@@ -70,7 +70,7 @@
   --color-primary-fill: #006edb;
   --color-primary-fill-hover: #005fbe;
   --color-scrim: 248, 248, 250;
-  /* Opaque equivalent of --color-elevated over the dialog dim; pinned footers paint with it. */
+  /* Opaque modal surface shared by sheets, cards, alerts and pinned footers. */
   --color-panel-solid: 248, 248, 250;
   --shadow-strong: rgba(0, 0, 0, 0.16);
   --shadow-medium: rgba(0, 0, 0, 0.1);
@@ -189,7 +189,7 @@
   --color-primary-fill: #006edb;
   --color-primary-fill-hover: #005fbe;
   --color-scrim: 18, 18, 20;
-  /* Opaque equivalent of --color-elevated over the dialog dim; pinned footers paint with it. */
+  /* Opaque modal surface shared by sheets, cards, alerts and pinned footers. */
   --color-panel-solid: 32, 32, 33;
   --color-oncolor: #ffffff;
   --shadow-strong: rgba(0, 0, 0, 0.9);

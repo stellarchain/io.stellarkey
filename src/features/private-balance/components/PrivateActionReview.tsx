@@ -17,6 +17,7 @@ import type {
 } from '../runtime/action-flow';
 import type { PrivateChainedSendProgress } from '../runtime/chained-send';
 import { PrivateActionError, PrivateReviewMismatchError } from './PrivateActionError';
+import { PrivatePrivacyAdvisory } from './PrivatePrivacyAdvisory';
 import { privateReviewBalanceSimulation } from './PrivateReviewSimulation';
 import type { PrivateProofDisclosure } from '../runtime/proof-disclosure';
 import { assertDirectPrivateSubmission } from '../runtime/direct-submission';
@@ -371,6 +372,7 @@ export function PrivateActionReview({
         </div>
       ) : null}
 
+      {draft.purpose !== 'recovery' && draft.kind !== 'transfer' ? <PrivatePrivacyAdvisory kind={draft.kind} amount={amountStroops} /> : null}
       <Notice tone="info" compact>
         {draft.feePayer
           ? 'Your current account remains the public transaction source. The selected fee account pays the network fee; both accounts are visible on Stellar.'

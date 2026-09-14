@@ -87,7 +87,8 @@ test('native private receive offers reusable and shielded addresses in the same 
   assert.match(receive, /asset\?\.kind === 'native'/);
   assert.match(receive, /Fresh one-time account per payment/);
   assert.match(receive, /Sender, amount, and timing stay public/);
-  assert.match(receive, /Amount and counterparty are encrypted/);
+  assert.match(receive, /Amount and recipient are encrypted/);
+  assert.match(receive, /The submitting account remains public/);
   assert.match(receive, /stealthReceivePayload/);
   assert.match(receive, /stealthAddressFingerprint/);
 });
@@ -97,10 +98,11 @@ test('protocol facts and the reuse caveat live in a collapsed disclosure', () =>
 
   assert.match(receive, /aria-expanded=\{aboutOpen\}/);
   assert.match(receive, /About this address/);
-  assert.match(receive, /Protocol V1/);
+  assert.match(receive, /Protocol V\$\{protocolVersion\}/);
   assert.match(receive, /Network/);
   assert.match(receive, /asset\?\.code/);
-  assert.match(receive, /people you share it with can\s+recognize the same address/i);
+  assert.match(receive, /People you share it with can also recognize the same address/);
+  assert.match(receive, /link payments on-chain through its public diversifier/);
 });
 
 test('receive rotates to a fresh address in place while old addresses stay valid', () => {

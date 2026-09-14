@@ -54,6 +54,7 @@ function accountBody(publicKey: string, nativeBalance = "1000.0000000") {
         balance: "1000.0000000",
         selling_liabilities: "0.0000000",
         limit: "1000000.0000000",
+        is_authorized: true,
       },
     ],
   };

@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 declare global {
   interface Window {
@@ -51,6 +51,58 @@ async function safetySheet(page: Page) {
       .flatMap(element => element.getAnimations().map(animation => animation.finished.catch(() => {}))));
   });
   return dialog;
+}
+
+async function expectOpaqueModal(dialog: Locator, surface: string) {
+  await expect(dialog).toBeVisible();
+  await dialog.evaluate(async node => {
+    const shell = node.querySelector<HTMLElement>('[data-modal-shell]')!;
+    await Promise.all([node, shell].flatMap(element => element.getAnimations()
+      .map(animation => animation.finished.catch(() => {}))));
+  });
+  const shell = dialog.locator('[data-modal-shell]');
+  // A solid paint layer must hide the underlying page even without backdrop blur.
+  // Only structural/computed-style diagnostics: no screenshots or wallet content.
+  await expect(shell).toHaveCSS('background-color', surface);
+  await expect(shell).toHaveCSS('opacity', '1');
+  await expect(dialog).toHaveCSS('opacity', '1');
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  for (const width of [390, 900]) {
+    for (const motion of ['reduce', 'no-preference'] as const) {
+      test(`modal opacity: ${theme} ${width}px ${motion} keeps page content behind solid shells`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 844 });
+        await page.emulateMedia({ colorScheme: theme, reducedMotion: motion });
+        await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+        const surface = theme === 'dark' ? 'rgb(32, 32, 33)' : 'rgb(248, 248, 250)';
+        const parent = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
+        await expect(parent).toHaveAttribute('data-presentation', width < 640 ? 'sheet' : 'card');
+        await expectOpaqueModal(parent, surface);
+
+        await page.getByRole('button', { name: 'Open synthetic sheet safety', exact: true }).click();
+        const sheet = page.getByRole('dialog', { name: 'Synthetic sheet safety', exact: true });
+        await expect(sheet).toHaveAttribute('data-presentation', 'sheet');
+        await expectOpaqueModal(sheet, surface);
+        await expect.poll(() => parent.evaluate(node => (node as HTMLElement).inert)).toBe(true);
+
+        await sheet.getByRole('button', { name: 'Open synthetic confirmation', exact: true }).click();
+        const alert = page.getByRole('dialog', { name: 'Synthetic confirmation', exact: true });
+        await expect(alert).toHaveAttribute('data-presentation', 'alert');
+        await expectOpaqueModal(alert, surface);
+        await expect.poll(() => sheet.evaluate(node => (node as HTMLElement).inert)).toBe(true);
+        await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+
+        await alert.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await expect(alert).toHaveCount(0);
+        await expectOpaqueModal(sheet, surface);
+        await expect(sheet.getByRole('button', { name: 'Open synthetic confirmation', exact: true })).toBeFocused();
+        await sheet.getByRole('button', { name: 'Close', exact: true }).click();
+        await expect(sheet).toHaveCount(0);
+        await expectOpaqueModal(parent, surface);
+      });
+    }
+  }
 }
 
 for (const theme of ['dark', 'light']) for (const width of [320, 900]) {

@@ -195,7 +195,11 @@ test('the whitepaper distinguishes issued receive addresses, dummy lanes, and re
   assert.match(paper, /First setup generates a random non-zero receive diversifier/);
   assert.match(paper, /preserves an existing supported receive address exactly/);
   assert.match(paper, /rejects an unsupported default identity/);
-  assert.match(paper, /Only explicit rotation generates a\s+replacement/);
+  assert.match(paper, /Each new receive opening creates a fresh\s+address after the user explicitly selects Private/);
+  assert.match(paper, /Focusing a tab alone is not\s+issuance intent/);
+  assert.match(paper, /warned, explicit reuse of the saved address rather than silently\s+sharing it/);
+  assert.match(paper, /local-only amount and timing advice/);
+  assert.match(paper, /do not upload history,\s+query additional RPC data, change amounts, or delay submission/);
   assert.match(paper, /records each issued diversifier.*before publishing/is);
   assert.match(paper, /Dummy lanes\s+share the same clear action diversifier/);
   assert.match(paper, /Scalar-field elements.*below `Fr`.*proof coordinates.*`Fq`/s);

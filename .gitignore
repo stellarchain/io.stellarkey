@@ -27,6 +27,9 @@
 # production
 /build
 
+# generated image assets
+/output/imagegen/
+
 # misc
 .DS_Store
 *.pem

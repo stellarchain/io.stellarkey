@@ -15,7 +15,7 @@ import { IconCheck, IconChevronDown, IconClose, IconCopy } from "./icons";
 
 /** Shared panel chrome for modal surfaces (Modal, CommandPalette). */
 export const MODAL_PANEL_CLASS =
-  "rounded-[28px] border border-white/[0.12] bg-[var(--color-elevated)] shadow-[0_25px_70px_-15px_var(--shadow-strong)] backdrop-blur-2xl";
+  "rounded-[28px] border border-white/[0.12] bg-[rgb(var(--color-panel-solid))] shadow-[0_25px_70px_-15px_var(--shadow-strong)] backdrop-blur-2xl";
 
 /** Shared chrome for floating popover surfaces (Select, Dropdown). */
 const POPOVER_PANEL_CLASS =
@@ -954,11 +954,11 @@ export function Modal({
         ? "modal-overlay fixed inset-0 z-50 flex items-stretch justify-center bg-[var(--color-bg)] p-0"
         : `modal-overlay app-safe-overlay fixed inset-0 z-50 flex ${anchor === "top" ? "items-start pt-[15vh]" : "items-center"} justify-center bg-[var(--scrim-dialog)] p-4 backdrop-blur-md`;
   const panelClass = isSheet
-    ? `modal-sheet relative max-h-[calc(100dvh-var(--app-safe-area-top)-1.5rem)] w-full min-w-0 overflow-y-auto scrollbar-none overscroll-contain rounded-t-[28px] border border-b-0 border-white/[0.12] bg-[var(--color-elevated)] pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_50px_-20px_var(--shadow-strong)] ${
+    ? `modal-sheet relative max-h-[calc(100dvh-var(--app-safe-area-top)-1.5rem)] w-full min-w-0 overflow-y-auto scrollbar-none overscroll-contain rounded-t-[28px] border border-b-0 border-white/[0.12] bg-[rgb(var(--color-panel-solid))] pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_50px_-20px_var(--shadow-strong)] ${
         resolvedWide ? "max-w-2xl" : "max-w-xl"
       }`
     : isAlert
-      ? "modal-alert relative max-h-full w-full min-w-0 max-w-[270px] sm:max-w-[300px] overflow-y-auto scrollbar-none overscroll-contain rounded-[26px] border border-white/[0.12] bg-[var(--color-elevated)] shadow-[0_25px_70px_-15px_var(--shadow-strong)] backdrop-blur-2xl"
+      ? "modal-alert relative max-h-full w-full min-w-0 max-w-[270px] sm:max-w-[300px] overflow-y-auto scrollbar-none overscroll-contain rounded-[26px] border border-white/[0.12] bg-[rgb(var(--color-panel-solid))] shadow-[0_25px_70px_-15px_var(--shadow-strong)] backdrop-blur-2xl"
       : isFullscreen
         ? "modal-fullscreen relative h-full w-full min-w-0 max-w-none overflow-y-auto scrollbar-none overscroll-contain bg-[var(--color-bg)]"
         : `modal-dialog relative max-h-[90dvh] w-full min-w-0 overflow-y-auto md:max-h-[calc(100dvh-10rem)] scrollbar-none overscroll-contain ${MODAL_PANEL_CLASS} ${

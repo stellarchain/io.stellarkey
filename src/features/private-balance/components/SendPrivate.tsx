@@ -53,6 +53,8 @@ const SEND_DEFAULT_HEADER: PrivateFlowHeader = {
 interface SendPrivateFlowProps {
   onClose(): void;
   prefill?: { recipient?: string };
+  /** Switch an owning Send shell to Public without closing the overlay. */
+  onPublicSend?: (destination: string) => void;
   /** Fires when a confirmed send reaches the network (broadcast/ambiguous). */
   onSubmitted?: () => void;
   modeControl?: ReactNode;
@@ -115,6 +117,7 @@ export function SendPrivate({
         <SendPrivateFlow
           onClose={onClose}
           prefill={flowProps.prefill}
+          onPublicSend={flowProps.onPublicSend}
           onSubmitted={flowProps.onSubmitted}
           modeControl={flowProps.modeControl}
           showAssetSelector={flowProps.showAssetSelector}
@@ -131,6 +134,7 @@ export function SendPrivate({
 function SendPrivateFlow({
   onClose,
   prefill,
+  onPublicSend,
   onSubmitted,
   modeControl,
   showAssetSelector = false,
@@ -463,9 +467,16 @@ function SendPrivateFlow({
                     type="button"
                     variant="secondary"
                     className="w-full"
-                    onClick={() => {
-                      // One tap: hand the pasted address to the public send,
-                      // prefilled, and close this flow.
+                    onClick={event => {
+                      if (onPublicSend) {
+                        // WebKit does not focus tapped buttons by default. Give
+                        // this activation focus ownership before its panel leaves.
+                        event.currentTarget.focus({ preventScroll: true });
+                        onPublicSend(trimmedRecipient);
+                        return;
+                      }
+                      // Standalone flows hand off to the dashboard; an embedded
+                      // flow switches its owner's tab without dismissing it.
                       requestPublicSend(trimmedRecipient);
                       flow.close();
                     }}

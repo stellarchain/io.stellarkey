@@ -9,7 +9,7 @@ import {
   IconShare,
   IconShieldStellar,
 } from '@/components/icons';
-import { Button, CopyButton, Modal, ModalBody, ModalHeader, Select, Spinner } from '@/components/ui';
+import { Button, CopyButton, Modal, ModalBody, ModalHeader, Notice, Select, Spinner } from '@/components/ui';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { useWalletIdentity } from '@/hooks/useWallet';
 import { getSessionSnapshot, subscribeSessionChanges } from '@/lib/vault';
@@ -24,6 +24,7 @@ import {
   type StealthAddressPrefix,
 } from '../runtime/receive';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
+import { usePrivateReceiveRequest, type PrivateReceiveRequest } from './usePrivateReceiveRequest';
 
 /**
  * The receive body without the Modal wrapper, so it can embed inside other
@@ -34,9 +35,13 @@ import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 export function PrivateReceiveContent({
   onBusyChange,
   assetSelector,
+  request,
+  onRequestChange,
 }: {
   onBusyChange?(busy: boolean): void;
   assetSelector?: ReactNode;
+  request?: PrivateReceiveRequest | null;
+  onRequestChange?(request: PrivateReceiveRequest): void;
 } = {}) {
   const {
     privateAddress,
@@ -47,7 +52,7 @@ export function PrivateReceiveContent({
     isLeader,
     rotatePrivateAddress,
     phase, error, stealthError, stealthSyncing, refreshSync, refreshStealth,
-    takeoverLeadership, publicAddress, deployment, receiveSessionId,
+    takeoverLeadership, publicAddress, deployment, receiveSessionId, protocolVersion,
   } = usePrivateBalanceRuntimeData();
   const { activeAccount, network } = useWalletIdentity();
   const session = useSyncExternalStore(subscribeSessionChanges, getSessionSnapshot, () => null);
@@ -65,8 +70,16 @@ export function PrivateReceiveContent({
   const [receiveKind, setReceiveKind] = useState<'reusable' | 'shielded'>('shielded');
   const nativeAsset = asset?.kind === 'native';
   const reusable = nativeAsset && receiveKind === 'reusable';
-  const address = locked ? '' : reusable ? (stealthMetaAddress ?? '') : (privateAddress ?? '');
   const prefix: PrivateAddressPrefix = networkLabel === 'Mainnet' ? 'skpay_' : 'tskpay_';
+  // One request spans asset/tab changes in this opening. Asset selection does
+  // not rotate a multi-asset pool address; account/session/deployment changes do.
+  const requestScope = JSON.stringify([activeAccount?.id, network, session, publicAddress,
+    deployment.poolContractId, deployment.manifestHash]);
+  const freshRequest = usePrivateReceiveRequest({ request, onRequestChange, scope: requestScope,
+    enabled: configured && !locked && !reusable && !!privateAddress,
+    canCreate: isLeader && phase === 'current', savedAddress: privateAddress,
+    prefix, issue: rotatePrivateAddress });
+  const address = locked ? '' : reusable ? (stealthMetaAddress ?? '') : (freshRequest.address ?? '');
   const stealthPrefix: StealthAddressPrefix = networkLabel === 'Mainnet' ? 'ssm' : 'tsm';
   const encoded = useMemo(
     () => {
@@ -101,7 +114,7 @@ export function PrivateReceiveContent({
   const [expandedAddressScope, setExpandedAddressScope] = useState<object | null>(null);
   const showFullAddress = expandedAddressScope === scope;
   const [activity, setActivity] = useState<{ scope: object; kind: 'rotate' | 'retry' } | null>(null);
-  const rotating = activity?.scope === scope && activity.kind === 'rotate';
+  const rotating = freshRequest.creating || (activity?.scope === scope && activity.kind === 'rotate');
   const retrying = activity?.scope === scope && activity.kind === 'retry';
   const [failure, setFailure] = useState<{ scope: object; kind: string; cause: unknown } | null>(null);
   // Forget old private output as soon as its owner/input changes, including
@@ -111,7 +124,7 @@ export function PrivateReceiveContent({
   if (failure && failure.scope !== scope) setFailure(null);
   if (expandedAddressScope && expandedAddressScope !== scope) setExpandedAddressScope(null);
   const localError = failure?.scope === scope && failure.kind === receiveKind ? failure.cause : null;
-  const receiveError = encoded.error || localError || (reusable ? stealthError || error : error);
+  const receiveError = encoded.error || localError || (!reusable && freshRequest.error) || (reusable ? stealthError || error : error);
   const state = privateReceiveState({ configured, hasAddress: !!payload, isLeader, phase, reusable, stealthSyncing, hasError: !!receiveError, sessionCurrent });
   const statusRef = useRef<HTMLDivElement | null>(null);
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
@@ -142,7 +155,7 @@ export function PrivateReceiveContent({
       <p className="px-1 text-center text-[12px] leading-relaxed text-neutral-400">
         {reusable
           ? 'Fresh one-time account per payment. Sender, amount, and timing stay public.'
-          : 'Amount and counterparty are encrypted inside Private Balance.'}
+          : 'Amount and recipient are encrypted inside Private Balance. The submitting account remains public.'}
       </p>
     </div>
   );
@@ -174,6 +187,13 @@ export function PrivateReceiveContent({
   };
 
   const run = async (kind: 'rotate' | 'retry') => {
+    if (kind === 'rotate') {
+      // Hide the old QR immediately and keep focus within the stable body as
+      // the new request replaces its action controls.
+      statusRef.current?.focus({ preventScroll: true });
+      freshRequest.create();
+      return;
+    }
     if (operation.current) return;
     const token = {};
     operation.current = token;
@@ -184,10 +204,8 @@ export function PrivateReceiveContent({
     // its button. Do not move focus again when the asynchronous result arrives.
     if (kind === 'retry') statusRef.current?.focus({ preventScroll: true });
     try {
-      if (kind === 'rotate') await rotatePrivateAddress();
-      else if (reusable && privateAddress && phase === 'current') await refreshStealth();
+      if (reusable && privateAddress && phase === 'current') await refreshStealth();
       else await refreshSync();
-      if (current() && kind === 'rotate') triggerHaptic('success');
     } catch (cause) {
       if (current()) { setFailure({ scope, kind: receiveKind, cause }); triggerHaptic('error'); }
     } finally {
@@ -199,7 +217,21 @@ export function PrivateReceiveContent({
     <ModalBody>
       <div ref={statusRef} tabIndex={-1} aria-label="Private receive" className="mx-auto max-w-[420px] space-y-5 outline-none">
       {addressChoice}
-      {state !== 'ready' ? <div className="flex min-h-56 flex-col items-center justify-center gap-3 py-5 text-center">
+      {!reusable && configured && !locked && privateAddress && !freshRequest.address ? <div className="flex min-h-56 flex-col items-center justify-center gap-3 py-5 text-center">
+        {freshRequest.creating ? <Spinner size={26} /> : <IconShieldStellar size={30} />}
+        <h3 className="text-[17px] font-semibold" aria-live="polite">
+          {freshRequest.creating ? 'Creating a fresh payment request…' : freshRequest.failed ? 'New address unavailable' : 'Create a fresh payment request'}
+        </h3>
+        <p className="max-w-sm text-[12.5px] text-neutral-400">Each new request uses a fresh shielded address. Previous addresses remain valid.</p>
+        {freshRequest.error ? <HumanizedErrorNotice cause={freshRequest.error} /> : null}
+        {!freshRequest.creating ? <>
+          {isLeader && phase === 'current' ? <Button onClick={() => { statusRef.current?.focus({ preventScroll: true }); freshRequest.create(); }}>Try New Address</Button>
+            : !isLeader ? <Button onClick={takeoverLeadership}>Use in This Tab</Button>
+            : <Button onClick={() => void run('retry')} loading={retrying}>Try Again</Button>}
+          <Button variant="secondary" onClick={() => { statusRef.current?.focus({ preventScroll: true }); freshRequest.reuse(); }}>Reuse Saved Address</Button>
+          <p className="max-w-sm text-[12px] text-neutral-400">Reusing the saved address can link payments through its public diversifier.</p>
+        </> : null}
+      </div> : state !== 'ready' ? <div className="flex min-h-56 flex-col items-center justify-center gap-3 py-5 text-center">
         {state === 'loading' || retrying ? <Spinner size={26} /> : <IconShieldStellar size={30} className="text-neutral-400" />}
         <div role="status" aria-live="polite">
           <h3 className="text-[17px] font-semibold tracking-tight text-white">
@@ -271,13 +303,14 @@ export function PrivateReceiveContent({
         </button>
       </div>
 
+      {!reusable && freshRequest.reused ? <Notice tone="warn" compact>Saved address reused. Payments to this address can be correlated through its public diversifier.</Notice> : null}
       <CopyButton value={payload} label="Copy Address" className="btn btn-primary min-h-12 w-full justify-center rounded-2xl text-[14px] font-semibold" />
 
       <div className="flex min-h-11 flex-wrap items-center justify-center gap-x-4 gap-y-2">
         {!reusable ? (
           <button
             type="button"
-            disabled={!isLeader || rotating || retrying}
+            disabled={!isLeader || phase !== 'current' || rotating || retrying}
             onClick={() => void run('rotate')}
             title={isLeader ? 'Create a fresh shielded receive address' : 'Private Payments is active in another tab'}
             className="flex min-h-11 items-center gap-1.5 text-[12px] font-semibold text-neutral-400 transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
@@ -330,8 +363,8 @@ export function PrivateReceiveContent({
                 ['Network', networkLabel],
                 ['Asset', asset?.code ?? 'Unavailable'],
                 ['Address type', reusable ? 'Reusable one-time accounts' : 'Shielded pool'],
-                ['Privacy', reusable ? 'Recipient identity' : 'Amount and counterparty'],
-                ['Protocol', reusable ? 'Stealth receive V1' : 'Protocol V1'],
+                ['Privacy', reusable ? 'Recipient identity' : 'Amount and recipient'],
+                ['Protocol', reusable ? 'Stealth receive V1' : `Protocol V${protocolVersion}`],
               ].map(([label, value]) => (
                 <div key={label} className="flex items-center justify-between gap-4">
                   <dt className="text-neutral-400">{label}</dt>
@@ -353,12 +386,13 @@ export function PrivateReceiveContent({
             ) : (
               <>
                 <p className="mt-3 text-[11.5px] leading-relaxed text-neutral-500">
-                  Reusing this address does not expose it on-chain, but people you share it with can
-                  recognize the same address if they compare it.
+                  Reusing this address can link payments on-chain through its public diversifier.
+                  People you share it with can also recognize the same address if they compare it.
                 </p>
                 <p className="mt-2 text-[11.5px] leading-relaxed text-neutral-500">
-                  Previous addresses remain valid. Create a new one when you want a separate address
-                  for another person or payment request.
+                  Previous addresses remain valid. New payment requests use fresh addresses by default.
+                  This request stays unchanged while displayed. Rotation does not protect past payments
+                  if your recovery phrase or viewing key is compromised.
                 </p>
               </>
             )}

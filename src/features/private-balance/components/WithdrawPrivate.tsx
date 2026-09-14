@@ -9,6 +9,7 @@ import { humanizePrivateError, PRIVACY_ROW } from '../copy';
 import { parsePrivateAmount } from '../runtime/coin-selection';
 import { formatPrivateBalanceAmount } from '../runtime/selectors';
 import { PrivateActionError } from './PrivateActionError';
+import { PrivatePrivacyAdvisory } from './PrivatePrivacyAdvisory';
 import { PrivateActionReview } from './PrivateActionReview';
 import { PrivateAssetSelector } from './PrivateAssetSelector';
 import { PrivateFeeAccountSelector, usePrivateFeeAccount } from './PrivateFeeAccountSelector';
@@ -256,6 +257,7 @@ export function WithdrawPrivateFlow({
               />
             </div>
             <PrivateQuickAmounts onAmount={setAmount} max={privateBalanceMax} />
+            <PrivatePrivacyAdvisory kind="withdraw" amount={amountCheck.stroops} />
             <Field
               label="Public Recipient"
               hint={trimmedRecipient === publicAddress ? 'Active account' : 'Custom G or C address'}

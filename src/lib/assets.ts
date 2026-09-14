@@ -1,3 +1,5 @@
+import type { AssetBalance } from './types';
+
 export interface KnownAsset {
   code: string;
   name: string;
@@ -48,6 +50,28 @@ export function knownAssetIssuer(asset: KnownAsset, network: AssetNetwork): stri
 
 export function knownAssetsForNetwork(network: AssetNetwork): KnownAsset[] {
   return POPULAR_ASSETS.filter((asset) => knownAssetIssuer(asset, network) !== null);
+}
+
+export interface SwapAssetOption extends AssetBalance {
+  preferred: boolean;
+  requiresTrustline: boolean;
+}
+
+/** Receive choices include preferred assets even before the account holds them. */
+export function swapDestinationAssets(balances: readonly AssetBalance[], network: AssetNetwork): SwapAssetOption[] {
+  const options = balances.map(balance => ({ ...balance,
+    preferred: lookupKnownAsset(balance.code, balance.issuer, network) !== null,
+    requiresTrustline: false,
+  }));
+  const held = new Set(options.map(option => option.key));
+  for (const asset of knownAssetsForNetwork(network)) {
+    const issuer = knownAssetIssuer(asset, network)!;
+    const key = `${asset.code}:${issuer}`;
+    if (held.has(key)) continue;
+    options.push({ key, code: asset.code, issuer, balance: '0', sellingLiabilities: '0',
+      limit: null, isNative: false, preferred: true, requiresTrustline: true });
+  }
+  return options;
 }
 
 function directoryKey(network: AssetNetwork, code: string, issuer: string): string {

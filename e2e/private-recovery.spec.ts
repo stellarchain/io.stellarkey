@@ -216,6 +216,12 @@ for (const presentation of ['reduced-motion', 'animated', '200-percent-reflow'] 
   await expect(page.getByTestId('recovery-provider-phase')).toHaveText('safe-error');
   await page.getByRole('button', { name: 'Restore synthetic receive archive', includeHidden: true, exact: true }).evaluate(node => (node as HTMLButtonElement).click());
   await retry.click();
+  // The first restored scan now starts this opening's fresh receive request.
+  // The synthetic worker deliberately holds every issuance until released.
+  await expect(page.getByTestId('recovery-provider-rotation')).toHaveText('waiting');
+  await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Complete synthetic address rotation', includeHidden: true, exact: true }).evaluate(node => (node as HTMLButtonElement).click());
   await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toBeVisible();
   await expect(page.getByTestId('recovery-provider-phase')).toHaveText('current');
   await expect(page.getByTestId('recovery-provider-submissions')).toHaveText('0');

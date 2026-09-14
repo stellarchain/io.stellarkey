@@ -13,6 +13,7 @@ import { triggerHaptic } from "@/lib/haptics";
 import { Button, CopyButton, HashValue, LoadingRegion, Modal, ModalBody, ModalHeader, Select, Tabs } from "./ui";
 import { FiatValue } from "./FiatValue";
 import { IconAlert, IconDownload, IconShare, IconTrezor } from "./icons";
+import type { PrivateReceiveRequest } from '@/features/private-balance/components/usePrivateReceiveRequest';
 
 // The private receive body stays behind the feature's lazy boundary: the chunk
 // only loads when someone actually switches the toggle to Private.
@@ -88,6 +89,7 @@ function ReceiveInner({
   const { availableAssets, requestRuntime } = usePrivateBalanceRuntime();
   const [receiveMode, setReceiveMode] = useState<"public" | "private">(initialMode);
   const [privateBusy, setPrivateBusy] = useState(false);
+  const [privateReceiveRequest, setPrivateReceiveRequest] = useState<PrivateReceiveRequest | null>(null);
   const [, startRuntimeTransition] = useTransition();
   const [selectedAssetKey, setSelectedAssetKey] = useState("native");
   const [qrImage, setQrImage] = useState<{ payload: string; url: string } | null>(null);
@@ -381,7 +383,7 @@ function ReceiveInner({
   );
   const panel = receiveMode === "private" ? (
     <PrivatePaymentAccessGate action="receive">
-      <PrivateReceiveContent onBusyChange={setPrivateBusy} assetSelector={<PrivateAssetSelector disabled={privateBusy} />} />
+      <PrivateReceiveContent request={privateReceiveRequest} onRequestChange={setPrivateReceiveRequest} onBusyChange={setPrivateBusy} assetSelector={<PrivateAssetSelector disabled={privateBusy} />} />
     </PrivatePaymentAccessGate>
   ) : publicPanel;
 

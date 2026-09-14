@@ -9,6 +9,7 @@ import { NETWORKS } from '@/lib/stellar';
 import { stroopsToAmount } from '@/lib/stellar-domain';
 import { spendableAssetBalance } from '@/lib/transaction-intent';
 import { humanizePrivateError, PRIVACY_ROW } from '../copy';
+import { PrivatePrivacyAdvisory } from './PrivatePrivacyAdvisory';
 import { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from '../runtime/action-flow';
 import { parsePrivateAmount } from '../runtime/coin-selection';
 import { privateBalanceAssetMatchesPublicBalance } from '@/lib/private-balance-assets';
@@ -313,6 +314,7 @@ function AddPrivateFundsFlow({
                 enterKeyHint="done"
               />
             )}
+            <PrivatePrivacyAdvisory kind="deposit" amount={amountCheck.stroops} />
             {flow.errorCause ?? flow.error ? (
               <PrivateActionError cause={flow.errorCause ?? new Error(flow.error ?? '')} />
             ) : null}

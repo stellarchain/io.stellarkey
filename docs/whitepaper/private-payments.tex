@@ -1,5 +1,5 @@
 % Generated from docs/private-balance.md by build.py with Pandoc 3.11.
-% Markdown SHA-256: c2ab501df47f758a347ede3aecd9912e0831dbe9ef0fbae4751a5a5e719b7220
+% Markdown SHA-256: b7ffe62aafd369fe79dd2922c4f4e128b25d3df4aae0c412e6a3789876bba3ca
 % Edit the maintained Markdown or this template, then regenerate the manuscript.
 \documentclass[11pt,letterpaper]{article}
 \usepackage[margin=1in]{geometry}
@@ -13,7 +13,7 @@
 \usepackage{seqsplit}
 \usepackage{xurl}
 \usepackage[hidelinks,breaklinks]{hyperref}
-\hypersetup{pdftitle={StellarKey Private Balance Whitepaper},pdfauthor={StellarKey},pdfsubject={StellarKey 1.0.2; Protocol V2; revision 2026-09-14}}
+\hypersetup{pdftitle={StellarKey Private Balance Whitepaper},pdfauthor={StellarKey},pdfsubject={StellarKey 1.0.3; Protocol V2; revision 2026-09-14}}
 \setlength{\emergencystretch}{2em}
 \setlength{\parskip}{0.35em}
 \setlength{\parindent}{0pt}
@@ -26,7 +26,7 @@ A Client-Proved Multi-Asset Shielded Note Pool\\
 with On-Chain Recovery}
 \author{StellarKey\\\small\href{mailto:support@stellarkey.io}{\texttt{support@stellarkey.io}}}
 \date{2026-09-14\\[5pt]
-\small StellarKey 1.0.2 \textperiodcentered{} Protocol V2\\
+\small StellarKey 1.0.3 \textperiodcentered{} Protocol V2\\
 \small Development Testnet implementation; not for real value}
 \begin{document}
 \maketitle
@@ -61,7 +61,7 @@ implementation is not approved for real value or Mainnet.
 \end{abstract}
 \vspace{0.5em}
 {\small\textbf{Implementation baseline:}
-\href{https://github.com/stellarchain/io.stellarkey/tree/v1.0.2}{\texttt{v1.0.2}}.
+\href{https://github.com/stellarchain/io.stellarkey/tree/v1.0.3}{\texttt{v1.0.3}}.
 The source revision and artifact identities define the implementation described here. Dated deployment,
 benchmark, and test evidence retains the scope and limitations in Sections 16--17.}
 \clearpage
@@ -280,10 +280,16 @@ common to the account while issued receive addresses can rotate.
 
 First setup generates a random non-zero receive diversifier. Session
 initialization preserves an existing supported receive address exactly
-and rejects an unsupported default identity. Only explicit rotation
-generates a replacement. The provider records each issued diversifier in
-encrypted local state before publishing the address; receipts from
-current-format issued addresses remain recoverable.
+and rejects an unsupported default identity. Each new receive opening
+creates a fresh address after the user explicitly selects Private.
+Focusing a tab alone is not issuance intent. Switching tabs or assets
+within the same pool preserves the request; New address explicitly
+replaces it. If issuance is unavailable, the wallet offers warned,
+explicit reuse of the saved address rather than silently sharing it. The
+provider records each issued diversifier in encrypted local state before
+publishing the address; receipts from current-format issued addresses
+remain recoverable. Rotation does not provide forward secrecy against
+compromise of the seed or viewing key.
 
 Issuance records up to 65,536 diversifiers and refuses to reissue a
 recorded value. Rotation excludes the zero diversifier and current
@@ -907,7 +913,7 @@ agreement; it cannot prove operator independence if a user selects a
 custom primary under common control with the witness. The browser-CORS
 and five-pass state-corroboration screening behind this choice is
 preserved in
-\href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/protocol/private-balance/results/rpc-witness-validation.json}{\texttt{rpc-witness-validation.json}}.
+\href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/protocol/private-balance/results/rpc-witness-validation.json}{\texttt{rpc-witness-validation.json}}.
 A second-provider witness check is mandatory when there is no
 authenticated checkpoint, during seed recovery, and for an explicit
 full-history check. Routine witness checks are enabled by default but
@@ -1164,6 +1170,16 @@ cannot create a large privacy set when the pool is small or activity is
 uniquely timed. Reusing a private receive address still links whole
 actions through the clear diversifier.
 
+The wallet offers local-only amount and timing advice in deposit and
+withdrawal forms and reviews. It suggests considering rounder deposits
+with more than two decimal places, and warns when a withdrawal matches a
+same-asset deposit in available local history or follows a known
+same-asset deposit within 24 hours. Missing timestamps do not count as
+recent activity. These heuristics neither measure the anonymity set nor
+guarantee unlinkability; silence, waiting, or splitting a withdrawal is
+not evidence of privacy. They do not upload history, query additional
+RPC data, change amounts, or delay submission.
+
 The RPC operator can see the connecting IP address, request timing,
 selected pool, queried ledger ranges, simulations, restoration attempts,
 and submitted transactions. With correctly authenticated HTTPS and
@@ -1403,9 +1419,9 @@ substantially. Three samples do not support tail-latency or
 confidence-interval claims. Chromium exposed a sampled JavaScript heap
 counter; WebKit did not. Neither is a total process/\allowbreak{}Wasm
 peak-memory measurement. The reproducible harness and exact samples are
-\href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/protocol/private-balance/spikes/scripts/run-capacity-browser.mjs}{run-capacity-browser.mjs}
+\href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/protocol/private-balance/spikes/scripts/run-capacity-browser.mjs}{run-capacity-browser.mjs}
 and
-\href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/protocol/private-balance/results/capacity-browser-v2.json}{capacity-browser-v2.json}.
+\href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/protocol/private-balance/results/capacity-browser-v2.json}{capacity-browser-v2.json}.
 
 \subsection{Contemporary comparison}\label{contemporary-comparison}
 
@@ -1515,7 +1531,7 @@ transaction hash; a local file hash alone does not establish the
 on-chain executable. A separate public read on September 13 at 01:01:01
 UTC corroborated the instance executable through the SDF and Ankr RPCs
 at ledger 4,647,534. Both returned the Pool Wasm hash in \S{}16; see
-\href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/protocol/private-balance/results/capacity-v2-executable.json}{capacity-v2-executable.json}.
+\href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/protocol/private-balance/results/capacity-v2-executable.json}{capacity-v2-executable.json}.
 This read establishes an observed executable match, not a locally
 verified consensus proof.
 
@@ -1536,9 +1552,9 @@ application\textquotesingle s 10,000,000-stroop cap. These are dated
 Testnet estimates excluding the separate classic inclusion fee, not
 realized net charges, fixed tariffs or throughput measurements. Evidence
 and the bounded runner are
-\href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/protocol/private-balance/results/capacity-testnet-lifecycle.json}{capacity-testnet-lifecycle.json}
+\href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/protocol/private-balance/results/capacity-testnet-lifecycle.json}{capacity-testnet-lifecycle.json}
 and
-\href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/protocol/private-balance/spikes/scripts/run-capacity-testnet.mjs}{run-capacity-testnet.mjs}.
+\href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/protocol/private-balance/spikes/scripts/run-capacity-testnet.mjs}{run-capacity-testnet.mjs}.
 The runner requires \texttt{-\/-testnet-synthetic} and starts with fresh
 test keys.
 
@@ -1588,62 +1604,62 @@ deployment permits.
 \begin{itemize}
 \tightlist
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/protocol/private-balance/docs/protocol-v1.md}{Protocol
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/protocol/private-balance/docs/protocol-v1.md}{Protocol
   V2 specification}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/protocol/private-balance/docs/threat-model.md}{Threat
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/protocol/private-balance/docs/threat-model.md}{Threat
   model}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/protocol/private-balance/docs/encoding.md}{Canonical
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/protocol/private-balance/docs/encoding.md}{Canonical
   encoding}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/protocol/private-balance/circuits/circom/action.circom}{Action
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/protocol/private-balance/circuits/circom/action.circom}{Action
   circuit},
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/src/features/private-balance/worker/action-builder.ts}{witness
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/src/features/private-balance/worker/action-builder.ts}{witness
   construction}, and
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/public/protocol/private-balance/v1/manifest.json}{authenticated
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/public/protocol/private-balance/v1/manifest.json}{authenticated
   deployment manifest}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/protocol/private-balance/contracts/pool/src/contract.rs}{Pool
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/protocol/private-balance/contracts/pool/src/contract.rs}{Pool
   entrypoints} and
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/protocol/private-balance/contracts/pool/src/storage.rs}{storage/\allowbreak{}TTL
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/protocol/private-balance/contracts/pool/src/storage.rs}{storage/\allowbreak{}TTL
   behavior}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/src/features/private-balance/worker/client.ts}{Receive-address
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/src/features/private-balance/worker/client.ts}{Receive-address
   initialization} and
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/src/features/private-balance/runtime/storage.ts}{encrypted
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/src/features/private-balance/runtime/storage.ts}{encrypted
   issuance/\allowbreak{}recovery state}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/src/features/private-balance/runtime/scanner.ts}{Recipient
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/src/features/private-balance/runtime/scanner.ts}{Recipient
   and archive scanner}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/src/features/private-balance/runtime/archive-client.ts}{Public
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/src/features/private-balance/runtime/archive-client.ts}{Public
   getter validation} and
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/src/features/private-balance/runtime/archive-restoration.ts}{archive-record
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/src/features/private-balance/runtime/archive-restoration.ts}{archive-record
   restoration}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/src/features/private-balance/runtime/action-transaction.ts}{Action
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/src/features/private-balance/runtime/action-transaction.ts}{Action
   preparation},
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/src/features/private-balance/runtime/transaction-review.ts}{envelope
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/src/features/private-balance/runtime/transaction-review.ts}{envelope
   review}, and
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/src/features/private-balance/runtime/fee-policy.ts}{fee
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/src/features/private-balance/runtime/fee-policy.ts}{fee
   policy}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/src/features/private-balance/runtime/spend-recovery.ts}{Held-proof
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/src/features/private-balance/runtime/spend-recovery.ts}{Held-proof
   recovery rules}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/src/features/private-balance/runtime/provider.tsx}{Wallet/\allowbreak{}runtime
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/src/features/private-balance/runtime/provider.tsx}{Wallet/\allowbreak{}runtime
   authority and outcome watchers} and
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/src/features/private-balance/runtime/submission.ts}{submission
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/src/features/private-balance/runtime/submission.ts}{submission
   journal and polling}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/docs/private-balance-recovery.md}{Recovery
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/docs/private-balance-recovery.md}{Recovery
   guide}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/docs/private-balance-support.md}{Safe
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/docs/private-balance-support.md}{Safe
   support guide}
 \item
-  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.2/docs/private-balance-incident-response.md}{Incident-response
+  \href{https://github.com/stellarchain/io.stellarkey/blob/v1.0.3/docs/private-balance-incident-response.md}{Incident-response
   playbook}
 \end{itemize}
 
