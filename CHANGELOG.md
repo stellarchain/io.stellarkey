@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-14
+
+### Fixed
+
+- Match pinned modal-footer backgrounds and gutter coverage to the panel surface in light and dark themes.
+- Keep field labels above inputs, with hints and validation messages below; simplify the password-length hint without changing validation.
+- Start the Stellar trademark notice on a new line after the independence statement in public footers, About and Settings.
+
+### Changed
+
+- Synchronize the application, release documentation and whitepaper at 1.0.2, refreshing versioned-lockfile manifest provenance without changing dependencies, cryptographic artifacts or the Testnet deployment.
+
+### Security
+
+- Record the maintainer's explicit continuation of the physical-device, VoiceOver/NVDA, passkey, Trezor and redistribution/origin sign-off deferral for 1.0.2. These checks are unperformed or unconfirmed, not passed; this exception grants no third-party license rights and does not approve real-value Private Payments.
+
 ## [1.0.1] - 2026-09-13
 
 ### Fixed

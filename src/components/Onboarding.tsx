@@ -566,7 +566,7 @@ export function Onboarding() {
         )}
         <Field
           label="Vault Password"
-          hint={mode === "restore" ? undefined : "12+ characters; avoid common or predictable passwords"}
+          hint={mode === "restore" ? undefined : "At least 12 characters"}
         >
           <input
             className="input text-base sm:text-[14px]"
