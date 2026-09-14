@@ -15,6 +15,7 @@ import { disclosePrivateProof, PrivateProofConsent, type PrivateProofDisclosure 
 import { UxPrimitivesFixture } from '../../../e2e/fixtures/ux-primitives';
 import { QrFreshnessFixture } from '../../../e2e/fixtures/qr-freshness';
 import { DirectPrivateFixture } from '../../../e2e/fixtures/private-direct-panel';
+import { SwapFixture } from '../../../e2e/fixtures/swap-panel';
 import { MerchantLifetimeFixture } from '../../../e2e/fixtures/merchant-lifetime-panel';
 import { ModalOwnershipFixture } from '../../../e2e/fixtures/modal-ownership-panel';
 import { MerchantFeedbackFixture } from '../../../e2e/fixtures/merchant-feedback-panel';
@@ -610,6 +611,7 @@ function ProofPanel() {
 }
 
 function Fixture() {
+  const [swap, setSwap] = useState(false);
   const [privateRecovery, setPrivateRecovery] = useState(false);
   const [signingContext, setSigningContext] = useState(false);
   const [merchantFeedback, setMerchantFeedback] = useState(false);
@@ -626,6 +628,7 @@ function Fixture() {
   const [writes, setWrites] = useState(0);
   const completion = useRef<(() => void) | null>(null);
   const rejection = useRef<(() => void) | null>(null);
+  if (swap) return <SwapFixture />;
   if (privateRecovery) return <PrivateRecoveryFixture />;
   if (signingContext) return <SigningContextFixture />;
   if (merchantFeedback) return <MerchantFeedbackFixture />;
@@ -638,6 +641,7 @@ function Fixture() {
     } }}>
       <main id="app-content" data-app-surface className="min-h-screen p-6">
         <h1 className="text-xl text-white">Synthetic privacy interaction checks</h1>
+        <Button onClick={() => setSwap(true)}>Test swap</Button>
         <Button onClick={() => setPrivateRecovery(true)}>Test private recovery</Button>
         <Button onClick={() => setSigningContext(true)}>Test signing context</Button>
         <Button onClick={() => setMerchantFeedback(true)}>Test merchant feedback</Button>

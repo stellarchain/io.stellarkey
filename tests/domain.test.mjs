@@ -148,7 +148,10 @@ function mockPaymentHorizon(t, sourcePublicKey, destinationPublicKey) {
     const stringUrl = String(url);
     calls.push({ url: stringUrl, init });
     if (stringUrl.endsWith(`/accounts/${sourcePublicKey}`)) {
-      return new Response(JSON.stringify({ sequence: "0" }), { status: 200 });
+      return new Response(JSON.stringify({ sequence: "0", balances: [
+        { asset_type: "native", balance: "20" },
+        { asset_type: "credit_alphanum4", asset_code: "USD", asset_issuer: USDC_ISSUER, balance: "0", limit: "100", is_authorized: true },
+      ] }), { status: 200 });
     }
     if (stringUrl.endsWith(`/accounts/${destinationPublicKey}`)) {
       return new Response(JSON.stringify({ sequence: "0" }), { status: 200 });
@@ -441,6 +444,8 @@ test("every broadcast builder applies the shared surge fee per operation", async
       const accountPublicKey = decodeURIComponent(stringUrl.split("/accounts/")[1]);
       return new Response(JSON.stringify({
         sequence: "0",
+        balances: [{ asset_type: "native", balance: "20" },
+          { asset_type: "credit_alphanum4", asset_code: "USD", asset_issuer: issuer, balance: "0", limit: "100", is_authorized: true }],
         thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
         signers: [{
           key: accountPublicKey,
@@ -574,7 +579,7 @@ test("active transaction UIs use the selected fee for display and native reserve
   assert.doesNotMatch(send, /normalStroops\s*=\s*liveFeeStats\?\.modeAcceptedFee/);
   assert.match(send, /normalStroops\s*=\s*recommendedBaseFeeStroops/);
   assert.match(batch, /networkFeeXlm\(recommendedBaseFeeStroops, validRows\.length\)/);
-  assert.match(swap, /networkFeeXlm\(recommendedBaseFeeStroops, 1\)/);
+  assert.match(swap, /networkFeeXlm\(recommendedBaseFeeStroops, requiresTrustline \? 2 : 1\)/);
   assert.match(
     assets,
     /networkFeeXlm\([\s\S]*Math\.min\(selected\.length, MAX_TRUSTLINE_SELECTIONS\)/,

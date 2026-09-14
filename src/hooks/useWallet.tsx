@@ -145,6 +145,7 @@ type ActivityPageState = "idle" | "pending" | "recoverable-error";
 
 type WalletApi = typeof import("@/lib/api");
 type SwapApi = typeof import("@/lib/swap");
+type SwapTrustlineAuthorization = import("@/lib/swap").SwapTrustlineAuthorization;
 type MultisigApi = typeof import("@/lib/multisig");
 type PrivateBalanceSigningApi = typeof import("@/lib/private-balance-signing");
 type StealthPaymentApi = typeof import("@/features/private-balance/runtime/stealth-payment");
@@ -401,6 +402,8 @@ interface WalletContextValue {
     destCode: string;
     destIssuer?: string | null;
     intermediates: Asset[];
+    destinationTrustline?: SwapTrustlineAuthorization;
+    authorizeBeforeSigning?: () => void;
   } & (
     | {
         mode: "strict-send";
@@ -412,7 +415,7 @@ interface WalletContextValue {
         sendMax: string;
         destinationAmount: string;
       }
-  )) => Promise<SubmissionResult>;
+  )) => ReturnType<SwapApi["swapStrictSend"]>;
   /** Apply a multi-sig signer/threshold configuration to the active account */
   applyMultisigConfig: (config: MultisigConfig) => Promise<MultisigConfigOutcome>;
   /** Remove all cosigners and reset thresholds to single-sig defaults */
@@ -2675,6 +2678,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       destCode: string;
       destIssuer?: string | null;
       intermediates: Asset[];
+      destinationTrustline?: SwapTrustlineAuthorization;
+      authorizeBeforeSigning?: () => void;
     } & (
       | {
           mode: "strict-send";
@@ -2688,8 +2693,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
     )) => {
       if (!activeAccount) throw new Error("No active account");
+      if (activeAccount.watchOnly) throw new Error("This is a watch-only account — switch to a signing account to swap.");
+      const assertContextCurrent = captureSigningContext();
+      const beforeSign = () => { assertContextCurrent(); params.authorizeBeforeSigning?.(); };
       const swapLib = await loadSwapApi();
       const hw = hardwareSignerFor(activeAccount);
+      if (hw) hw.assertSessionActive = beforeSign;
       return withAuthorizedSigningSecret("Swap assets", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Swap",
         undefined,
@@ -2706,6 +2715,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
               destinationAmount: params.destinationAmount,
               intermediates: params.intermediates,
               feeStroops: recommendedBaseFeeStroops,
+              destinationTrustline: params.destinationTrustline,
+              authorizeBeforeSigning: beforeSign,
               onPrepared,
             })
           : swapLib.swapStrictSend({
@@ -2720,12 +2731,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
               destMin: params.destMin,
               intermediates: params.intermediates,
               feeStroops: recommendedBaseFeeStroops,
+              destinationTrustline: params.destinationTrustline,
+              authorizeBeforeSigning: beforeSign,
               onPrepared,
             }),
         (result) => result,
-      ));
+        undefined,
+        beforeSign,
+      ), beforeSign);
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
+    [activeAccount, captureSigningContext, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const fundFromFriendbot = useCallback(async () => {

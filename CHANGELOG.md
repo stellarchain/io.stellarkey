@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Offer network-specific preferred assets in Swap before they are held, and create a missing receiving trustline in the same signed swap transaction with its additional XLM reserve and network fee shown before confirmation.
+
 ### Fixed
 
 - Use opaque, theme-matched modal surfaces so underlying page content cannot show through mobile sheets, dialogs or confirmation alerts.

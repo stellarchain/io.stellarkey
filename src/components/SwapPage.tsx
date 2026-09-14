@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { SectionHeader } from "@/components/ui";
 import {
   useWalletIdentity,
@@ -11,14 +11,16 @@ import {
 import { fmtAmount, isValidAmount, normalizeAmount } from "@/lib/format";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { findStrictReceiveRoute, findStrictSendRoute } from "@/lib/swap";
-import { networkFeeXlm } from "@/lib/api";
+import { fetchCurrentBaseReserve, networkFeeXlm } from "@/lib/api";
+import { swapDestinationAssets, type SwapAssetOption } from "@/lib/assets";
 import {
   applySlippage,
   applySlippageCeiling,
   compareStellarAmounts,
   fractionOfStellarAmount,
+  stroopsToAmount,
+  sumStellarAmounts,
 } from "@/lib/stellar-domain";
-import type { AssetBalance } from "@/lib/types";
 import {
   bindSwapQuote,
   guardCurrentSwapQuote,
@@ -46,6 +48,7 @@ import {
 } from "./icons";
 
 interface SubmittedSwap {
+  readonly feeXlm: string;
   readonly quote: BoundSwapQuote;
   readonly sendAsset: SwapReceiptAssetIdentity;
   readonly destinationAsset: SwapReceiptAssetIdentity;
@@ -58,7 +61,13 @@ interface SwapPageProps {
   onViewActivity?: () => void;
 }
 
-export function SwapPage({
+export function SwapPage(props: SwapPageProps) {
+  const { network, activeAccount } = useWalletIdentity();
+  // A different account/network owns a fresh draft and revokes async publishers.
+  return <SwapForm key={`${network}:${activeAccount?.id ?? ''}`} {...props} />;
+}
+
+function SwapForm({
   prefill = null,
   onDone,
   onViewActivity,
@@ -90,24 +99,51 @@ export function SwapPage({
   const [error, setError] = useState<string | null>(null);
   const [pendingSubmission, setPendingSubmission] = useState<SubmissionResult | null>(null);
   const [submittedSwap, setSubmittedSwap] = useState<SubmittedSwap | null>(null);
+  const [reserve, setReserve] = useState<{ key: string; amount: string | null; error: string | null } | null>(null);
+  const [reserveAttempt, setReserveAttempt] = useState(0);
+  const operationRef = useRef<symbol | null>(null);
+  const quoteObservedAt = useRef<number | null>(null);
   const trackedSubmissionStatus = pendingSubmission ? submissionStatus(pendingSubmission) : null;
-  const options = useMemo(() => balances ?? [], [balances]);
-  const effectiveDestKey = destKey || options.find((b) => b.key !== sendKey)?.key || "";
+  const destinationOptions = useMemo(() => swapDestinationAssets(balances ?? [], network), [balances, network]);
+  const options = useMemo(() => destinationOptions.filter(option => !option.requiresTrustline), [destinationOptions]);
+  const effectiveDestKey = destKey || destinationOptions.find((b) => b.key !== sendKey)?.key || "";
 
   const sendAsset = useMemo(
     () => options.find((b) => b.key === sendKey) ?? null,
     [options, sendKey],
   );
   const destAsset = useMemo(
-    () => options.find((b) => b.key === effectiveDestKey) ?? null,
-    [options, effectiveDestKey],
+    () => destinationOptions.find((b) => b.key === effectiveDestKey) ?? null,
+    [destinationOptions, effectiveDestKey],
   );
 
-  const feeXlm = networkFeeXlm(recommendedBaseFeeStroops, 1);
+  const requiresTrustline = Boolean(destAsset?.requiresTrustline && destAsset.issuer !== activeAccount?.publicKey);
+  const reserveKey = `${network}:${activeAccount?.id ?? ''}:${effectiveDestKey}`;
+  const reserveXlm = requiresTrustline ? (reserve?.key === reserveKey ? reserve.amount : null) : '0';
+  const reserveError = requiresTrustline && reserve?.key === reserveKey ? reserve.error : null;
+  useEffect(() => {
+    if (!requiresTrustline) return;
+    let current = true;
+    void fetchCurrentBaseReserve(network).then(stroops => {
+      if (current) setReserve({ key: reserveKey, amount: stroopsToAmount(BigInt(stroops)), error: null });
+    }).catch(() => {
+      if (current) setReserve({ key: reserveKey, amount: null, error: 'Unable to check the trustline reserve. Retry before swapping.' });
+    });
+    return () => { current = false; };
+  }, [network, requiresTrustline, reserveKey, reserveAttempt]);
+
+  const feeXlm = networkFeeXlm(recommendedBaseFeeStroops, requiresTrustline ? 2 : 1);
+  const nativeAsset = options.find(asset => asset.isNative);
+  const reserveReady = reserveXlm !== null && minimumBalanceXlm !== null && balances !== null;
+  const insufficientNative = reserveReady && (!nativeAsset || compareStellarAmounts(nativeAsset.balance,
+    sumStellarAmounts([minimumBalanceXlm!, reserveXlm!, feeXlm, nativeAsset.sellingLiabilities || '0'])) < 0);
+  const unauthorizedDestination = Boolean(destAsset && !destAsset.isNative && !requiresTrustline
+    && destAsset.issuer !== activeAccount?.publicKey && destAsset.isAuthorized === false);
+  const setupBlocked = !reserveReady || insufficientNative || unauthorizedDestination;
   const sendAvailable = sendAsset?.isNative
-    ? minimumBalanceXlm === null
+    ? !reserveReady
       ? "0"
-      : spendableAssetBalance(sendAsset, [minimumBalanceXlm, feeXlm])
+      : spendableAssetBalance(sendAsset, [minimumBalanceXlm!, feeXlm, reserveXlm!])
     : sendAsset
       ? spendableAssetBalance(sendAsset)
       : "0";
@@ -115,6 +151,7 @@ export function SwapPage({
   const exactAmount = amountSide === "pay" ? payAmount : receiveAmount;
   const valid =
     isValidAmount(exactAmount) &&
+    !setupBlocked &&
     sendAsset !== null &&
     destAsset !== null &&
     (quoteMode === "strict-receive" || compareStellarAmounts(exactAmount, sendAvailable) <= 0) &&
@@ -141,6 +178,13 @@ export function SwapPage({
     : currentQuote?.sendAmount ?? null;
   const quoteExceedsBalance = quotedSpendLimit !== null
     && compareStellarAmounts(quotedSpendLimit, sendAvailable) > 0;
+  const authorizationKey = JSON.stringify([routeKey, reserveXlm, requiresTrustline, feeXlm, setupBlocked, quoteExceedsBalance]);
+  const authorizationRef = useRef<string | null>(authorizationKey);
+  useLayoutEffect(() => {
+    authorizationRef.current = authorizationKey;
+    return () => { authorizationRef.current = null; };
+  }, [authorizationKey]);
+  useEffect(() => () => { operationRef.current = null; quoteObservedAt.current = null; }, []);
 
   useEffect(() => {
     let alive = true;
@@ -207,6 +251,8 @@ export function SwapPage({
 
         if (!alive) return;
         if (found) {
+          // Only a successful response establishes freshness; edits and renders do not.
+          quoteObservedAt.current = Date.now();
           setRoute("destinationAmount" in found
             ? bindSwapQuote({
                 mode: "strict-send",
@@ -254,6 +300,7 @@ export function SwapPage({
   }, [routeKey, sendAsset, destAsset, exactAmount, quoteMode, slippage, valid, network, quoteAttempt]);
 
   function invalidateQuoteForEdit() {
+    quoteObservedAt.current = null;
     setRoute(null);
     setNoRouteKey(null);
     setError(null);
@@ -264,7 +311,7 @@ export function SwapPage({
     triggerHaptic("medium");
     const prevSend = sendKey;
     const prevDest = effectiveDestKey;
-    if (!prevDest) return;
+    if (!prevDest || !options.some(option => option.key === prevDest)) return;
     setSendKey(prevDest);
     setDestKey(prevSend);
     setPayAmount("");
@@ -287,18 +334,30 @@ export function SwapPage({
   }
 
   async function handleSwap() {
-    if (pendingSubmission) return;
+    if (operationRef.current || pendingSubmission || setupBlocked || quoteExceedsBalance) return;
     const submissionQuote = guardCurrentSwapQuote(route, routeKey);
     if (!submissionQuote || !sendAsset || !destAsset) return;
+    const operation = Symbol();
+    operationRef.current = operation;
+    const isCurrent = () => operationRef.current === operation && authorizationRef.current === authorizationKey;
+    const observedAt = quoteObservedAt.current;
+    const assertCurrent = () => {
+      if (!isCurrent() || observedAt === null || quoteObservedAt.current !== observedAt || Date.now() - observedAt > 30_000) {
+        throw new Error('The swap details or quote changed. Review the swap again before signing.');
+      }
+    };
     setBusy(true);
     setError(null);
     try {
+      assertCurrent();
       const common = {
         sendCode: sendAsset.code,
         sendIssuer: sendAsset.issuer,
         destCode: destAsset.code,
         destIssuer: destAsset.issuer,
         intermediates: [...submissionQuote.intermediates],
+        destinationTrustline: requiresTrustline ? { maximumReserveXlm: reserveXlm! } : undefined,
+        authorizeBeforeSigning: assertCurrent,
       };
       const result = submissionQuote.mode === "strict-receive"
         ? await swap({
@@ -313,7 +372,9 @@ export function SwapPage({
             sendAmount: submissionQuote.sendAmount,
             destMin: submissionQuote.destinationMinimum,
           });
+      if (!isCurrent()) return;
       setSubmittedSwap(Object.freeze({
+        feeXlm: result.feeXlm,
         quote: submissionQuote,
         sendAsset: swapReceiptAssetIdentity(sendAsset),
         destinationAsset: swapReceiptAssetIdentity(destAsset),
@@ -323,14 +384,23 @@ export function SwapPage({
       setStage(result.status === "confirmed" ? "success" : "status");
       triggerHaptic(result.status === "status_unknown" ? "warning" : "medium");
     } catch (e) {
+      if (!isCurrent()) return;
       triggerHaptic("error");
+      if (requiresTrustline) {
+        setReserve(null);
+        setReserveAttempt(attempt => attempt + 1);
+        void refresh();
+      }
       setRoute(null);
       setNoRouteKey(null);
       setStage("form");
       setQuoteAttempt((attempt) => attempt + 1);
       setError(e instanceof Error ? e.message : "Swap failed. Refreshing the quote before retry.");
     } finally {
-      setBusy(false);
+      if (operationRef.current === operation) {
+        operationRef.current = null;
+        setBusy(false);
+      }
     }
   }
 
@@ -370,7 +440,7 @@ export function SwapPage({
       <SwapResultView
         receipt={submittedSwap}
         status={stage === "success" ? "confirmed" : trackedSubmissionStatus}
-        feeXlm={feeXlm}
+        feeXlm={submittedSwap.feeXlm}
         onDone={() => {
           triggerHaptic("selection");
           if (onDone) onDone();
@@ -398,6 +468,7 @@ export function SwapPage({
         </div>
         <button
           type="button"
+          disabled={busy}
           onClick={() => {
             triggerHaptic("selection");
             setShowSettings((s) => !s);
@@ -447,7 +518,8 @@ export function SwapPage({
                   setSlippage(val);
                   invalidateQuoteForEdit();
                 }}
-                className={`rounded-xl py-[5px] text-[12px] font-medium transition-all ${
+                disabled={busy}
+                className={`rounded-xl py-[5px] text-[12px] font-medium transition-[background-color,color,box-shadow] ${
                   slippage === val
                     ? "bg-[#0A84FF] text-[var(--color-oncolor)] shadow-sm"
                     : "bg-white/[0.08] text-neutral-300 hover:text-white"
@@ -464,6 +536,7 @@ export function SwapPage({
             <div className="flex items-center gap-1">
               <input
                 id="swap-custom-slippage"
+                disabled={busy}
                 type="number"
                 inputMode="decimal"
                 aria-label="Custom slippage percentage"
@@ -506,17 +579,18 @@ export function SwapPage({
             exact={amountSide === "pay"}
             routing={routing && amountSide === "receive"}
             assetOptions={options}
+            disabled={busy}
             assetKey={sendKey}
             onAmountChange={(value) => handleAmountChange("pay", value)}
             onAssetChange={(key) => {
               setSendKey(key);
               if (key === effectiveDestKey) {
-                setDestKey(options.find((balance) => balance.key !== key)?.key ?? "");
+                setDestKey(destinationOptions.find((balance) => balance.key !== key)?.key ?? "");
               }
               invalidateQuoteForEdit();
             }}
             balance={sendAsset ? `Available ${fmtAmount(sendAvailable)} ${sendAsset.code}` : null}
-            onBalanceClick={sendAsset
+            onBalanceClick={sendAsset && reserveReady
               ? () => {
                   triggerHaptic("selection");
                   handleAmountChange("pay", sendAvailable);
@@ -529,6 +603,7 @@ export function SwapPage({
                   <button
                     key={pct}
                     type="button"
+                    disabled={busy || !reserveReady}
                     onClick={() => {
                       triggerHaptic("selection");
                       handleAmountChange(
@@ -550,7 +625,8 @@ export function SwapPage({
             <button
               type="button"
               onClick={flipAssets}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-neutral-900 text-[var(--color-oncolor)] shadow-lg ring-4 ring-black transition-all duration-200 hover:bg-neutral-800 active:scale-90"
+              disabled={busy || !options.some(option => option.key === effectiveDestKey)}
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-neutral-900 text-[var(--color-oncolor)] shadow-lg ring-4 ring-black transition-[background-color,transform] duration-200 hover:bg-neutral-800 active:scale-90 disabled:opacity-40"
               aria-label="Invert Assets"
             >
               <IconSwap size={18} className="rotate-90" />
@@ -564,7 +640,8 @@ export function SwapPage({
             amount={displayedReceiveAmount}
             exact={amountSide === "receive"}
             routing={routing && amountSide === "pay"}
-            assetOptions={options.filter((balance) => balance.key !== sendKey)}
+            assetOptions={destinationOptions.filter((balance) => balance.key !== sendKey)}
+            disabled={busy}
             assetKey={effectiveDestKey}
             onAmountChange={(value) => handleAmountChange("receive", value)}
             onAssetChange={(key) => {
@@ -573,6 +650,18 @@ export function SwapPage({
             }}
             balance={destAsset ? `Balance ${fmtAmount(destAsset.balance)} ${destAsset.code}` : null}
           />
+
+          {requiresTrustline && (
+            <Notice tone="accent" compact>
+              <p className="font-semibold">Trustline included</p>
+              <p className="mt-1">Confirming this swap also adds the {destAsset?.code} trustline in the same transaction.</p>
+              {reserveXlm !== null ? <p className="mt-1">An additional {fmtAmount(reserveXlm)} XLM stays reserved, not spent. It becomes available when you remove the empty trustline.</p>
+                : <p role="status" className="mt-1">{reserveError ?? 'Checking the additional XLM reserve…'}</p>}
+              {reserveError && <Button variant="secondary" onClick={() => setReserveAttempt(value => value + 1)}>Retry reserve check</Button>}
+            </Notice>
+          )}
+          {insufficientNative && <Notice tone="warn" compact>Not enough available XLM for network fees and the required reserve.</Notice>}
+          {unauthorizedDestination && <Notice tone="warn" compact>This trustline needs issuer authorization before it can receive a swap.</Notice>}
 
           {quoteExceedsBalance && quotedSpendLimit && sendAsset && (
             <Notice tone="warn" compact icon={<IconAlert size={16} />}>
@@ -737,6 +826,10 @@ export function SwapPage({
                     <XlmFeeFiatValue amount={feeXlm} />
                   </span>
                 </div>
+                {requiresTrustline && reserveXlm !== null && <div className="flex justify-between text-neutral-400 text-[12px]">
+                  <span>Additional XLM reserve</span>
+                  <span className="mono">{fmtAmount(reserveXlm)} XLM</span>
+                </div>}
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -752,7 +845,7 @@ export function SwapPage({
                 </Button>
                 <Button
                   loading={busy}
-                  disabled={busy || Boolean(pendingSubmission)}
+                  disabled={busy || setupBlocked || quoteExceedsBalance || Boolean(pendingSubmission)}
                   onClick={() => void handleSwap()}
                 >
                   {busy ? "Executing…" : "Confirm Swap"}
@@ -762,7 +855,7 @@ export function SwapPage({
           ) : (
             <Button
               className="!mt-6 w-full !h-12 text-[16px]"
-              disabled={!currentQuote || quoteExceedsBalance || busy || routing || Boolean(pendingSubmission)}
+              disabled={!currentQuote || setupBlocked || quoteExceedsBalance || busy || routing || Boolean(pendingSubmission)}
               onClick={() => {
                 const reviewQuote = guardCurrentSwapQuote(route, routeKey);
                 if (!reviewQuote) return;
@@ -1000,6 +1093,7 @@ function SwapAmountCard({
   onAssetChange,
   balance,
   onBalanceClick,
+  disabled,
   children,
 }: {
   label: string;
@@ -1008,7 +1102,8 @@ function SwapAmountCard({
   amount: string;
   exact: boolean;
   routing: boolean;
-  assetOptions: AssetBalance[];
+  assetOptions: SwapAssetOption[];
+  disabled: boolean;
   assetKey: string;
   onAmountChange: (value: string) => void;
   onAssetChange: (key: string) => void;
@@ -1037,6 +1132,7 @@ function SwapAmountCard({
           <button
             type="button"
             onClick={onBalanceClick}
+            disabled={disabled}
             className="min-w-0 break-words text-right text-[11.5px] font-medium text-[#64D2FF] hover:underline"
           >
             {balance}
@@ -1053,6 +1149,7 @@ function SwapAmountCard({
           inputMode="decimal"
           autoComplete="off"
           aria-label={amountLabel}
+          disabled={disabled}
           placeholder={routing ? "Quoting…" : "0.0"}
           value={amount}
           onChange={(event) => onAmountChange(event.target.value)}
@@ -1061,6 +1158,7 @@ function SwapAmountCard({
         <div className="max-w-[148px] shrink-0 sm:max-w-[180px]">
           <AssetSelect
             options={assetOptions}
+            disabled={disabled}
             value={assetKey}
             ariaLabel={assetLabel}
             onChange={onAssetChange}
@@ -1074,11 +1172,13 @@ function SwapAmountCard({
 
 function AssetSelect({
   options,
+  disabled,
   value,
   ariaLabel,
   onChange,
 }: {
-  options: AssetBalance[];
+  options: SwapAssetOption[];
+  disabled: boolean;
   value: string;
   ariaLabel: string;
   onChange: (key: string) => void;
@@ -1086,6 +1186,7 @@ function AssetSelect({
   return (
     <Select
       size="sm"
+      disabled={disabled}
       value={value}
       onChange={onChange}
       ariaLabel={ariaLabel}
@@ -1097,7 +1198,7 @@ function AssetSelect({
         label: b.code,
         sublabel: b.isNative
           ? `${fmtAmount(b.balance)} · Native`
-          : `${fmtAmount(b.balance)} · ${formatTrezorAddress(b.issuer ?? "Unknown issuer")}`,
+          : `${b.preferred ? 'Preferred · ' : ''}${b.requiresTrustline ? 'Trustline included' : fmtAmount(b.balance)} · ${formatTrezorAddress(b.issuer ?? "Unknown issuer")}`,
       }))}
     />
   );
