@@ -1,7 +1,7 @@
 'use client';
 
 import { StrictMode, useState } from 'react';
-import { Button, ConfirmModal, CopyButton, Dropdown, Field, HashValue, Modal, ModalHeader, Select, Tabs, Toggle, Tooltip } from '@/components/ui';
+import { Button, ConfirmModal, CopyButton, Dropdown, Field, HashValue, Modal, ModalFooter, ModalHeader, Select, Tabs, Toggle, Tooltip } from '@/components/ui';
 
 // Only opaque synthetic strings. Clipboard behaviour is controlled at the
 // browser API boundary by tests; these are the real production primitives.
@@ -124,8 +124,8 @@ export function UxPrimitivesFixture() {
         <div data-testid="synthetic-nested-scroll" className="h-24 overflow-y-auto">
           <div data-testid="synthetic-scroll-content" className="h-96">Synthetic scroll content</div>
         </div>
-        <Button onClick={() => setConfirmOpen(true)}>Open synthetic confirmation</Button>
         <p data-testid="synthetic-confirm-actions">{confirmActions}</p>
+        <ModalFooter pinned primary={<Button onClick={() => setConfirmOpen(true)}>Open synthetic confirmation</Button>} />
       </div>
     </Modal>
     <ConfirmModal open={confirmOpen} title="Synthetic confirmation" confirmLabel="Confirm synthetic action"

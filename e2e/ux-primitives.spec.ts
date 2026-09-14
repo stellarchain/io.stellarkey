@@ -53,6 +53,27 @@ async function safetySheet(page: Page) {
   return dialog;
 }
 
+for (const theme of ['dark', 'light']) for (const width of [320, 900]) {
+  test(`pinned modal footer uses the ${theme} panel surface at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+    const dialog = await safetySheet(page);
+    const footer = dialog.locator('.modal-footer-pinned');
+    await expect(footer).toBeVisible();
+    await expect.poll(() => footer.evaluate((node, theme) => {
+      const style = getComputedStyle(node);
+      const rgb = theme === 'light' ? '248,248,250' : '32,32,33';
+      const paint = `rgba(${rgb},0.98)`;
+      const gutter = innerWidth >= 640 ? 24 : 16;
+      const shadows = style.boxShadow.replace(/\s+/g, '');
+      return style.backgroundImage.replace(/\s+/g, '').includes(paint) &&
+        shadows.includes(`${paint}-${gutter}px0px0px0px`) &&
+        shadows.includes(`${paint}${gutter}px0px0px0px`) &&
+        style.position === 'sticky';
+    }, theme)).toBe(true);
+  });
+}
+
 test('integration safety: sheet surfaces permit pinch zoom', async ({ page }) => {
   const dialog = await safetySheet(page);
   const permitted = await dialog.evaluate(node => [...node.querySelectorAll('[data-modal-shell], [data-sheet-handle]')]
@@ -339,10 +360,13 @@ for (const kind of ['input', 'textarea']) test(`Field native ${kind} retains foc
     await expect.poll(() => field.evaluate(node => {
       const control = node.querySelector('input, textarea')!;
       const label = node.querySelector('label')!;
+      const hint = node.querySelector('.field-hint')!;
       const alert = node.querySelector('[role="alert"]');
       const described = (control.getAttribute('aria-describedby') ?? '').split(' ').map(id => document.getElementById(id));
       return label.control === control && described.every(Boolean) &&
-        (!alert || alert.getBoundingClientRect().top >= control.getBoundingClientRect().bottom);
+        label.getBoundingClientRect().bottom <= control.getBoundingClientRect().top &&
+        hint.getBoundingClientRect().top >= control.getBoundingClientRect().bottom &&
+        (!alert || alert.getBoundingClientRect().top >= hint.getBoundingClientRect().bottom);
     })).toBe(true);
   }
 });
