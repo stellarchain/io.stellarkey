@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { encodePrivateAddress } from '@stellarkey/private-balance';
 import { Button } from '@/components/ui';
+import { SendModal, type SendPrefill } from '@/components/SendModal';
+import { PUBLIC_SEND_REQUEST_EVENT } from '@/lib/private-address';
 import { SendPrivate } from '@/features/private-balance/components/SendPrivate';
 import { WithdrawPrivate } from '@/features/private-balance/components/WithdrawPrivate';
 import { PrivateActionInFlightError, PrivateConsolidationRequiredError, type PreparedPrivateActionReview, type PrivateActionDraft } from '@/features/private-balance/runtime/action-flow';
@@ -29,12 +31,12 @@ function syntheticReview(draft: PrivateActionDraft, id: string): PreparedPrivate
   };
 }
 
-function DirectPrivateAssetRegistration() {
+function DirectPrivateAssetRegistration({ enabled = false }: { enabled?: boolean }) {
   const { asset } = usePrivateBalanceRuntimeData();
   const { registerAvailableAssets } = usePrivateBalanceRuntime();
   useEffect(() => {
-    if (asset) registerAvailableAssets([{ deploymentId: 'synthetic-direct', asset, encryptedStateExists: false }], 'synthetic-direct');
-  }, [asset, registerAvailableAssets]);
+    if (asset) registerAvailableAssets([{ deploymentId: 'synthetic-direct', asset, encryptedStateExists: enabled }], 'synthetic-direct');
+  }, [asset, enabled, registerAvailableAssets]);
   return null;
 }
 
@@ -43,11 +45,27 @@ export function DirectPrivateFixture() {
   const parent = usePrivateBalanceRuntimeData();
   const [open, setOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [sharedOpen, setSharedOpen] = useState(false);
+  const [sharedPrefill, setSharedPrefill] = useState<SendPrefill | null>(null);
+  const [publicRequests, setPublicRequests] = useState(0);
+  // Mirror the dashboard's standalone handoff boundary. An embedded handoff
+  // must not dispatch this event or close the already-open shared Send shell.
+  useEffect(() => {
+    const onRequest = (event: Event) => {
+      const destination = (event as CustomEvent<{ destination: string }>).detail.destination;
+      setSharedPrefill({ destination });
+      setSharedOpen(true);
+      setPublicRequests(value => value + 1);
+    };
+    window.addEventListener(PUBLIC_SEND_REQUEST_EVENT, onRequest);
+    return () => window.removeEventListener(PUBLIC_SEND_REQUEST_EVENT, onRequest);
+  }, []);
   const [calls, setCalls] = useState(0);
   const [delay, setDelay] = useState(false);
   const [holdDisclosedPreparation, setHoldDisclosedPreparation] = useState(false);
   const [scenario, setScenario] = useState<'blocked' | 'direct' | 'deferred' | 'chain'>('blocked');
   const [account, setAccount] = useState(false);
+  const [privacyHistory, setPrivacyHistory] = useState(false);
   const [cancellations, setCancellations] = useState(0);
   const [submissionAttempts, setSubmissionAttempts] = useState(0);
   const [busyRejections, setBusyRejections] = useState(0);
@@ -62,6 +80,9 @@ export function DirectPrivateFixture() {
   const submissionBusy = useRef(false);
   const sequence = useRef(0);
   const runtime = useMemo(() => ({ ...parent, networkLabel: 'Testnet' as const, verifiedBalanceStroops: '100000000',
+    activities: privacyHistory && !account ? [{ id: 'synthetic-deposit', actionIndex: 1n,
+      actionKind: 'deposit' as const, assetIndex: 0, assetContractId: 'synthetic', amount: '10000000',
+      direction: 'inflow' as const, timestamp: 0, nullifiers: [], outputCommitments: [] }] : [],
     publicAddress: account ? `G${'B'.repeat(55)}` : 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
     validateRecipient: async () => {
       if (delay) await new Promise<void>(resolve => { finishes.current.push(resolve); });
@@ -129,10 +150,12 @@ export function DirectPrivateFixture() {
         return { status: 'broadcast' as const, finalTransactionHash: '77'.repeat(32) };
       } finally { submissionBusy.current = false; }
     }) satisfies typeof parent.submitChainedSend,
-  }), [parent, delay, holdDisclosedPreparation, scenario, account]);
+  }), [parent, delay, holdDisclosedPreparation, scenario, account, privacyHistory]);
   return <section aria-label="Synthetic recipient checks">
+    <Button onClick={() => { setSharedPrefill(null); setSharedOpen(true); }}>Open shared send</Button>
     <Button onClick={() => setOpen(true)}>Open synthetic private send</Button>
     <Button onClick={() => setWithdrawOpen(true)}>Open synthetic private withdrawal</Button>
+    <Button onClick={() => setPrivacyHistory(true)}>Use synthetic matching deposit</Button>
     <Button onClick={() => setDelay(true)}>Delay recipient validation</Button>
     <Button onClick={() => finishes.current.shift()?.()}>Finish recipient validation</Button>
     <Button onClick={() => finishes.current.pop()?.()}>Finish newest recipient validation</Button>
@@ -160,6 +183,7 @@ export function DirectPrivateFixture() {
     <Button onClick={() => chainSteps.current.shift()?.()}>Advance direct chain</Button>
     <Button onClick={() => setAccount(value => !value)}>Replace direct account</Button>
     <p data-testid="recipient-preparations">{calls}</p>
+    <p data-testid="public-send-requests">{publicRequests}</p>
     <p data-testid="direct-cancellations">{cancellations}</p>
     <p data-testid="direct-submission-attempts">{submissionAttempts}</p>
     <p data-testid="direct-busy-rejections">{busyRejections}</p>
@@ -169,7 +193,10 @@ export function DirectPrivateFixture() {
     <p data-testid="direct-proof-events">{events.join(',') || 'none'}</p>
     <PrivateBalanceRuntimeControlProvider scopeKey="synthetic-direct">
       <PrivateBalanceRuntimeDataProvider value={runtime}>
-        <DirectPrivateAssetRegistration />
+        <DirectPrivateAssetRegistration enabled={sharedOpen} />
+        <PrivateBalanceRuntimeDataProvider value={{ ...runtime, configured: true }}>
+          <SendModal open={sharedOpen} prefill={sharedPrefill} initialMode={sharedPrefill ? 'public' : 'private'} onClose={() => setSharedOpen(false)} />
+        </PrivateBalanceRuntimeDataProvider>
         <SendPrivate open={open} prefill={{ recipient: defaultAddress }} onClose={() => setOpen(false)} onSubmitted={() => setOutcomes(value => value + 1)} />
         <WithdrawPrivate open={withdrawOpen} onClose={() => setWithdrawOpen(false)} onSubmitted={() => setOutcomes(value => value + 1)} />
       </PrivateBalanceRuntimeDataProvider>

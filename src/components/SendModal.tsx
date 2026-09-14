@@ -210,6 +210,7 @@ function SendSurface({
   const [sendMode, setSendMode] = useState<"public" | "private">(initialMode);
   const [, startRuntimeTransition] = useTransition();
   const [privatePrefill, setPrivatePrefill] = useState<string | undefined>(undefined);
+  const [publicPrefill, setPublicPrefill] = useState<SendPrefill | undefined>(undefined);
   const privateLeaveHandler = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
@@ -228,6 +229,12 @@ function SendSurface({
     setSendMode("private");
     startRuntimeTransition(requestRuntime);
   };
+  const openPublicSend = (destination: string) => {
+    if (surfaceBusy) return;
+    // Only the public destination crosses modes, never private memo or amount.
+    setPublicPrefill({ destination });
+    changeMode("public");
+  };
   // Unsigned form/review can change mode (resetting the public draft).
   // Busy preparation/signing blocks activation; result screens hide the switch.
   const [publicStage, setPublicStage] = useState<Stage>("form");
@@ -236,6 +243,7 @@ function SendSurface({
       <PrivateSend
         onClose={onClose}
         prefill={privatePrefill ? { recipient: privatePrefill } : undefined}
+        onPublicSend={openPublicSend}
         showAssetSelector
         embedded
         onCloseHandlerChange={onPrivateCloseHandlerChange}
@@ -249,7 +257,8 @@ function SendSurface({
   ) : (
     <SendInner
       onClose={onClose}
-      prefill={prefill}
+      prefill={publicPrefill ?? prefill}
+      focusRecipient={publicPrefill !== undefined}
       openPrivateSend={openPrivateSend}
       onBusyChange={onBusyChange}
       onDirtyChange={onDirtyChange}
@@ -280,6 +289,7 @@ function SendSurface({
 function SendInner({
   onClose,
   prefill,
+  focusRecipient = false,
   openPrivateSend,
   onBusyChange,
   onDirtyChange,
@@ -288,6 +298,7 @@ function SendInner({
 }: {
   onClose: () => void;
   prefill?: SendPrefill | null;
+  focusRecipient?: boolean;
   openPrivateSend(address: string): void;
   onBusyChange(busy: boolean): void;
   onDirtyChange?(dirty: boolean): void;
@@ -376,8 +387,18 @@ function SendInner({
   const amountInputId = useId();
   const amountErrorId = `${amountInputId}-error`;
   const destinationInputId = useId();
+  const destinationInputRef = useRef<HTMLInputElement>(null);
   const memoInputId = useId();
   const memoCounterId = `${memoInputId}-counter`;
+
+  useLayoutEffect(() => {
+    // The handoff removes its activating button. Restore that lost focus in
+    // this panel, but never replace newer focus on a tab or another overlay.
+    const input = destinationInputRef.current;
+    if (focusRecipient && document.activeElement === document.body && input && !input.closest('[inert]')) {
+      input.focus({ preventScroll: true });
+    }
+  }, [focusRecipient]);
 
   const [signerInfo, setSignerInfo] = useState<AccountSignerInfo | null>(null);
   const trackedSubmissionStatus = submission ? submissionStatus(submission) : null;
@@ -1274,6 +1295,7 @@ function SendInner({
                 />
                 <input
                   id={destinationInputId}
+                  ref={destinationInputRef}
                   type="text"
                   placeholder="G…, user*domain.com, or tsm…"
                   value={destination}

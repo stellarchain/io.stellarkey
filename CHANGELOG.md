@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Use opaque, theme-matched modal surfaces so underlying page content cannot show through mobile sheets, dialogs or confirmation alerts.
+- Keep the Send Payment modal open when “Use Regular Send” switches from Private to Public, carrying over the recipient without exposing the private memo or amount.
 
 ## [1.0.2] - 2026-09-14
 
