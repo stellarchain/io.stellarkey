@@ -99,11 +99,11 @@ test('receive QR and download never describe a stale payload; leaving clears ren
   await dialog.getByRole('button', { name: 'Complete initial synthetic QRs' }).click();
   await expect(dialog.locator('img')).toHaveCount(1);
   await expect(dialog.locator('a[download]')).toHaveCount(1);
-  await dialog.getByRole('button', { name: /New Address|Fresh Address|Rotate/i }).click();
+  await dialog.getByRole('button', { name: 'New address', exact: true }).click();
   await expect(dialog.getByTestId('qr-request-count')).toHaveText(String(initial + 1));
   await expect(dialog.locator('img')).toHaveCount(0);
   await expect(dialog.locator('a[download]')).toHaveCount(0);
-  await dialog.getByRole('button', { name: /New Address|Fresh Address|Rotate/i }).click();
+  await dialog.getByRole('button', { name: 'New address', exact: true }).click();
   await expect(dialog.getByTestId('qr-request-count')).toHaveText(String(initial + 2));
   await dialog.getByRole('button', { name: 'Complete next synthetic QR' }).click();
   await expect(dialog.locator('img')).toHaveCount(0);
