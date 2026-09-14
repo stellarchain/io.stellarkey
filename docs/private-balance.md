@@ -3,9 +3,9 @@
 - **Author:** StellarKey
 - **Contact:** support@stellarkey.io
 - **Protocol:** V2 capacity-independent full-input exits
-- **Application version:** StellarKey 1.0.2
+- **Application version:** StellarKey 1.0.3
 - **Application baseline:** Stable 1.0.0; only current-format state is supported
-- **Implementation baseline:** `v1.0.2` (immutable release tag; artifact identities in §16)
+- **Implementation baseline:** `v1.0.3` (immutable release tag; artifact identities in §16)
 - **Implementation status:** Live Testnet development deployment; validation scope and dates in §17; not for real value
 - **Document revision:** 2026-09-14
 
@@ -181,10 +181,15 @@ common to the account while issued receive addresses can rotate.
 
 First setup generates a random non-zero receive diversifier. Session
 initialization preserves an existing supported receive address exactly and
-rejects an unsupported default identity. Only explicit rotation generates a
-replacement. The provider records each issued diversifier in encrypted local
+rejects an unsupported default identity. Each new receive opening creates a fresh
+address after the user explicitly selects Private. Focusing a tab alone is not
+issuance intent. Switching tabs or assets within the same pool preserves the
+request; New address explicitly replaces it. If issuance is unavailable, the
+wallet offers warned, explicit reuse of the saved address rather than silently
+sharing it. The provider records each issued diversifier in encrypted local
 state before publishing the address; receipts from current-format issued
-addresses remain recoverable.
+addresses remain recoverable. Rotation does not provide forward secrecy against
+compromise of the seed or viewing key.
 
 Issuance records up to 65,536 diversifiers and refuses to reissue a recorded
 value. Rotation excludes the zero diversifier and current address. Full
@@ -837,6 +842,15 @@ set. Fixed two-input/three-output arity, randomized lanes, and one matched clear
 diversifier per action obscure output roles, but they cannot create a large
 privacy set when the pool is small or activity is uniquely timed. Reusing a
 private receive address still links whole actions through the clear diversifier.
+
+The wallet offers local-only amount and timing advice in deposit and withdrawal
+forms and reviews. It suggests considering rounder deposits with more than two
+decimal places, and warns when a withdrawal matches a same-asset deposit in
+available local history or follows a known same-asset deposit within 24 hours.
+Missing timestamps do not count as recent activity. These heuristics neither
+measure the anonymity set nor guarantee unlinkability; silence, waiting, or
+splitting a withdrawal is not evidence of privacy. They do not upload history,
+query additional RPC data, change amounts, or delay submission.
 
 The RPC operator can see the connecting IP address, request timing, selected
 pool, queried ledger ranges, simulations, restoration attempts, and submitted

@@ -70,9 +70,9 @@ The review's unsigned inner hash differs from a sponsored transaction's final
 hash. The wallet journals both and tracks the submitted outer envelope for
 confirmation and resume. A pending or uncertain result is not ledger confirmation.
 
-## Receive requests and local privacy advice (Unreleased)
+## Receive requests and local privacy advice (1.0.3)
 
-The current development build creates a fresh shielded receive address when a
+StellarKey 1.0.3 creates a fresh shielded receive address when a
 new receive opening explicitly selects Private. Merely focusing the tab does
 not request an address. Switching tabs or assets within the same pool does not
 request another rotation. **New address** starts another request in place.
