@@ -37,7 +37,7 @@ jobs:
           git clone --no-checkout https://github.com/costa-group/circom_civer.git "$RUNNER_TEMP/circom_civer"
           git -C "$RUNNER_TEMP/circom_civer" checkout --detach "$CIVER_SOURCE_COMMIT"
           test "$(git -C "$RUNNER_TEMP/circom_civer" rev-parse HEAD)" = "$CIVER_SOURCE_COMMIT"
-          cargo +1.97.1 build --manifest-path "$RUNNER_TEMP/circom_civer/Cargo.toml" --release -p civer_circom
+          cargo +1.97.1 build --manifest-path "$RUNNER_TEMP/circom_civer/Cargo.toml" --release --locked -p civer_circom
       - run: cargo +1.97.1 install --git https://github.com/iden3/circom.git --tag v2.2.3 --locked circom
       - run: cargo +1.97.1 install circomspect --version 0.9.0 --locked
       - run: corepack npm --prefix protocol/private-balance/circuits ci
@@ -92,15 +92,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: rustup toolchain install 1.97.1 --profile minimal
+      - run: rustup component add rustfmt --toolchain 1.97.1
+      - run: cargo +1.97.1 fmt --all -- --check
+        working-directory: protocol/private-balance
       - run: cargo +1.97.1 test --workspace --locked
         working-directory: protocol/private-balance
       - run: cargo +1.97.1 install cargo-deny --version 0.20.2 --locked
       - run: cargo +1.97.1 deny --config deny.toml check
         working-directory: protocol/private-balance
 
-  verify:
+  application:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -115,5 +120,49 @@ jobs:
       - run: rustup toolchain install 1.97.1 --profile minimal
       - uses: ./.github/actions/setup-stellar-cli
       - run: npx playwright install --with-deps chromium webkit
-      - run: npm run verify:application
+      - run: npm run verify:application:core
+      - run: npm run verify:application:production
       - run: test -f out/index.html
+
+  private-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [desktop-chromium, iphone-webkit]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.2
+          cache: npm
+      - run: corepack install
+      - run: corepack npm ci
+      - run: corepack npm --prefix protocol/private-balance/circuits ci
+      - run: rustup toolchain install 1.97.1 --profile minimal
+      - uses: ./.github/actions/setup-stellar-cli
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run private:check-generated
+      - run: npm run test:e2e:private-ui
+      - run: npm run test:e2e:private-components -- --project="$BROWSER_PROJECT" && npm run check:fixture-clean
+        env:
+          BROWSER_PROJECT: ${{ matrix.browser }}
+
+  verify:
+    needs: [application, private-ui]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every application verification lane
+        env:
+          APPLICATION_RESULT: ${{ needs.application.result }}
+          PRIVATE_UI_RESULT: ${{ needs.private-ui.result }}
+        run: |
+          test "$APPLICATION_RESULT" = success
+          test "$PRIVATE_UI_RESULT" = success

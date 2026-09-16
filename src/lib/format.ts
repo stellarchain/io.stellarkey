@@ -70,31 +70,18 @@ export interface ActivityAmountLine {
 
 /** Return bank-style signed amount lines, including both legs of a self-swap. */
 export function activityAmountLines(item: ActivityItem): ActivityAmountLine[] {
-  if (item.internalTransfer) {
+  const transfer = item.internalTransfer ?? item.swap;
+  if (transfer) {
     return [
       {
-        ...item.internalTransfer.debit,
+        ...transfer.debit,
         direction: "out",
-        display: `−${fmtAmount(item.internalTransfer.debit.amount)} ${item.internalTransfer.debit.assetCode}`,
+        display: `−${fmtAmount(transfer.debit.amount)} ${transfer.debit.assetCode}`,
       },
       {
-        ...item.internalTransfer.credit,
+        ...transfer.credit,
         direction: "in",
-        display: `+${fmtAmount(item.internalTransfer.credit.amount)} ${item.internalTransfer.credit.assetCode}`,
-      },
-    ];
-  }
-  if (item.swap) {
-    return [
-      {
-        ...item.swap.debit,
-        direction: "out",
-        display: `−${fmtAmount(item.swap.debit.amount)} ${item.swap.debit.assetCode}`,
-      },
-      {
-        ...item.swap.credit,
-        direction: "in",
-        display: `+${fmtAmount(item.swap.credit.amount)} ${item.swap.credit.assetCode}`,
+        display: `+${fmtAmount(transfer.credit.amount)} ${transfer.credit.assetCode}`,
       },
     ];
   }

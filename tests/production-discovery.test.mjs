@@ -208,7 +208,11 @@ test("tag releases build once, attest, and publish the exact artifacts", () => {
   assert.match(workflow, /actions\/checkout@[0-9a-f]{40}/);
   assert.match(workflow, /actions\/setup-node@[0-9a-f]{40}/);
   assert.match(workflow, /actions\/attest-build-provenance@[0-9a-f]{40}/);
-  assert.match(workflow, /npm run release:verify/);
+  assert.match(workflow, /node scripts\/assert-clean-release\.mjs --commit "\$GITHUB_SHA" --tag "\$GITHUB_REF_NAME"/);
+  assert.match(workflow, /npm run verify:application:core/);
+  assert.match(workflow, /npm run verify:application:production/);
+  assert.match(workflow, /npm run test:e2e:private-ui/);
+  assert.match(workflow, /npm run test:e2e:private-components -- --project="\$BROWSER_PROJECT" && npm run check:fixture-clean/);
   assert.equal((workflow.match(/npm run build/g) ?? []).length, 0);
   assert.match(workflow, /node scripts\/create-release-artifact\.mjs/);
   assert.match(workflow, /gh release create/);

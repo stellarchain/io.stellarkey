@@ -9,9 +9,7 @@ env:
   NEXT_TELEMETRY_DISABLED: "1"
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
 
 jobs:
   private-circuits:
@@ -36,9 +34,12 @@ jobs:
           git clone --no-checkout https://github.com/costa-group/circom_civer.git "$RUNNER_TEMP/circom_civer"
           git -C "$RUNNER_TEMP/circom_civer" checkout --detach "$CIVER_SOURCE_COMMIT"
           test "$(git -C "$RUNNER_TEMP/circom_civer" rev-parse HEAD)" = "$CIVER_SOURCE_COMMIT"
-          cargo +1.97.1 build --manifest-path "$RUNNER_TEMP/circom_civer/Cargo.toml" --release -p civer_circom
+          cargo +1.97.1 build --manifest-path "$RUNNER_TEMP/circom_civer/Cargo.toml" --release --locked -p civer_circom
       - run: cargo +1.97.1 install --git https://github.com/iden3/circom.git --tag v2.2.3 --locked circom
       - run: cargo +1.97.1 install circomspect --version 0.9.0 --locked
+      - run: rustup component add rustfmt --toolchain 1.97.1
+      - run: cargo +1.97.1 fmt --all -- --check
+        working-directory: protocol/private-balance
       - run: cargo +1.97.1 test --workspace --locked
         working-directory: protocol/private-balance
       - run: cargo +1.97.1 install cargo-deny --version 0.20.2 --locked
@@ -89,10 +90,13 @@ jobs:
           test "$CIRCUIT_RESULT" = success
           test "$ARTIFACT_RESULT" = success
 
-  release:
-    needs: private-gate-a
+  application:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      artifact-id: ${{ steps.bundle.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -108,11 +112,82 @@ jobs:
       - uses: ./.github/actions/setup-stellar-cli
       - run: npx playwright install --with-deps chromium webkit
       - run: node scripts/assert-clean-release.mjs --commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
-      - name: Verify the shared application gate and clean release
-        run: npm run release:verify
+      - run: npm run verify:application:core
+      - run: npm run verify:application:production
         env:
           NEXT_PUBLIC_BUILD_COMMIT: ${{ github.sha }}
       - run: node scripts/create-release-artifact.mjs --commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
+      - name: Stage the verified public release bundle
+        id: bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            release-artifacts/*.tar.gz
+            release-artifacts/*.cdx.json
+            release-artifacts/release-files.json
+            release-artifacts/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  private-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [desktop-chromium, iphone-webkit]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.2
+          cache: npm
+      - run: corepack install
+      - run: corepack npm ci
+      - run: corepack npm --prefix protocol/private-balance/circuits ci
+      - run: rustup toolchain install 1.97.1 --profile minimal
+      - uses: ./.github/actions/setup-stellar-cli
+      - run: npx playwright install --with-deps chromium webkit
+      - run: node scripts/assert-clean-release.mjs --commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
+      - run: npm run private:check-generated
+      - run: npm run test:e2e:private-ui
+      - run: npm run test:e2e:private-components -- --project="$BROWSER_PROJECT" && npm run check:fixture-clean
+        env:
+          BROWSER_PROJECT: ${{ matrix.browser }}
+      - run: node scripts/assert-clean-release.mjs --commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
+
+  release:
+    needs: [private-gate-a, application, private-ui]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Require a single staged artifact ID
+        env:
+          ARTIFACT_ID: ${{ needs.application.outputs.artifact-id }}
+        run: '[[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]'
+      - name: Download this run's exact staged bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.application.outputs.artifact-id }}
+          path: release-artifacts
+          merge-multiple: true
+          digest-mismatch: error
+      - name: Verify staged checksums and source identity
+        working-directory: release-artifacts
+        run: |
+          sha256sum --check SHA256SUMS
+          test "$(node -p "require('./release-files.json').commit")" = "$GITHUB_SHA"
+          test "$(node -p "require('./release-files.json').version")" = "${GITHUB_REF_NAME#v}"
       - name: Attest release artifacts
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -120,6 +195,7 @@ jobs:
       - name: Publish exact verified files
         run: >-
           gh release create "$GITHUB_REF_NAME" release-artifacts/*
+          --repo "$GITHUB_REPOSITORY"
           --verify-tag
           --generate-notes
           --title "StellarKey ${GITHUB_REF_NAME#v}"

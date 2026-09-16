@@ -86,7 +86,7 @@ export async function mnemonicToSeed(
   const provider = requireWebCrypto();
   const baseKey = await provider.subtle.importKey(
     "raw",
-    te.encode(normalizeMnemonic(mnemonic)) as unknown as ArrayBuffer,
+    te.encode(normalizeMnemonic(mnemonic)),
     "PBKDF2",
     false,
     ["deriveBits"],
@@ -94,7 +94,7 @@ export async function mnemonicToSeed(
   const bits = await provider.subtle.deriveBits(
     {
       name: "PBKDF2",
-      salt: te.encode(`mnemonic${passphrase.normalize("NFKD")}`) as unknown as ArrayBuffer,
+      salt: te.encode(`mnemonic${passphrase.normalize("NFKD")}`),
       iterations: 2048,
       hash: "SHA-512",
     },

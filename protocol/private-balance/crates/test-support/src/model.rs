@@ -131,16 +131,19 @@ impl PoolModel {
 
         let starting_leaf_index = self.tree.next_leaf_index;
         let mut next_tree = self.tree.clone();
-        let root_after = if action.kind == ActionKind::FullInputExit { Ok(next_tree.root) } else { match tree_hash_context {
-            Some(context) => context.append_three_commitments(
-                &mut next_tree,
-                &action.outputs.clone().map(|output| output.cm),
-            ),
-            None => {
-                next_tree.append_three_commitments(&action.outputs.clone().map(|output| output.cm))
+        let root_after = if action.kind == ActionKind::FullInputExit {
+            Ok(next_tree.root)
+        } else {
+            match tree_hash_context {
+                Some(context) => context.append_three_commitments(
+                    &mut next_tree,
+                    &action.outputs.clone().map(|output| output.cm),
+                ),
+                None => next_tree
+                    .append_three_commitments(&action.outputs.clone().map(|output| output.cm)),
             }
         }
-        }.map_err(|error| format!("{error:?}"))?;
+        .map_err(|error| format!("{error:?}"))?;
 
         let rec = ArchiveRecord {
             action_index: self.records.len() as u128,

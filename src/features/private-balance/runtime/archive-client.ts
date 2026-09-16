@@ -1,3 +1,4 @@
+import { equalBytes } from '@noble/ciphers/utils.js';
 import { isPrivateIndex, MAX_PRIVATE_INDEX } from './indices';
 import {
   Address,
@@ -327,13 +328,6 @@ function unwrapContractResult(value: unknown, name: string): unknown {
     throw new Error(`${name} did not return a successful contract result`);
   }
   return value.unwrap();
-}
-
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.length !== right.length) return false;
-  let difference = 0;
-  for (let index = 0; index < left.length; index += 1) difference |= left[index] ^ right[index];
-  return difference === 0;
 }
 
 function hex32(value: string, name: string): Uint8Array {

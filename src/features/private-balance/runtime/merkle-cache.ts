@@ -1,3 +1,4 @@
+import { equalBytes } from '@noble/ciphers/utils.js';
 import { isPrivateIndex, stringifyPrivateIndices, parsePrivateIndices } from './indices';
 import {
   EMPTY_ROOTS,
@@ -112,13 +113,6 @@ function checkpointKey(context: PrivateBalancePublicCacheContext): string {
 
 function nodeKey(context: PrivateBalancePublicCacheContext, level: number, index: bigint): string {
   return `${prefix(context)}node:${level.toString().padStart(2, '0')}:${index.toString().padStart(39, '0')}`;
-}
-
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.length !== right.length) return false;
-  let difference = 0;
-  for (let index = 0; index < left.length; index += 1) difference |= left[index] ^ right[index];
-  return difference === 0;
 }
 
 function decodeCheckpoint(raw: string): MerkleCheckpointRecord {

@@ -122,7 +122,8 @@ pub fn append_record(
             }
             (None, None)
         }
-        private_balance_protocol::action::ActionKind::Withdraw | private_balance_protocol::action::ActionKind::FullInputExit => {
+        private_balance_protocol::action::ActionKind::Withdraw
+        | private_balance_protocol::action::ActionKind::FullInputExit => {
             let recipient = public_address.ok_or(PoolError::InvalidActionShape)?;
             if action.public_recipient != Some(address_payload(recipient)?) {
                 return Err(PoolError::ArchiveCorrupt);

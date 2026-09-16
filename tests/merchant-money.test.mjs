@@ -64,6 +64,20 @@ test("a line carries its modifiers into its quantity", () => {
   assert.equal(lineGrossMinor(l), 720);
 });
 
+test("merchant price drafts allow partial decimals but reject signs, grouping and excess precision", async () => {
+  const { parsePriceMinor } = await import("../src/lib/merchant/money.ts");
+  assert.equal(typeof parsePriceMinor, "function");
+  for (const [input, expected] of [
+    ["0", 0], ["0.00", 0], [".00", 0], [".5", 50], ["1.", 100],
+    [" 12.30 ", 1230], ["000000001.25", 125], ["999999999.99", 99999999999],
+    ["", null], [" ", null], [".", null], ["-0", null], ["-1", null],
+    ["+1", null], ["1,000", null], ["1e2", null], ["1.234", null],
+    ["1000000000", null], ["0000000000", null], ["NaN", null], ["Infinity", null],
+  ]) {
+    assert.equal(parsePriceMinor(input), expected, JSON.stringify(input));
+  }
+});
+
 test("inclusive tax is contained in the price, added tax is not", () => {
   assert.equal(taxOn(2733, 23, "inclusive"), 511);
   assert.equal(taxOn(2733, 23, "added"), 629);

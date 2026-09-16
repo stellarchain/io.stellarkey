@@ -11,6 +11,7 @@ import type {
   LoyaltyEvent,
   MerchantStore,
   Minor,
+  Order,
   StaffMember,
 } from "./types";
 import { canonicalPayerAddress, samePayerAccount } from "./payer";
@@ -241,9 +242,14 @@ export function reconcileCustomerSettlements(
   { contacts }: { contacts: Contact[] },
 ): MerchantStore {
   let next = current;
+  const previousOrdersById = new Map<string, Order>();
+  for (const order of previous.orders) {
+    // Preserve the first-match semantics of the prior lookup.
+    if (!previousOrdersById.has(order.id)) previousOrdersById.set(order.id, order);
+  }
   for (const order of current.orders) {
     if (order.status !== "paid" || !order.payerAddress || order.paidAt === null) continue;
-    const prior = previous.orders.find((entry) => entry.id === order.id);
+    const prior = previousOrdersById.get(order.id);
     if (
       prior?.status === "paid" &&
       prior.payerAddress &&

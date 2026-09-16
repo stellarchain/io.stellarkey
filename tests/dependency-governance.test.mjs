@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
 import { createRequire } from "node:module";
 import { Legacy } from "@eslint/eslintrc";
+import { applicationVerificationCommand } from './helpers/application-verification.mjs';
 
 const root = new URL("../", import.meta.url);
 const read = (relativePath) => readFileSync(new URL(relativePath, root), "utf8");
@@ -32,7 +33,7 @@ test("ESLint loads ordinary YAML config and rejects malformed YAML through its i
 test("application verification audits development dependencies as well as production", () => {
   const scripts = JSON.parse(read("package.json")).scripts;
   assert.equal(scripts["audit:all"], "npm audit --audit-level=high");
-  assert.match(scripts["verify:application"], /npm run audit:prod && npm run audit:all/);
+  assert.match(applicationVerificationCommand(scripts), /npm run audit:prod && npm run audit:all/);
 });
 
 test("the direct cipher dependency is the reviewed hardening release", () => {
@@ -140,6 +141,8 @@ test("workflow JavaScript actions use reviewed Node 24 releases", () => {
     ["actions/checkout", "3d3c42e5aac5ba805825da76410c181273ba90b1"],
     ["actions/setup-node", "820762786026740c76f36085b0efc47a31fe5020"],
     ["actions/attest-build-provenance", "4d101475d8b20a2381f78447822ac1eab6504dd8"],
+    ["actions/upload-artifact", "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"],
+    ["actions/download-artifact", "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"],
     ["cloudflare/wrangler-action", "ebbaa1584979971c8614a24965b4405ff95890e0"],
   ]);
   for (const [action, reviewedSha] of reviewedActions) {

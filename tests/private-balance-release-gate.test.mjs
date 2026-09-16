@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
+import { applicationVerificationCommand } from './helpers/application-verification.mjs';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
@@ -8,12 +9,16 @@ test('CI and release require isolated phone/desktop components and nested browse
   const { scripts } = JSON.parse(read('../package.json'));
   assert.equal(scripts['test:private-protocol'], 'npm --prefix protocol/private-balance/packages/browser test');
   assert.equal(scripts['test:e2e:private-components'], 'node scripts/test-private-components.mjs');
-  assert.match(scripts['verify:application'], /npm run test:private-protocol/);
-  assert.match(scripts['verify:application'], /npm run test:e2e:reporter/);
-  assert.match(scripts['verify:application'], /npm run test:e2e:private-ui.*npm run test:e2e:private-components.*npm run check:fixture-clean.*npm run build.*npm run check:fixture-clean/);
+  assert.match(applicationVerificationCommand(scripts), /npm run test:private-protocol/);
+  assert.match(applicationVerificationCommand(scripts), /npm run test:e2e:reporter/);
+  assert.match(applicationVerificationCommand(scripts), /npm run test:e2e:private-ui.*npm run test:e2e:private-components.*npm run check:fixture-clean.*npm run build.*npm run check:fixture-clean/);
   assert.match(scripts['release:verify'], /npm run verify:application/);
   assert.match(read('../.github/workflows/ci.yml'), /npm run verify:application/);
-  assert.match(read('../.github/workflows/release.yml'), /npm run release:verify/);
+  for (const workflow of ['ci', 'release']) {
+    const source = read(`../.github/workflows/${workflow}.yml`);
+    assert.match(source, /npm run test:e2e:private-ui/);
+    assert.match(source, /npm run test:e2e:private-components -- --project="\$BROWSER_PROJECT" && npm run check:fixture-clean/);
+  }
   const isolated = read('../playwright.private-components.config.ts');
   for (const suite of ['private-components', 'ux-primitives', 'qr-freshness', 'private-direct', 'private-recovery']) {
     assert.ok(isolated.includes(`${suite}.spec.ts`), `${suite} must execute in the isolated gate`);

@@ -1,3 +1,4 @@
+import { equalBytes } from '@noble/ciphers/utils.js';
 import {
   ActionKind,
   TREE_DEPTH,
@@ -118,15 +119,6 @@ interface OutputWitness {
   commitment: Uint8Array;
   recipientEnvelope: Uint8Array;
   outgoingEnvelope: Uint8Array;
-}
-
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.length !== right.length) return false;
-  let difference = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    difference |= left[index] ^ right[index];
-  }
-  return difference === 0;
 }
 
 function merklePathRoot(path: MerklePathWitness): Uint8Array {

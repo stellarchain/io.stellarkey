@@ -330,19 +330,16 @@ function InvoiceRow({
   // target, so one tap never has to mean two different things.
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      className={`row-hover flex w-full cursor-pointer items-center gap-3.5 px-4 py-3.5 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#0A84FF] ${
+      className={`row-hover relative flex w-full cursor-pointer items-center gap-3.5 px-4 py-3.5 text-left ${
         sep ? "ios-sep" : ""
       }`}
     >
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`${invoice.number} · ${INVOICE_STATUS_LABEL[invoice.status]} · ${secondary} · ${fmtMinor(invoice.totals.totalMinor, invoice.currency)}`}
+        className="absolute inset-0 z-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#0A84FF]"
+      />
       <InvoiceStatusIcon status={invoice.status} />
 
       <span className="min-w-0 flex-1">
@@ -368,14 +365,10 @@ function InvoiceRow({
         {isDraft && (
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit();
-            }}
+            onClick={onEdit}
             aria-label={`Edit draft ${invoice.number}`}
-            /* 32px of ink, 44px of target: the pseudo-element carries the reach
-               so the row keeps the app's height. */
-            className="relative flex h-8 w-8 items-center justify-center rounded-full text-[#0A84FF] transition-colors before:absolute before:-inset-1.5 before:content-[''] hover:bg-[#0A84FF]/15 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#0A84FF]"
+            /* Expand the 32px pointer button; touch already has a 44px target. */
+            className="relative z-10 flex h-8 w-8 items-center justify-center rounded-full text-[#0A84FF] transition-colors before:absolute before:-inset-1.5 before:content-[''] pointer-coarse:h-11 pointer-coarse:w-11 pointer-coarse:before:inset-0 hover:bg-[#0A84FF]/15 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#0A84FF]"
           >
             <IconSliders size={16} />
           </button>

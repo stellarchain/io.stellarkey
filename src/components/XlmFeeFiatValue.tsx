@@ -11,7 +11,7 @@ import { marketDataLabel } from "@/lib/prices";
  */
 export function XlmFeeFiatValue({
   amount,
-  className = "text-[10.5px] font-normal text-neutral-500",
+  className = "text-[10.5px] font-normal text-neutral-400",
 }: {
   amount: string;
   className?: string;

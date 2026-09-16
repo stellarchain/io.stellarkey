@@ -9,10 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8");
 
 test("XLM market values follow the selected display currency", () => {
-  const dashboard = read("src/components/Dashboard.tsx");
-  const priceCard = dashboard.slice(
-    dashboard.indexOf("function PriceCard()"),
-  );
+  const priceCard = read("src/components/DashboardPriceCard.tsx");
   const chart = read("src/components/PriceChart.tsx");
 
   assert.match(
@@ -44,8 +41,7 @@ test("market prices retain useful precision below one display-currency unit", ()
 });
 
 test("market card pins its range controls to the dashboard footer line", () => {
-  const dashboard = read("src/components/Dashboard.tsx");
-  const priceCard = dashboard.slice(dashboard.indexOf("function PriceCard()"));
+  const priceCard = read("src/components/DashboardPriceCard.tsx");
 
   assert.match(
     priceCard,
@@ -61,8 +57,7 @@ test("market card pins its range controls to the dashboard footer line", () => {
 });
 
 test("market chart explains the selected period without changing its plot", () => {
-  const dashboard = read("src/components/Dashboard.tsx");
-  const priceCard = dashboard.slice(dashboard.indexOf("function PriceCard()"));
+  const priceCard = read("src/components/DashboardPriceCard.tsx");
   const chart = read("src/components/PriceChart.tsx");
 
   assert.match(priceCard, /Stellar Lumens · \$\{periodLabel\} range/);
@@ -81,9 +76,8 @@ test("market chart explains the selected period without changing its plot", () =
 });
 
 test("range switches keep the visible series labelled correctly and share the latest-request lane", () => {
-  const dashboard = read("src/components/Dashboard.tsx");
   const wallet = read("src/hooks/useWallet.tsx");
-  const priceCard = dashboard.slice(dashboard.indexOf("function PriceCard()"));
+  const priceCard = read("src/components/DashboardPriceCard.tsx");
   const changeRange = wallet.slice(
     wallet.indexOf("const changePriceRange"),
     wallet.indexOf("const togglePrivacy"),
@@ -105,7 +99,7 @@ test("range switches keep the visible series labelled correctly and share the la
 
 test("the main balance and market chart omit rate timestamps and the chart refresh button", () => {
   const dashboard = read("src/components/Dashboard.tsx");
-  const priceCard = dashboard.slice(dashboard.indexOf("function PriceCard()"));
+  const priceCard = read("src/components/DashboardPriceCard.tsx");
   assert.doesNotMatch(dashboard, /marketDataLabel/);
   assert.doesNotMatch(priceCard, /Retry chart|IconRefresh|<Button/);
   assert.match(priceCard, /Chart refresh unavailable/);
@@ -121,8 +115,7 @@ test("retained converter rates disclose their observation rather than claiming t
 });
 
 test("chart inspection replaces the single top-right market readout", () => {
-  const dashboard = read("src/components/Dashboard.tsx");
-  const priceCard = dashboard.slice(dashboard.indexOf("function PriceCard()"));
+  const priceCard = read("src/components/DashboardPriceCard.tsx");
   const chart = read("src/components/PriceChart.tsx");
 
   assert.match(

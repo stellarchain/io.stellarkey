@@ -167,16 +167,20 @@ fn replay_record(
         }
     }
 
-    let root_after = if kind == ActionKind::FullInputExit { Ok(accumulator.tree.root) } else { match tree_hash_context {
-        Some(context) => context.append_three_commitments(
-            &mut accumulator.tree,
-            &record.outputs.clone().map(|output| output.cm),
-        ),
-        None => accumulator
-            .tree
-            .append_three_commitments(&record.outputs.clone().map(|output| output.cm)),
+    let root_after = if kind == ActionKind::FullInputExit {
+        Ok(accumulator.tree.root)
+    } else {
+        match tree_hash_context {
+            Some(context) => context.append_three_commitments(
+                &mut accumulator.tree,
+                &record.outputs.clone().map(|output| output.cm),
+            ),
+            None => accumulator
+                .tree
+                .append_three_commitments(&record.outputs.clone().map(|output| output.cm)),
+        }
     }
-    }.map_err(|error| format!("Tree replay failed at action {action_index}: {error:?}"))?;
+    .map_err(|error| format!("Tree replay failed at action {action_index}: {error:?}"))?;
     if record.tree_root_after != root_after {
         return Err(format!("Invalid tree root at action {action_index}"));
     }

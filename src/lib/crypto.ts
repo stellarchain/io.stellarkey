@@ -22,22 +22,22 @@ function toB64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-function fromB64(s: string): Uint8Array {
+function fromB64(s: string): Uint8Array<ArrayBuffer> {
   const bin = atob(s);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
 
-export function randomBytes(n: number): Uint8Array {
+export function randomBytes(n: number): Uint8Array<ArrayBuffer> {
   return requireWebCrypto().getRandomValues(new Uint8Array(n));
 }
 
-async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+async function deriveKey(password: string, salt: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
   const provider = requireWebCrypto();
   const material = await provider.subtle.importKey(
     "raw",
-    te.encode(password) as unknown as ArrayBuffer,
+    te.encode(password),
     "PBKDF2",
     false,
     ["deriveKey"],
@@ -45,7 +45,7 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
   return provider.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt: salt as unknown as ArrayBuffer,
+      salt,
       iterations: KDF_ITERATIONS,
       hash: "SHA-256",
     },
@@ -60,15 +60,7 @@ export async function encryptString(
   plaintext: string,
   password: string,
 ): Promise<EncryptedPayload> {
-  const salt = randomBytes(16);
-  const iv = randomBytes(12);
-  const key = await deriveKey(password, salt);
-  const ct = await requireWebCrypto().subtle.encrypt(
-    { name: "AES-GCM", iv: iv as unknown as ArrayBuffer },
-    key,
-    te.encode(plaintext) as unknown as ArrayBuffer,
-  );
-  return { salt: toB64(salt), iv: toB64(iv), ciphertext: toB64(new Uint8Array(ct)) };
+  return encryptBytes(te.encode(plaintext), password);
 }
 
 export async function encryptBytes(
@@ -79,7 +71,7 @@ export async function encryptBytes(
   const iv = randomBytes(12);
   const key = await deriveKey(password, salt);
   const ciphertext = await requireWebCrypto().subtle.encrypt(
-    { name: "AES-GCM", iv: iv as unknown as ArrayBuffer },
+    { name: "AES-GCM", iv },
     key,
     plaintext as unknown as ArrayBuffer,
   );
@@ -90,13 +82,7 @@ export async function decryptString(
   payload: EncryptedPayload,
   password: string,
 ): Promise<string> {
-  const key = await deriveKey(password, fromB64(payload.salt));
-  const pt = await requireWebCrypto().subtle.decrypt(
-    { name: "AES-GCM", iv: fromB64(payload.iv) as unknown as ArrayBuffer },
-    key,
-    fromB64(payload.ciphertext) as unknown as ArrayBuffer,
-  );
-  return td.decode(pt);
+  return td.decode(await decryptBytes(payload, password));
 }
 
 export async function decryptBytes(
@@ -105,9 +91,9 @@ export async function decryptBytes(
 ): Promise<Uint8Array> {
   const key = await deriveKey(password, fromB64(payload.salt));
   const plaintext = await requireWebCrypto().subtle.decrypt(
-    { name: "AES-GCM", iv: fromB64(payload.iv) as unknown as ArrayBuffer },
+    { name: "AES-GCM", iv: fromB64(payload.iv) },
     key,
-    fromB64(payload.ciphertext) as unknown as ArrayBuffer,
+    fromB64(payload.ciphertext),
   );
   return new Uint8Array(plaintext);
 }
@@ -140,7 +126,7 @@ export async function encryptBytesWithKey(
   const ciphertext = await requireWebCrypto().subtle.encrypt(
     {
       name: "AES-GCM",
-      iv: iv as unknown as ArrayBuffer,
+      iv,
       ...(additionalData
         ? { additionalData: additionalData as unknown as ArrayBuffer }
         : {}),
@@ -167,13 +153,13 @@ export async function decryptBytesWithKey(
   const plaintext = await requireWebCrypto().subtle.decrypt(
     {
       name: "AES-GCM",
-      iv: fromB64(payload.iv) as unknown as ArrayBuffer,
+      iv: fromB64(payload.iv),
       ...(additionalData
         ? { additionalData: additionalData as unknown as ArrayBuffer }
         : {}),
     },
     key,
-    fromB64(payload.ciphertext) as unknown as ArrayBuffer,
+    fromB64(payload.ciphertext),
   );
   return new Uint8Array(plaintext);
 }
@@ -194,8 +180,8 @@ export async function deriveContextKeyBytes(
     {
       name: "HKDF",
       hash: "SHA-256",
-      salt: te.encode("wallet-vault-context-v1") as unknown as ArrayBuffer,
-      info: te.encode(context) as unknown as ArrayBuffer,
+      salt: te.encode("wallet-vault-context-v1"),
+      info: te.encode(context),
     },
     material,
     256,

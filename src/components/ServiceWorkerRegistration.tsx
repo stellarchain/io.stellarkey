@@ -72,6 +72,7 @@ export function ServiceWorkerRegistration() {
       };
     }
 
+    let cancelled = false;
     let registration: ServiceWorkerRegistration | null = null;
     let installing: ServiceWorker | null = null;
 
@@ -95,10 +96,12 @@ export function ServiceWorkerRegistration() {
     };
     const register = async () => {
       try {
-        registration = await navigator.serviceWorker.register("/sw.js", {
+        const registered = await navigator.serviceWorker.register("/sw.js", {
           scope: "/",
           updateViaCache: "none",
         });
+        if (cancelled) return;
+        registration = registered;
         registration.addEventListener("updatefound", onUpdateFound);
         offerWaitingUpdate();
       } catch {
@@ -111,6 +114,7 @@ export function ServiceWorkerRegistration() {
     else window.addEventListener("load", register, { once: true });
 
     return () => {
+      cancelled = true;
       window.removeEventListener("load", register);
       navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
       registration?.removeEventListener("updatefound", onUpdateFound);

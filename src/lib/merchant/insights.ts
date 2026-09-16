@@ -14,6 +14,7 @@ export interface InsightsHistory {
   sameDayLastWeekToDate: { takingsMinor: Minor; orderCount: number } | null;
   last14Days: { at: number; takingsMinor: Minor; orderCount: number; toDateMinor: Minor }[];
   typicalByHour: { hour: number; takingsMinor: Minor }[];
+  /** Local clock position for the hourly chart, not a duration across clock changes. */
   hoursElapsed: number;
 }
 
@@ -32,20 +33,29 @@ function shiftDays(dayStart: number, days: number): number {
   return date.getTime();
 }
 
+function clockTimeMs(date: Date): number {
+  return ((date.getHours() * 60 + date.getMinutes()) * 60 + date.getSeconds()) * 1000 +
+    date.getMilliseconds();
+}
+
 export function deriveInsightsHistory(
   orders: readonly Order[],
   { network, now }: { network: NetworkKey; now: number },
 ): InsightsHistory {
   const todayStart = startOfDay(now);
-  const elapsedMs = now - todayStart;
-  const paid = orders.filter((order) => order.network === network && order.paidAt !== null);
+  const clockMs = clockTimeMs(new Date(now));
+  const historyStart = shiftDays(todayStart, -Math.max(TREND_DAYS - 1, TYPICAL_WEEKS * 7));
+  const tomorrowStart = shiftDays(todayStart, 1);
 
   const days = new Map<number, { takingsMinor: Minor; orderCount: number }>();
   const toClock = new Map<number, { takingsMinor: Minor; orderCount: number }>();
   const hours = new Map<number, Map<number, Minor>>();
 
-  for (const order of paid) {
-    const at = order.paidAt as number;
+  for (const order of orders) {
+    const at = order.paidAt;
+    if (order.network !== network || at === null) continue;
+    if (at < historyStart || at >= tomorrowStart) continue;
+    const date = new Date(at);
     const dayStart = startOfDay(at);
     const total = order.totals.totalMinor;
 
@@ -54,7 +64,7 @@ export function deriveInsightsHistory(
     day.orderCount += 1;
     days.set(dayStart, day);
 
-    if (at - dayStart < elapsedMs) {
+    if (clockTimeMs(date) < clockMs) {
       const soFar = toClock.get(dayStart) ?? { takingsMinor: 0, orderCount: 0 };
       soFar.takingsMinor += total;
       soFar.orderCount += 1;
@@ -62,7 +72,7 @@ export function deriveInsightsHistory(
     }
 
     const perHour = hours.get(dayStart) ?? new Map<number, Minor>();
-    const hour = new Date(at).getHours();
+    const hour = date.getHours();
     perHour.set(hour, (perHour.get(hour) ?? 0) + total);
     hours.set(dayStart, perHour);
   }
@@ -99,6 +109,6 @@ export function deriveInsightsHistory(
     typicalByHour: [...typicalTotals.entries()]
       .map(([hour, minor]) => ({ hour, takingsMinor: Math.round(minor / weekdays.length) }))
       .sort((a, b) => a.hour - b.hour),
-    hoursElapsed: elapsedMs / HOUR_MS,
+    hoursElapsed: clockMs / HOUR_MS,
   };
 }

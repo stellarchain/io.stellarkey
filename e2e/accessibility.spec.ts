@@ -506,7 +506,34 @@ test("critical merchant screens remain operable and accessible", async ({ page, 
   const invoice = page.getByRole("dialog", { name: "New Invoice" });
   await expect(invoice).toBeVisible();
   await expectAccessibleSurface(page, "new invoice sheet", browserName);
-  await invoice.getByRole("button", { name: "Close", exact: true }).click();
+  await invoice.getByLabel("Customer").fill("Synthetic accessibility customer");
+  await invoice.getByRole("button", { name: /Free-Text Line/ }).click();
+  await invoice.getByLabel("Line description").fill("Synthetic service");
+  await invoice.getByLabel("Unit price").fill("12.00");
+  await invoice.getByRole("button", { name: "Save Draft" }).click();
+  await expect(page.locator("[data-modal-backdrop]")).toHaveCount(0);
+  // WebKit's native field scrolling can leave the header partly outside the
+  // viewport. Bring it back into view for the page-wide target-size audit.
+  if (await merchantNav.isVisible()) {
+    await page.getByRole("button", { name: "Open shift", exact: true }).scrollIntoViewIfNeeded();
+  }
+  await expectAccessibleSurface(page, "populated invoice list", browserName);
+  for (const key of ["Enter", " "]) {
+    await expect(page.locator("[data-modal-backdrop]")).toHaveCount(0);
+    const editButton = page.getByRole("button", { name: /^Edit draft INV-/ });
+    if (await page.evaluate(() => matchMedia("(pointer: coarse)").matches)) {
+      const bounds = await editButton.boundingBox();
+      expect(bounds?.width).toBeGreaterThanOrEqual(44);
+      expect(bounds?.height).toBeGreaterThanOrEqual(44);
+    }
+    await editButton.focus();
+    await expect(editButton).toBeFocused();
+    await editButton.press(key);
+    const editor = page.getByRole("dialog", { name: "Edit invoice" });
+    await expect(editor).toBeVisible();
+    await expectAccessibleSurface(page, "edit invoice sheet", browserName);
+    await editor.getByRole("button", { name: "Close", exact: true }).click();
+  }
 
   await clickMerchantSection(page, "Counter codes");
   await page.getByRole("button", { name: "New Code", exact: true }).first().click();

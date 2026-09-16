@@ -1,3 +1,4 @@
+import { equalBytes } from "@noble/ciphers/utils.js";
 import {
   decryptBytesWithKey,
   encryptBytesWithKey,
@@ -162,15 +163,6 @@ function readPrfResult(credential: ReturnType<typeof readCredential>): Uint8Arra
 function registrationSupportsPrf(credential: ReturnType<typeof readCredential>): boolean {
   const extensions = credential.getClientExtensionResults() as { prf?: { enabled?: unknown } };
   return extensions?.prf?.enabled === true;
-}
-
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) return false;
-  let difference = 0;
-  for (let index = 0; index < left.byteLength; index += 1) {
-    difference |= left[index] ^ right[index];
-  }
-  return difference === 0;
 }
 
 function normalizeCeremonyError(error: unknown): never {

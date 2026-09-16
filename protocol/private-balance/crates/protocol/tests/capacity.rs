@@ -1,7 +1,7 @@
 use private_balance_protocol::{
     constants::{TREE_CAPACITY, TREE_DEPTH},
     note::compute_nullifier,
-    tree::{compute_root_from_path, hash_merkle_node, TreeState, EMPTY_ROOTS},
+    tree::{EMPTY_ROOTS, TreeState, compute_root_from_path, hash_merkle_node},
 };
 
 #[test]
