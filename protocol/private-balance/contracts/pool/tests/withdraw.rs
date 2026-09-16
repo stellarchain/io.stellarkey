@@ -264,24 +264,49 @@ fn paused_idle_pool_can_refresh_current_root_and_withdraw() {
 
 #[test]
 fn full_input_exit_survives_saturation_and_shares_replay_protection() {
-    use private_balance_protocol::constants::TREE_CAPACITY;
     use private_balance_pool::storage;
+    use private_balance_protocol::constants::TREE_CAPACITY;
     let env = Env::default();
     env.mock_all_auths();
     let fixture = register_pool(&env);
     let pool = PrivateBalancePoolClient::new(&env, &fixture.pool_id);
     let token = MockNativeTokenClient::new(&env, &fixture.asset);
-    let recipient = AddressPayload::AccountIdPublicKeyEd25519(BytesN::from_array(&env, &[5; 32])).to_address(&env);
-    let vectors: ProofVectorFile = serde_json::from_str(&fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../vectors/proofs-v1.json")).unwrap()).unwrap();
+    let recipient = AddressPayload::AccountIdPublicKeyEd25519(BytesN::from_array(&env, &[5; 32]))
+        .to_address(&env);
+    let vectors: ProofVectorFile = serde_json::from_str(
+        &fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../vectors/proofs-v1.json"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
     let vector = &vectors.proofs[3];
-    let field = |index: usize| BytesN::from_array(&env, &field_str_to_bytes(&vector.public_signals[index]));
+    let field =
+        |index: usize| BytesN::from_array(&env, &field_str_to_bytes(&vector.public_signals[index]));
     let action = WithdrawAction {
         action_nonce: BytesN::from_array(&env, &[0x44; 32]),
-        anchor_root: field(3), nullifier_0: field(6), nullifier_1: field(7),
-        output_0: OutputPackage { commitment: field(8), recipient_envelope: BytesN::from_array(&env, &[0xdd; 181]), outgoing_envelope: BytesN::from_array(&env, &[0xde; 157]) },
-        output_1: OutputPackage { commitment: field(9), recipient_envelope: BytesN::from_array(&env, &[0xdf; 181]), outgoing_envelope: BytesN::from_array(&env, &[0xe0; 157]) },
-        output_2: OutputPackage { commitment: field(10), recipient_envelope: BytesN::from_array(&env, &[0xe1; 181]), outgoing_envelope: BytesN::from_array(&env, &[0xe2; 157]) },
-        asset_index: 0, public_value: 10_000_000, public_recipient: recipient.clone(),
+        anchor_root: field(3),
+        nullifier_0: field(6),
+        nullifier_1: field(7),
+        output_0: OutputPackage {
+            commitment: field(8),
+            recipient_envelope: BytesN::from_array(&env, &[0xdd; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xde; 157]),
+        },
+        output_1: OutputPackage {
+            commitment: field(9),
+            recipient_envelope: BytesN::from_array(&env, &[0xdf; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xe0; 157]),
+        },
+        output_2: OutputPackage {
+            commitment: field(10),
+            recipient_envelope: BytesN::from_array(&env, &[0xe1; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xe2; 157]),
+        },
+        asset_index: 0,
+        public_value: 10_000_000,
+        public_recipient: recipient.clone(),
     };
     let proof = proof_from_snarkjs(&vector.proof).to_contract_proof(&env);
     let normal_proof = proof_from_snarkjs(&vectors.proofs[2].proof).to_contract_proof(&env);
@@ -299,8 +324,14 @@ fn full_input_exit_survives_saturation_and_shares_replay_protection() {
     let full = pool.tree_state();
     let before_meta = pool.archive_meta();
     // A normal withdrawal proof cannot authorize the no-append mode.
-    assert_eq!(pool.try_full_input_exit(&action, &normal_proof), Err(Ok(PoolError::InvalidProof)));
-    assert_eq!(pool.try_withdraw(&action, &proof), Err(Ok(PoolError::TreeFull)));
+    assert_eq!(
+        pool.try_full_input_exit(&action, &normal_proof),
+        Err(Ok(PoolError::InvalidProof))
+    );
+    assert_eq!(
+        pool.try_withdraw(&action, &proof),
+        Err(Ok(PoolError::TreeFull))
+    );
     // Token failure must roll back the archive, nullifiers, and root renewal.
     assert!(pool.try_full_input_exit(&action, &proof).is_err());
     assert_eq!(pool.archive_meta(), before_meta);
@@ -311,9 +342,17 @@ fn full_input_exit_survives_saturation_and_shares_replay_protection() {
     assert_eq!(pool.tree_state(), full);
     assert_eq!(pool.archive_meta().action_count, index + 1);
     assert_eq!(token.balance(&recipient), 10_000_000);
-    let record = env.as_contract(&fixture.pool_id, || storage::get_archive_record(&env, index).unwrap());
+    let record = env.as_contract(&fixture.pool_id, || {
+        storage::get_archive_record(&env, index).unwrap()
+    });
     assert_eq!(record.starting_leaf_index, TREE_CAPACITY);
     assert_eq!(record.action_kind, 4);
-    assert_eq!(pool.try_full_input_exit(&action, &proof), Err(Ok(PoolError::NullifierAlreadySpent)));
-    assert_eq!(pool.try_withdraw(&action, &normal_proof), Err(Ok(PoolError::NullifierAlreadySpent)));
+    assert_eq!(
+        pool.try_full_input_exit(&action, &proof),
+        Err(Ok(PoolError::NullifierAlreadySpent))
+    );
+    assert_eq!(
+        pool.try_withdraw(&action, &normal_proof),
+        Err(Ok(PoolError::NullifierAlreadySpent))
+    );
 }

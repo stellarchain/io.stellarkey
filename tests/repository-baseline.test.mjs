@@ -14,7 +14,7 @@ test('release-history cleanup preserves CI and Cloudflare deployment workflows',
 
 test('manual release verification retains independent private security gates', () => {
   const { scripts } = JSON.parse(read('package.json'));
-  assert.equal(scripts['verify:private-rust'], 'cd protocol/private-balance && cargo +1.97.1 test --workspace --locked && cargo +1.97.1 deny check');
+  assert.equal(scripts['verify:private-rust'], 'cd protocol/private-balance && cargo +1.97.1 fmt --all -- --check && cargo +1.97.1 test --workspace --locked && cargo +1.97.1 deny check');
   assert.equal(scripts['verify:private-circuits'], 'npm --prefix protocol/private-balance/circuits audit --audit-level=high && npm run private:gate-a');
   assert.equal(scripts['verify:private-artifacts'], 'npm run private:check-reproducible');
   assert.match(scripts['verify:private-model'], /cargo \+1\.97\.1 test --release --locked.*one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption -- --ignored --exact/);

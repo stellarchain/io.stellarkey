@@ -2,6 +2,31 @@
 
 `npm run release:verify` requires a clean worktree and runs `verify:application`, the complete application verification suite. CI and tagged releases also require separate Rust security, circuit analysis and canonical-artifact jobs; the application command does not run those checks. Their local counterparts are `verify:private-rust`, `verify:private-circuits` and `verify:private-artifacts`. Normal browser tests own their production static server, install bounded synthetic network fixtures, and fail on unexpected page or console errors. Required private UI and component tests own an isolated development server. None of these automated gates uses a developer-owned browser session or a funded public-testnet account.
 
+Application verification has three shared stages:
+
+- `verify:application:core`: generated artifacts, types, unit and browser-protocol tests, lint, dependency audits and reporter tests.
+- `verify:application:private`: required development-server private UI and synthetic component suites.
+- `verify:application:production`: fixture cleanup, production build, another cleanup check, bundle gates and production-browser tests.
+
+`verify:application` runs all three in that order locally. Do not run the private
+and production stages concurrently in one checkout: they own the same Next.js
+output and server port, and the private runner temporarily installs a fixture
+route. Hosted CI uses separate checkouts/runners: `application` runs core then
+production, while the `private-ui` matrix prepares generated artifacts in one
+runner per required component browser (desktop Chromium and iPhone WebKit).
+Each matrix runner executes the complete, short private UI suite, then its
+browser's component suite and fixture cleanup. The small UI suite is deliberately
+repeated to retain the shared command and its required-test flags. The component
+matrix covers the same tests as the complete local command, without exclusions.
+Both runners finish even if one fails; the existing required `verify` status
+joins application and matrix results and rejects anything other than success.
+Per-file ordering, capture policy and per-runner browser worker limits are
+unchanged. A stage or browser passing alone is not full application verification.
+
+`npm run lint` rejects warnings as well as errors. Dependency audits retain their
+existing severity gates and report upstream findings; a successful audit command
+does not imply an empty advisory list.
+
 ## Coverage map
 
 - `tests/*.test.mjs` covers exact Stellar arithmetic, transaction review and submission recovery, Trezor serialization, standard mnemonic/derivation vectors, current wallet and merchant storage schemas, encryption, reporting, payment reconciliation, responsive UI policies, static security, and bundle boundaries.

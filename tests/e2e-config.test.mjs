@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
+import { applicationVerificationCommand } from './helpers/application-verification.mjs';
 
 function source(path) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -19,9 +20,9 @@ test("Playwright owns the production browser-test server and release command", (
     "browser tests must never reuse a server that may expose a stale release",
   );
   assert.match(pkg.scripts["test:e2e"], /playwright test/);
-  assert.match(pkg.scripts['verify:application'], /npm run build.*playwright test/);
+  assert.match(applicationVerificationCommand(pkg.scripts), /npm run build.*playwright test/);
   assert.match(
-    pkg.scripts['verify:application'],
+    applicationVerificationCommand(pkg.scripts),
     /npm run test:e2e:private-ui.*npm run test:e2e:private-components.*npm run check:fixture-clean.*npm run build.*playwright test/,
     "the isolated private surfaces must complete and clean up before the final production build and server-owned suite",
   );
@@ -58,7 +59,7 @@ test("the Private Payments catalogue-tamper browser gate cannot silently skip", 
   assert.match(security, /expect\(await manifestRequested\)\.toBe\(false\)/);
   assert.match(security, /Open private XLM/);
   assert.match(pkg.scripts["test:e2e:private-ui"], /private-manifest-security\.spec\.ts/);
-  assert.match(pkg.scripts['verify:application'], /npm run test:e2e:private-ui/);
+  assert.match(applicationVerificationCommand(pkg.scripts), /npm run test:e2e:private-ui/);
   assert.match(source('playwright.config.ts'), /iphone-webkit[\s\S]*testMatch:[^\n]*private-manifest-security/);
 });
 

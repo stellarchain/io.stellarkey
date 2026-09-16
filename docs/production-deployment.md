@@ -26,6 +26,28 @@ The workflows install the following pinned toolchains. For local verification:
    identities, exit codes and timestamps; unchanged prior evidence must be labelled
    with its original date and scope, never presented as a fresh run.
 
+CIVER must be built from the clean pinned checkout, including its lockfile. On
+Linux, after installing the compiler prerequisites used by the upstream tool:
+
+```sh
+civer_dir="$(mktemp -d)"
+git clone --no-checkout https://github.com/costa-group/circom_civer.git "$civer_dir"
+git -C "$civer_dir" checkout --detach af7d4ed0325e6f7743d8a1ac0e415d0c69b8aae8
+export CIVER_SOURCE_COMMIT="$(git -C "$civer_dir" rev-parse HEAD)"
+test "$CIVER_SOURCE_COMMIT" = af7d4ed0325e6f7743d8a1ac0e415d0c69b8aae8
+cargo +1.97.1 build --manifest-path "$civer_dir/Cargo.toml" --release --locked -p civer_circom
+test -z "$(git -C "$civer_dir" status --porcelain --untracked-files=no)"
+export CIVER_CIRCOM="$civer_dir/target/release/civer_circom"
+npm run verify:private-circuits
+```
+
+Keep these exports in the shell running the gate. An ordinary Circom executable,
+or a native port with modified solver dependencies, is not the pinned analyzer.
+macOS developers should run this analysis in an isolated Linux environment and
+retain the separate macOS ARM64 artifact-reproduction check. The gate intentionally
+fails when analyzer provenance is missing; do not skip the underconstraint step.
+Local Rust verification also requires `rustup component add rustfmt --toolchain 1.97.1`.
+
 ```sh
 npm run verify:private-rust
 npm run verify:private-circuits
@@ -41,6 +63,32 @@ and every entry in release-files.json before publication. For a future release,
 update the version and changelog, complete the release checklist, create the
 corresponding protected tag, and push it to run `.github/workflows/release.yml`.
 The workflow uploads the verified files and deploys them without rebuilding.
+
+### Parallel release verification
+
+Circuit analysis (including Rust security), canonical artifact reproduction,
+application core/production checks, and private UI checks start independently
+on separate runners. The application job uses the shared core and production
+stages. Private components run in a two-browser matrix, each with its own fixture
+and server; both runners also execute the complete private UI suite. The matrix
+preserves the local `verify:application` coverage and two-worker component limit
+per runner, without cancelling the other browser when one fails. Publication
+requires the whole matrix to succeed, not just one browser.
+
+The application job stages only the public release archive, SBOM, inventory and
+checksums. It does not publish a release. The `release` job waits for Gate A,
+application and private UI success, downloads the staging artifact by its exact
+ID from the same workflow run, fails on digest/checksum or source/version
+mismatches, then attests and publishes it. Deployment retains the published
+archive's immutable-release, provenance, checksum and embedded-commit checks.
+No test output, wallet fixtures, screenshots or traces are uploaded.
+
+Staging artifacts expire after seven days. If a delayed retry can no longer
+download its artifact, rerun the application job; never substitute another run's
+bundle. Parallel jobs repeat a small amount of setup to keep their outputs and
+temporary fixtures isolated. They reduce the release's sequential wait without
+removing tests or reusing cached test results. Actual hosted timing depends on
+runner availability and must be measured on a new authorised run.
 
 The existing `v1.0.0` release was published manually. It has GitHub's immutable-release
 attestation but no GitHub Actions build-provenance attestation. Restoring workflows

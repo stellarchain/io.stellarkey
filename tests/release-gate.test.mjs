@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
+import { applicationVerificationCommand } from './helpers/application-verification.mjs';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -48,7 +49,7 @@ test("CI pins third-party actions and verifies the complete static release", () 
   assert.match(ci, /corepack install[\s\S]*corepack npm ci/);
   assert.match(ci, /playwright install --with-deps chromium webkit/);
   assert.match(ci, /npm run verify:application/);
-  assert.match(JSON.parse(read("package.json")).scripts["verify:application"], /npm run check:bundle/);
+  assert.match(applicationVerificationCommand(JSON.parse(read("package.json")).scripts), /npm run check:bundle/);
   assert.match(ci, /test -f out\/index\.html/);
   assert.doesNotMatch(ci, /uses:\s+[^\n]+@v\d+/);
 });
@@ -64,6 +65,7 @@ test("main and tagged releases require the pinned Private Payments Gate A", () =
     assert.match(workflow, /private-gate-a:/);
     assert.match(workflow, /https:\/\/github\.com\/costa-group\/circom_civer\.git/);
     assert.match(workflow, new RegExp(pinnedCiverCommit));
+    assert.match(workflow, /cargo \+1\.97\.1 build[^\n]+--locked -p civer_circom/);
     assert.match(workflow, /CIVER_CIRCOM:/);
     assert.match(workflow, /CIVER_SOURCE_COMMIT:/);
     assert.match(workflow, /npm run private:gate-a/);
@@ -79,7 +81,7 @@ test("main and tagged releases require the pinned Private Payments Gate A", () =
     );
   }
 
-  assert.match(workflows[1], /release:\s*\n\s*needs:\s*private-gate-a/);
+  assert.match(workflows[1], /release:\s*\n\s*needs:\s*\[private-gate-a, application, private-ui\]/);
 });
 
 test("CI, releases, and the scheduled Gate B execute the private Rust models", () => {
@@ -113,12 +115,24 @@ test("CI, releases, and the scheduled Gate B execute the private Rust models", (
   );
 });
 
+test("local and hosted Rust verification enforce the pinned formatter", () => {
+  const command = "cargo +1.97.1 fmt --all -- --check";
+  const scripts = JSON.parse(read("package.json")).scripts;
+  assert.ok(scripts["verify:private-rust"].includes(`${command} && cargo +1.97.1 test`));
+  for (const file of [".github/workflows/ci.yml", ".github/workflows/release.yml"]) {
+    const workflow = read(file);
+    assert.match(workflow, /rustup component add rustfmt --toolchain 1\.97\.1/);
+    assert.ok(workflow.includes(`run: ${command}\n        working-directory: protocol/private-balance`));
+    assert.ok(workflow.indexOf(command) < workflow.indexOf("cargo +1.97.1 test --workspace --locked"));
+  }
+});
+
 test("every CLI-consuming CI job installs the checksum-verified complete CLI", () => {
   for (const file of [".github/workflows/ci.yml", ".github/workflows/release.yml"]) {
     const jobs = read(file)
       .split(/\n(?= {2}[a-z][a-z0-9-]*:\s*\n)/)
       .filter((job) => /uses: \.\/\.github\/actions\/setup-stellar-cli/.test(job));
-    assert.equal(jobs.length, 2, `${file} must cover both application and artifact jobs`);
+    assert.equal(jobs.length, 3, `${file} must cover application, private UI and artifact jobs`);
 
     for (const job of jobs) {
       assert.match(job, /runs-on: (?:ubuntu-latest|macos-15)/);
@@ -169,8 +183,8 @@ test("Gate A requires Linux circuit analysis and canonical macOS ARM64 reproduct
 test("generated-artifact checks install their complete toolchain in the same job", () => {
   const ci = read(".github/workflows/ci.yml");
   const release = read(".github/workflows/release.yml");
-  const ciVerify = ci.split("\n  verify:")[1];
-  const releaseJob = release.split("\n  release:")[1].split("\n  deploy:")[0];
+  const ciVerify = ci.split("\n  application:")[1].split("\n  private-ui:")[0];
+  const releaseJob = release.split("\n  application:")[1].split("\n  private-ui:")[0];
 
   assert.match(ciVerify, /fetch-depth: 0/);
   for (const job of [ciVerify, releaseJob]) {
@@ -187,8 +201,8 @@ test("generated-artifact checks install their complete toolchain in the same job
 });
 
 test("hosted application gates allow the complete private and public browser matrix", () => {
-  const ciVerify = read(".github/workflows/ci.yml").split("\n  verify:")[1];
-  const release = read(".github/workflows/release.yml").split("\n  release:")[1].split("\n  deploy:")[0];
+  const ciVerify = read(".github/workflows/ci.yml").split("\n  application:")[1].split("\n  private-ui:")[0];
+  const release = read(".github/workflows/release.yml").split("\n  application:")[1].split("\n  private-ui:")[0];
   for (const job of [ciVerify, release]) {
     assert.match(job, /timeout-minutes: 90/,
       "cold toolchain installs and the complete synthetic browser matrix need a 90-minute job budget");
@@ -261,7 +275,7 @@ test("clean CI runs generated bundle assertions only after the static build", ()
   assert.match(pkg.scripts.test, /tests\/\*\.test\.mjs/);
   assert.match(pkg.scripts["test:bundle"], /tests\/bundle-budget\.build\.mjs/);
   assert.match(
-    pkg.scripts["verify:application"],
+    applicationVerificationCommand(pkg.scripts),
     /npm test.*npm run build.*npm run test:bundle.*npm run check:bundle.*playwright test/,
   );
   assert.match(
@@ -276,7 +290,7 @@ test("the toolchain and dependency lifecycle approvals are explicit", () => {
   const npmConfig = read(".npmrc");
   assert.match(pkg.packageManager, /^npm@\d+\.\d+\.\d+$/);
   assert.match(pkg.engines.node, /22\.22\.2/);
-  assert.match(pkg.scripts["verify:application"], /check:bundle.*playwright test/);
+  assert.match(applicationVerificationCommand(pkg.scripts), /check:bundle.*playwright test/);
   assert.equal(pkg.allowScripts, undefined, "decorative allowScripts metadata must not imply enforcement");
   assert.match(npmConfig, /^ignore-scripts=true$/m);
 });
@@ -292,7 +306,7 @@ test("private proving artifacts are provenance-checked in local, CI, and release
   const ci = read(".github/workflows/ci.yml");
   const release = read(".github/workflows/release.yml");
 
-  assert.match(pkg.scripts["verify:application"], /private:check-generated/);
+  assert.match(applicationVerificationCommand(pkg.scripts), /private:check-generated/);
   assert.match(circuits.scripts["verify:zkey"], /verify-proving-key\.mjs/);
   assert.match(circuits.scripts["gate:a"], /verify:zkey/);
   assert.match(setup, /ensurePowersOfTau/);

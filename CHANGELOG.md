@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Reduce repeated work in merchant customer reconciliation and recent Insights calculations without caching customer or payment data.
+- Check pinned Rust formatting during local, CI and release verification, and remove unused dependency licence allowances.
+- Build the pinned circuit analyzer with its locked dependencies in CI and release checks.
+- Run independent application, private UI and protocol verification jobs concurrently; publish the exact staged release only after every required gate succeeds.
+- Split hosted private-component checks across isolated Chromium and iPhone WebKit runners without reducing coverage, and reject lint warnings during verification.
 
 ## [1.0.3] - 2026-09-14
 

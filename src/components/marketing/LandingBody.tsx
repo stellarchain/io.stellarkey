@@ -6,6 +6,7 @@
  * (LandingPanels) rather than screenshotted — crisp at any density, honest
  * about being representative, and weightless next to raster images.
  */
+import Image from "next/image";
 import { STELLAR_MARK_PATH } from "@/components/icons";
 import {
   DocAlert, DocBook, DocChip, DocClock, DocCoin, DocCycle, DocExport,
@@ -178,7 +179,7 @@ export function LandingBody() {
             </div>
             <div className="step" data-step="1">
               <div className="sub" style={{ textAlign: "center", marginBottom: ".2rem" }}>ORDER 1024 · MC-O-1024</div>
-              <div className="qr"><img src="/marketing/demo-qr.svg" alt="Stellar payment request" width={148} height={148} /></div>
+              <div className="qr"><Image src="/marketing/demo-qr.svg" alt="Stellar payment request" width={148} height={148} unoptimized loading="eager" /></div>
               <div className="rows">
                 <div><span>asking</span><b className="g">22.3755101 XLM</b></div>
                 <div><span>payment route</span><b className="g">in the address</b></div>

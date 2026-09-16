@@ -372,7 +372,11 @@ impl PrivateBalancePool {
     }
 
     /// Consumes selected inputs completely, without reserving output capacity.
-    pub fn full_input_exit(env: Env, action: WithdrawAction, proof: Proof) -> Result<u128, PoolError> {
+    pub fn full_input_exit(
+        env: Env,
+        action: WithdrawAction,
+        proof: Proof,
+    ) -> Result<u128, PoolError> {
         let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
         let recipient = action.public_recipient.clone();
         let asset =

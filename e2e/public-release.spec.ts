@@ -20,6 +20,27 @@ test.beforeEach(async ({ context }) => {
   await installNetworkFixtures(context);
 });
 
+test("landing demonstration QR images load directly from the static export", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const images = page.locator('img[src="/marketing/demo-qr.svg"]');
+  await expect(images).toHaveCount(4);
+  for (let index = 0; index < 4; index++) {
+    const image = images.nth(index);
+    await expect(image).toHaveAttribute("width", "148");
+    await expect(image).toHaveAttribute("height", "148");
+    await expect(image).not.toHaveAttribute("alt", "");
+    // The animated example can be hidden until its step becomes active.
+    if (await image.isVisible()) await image.scrollIntoViewIfNeeded();
+    await expect.poll(() => image.evaluate(element => {
+      const img = element as HTMLImageElement;
+      return img.complete && img.naturalWidth > 0;
+    })).toBe(true);
+    const isAnimatedExample = await image.getAttribute("alt") === "Stellar payment request";
+    expect(await image.getAttribute("loading") ?? "eager")
+      .toBe(isAnimatedExample ? "eager" : "lazy");
+  }
+});
+
 async function expectReleaseIdentity(page: Page, placement: "footer" | "viewport") {
   const identity = page.locator("[data-build-identity]");
   await expect(identity).toHaveCount(1);

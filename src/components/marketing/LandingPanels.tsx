@@ -4,6 +4,7 @@
  * primitives the live demos use. Values are representative; the brand marks
  * (the Stellar glyph, the shield notch) keep their exact shipped geometry.
  */
+import Image from "next/image";
 import { STELLAR_MARK_PATH } from "@/components/icons";
 
 const tick = (
@@ -149,7 +150,7 @@ export function PanelCharge() {
       <div className="pbody">
         <div className="amount" style={{ fontSize: "2rem" }}><span className="cur">€</span>9.20</div>
         <div className="sub">= 42.7459510 XLM</div>
-        <div className="qr"><img src="/marketing/demo-qr.svg" alt="Stellar payment request QR code" width={148} height={148} loading="lazy" decoding="async" /></div>
+        <div className="qr"><Image src="/marketing/demo-qr.svg" alt="Stellar payment request QR code" width={148} height={148} unoptimized loading="lazy" decoding="async" /></div>
         <div className="rows">
           <div><span>Payment route</span><b>Included in address</b></div>
         </div>
@@ -356,7 +357,7 @@ export function PanelReceive() {
   return (
     <Pane label="receive // private" tag={{ text: "Shielded", tone: "b" }}>
       <div className="pbody">
-        <div className="qr"><img src="/marketing/demo-qr.svg" alt="Shielded address QR code" width={148} height={148} loading="lazy" decoding="async" /></div>
+        <div className="qr"><Image src="/marketing/demo-qr.svg" alt="Shielded address QR code" width={148} height={148} unoptimized loading="lazy" decoding="async" /></div>
         <div className="vcode"><em>Verification code</em><b>FC42 C9CF</b></div>
         <div className="sub" style={{ textAlign: "center", marginTop: ".45rem" }}>the sender sees the same code before paying</div>
         <div className="addr"><span>tskpay_ … n8d6</span></div>
