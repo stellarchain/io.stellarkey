@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Keep local-currency network-fee labels readable on raised dark review surfaces.
-
 ## [1.0.4] - 2026-09-16
 
 ### Fixed
@@ -21,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show the same payment reference in a new invoice's preview and saved draft.
 - Keep invoice Open and Edit controls independently accessible by keyboard and touch, without nesting buttons or duplicating touch-target expansion.
 - Keep merchant Insights comparisons and the live-hour chart aligned with local clock time across daylight-saving changes.
+- Keep local-currency network-fee labels readable on raised dark review surfaces.
 
 ### Changed
 
