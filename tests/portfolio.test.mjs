@@ -142,6 +142,70 @@ test("snapshots from another network never enter the selected-network total", ()
   assert.deepEqual(result.loadingAccounts, [ACCOUNT_A]);
 });
 
+test("valuation lists every unpriced positive asset once, even after an oversized balance", () => {
+  for (const nativeAmount of ["2", "1" + "0".repeat(310)]) {
+    const result = aggregatePortfolio({
+      accounts: [ACCOUNT_A],
+      snapshots: {
+        [portfolioSnapshotKey("mainnet", ACCOUNT_A)]: ready(ACCOUNT_A, [
+          balance("XLM", null, nativeAmount),
+          balance("USDC", USDC_ISSUER, "5"),
+          balance("USDC", OTHER_ISSUER, "7"),
+          balance("ZERO", OTHER_ISSUER, "0"),
+        ]),
+      },
+      network: "mainnet",
+      xlmPriceUsd: null,
+      assetPrices: {
+        [assetPriceKey("mainnet", "USDC", USDC_ISSUER)]: NaN,
+        [assetPriceKey("mainnet", "USDC", OTHER_ISSUER)]: -1,
+      },
+    });
+    assert.equal(result.totalUsd, null);
+    assert.deepEqual(result.unpricedAssets.map(asset => asset.key), [
+      "native", `USDC:${USDC_ISSUER}`, `USDC:${OTHER_ISSUER}`,
+    ]);
+  }
+});
+
+test("one malformed balance excludes the entire account before aggregation", () => {
+  const result = aggregatePortfolio({
+    accounts: [ACCOUNT_A, ACCOUNT_B],
+    snapshots: {
+      [portfolioSnapshotKey("mainnet", ACCOUNT_A)]: ready(ACCOUNT_A, [
+        balance("XLM", null, "100"), balance("USDC", USDC_ISSUER, "invalid"),
+      ]),
+      [portfolioSnapshotKey("mainnet", ACCOUNT_B)]: ready(ACCOUNT_B, [balance("XLM", null, "2")]),
+    },
+    network: "mainnet",
+    xlmPriceUsd: 1,
+    assetPrices: {},
+  });
+  assert.equal(result.completeness, "partial");
+  assert.deepEqual(result.unavailableAccounts, [ACCOUNT_A]);
+  assert.deepEqual(result.assets.map(asset => [asset.key, asset.balance, asset.accountCount]), [
+    ["native", "2.0000000", 1],
+  ]);
+  assert.equal(result.nativeBalance, null);
+  assert.equal(result.totalUsd, null);
+});
+
+test("zero holdings do not require a market price", () => {
+  const result = aggregatePortfolio({
+    accounts: [ACCOUNT_A],
+    snapshots: {
+      [portfolioSnapshotKey("mainnet", ACCOUNT_A)]: ready(ACCOUNT_A, [
+        balance("XLM", null, "0"), balance("USDC", USDC_ISSUER, "0"),
+      ]),
+    },
+    network: "mainnet",
+    xlmPriceUsd: null,
+    assetPrices: {},
+  });
+  assert.equal(result.totalUsd, 0);
+  assert.deepEqual(result.unpricedAssets, []);
+});
+
 test("every account can show its own complete Testnet reference value", () => {
   assert.equal(typeof portfolio.representativePortfolioUsd, "function");
   const snapshots = {

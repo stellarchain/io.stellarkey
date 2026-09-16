@@ -108,11 +108,11 @@ export function aggregatePortfolio({
       continue;
     }
 
-    const parsed = snapshot.balances.map((balance) => ({
-      balance,
-      stroops: toStroops(balance.balance),
-    }));
-    if (parsed.some((entry) => entry.stroops === null)) {
+    const parsed = snapshot.balances.map((balance) => {
+      const stroops = toStroops(balance.balance);
+      return stroops === null ? null : { balance, stroops };
+    });
+    if (!parsed.every((entry) => entry !== null)) {
       unavailableAccounts.push(publicKey);
       continue;
     }
@@ -122,14 +122,14 @@ export function aggregatePortfolio({
       const key = identityKey(balance);
       const current = totals.get(key);
       if (current) {
-        current.stroops += stroops as bigint;
+        current.stroops += stroops;
         current.accounts.add(publicKey);
       } else {
         totals.set(key, {
           code: balance.code,
           issuer: balance.issuer,
           isNative: balance.isNative,
-          stroops: stroops as bigint,
+          stroops,
           accounts: new Set([publicKey]),
         });
       }
@@ -161,12 +161,10 @@ export function aggregatePortfolio({
   let totalUsd: number | null = completeness === "complete" && network === "mainnet" ? 0 : null;
 
   if (totalUsd !== null) {
+    // Keep collecting missing prices after the total becomes unavailable.
     for (const asset of assets) {
       const amount = Number(asset.balance);
-      if (!Number.isFinite(amount)) {
-        totalUsd = null;
-        break;
-      }
+      if (!Number.isFinite(amount)) totalUsd = null;
       const price = asset.isNative
         ? xlmPriceUsd
         : asset.issuer
@@ -181,25 +179,11 @@ export function aggregatePortfolio({
     }
   }
 
-  // Once one asset makes the total unavailable, still enumerate every other
-  // positive unpriced asset so the UI can explain the complete reason set.
-  if (completeness === "complete" && network === "mainnet") {
-    for (const asset of assets) {
-      if (Number(asset.balance) <= 0 || unpricedAssets.some((entry) => entry.key === asset.key)) continue;
-      const price = asset.isNative
-        ? xlmPriceUsd
-        : asset.issuer
-          ? assetPrices[assetPriceKey(network, asset.code, asset.issuer)] ?? null
-          : null;
-      if (price === null || !Number.isFinite(price) || price <= 0) unpricedAssets.push(asset);
-    }
-  }
-
   return {
     completeness,
     assets,
     nativeBalance,
-    totalUsd: unpricedAssets.length > 0 ? null : totalUsd,
+    totalUsd,
     loadingAccounts,
     unavailableAccounts,
     unpricedAssets,

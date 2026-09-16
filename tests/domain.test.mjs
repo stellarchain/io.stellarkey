@@ -2928,6 +2928,13 @@ test("formats internal public-private transfers as two signed bank-ledger postin
     ["private", "+25 USDC"],
   ]);
   assert.match(generateActivityCsv([item]), /"internal","Public: −25 USDC \/ Private: \+25 USDC"/);
+  assert.deepEqual(activityAmountLines({
+    ...item,
+    swap: {
+      debit: { amount: "1", assetCode: "XLM", assetIssuer: null },
+      credit: { amount: "2", assetCode: "USDC", assetIssuer: USDC_ISSUER },
+    },
+  }), activityAmountLines(item), "Internal postings retain precedence over swap metadata");
 });
 
 test("account activity is bounded to one year of public Horizon history", async (t) => {
