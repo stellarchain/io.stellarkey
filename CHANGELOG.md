@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep the local production server running through malformed requests and unavailable build files, without serving the wallet without its generated security headers.
 - Show the same payment reference in a new invoice's preview and saved draft.
 - Keep invoice Open and Edit controls independently accessible by keyboard and touch, without nesting buttons or duplicating touch-target expansion.
+- Keep merchant Insights comparisons and the live-hour chart aligned with local clock time across daylight-saving changes.
+
+### Changed
+
+- Reduce repeated work in merchant customer reconciliation and recent Insights calculations without caching customer or payment data.
 
 ## [1.0.3] - 2026-09-14
 

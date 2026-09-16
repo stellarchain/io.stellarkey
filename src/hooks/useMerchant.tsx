@@ -48,7 +48,6 @@ import type { ObservedPayment } from "@/lib/merchant/match";
 import {
   fromStroops,
   assetAmountFor,
-  lineGrossMinor,
   orderTotals,
   tipPresets,
   toStroops,
@@ -208,6 +207,8 @@ import {
   expireAwaitingCharges,
   indexMerchantRecords,
   nextAwaitingChargeExpiry,
+  summarizeMerchantDay,
+  type TodaySummary,
 } from "@/lib/merchant/selectors";
 import {
   fetchIncomingPayments,
@@ -299,17 +300,7 @@ export interface MerchantCounterCodeDraft {
   routingId?: string;
 }
 
-export interface TodaySummary {
-  takingsMinor: Minor;
-  orderCount: number;
-  avgTicketMinor: Minor;
-  tipsMinor: Minor;
-  taxMinor: Minor;
-  refundedMinor: Minor;
-  byHour: { hour: number; orders: number; takingsMinor: Minor }[];
-  topItems: { name: string; units: number; revenueMinor: Minor }[];
-  assetMix: { asset: AcceptedAsset; takingsMinor: Minor; share: number }[];
-}
+export type { TodaySummary } from "@/lib/merchant/selectors";
 
 export type MerchantRefundOutcome =
   | { kind: "refunded"; refund: Refund }
@@ -699,17 +690,6 @@ const WATCHER_LEASE_MS = 25_000;
 
 function uid(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${randomHex(12)}`;
-}
-
-/** Local midnight of the calendar day `at` falls in. */
-function startOfDay(at: number): number {
-  const d = new Date(at);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
-function startOfToday(now = Date.now()): number {
-  return startOfDay(now);
 }
 
 export function MerchantProvider({
@@ -3506,76 +3486,13 @@ export function MerchantProvider({
     [store.charges, store.orders],
   );
 
-  const today = useMemo<TodaySummary>(() => {
-    const from = startOfToday(reportingNow);
-    const paid = store.orders.filter(
-      (o) => o.network === network && o.paidAt !== null && o.paidAt >= from,
-    );
-    const takingsMinor = paid.reduce((sum, o) => sum + o.totals.totalMinor, 0);
-    const tipsMinor = paid.reduce((sum, o) => sum + o.totals.tipMinor, 0);
-    const taxMinor = paid.reduce((sum, o) => sum + o.totals.taxMinor, 0);
-    const refundedMinor = store.refunds
-      .filter(
-        (r) =>
-          r.kind === "order" &&
-          r.network === network &&
-          r.createdAt >= from &&
-          r.submissionStatus === "confirmed",
-      )
-      .reduce((sum, r) => sum + r.amountMinor, 0);
-
-    const hours = new Map<number, { orders: number; takingsMinor: Minor }>();
-    for (const order of paid) {
-      const hour = new Date(order.paidAt as number).getHours();
-      const bucket = hours.get(hour) ?? { orders: 0, takingsMinor: 0 };
-      bucket.orders += 1;
-      bucket.takingsMinor += order.totals.totalMinor;
-      hours.set(hour, bucket);
-    }
-
-    const items = new Map<string, { units: number; revenueMinor: Minor }>();
-    for (const order of paid) {
-      for (const line of order.lines) {
-        const entry = items.get(line.name) ?? { units: 0, revenueMinor: 0 };
-        entry.units += line.quantity;
-        entry.revenueMinor += lineGrossMinor(line);
-        items.set(line.name, entry);
-      }
-    }
-
-    const mix = new Map<string, { asset: AcceptedAsset; takingsMinor: Minor }>();
-    for (const order of paid) {
-      const charge = recordIndex.paymentChargeByOrderId.get(order.id);
-      const asset = charge?.payment?.asset;
-      if (!asset) continue;
-      const key = assetKey(asset);
-      const entry = mix.get(key) ?? { asset, takingsMinor: 0 };
-      entry.takingsMinor += order.totals.totalMinor;
-      mix.set(key, entry);
-    }
-
-    return {
-      takingsMinor,
-      orderCount: paid.length,
-      avgTicketMinor: paid.length ? Math.round(takingsMinor / paid.length) : 0,
-      tipsMinor,
-      taxMinor,
-      refundedMinor,
-      byHour: [...hours.entries()]
-        .map(([hour, v]) => ({ hour, ...v }))
-        .sort((a, b) => a.hour - b.hour),
-      topItems: [...items.entries()]
-        .map(([name, v]) => ({ name, ...v }))
-        .sort((a, b) => b.revenueMinor - a.revenueMinor)
-        .slice(0, 8),
-      assetMix: [...mix.values()]
-        .map((v) => ({
-          ...v,
-          share: takingsMinor ? v.takingsMinor / takingsMinor : 0,
-        }))
-        .sort((a, b) => b.takingsMinor - a.takingsMinor),
-    };
-  }, [network, recordIndex.paymentChargeByOrderId, reportingNow, store.orders, store.refunds]);
+  const today = useMemo(() => summarizeMerchantDay(
+    store.orders,
+    store.refunds,
+    recordIndex.paymentChargeByOrderId,
+    network,
+    reportingNow,
+  ), [network, recordIndex.paymentChargeByOrderId, reportingNow, store.orders, store.refunds]);
 
   const activeCharge = useMemo(
     () => (activeChargeId ? (recordIndex.chargesById.get(activeChargeId) ?? null) : null),

@@ -293,6 +293,32 @@ test("only new crypto settlements create customer visits and history is exact", 
   );
 });
 
+test("customer reconciliation retains forgotten history and first-match transition semantics", async () => {
+  const { reconcileCustomerSettlements } = await customerDomain();
+  const history = Array.from({ length: 100 }, (_, i) => order(String(i), CUSTOMER, 100, NOW - 1000));
+  const newlyPaid = order("new", CUSTOMER, 300, NOW);
+  const previous = {
+    ...emptyStore(),
+    orders: [...history, { ...newlyPaid, status: "awaiting_payment", paidAt: null }],
+  };
+  const current = {
+    ...previous,
+    orders: [newlyPaid, ...structuredClone(history)],
+    charges: [newlyPaid.charge, ...history.map(entry => entry.charge)],
+  };
+  const snapshot = structuredClone({ previous, current });
+  const next = reconcileCustomerSettlements(previous, current, { contacts: [] });
+  assert.equal(next.customers.length, 1);
+  assert.equal(next.customers[0].lifetimeMinor, 300);
+  assert.deepEqual(next.customers[0].sourceIds, ["order:new"]);
+  assert.equal(reconcileCustomerSettlements(current, next, { contacts: [] }), next);
+  assert.deepEqual({ previous, current }, snapshot);
+
+  const duplicateHistory = { ...previous, orders: [newlyPaid, ...previous.orders] };
+  assert.equal(reconcileCustomerSettlements(duplicateHistory, current, { contacts: [] }), current,
+    "the first prior occurrence still decides whether a payment is new");
+});
+
 test("contact synchronization and notes persist without inventing identity", async () => {
   const { recordCustomerVisit, syncCustomerContacts, updateCustomerNote } = await customerDomain();
   const { member, store: base } = storeWithActor();

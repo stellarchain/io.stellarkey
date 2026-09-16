@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { summarizeMerchantDay as summarizeDay } from "../src/lib/merchant/selectors.ts";
 
 async function selectorsDomain() {
   try {
@@ -130,6 +131,40 @@ test("insights history is derived on demand from one timestamp", async () => {
   assert.equal(history.hoursElapsed, 15.5);
 });
 
+test("insights preserves empty days, the exclusive clock cut and active-week averages", async () => {
+  const { deriveInsightsHistory } = await insightsDomain();
+  const now = new Date(2027, 0, 26, 15, 30).getTime();
+  const at = (day, hour = 0, minute = 0) => new Date(2027, 0, day, hour, minute).getTime();
+  const relevant = [
+    order({ id: "before-cut", paidAt: at(19, 15, 29), totalMinor: 200 }),
+    order({ id: "at-cut", paidAt: at(19, 15, 30), totalMinor: 300 }),
+    order({ id: "earliest-week", paidAt: at(-2, 15), totalMinor: 100 }),
+    order({ id: "trend-start", paidAt: at(13), totalMinor: 50 }),
+    order({ id: "today", paidAt: at(26, 9), totalMinor: 75 }),
+  ];
+  const before = structuredClone(relevant);
+  const expected = deriveInsightsHistory(relevant, { network: "mainnet", now });
+  assert.deepEqual(expected.sameDayLastWeek, { takingsMinor: 500, orderCount: 2 });
+  assert.deepEqual(expected.sameDayLastWeekToDate, { takingsMinor: 200, orderCount: 1 });
+  assert.deepEqual(expected.typicalByHour, [{ hour: 15, takingsMinor: 300 }]);
+  assert.deepEqual(expected.last14Days[0], { at: at(13), takingsMinor: 50, orderCount: 1, toDateMinor: 50 });
+  assert.deepEqual(expected.last14Days[1], { at: at(14), takingsMinor: 0, orderCount: 0, toDateMinor: 0 });
+  const ignored = [
+    order({ id: "older", paidAt: at(-3, 23), totalMinor: 999 }),
+    order({ id: "tomorrow", paidAt: at(27), totalMinor: 999 }),
+    { ...order({ id: "unpaid", paidAt: now }), paidAt: null },
+    { ...order({ id: "other-network", paidAt: at(19, 10) }), network: "testnet" },
+  ];
+  assert.deepEqual(deriveInsightsHistory([...ignored, ...relevant], { network: "mainnet", now }), expected);
+  assert.deepEqual(relevant, before, "insights must not mutate stored orders");
+  const empty = deriveInsightsHistory([], { network: "mainnet", now });
+  assert.equal(empty.sameDayLastWeek, null);
+  assert.equal(empty.sameDayLastWeekToDate, null);
+  assert.deepEqual(empty.typicalByHour, []);
+  assert.equal(empty.last14Days.length, 14);
+  assert.ok(empty.last14Days.every(day => day.takingsMinor === 0 && day.orderCount === 0 && day.toDateMinor === 0));
+});
+
 test("merchant provider schedules exact expiry and Insights owns historical analytics", () => {
   const hook = source("src/hooks/useMerchant.tsx");
   const insights = source("src/components/merchant/InsightsPage.tsx");
@@ -149,4 +184,64 @@ test("the live-hour marker hides its label before it overlaps the chart ceiling"
     insights,
     /nowX - 26 > padL \+ fmtMinor\(ceiling, currency\)\.length \* 6\.2 \+ 6/,
   );
+});
+
+test("daily summary preserves local-day scope, settled refund policy and first-charge asset joins", async () => {
+  const { indexMerchantRecords } = await selectorsDomain();
+  const now = new Date(2027, 0, 12, 15, 30).getTime();
+  const midnight = new Date(now).setHours(0, 0, 0, 0);
+  const first = order({ id: "first", paidAt: midnight, totalMinor: 300 });
+  first.totals.tipMinor = 20;
+  first.totals.taxMinor = 40;
+  first.lines = [{ id: "line", itemId: null, name: "Tea", quantity: 2, unitPriceMinor: 100,
+    modifiers: [{ modifierId: "extra", name: "Extra", priceMinor: 25 }], taxRateId: "zero", note: null }];
+  const last = order({ id: "last", paidAt: new Date(2027, 0, 12, 13).getTime(), totalMinor: 500 });
+  const orders = [last, first,
+    order({ id: "yesterday", paidAt: midnight - 1, totalMinor: 999 }),
+    { ...order({ id: "unpaid", paidAt: midnight }), paidAt: null },
+    { ...order({ id: "testnet", paidAt: midnight }), network: "testnet" },
+  ];
+  const xlm = { code: "XLM", issuer: null };
+  const usd = { code: "USD", issuer: "synthetic-issuer" };
+  const charges = [charge({ id: "first-payment", orderId: "first", payment: { asset: xlm } }),
+    charge({ id: "later-payment", orderId: "first", payment: { asset: usd } })];
+  const refund = { kind: "order", network: "mainnet", createdAt: midnight, submissionStatus: "confirmed", amountMinor: 75 };
+  const refunds = [refund, { ...refund, submissionStatus: "pending" },
+    { ...refund, kind: "payment_reversal" }, { ...refund, network: "testnet" },
+    { ...refund, createdAt: midnight - 1 }];
+  const before = structuredClone({ orders, charges, refunds });
+  const index = indexMerchantRecords(orders, charges);
+  assert.deepEqual(summarizeDay(orders, refunds, index.paymentChargeByOrderId, "mainnet", now), {
+    takingsMinor: 800, orderCount: 2, avgTicketMinor: 400, tipsMinor: 20, taxMinor: 40, refundedMinor: 75,
+    byHour: [{ hour: 0, orders: 1, takingsMinor: 300 }, { hour: 13, orders: 1, takingsMinor: 500 }],
+    topItems: [{ name: "Tea", units: 2, revenueMinor: 250 }],
+    assetMix: [{ asset: xlm, takingsMinor: 300, share: 0.375 }],
+  });
+  assert.deepEqual({ orders, charges, refunds }, before, "reporting must not mutate stored records");
+});
+
+test("daily summary has a complete empty state and keeps zero-value asset shares finite", () => {
+  const now = new Date(2027, 0, 12, 12).getTime();
+  const empty = { takingsMinor: 0, orderCount: 0, avgTicketMinor: 0, tipsMinor: 0, taxMinor: 0, refundedMinor: 0,
+    byHour: [], topItems: [], assetMix: [] };
+  assert.deepEqual(summarizeDay([], [], new Map(), "mainnet", now), empty);
+  const zero = order({ id: "zero", paidAt: now, totalMinor: 0 });
+  const asset = { code: "XLM", issuer: null };
+  const summary = summarizeDay([zero], [], new Map([[zero.id, { payment: { asset } }]]), "mainnet", now);
+  assert.equal(summary.avgTicketMinor, 0);
+  assert.deepEqual(summary.assetMix, [{ asset, takingsMinor: 0, share: 0 }]);
+});
+
+test("daily summary aggregates item names and preserves stable ties when limiting top items", () => {
+  const now = new Date(2027, 0, 12, 12).getTime();
+  const sale = order({ id: "sale", paidAt: now });
+  sale.lines = Array.from({ length: 10 }, (_, i) => ({
+    id: `line-${i}`, itemId: null, name: `Item ${i}`, quantity: 1, unitPriceMinor: 100,
+    modifiers: [], taxRateId: "zero", note: null,
+  }));
+  sale.lines.push({ ...sale.lines[9], id: "another-line", quantity: 2 });
+  const result = summarizeDay([sale], [], new Map(), "mainnet", now);
+  assert.deepEqual(result.topItems.map(({ name, units, revenueMinor }) => [name, units, revenueMinor]), [
+    ["Item 9", 3, 300], ...Array.from({ length: 7 }, (_, i) => [`Item ${i}`, 1, 100]),
+  ]);
 });
