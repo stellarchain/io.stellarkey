@@ -4,7 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useMerchantConfiguration, useMerchantTill } from "@/hooks/useMerchant";
 import { FIAT_SYMBOLS } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
-import { fmtMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
+import { fmtMinor, minorToDecimal, parsePriceMinor } from "@/lib/merchant/money";
 import type { CatalogueItem } from "@/lib/merchant/types";
 import { IconCheck } from "../icons";
 import { useToast } from "../Toast";
@@ -40,13 +40,6 @@ const NEW_CATEGORY = " new-category";
 /** "Flat White" to "FLA", the shape the seed catalogue gives its SKUs. */
 function suggestSku(name: string): string {
   return name.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 3);
-}
-
-/** A plain decimal price in minor units, or null when the text is not one. */
-function parsePrice(text: string): number | null {
-  const raw = text.trim();
-  if (raw === "" || raw === "." || !/^\d{0,9}(\.\d{0,2})?$/.test(raw)) return null;
-  return toMinor(raw);
 }
 
 /** A whole, non-negative count, or null. */
@@ -157,7 +150,7 @@ function ItemEditor({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const effectiveSku = skuTouched ? sku : suggestSku(name);
-  const previewMinor = parsePrice(priceText);
+  const previewMinor = parsePriceMinor(priceText);
   const symbol = FIAT_SYMBOLS[settings.currency].trim();
   const draftId = isEdit ? item.id : effectiveSku.trim().toLowerCase();
 
@@ -214,7 +207,7 @@ function ItemEditor({
       }
     }
 
-    const priceMinor = parsePrice(priceText);
+    const priceMinor = parsePriceMinor(priceText);
     if (priceMinor === null) {
       fail("Enter the price as a plain amount, such as 3.20. It cannot be negative or blank.");
       return;

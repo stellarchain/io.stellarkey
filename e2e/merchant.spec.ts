@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { MuxedAccount, Networks, TransactionBuilder } from "@stellar/stellar-sdk";
 import {
   chromium,
+  expect,
   test,
   type Browser,
   type BrowserContext,
@@ -609,14 +610,54 @@ test(
       await page.getByRole("button", { name: "Invoices", exact: true }).click();
       await page.getByRole("button", { name: "New Invoice" }).first().click();
       const composer = page.getByRole("dialog", { name: /New Invoice/ });
+      await composer.getByText(/· reference NSC-I-1$/).waitFor();
+      await composer.getByRole("button", { name: "Save Draft" }).click();
+      await composer.getByText("Give the invoice a customer. It is the name that goes on the document.").waitFor();
       await composer.getByLabel("Customer").fill("Praça Hotel");
+      await composer.getByRole("button", { name: "Save Draft" }).click();
+      await composer.getByText("An invoice needs at least one line. Add one from the catalogue, or type your own.").waitFor();
       await composer.getByRole("button", { name: /Free-Text Line/ }).click();
       await composer.getByLabel("Line description").fill("Wholesale beans");
+      const invalidLine = composer.getByText("Every line needs a description, a whole quantity and a plain price such as 12.00.");
+      for (const price of ["", "1.234", "-1", "1e2"]) {
+        await composer.getByLabel("Unit price").fill(price);
+        await composer.getByRole("button", { name: "Save Draft" }).click();
+        await invalidLine.waitFor();
+      }
       await composer.getByLabel("Unit price").fill("42.00");
+      await composer.getByLabel("Qty", { exact: true }).fill("0");
       await composer.getByRole("button", { name: "Save Draft" }).click();
+      await invalidLine.waitFor();
+      await composer.getByLabel("Qty", { exact: true }).fill("1");
+      const dueDate = await composer.getByLabel("Due Date").inputValue();
+      await composer.getByLabel("Due Date").fill("");
+      await composer.getByRole("button", { name: "Save Draft" }).click();
+      await composer.getByText("The due date has to be a real date.").waitFor();
+      await composer.getByLabel("Due Date").fill(dueDate);
+      await composer.getByRole("button", { name: "Save Draft" }).click();
+      for (const key of ["Enter", " "]) {
+        await expect(page.locator("[data-modal-backdrop]")).toHaveCount(0);
+        const editButton = page.getByRole("button", { name: /^Edit draft INV-/ });
+        await editButton.focus();
+        await expect(editButton).toBeFocused();
+        await editButton.press(key);
+        const editInvoice = page.getByRole("dialog", { name: "Edit invoice" });
+        await editInvoice.getByText(/· reference NSC-I-1$/).waitFor();
+        assert.equal(await editInvoice.getByLabel("Unit price").inputValue(), "42.00");
+        await editInvoice.getByLabel("Note", { exact: true }).fill("Synthetic edited invoice note");
+        await editInvoice.getByRole("button", { name: "Save Draft" }).click();
+      }
       const invoiceRow = page.getByRole("button", { name: /INV-.*Praça Hotel/ });
       await invoiceRow.click();
       const invoice = page.getByRole("dialog", { name: /INV-/ });
+      await invoice.getByText("NSC-I-1", { exact: true }).waitFor();
+      await invoice.getByText("Synthetic edited invoice note", { exact: true }).waitFor();
+      await invoice.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(page.locator("[data-modal-backdrop]")).toHaveCount(0);
+      await invoiceRow.focus();
+      await expect(invoiceRow).toBeFocused();
+      await invoiceRow.press(" ");
+      await invoice.getByText("NSC-I-1", { exact: true }).waitFor();
       await invoice.getByRole("button", { name: "Issue invoice" }).click();
       await invoice.getByRole("button", { name: "Record Payment" }).click();
       await invoice.getByLabel(/Amount · EUR/).fill("42.00");

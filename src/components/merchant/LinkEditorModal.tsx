@@ -5,7 +5,7 @@ import { formatTrezorAddress } from "@/lib/address-display";
 import { FIAT_SYMBOLS, memoByteLength } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { assetKey, isNative, referencePrefix } from "@/lib/merchant/charge";
-import { fmtMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
+import { fmtMinor, minorToDecimal, parsePriceMinor } from "@/lib/merchant/money";
 import { counterReference } from "@/lib/merchant/payment-reference";
 import { createMerchantRoutingId } from "@/lib/merchant/routing";
 import type {
@@ -77,12 +77,6 @@ export function CodeKindIcon({ kind, size = 17 }: { kind: CounterCodeKind; size?
   if (kind === "fixed") return <IconTag size={size} />;
   if (kind === "tip") return <IconGift size={size} />;
   return <IconQr size={size} />;
-}
-
-function parseAmount(text: string): Minor | null {
-  const raw = text.trim();
-  if (raw === "" || raw === "." || !/^\d{0,9}(\.\d{0,2})?$/.test(raw)) return null;
-  return toMinor(raw);
 }
 
 function dateInput(timestamp: number | null): string {
@@ -227,7 +221,7 @@ function CodeEditor({
       effectiveMemo = null;
     }
   }
-  const amountMinor = parseAmount(amountText);
+  const amountMinor = parsePriceMinor(amountText);
   const memoBytes = memoByteLength(effectiveMemo ?? memoSuffix);
 
   /* Unsaved edits: anything that differs from the code, or from a blank form. */
@@ -279,7 +273,7 @@ function CodeEditor({
   }
 
   function addSuggestion() {
-    const minor = parseAmount(suggestionText);
+    const minor = parsePriceMinor(suggestionText);
     if (minor === null || minor <= 0) {
       setError("A suggested amount has to be above zero.");
       triggerHaptic("error");

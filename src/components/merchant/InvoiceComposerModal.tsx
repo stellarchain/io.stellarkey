@@ -8,9 +8,9 @@ import {
 } from "@/hooks/useMerchant";
 import { FIAT_SYMBOLS } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
-import { referencePrefix } from "@/lib/merchant/charge";
-import { fmtMinor, minorToDecimal, orderTotals, toMinor } from "@/lib/merchant/money";
-import type { Invoice, InvoiceLine, Minor, OrderLine } from "@/lib/merchant/types";
+import { invoiceReference } from "@/lib/merchant/payment-reference";
+import { fmtMinor, minorToDecimal, orderTotals, parsePriceMinor } from "@/lib/merchant/money";
+import type { Invoice, InvoiceLine, OrderLine } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
 import {
   Button,
@@ -54,13 +54,6 @@ function parseQuantity(text: string): number | null {
   return /^\d{1,4}$/.test(raw) && Number(raw) > 0 ? Number(raw) : null;
 }
 
-/** A plain decimal price in minor units, or null while the field is not one. */
-function parsePrice(text: string): Minor | null {
-  const raw = text.trim();
-  if (raw === "" || raw === "." || !/^\d{0,9}(\.\d{0,2})?$/.test(raw)) return null;
-  return toMinor(raw);
-}
-
 function toDateInput(ts: number): string {
   return new Date(ts).toISOString().slice(0, 10);
 }
@@ -77,7 +70,7 @@ function nextInvoiceIdentity(
 ): { number: string; reference: string } {
   return {
     number: `INV-${new Date(now).getUTCFullYear()}-${String(sequence).padStart(4, "0")}`,
-    reference: `${referencePrefix(shopName || "Till")}INV${sequence}`,
+    reference: invoiceReference(shopName || "Till", sequence),
   };
 }
 
@@ -179,7 +172,7 @@ function Composer({
         itemId: line.itemId,
         name: line.description,
         quantity: parseQuantity(line.quantityText) ?? 0,
-        unitPriceMinor: parsePrice(line.priceText) ?? 0,
+        unitPriceMinor: parsePriceMinor(line.priceText) ?? 0,
         modifiers: [],
         taxRateId: line.taxRateId,
         note: null,
@@ -270,60 +263,30 @@ function Composer({
     setDueDate(toDateInput(draftBase + days * DAY));
   }
 
-  /** The first thing wrong with the draft, or null when it can be saved. */
-  function validationError(): string | null {
-    if (!customerName.trim()) {
-      return "Give the invoice a customer. It is the name that goes on the document.";
-    }
-    if (lines.length === 0) {
-      return "An invoice needs at least one line. Add one from the catalogue, or type your own.";
-    }
-    const badLine = lines.find(
-      (line) =>
-        !line.description.trim() ||
-        parseQuantity(line.quantityText) === null ||
-        parsePrice(line.priceText) === null,
-    );
-    if (badLine) {
-      return "Every line needs a description, a whole quantity and a plain price such as 12.00.";
-    }
-    if (fromDateInput(dueDate) === null) return "The due date has to be a real date.";
-    return null;
-  }
-
   function handleSave() {
-    const problem = validationError();
-    if (problem !== null) {
-      triggerHaptic("error");
-      setError(problem);
-      return;
-    }
-    const dueAt = fromDateInput(dueDate) as number;
-    const invoiceLines: InvoiceLine[] = lines.map((line) => ({
-      id: line.id,
-      description: line.description.trim(),
-      quantity: parseQuantity(line.quantityText) as number,
-      unitPriceMinor: parsePrice(line.priceText) as Minor,
-      taxRateId: line.taxRateId,
-    }));
     try {
+      if (!customerName.trim()) {
+        throw new Error("Give the invoice a customer. It is the name that goes on the document.");
+      }
+      if (lines.length === 0) {
+        throw new Error("An invoice needs at least one line. Add one from the catalogue, or type your own.");
+      }
+      const invoiceLines: InvoiceLine[] = lines.map((line) => {
+        const description = line.description.trim();
+        const quantity = parseQuantity(line.quantityText);
+        const unitPriceMinor = parsePriceMinor(line.priceText);
+        if (!description || quantity === null || unitPriceMinor === null) {
+          throw new Error("Every line needs a description, a whole quantity and a plain price such as 12.00.");
+        }
+        return { id: line.id, description, quantity, unitPriceMinor, taxRateId: line.taxRateId };
+      });
+      const dueAt = fromDateInput(dueDate);
+      if (dueAt === null) throw new Error("The due date has to be a real date.");
+      const draft = { customerName, customerEmail, lines: invoiceLines, dueAt, note };
       if (invoice) {
-        updateInvoiceDraft({
-          invoiceId: invoice.id,
-          customerName,
-          customerEmail,
-          lines: invoiceLines,
-          dueAt,
-          note,
-        });
+        updateInvoiceDraft({ ...draft, invoiceId: invoice.id });
       } else {
-        createInvoiceDraft({
-          customerName,
-          customerEmail,
-          lines: invoiceLines,
-          dueAt,
-          note,
-        });
+        createInvoiceDraft(draft);
       }
       triggerHaptic("success");
       toast(invoice ? "Invoice draft updated" : "Invoice saved as a draft", "success", {
@@ -385,7 +348,7 @@ function Composer({
           ) : (
             lines.map((line) => {
               const quantity = parseQuantity(line.quantityText);
-              const price = parsePrice(line.priceText);
+              const price = parsePriceMinor(line.priceText);
               const lineTotal = quantity !== null && price !== null ? quantity * price : null;
               return (
                 <div key={line.id} className="panel-inset space-y-2.5 p-3">

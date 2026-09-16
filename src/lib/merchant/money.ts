@@ -38,6 +38,13 @@ export function toMinor(value: string | number): Minor {
   return negative ? -cents : cents;
 }
 
+/** Price drafts accept at most nine whole digits and two decimal places, without rounding. */
+export function parsePriceMinor(text: string): Minor | null {
+  const raw = text.trim();
+  if (raw === "" || raw === "." || !/^\d{0,9}(\.\d{0,2})?$/.test(raw)) return null;
+  return toMinor(raw);
+}
+
 /** 2733 → "27.33". No symbol, no grouping — for inputs and machine output. */
 export function minorToDecimal(minor: Minor): string {
   const negative = minor < 0;

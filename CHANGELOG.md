@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cancel notification timers when banners are removed or replaced, without restarting the remaining banners' display or exit deadlines.
 - Ignore service-worker registration results after their UI owner unmounts, preventing stale update prompts and leaked listeners.
 - Keep the local production server running through malformed requests and unavailable build files, without serving the wallet without its generated security headers.
+- Show the same payment reference in a new invoice's preview and saved draft.
+- Keep invoice Open and Edit controls independently accessible by keyboard and touch, without nesting buttons or duplicating touch-target expansion.
 
 ## [1.0.3] - 2026-09-14
 
