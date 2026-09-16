@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Cancel notification timers when banners are removed or replaced, without restarting the remaining banners' display or exit deadlines.
 - Ignore service-worker registration results after their UI owner unmounts, preventing stale update prompts and leaked listeners.
+- Keep the local production server running through malformed requests and unavailable build files, without serving the wallet without its generated security headers.
 
 ## [1.0.3] - 2026-09-14
 

@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { existsSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -194,6 +195,58 @@ test("the static server serves canonical documents, social PNGs, and the branded
     assert.equal(missing.status, 404);
     assert.match(missing.headers.get("content-type") ?? "", /^text\/html/);
     assert.match(await missing.text(), /Page not found — StellarKey/);
+  } finally {
+    if (child?.exitCode === null) {
+      child.kill("SIGTERM");
+      await once(child, "exit");
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the static server contains request errors and recovers when build headers return", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "stellarkey-static-errors-"));
+  const scriptDirectory = path.join(root, "scripts");
+  const outputDirectory = path.join(root, "out");
+  const serverPath = path.join(scriptDirectory, "static-server.mjs");
+  let child;
+  try {
+    await mkdir(scriptDirectory);
+    await mkdir(outputDirectory);
+    await copyFile(new URL("../scripts/static-server.mjs", import.meta.url), serverPath);
+    await writeFile(path.join(outputDirectory, "index.html"), "<!doctype html><title>Synthetic fixture</title>");
+    const port = await availablePort();
+    child = spawn(process.execPath, [serverPath, "--hostname", "127.0.0.1", "--port", String(port)], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    await waitForReady(child);
+    const origin = `http://127.0.0.1:${port}`;
+
+    const unavailable = await fetch(origin);
+    assert.equal(unavailable.status, 503);
+    assert.equal(unavailable.headers.get("cache-control"), "no-store");
+    assert.equal(unavailable.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(await unavailable.text(), "Static build unavailable");
+    const head = await fetch(origin, { method: "HEAD" });
+    assert.equal(head.status, 503);
+    assert.equal(await head.text(), "");
+
+    const malformed = await new Promise((resolve, reject) => {
+      const req = request(origin, { headers: { Host: "[" } }, (response) => {
+        response.resume();
+        response.on("end", () => resolve(response.statusCode));
+      });
+      req.on("error", reject);
+      req.end();
+    });
+    assert.equal(malformed, 400);
+
+    await writeFile(path.join(outputDirectory, "_headers"), "/*\n  Content-Security-Policy: default-src 'none'\n");
+    const restored = await fetch(origin);
+    assert.equal(restored.status, 200);
+    assert.equal(restored.headers.get("content-security-policy"), "default-src 'none'");
+    assert.match(await restored.text(), /Synthetic fixture/);
+    assert.equal(child.exitCode, null);
   } finally {
     if (child?.exitCode === null) {
       child.kill("SIGTERM");

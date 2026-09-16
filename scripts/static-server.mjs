@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
+import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -98,11 +99,31 @@ async function serveFile({ request, response, filePath, urlPath, status = 200 })
   headers["Content-Type"] = contentTypeFor(urlPath, filePath);
   response.writeHead(status, headers);
   if (request.method === "HEAD") response.end();
-  else createReadStream(filePath).pipe(response);
+  else await pipeline(createReadStream(filePath), response);
 }
 
-const server = createServer(async (request, response) => {
-  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+function respondError(request, response, status, message) {
+  if (response.destroyed) return;
+  if (response.headersSent) {
+    response.destroy();
+    return;
+  }
+  response.writeHead(status, {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+  });
+  response.end(request.method === "HEAD" ? undefined : message);
+}
+
+async function handleRequest(request, response) {
+  let url;
+  try {
+    url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  } catch {
+    respondError(request, response, 400, "Invalid request URL");
+    return;
+  }
 
   if (url.pathname.length > 1 && url.pathname.endsWith("/")) {
     const canonicalPath = url.pathname.replace(/\/+$/, "");
@@ -129,6 +150,12 @@ const server = createServer(async (request, response) => {
     return;
   }
   await serveFile({ request, response, filePath, urlPath: url.pathname });
+}
+
+const server = createServer((request, response) => {
+  void handleRequest(request, response).catch(() => {
+    respondError(request, response, 503, "Static build unavailable");
+  });
 });
 
 server.listen(port, hostname, () => {
