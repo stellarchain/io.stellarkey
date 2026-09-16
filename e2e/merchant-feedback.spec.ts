@@ -31,7 +31,9 @@ test.beforeEach(async ({ page, baseURL }) => {
     const clear = window.clearTimeout.bind(window);
     window.setTimeout = (handler, delay, ...args) => {
       const id = timeout(handler, delay, ...args);
-      if (delay === 4200) timers.owned.add(id);
+      // Expiry uses the remaining 4.2 s deadline after React commits the banner.
+      // The clock-controlled lifecycle cases below assert its exact timing.
+      if (delay !== undefined && delay > 4000 && delay <= 4200) timers.owned.add(id);
       return id;
     };
     window.clearTimeout = id => {
@@ -361,8 +363,71 @@ test('toast provider teardown clears every owned expiry timer', async ({ page })
   await control(page, 'Local toast');
   await control(page, 'Local toast');
   await expect.poll(() => page.evaluate(() => window.__merchantToastTimers.owned.size)).toBe(2);
+  const clearedBeforeUnmount = await page.evaluate(() => window.__merchantToastTimers.cleared);
   await control(page, 'Toggle local toast provider');
-  await expect.poll(() => page.evaluate(() => ({ pending: window.__merchantToastTimers.owned.size, cleared: window.__merchantToastTimers.cleared }))).toEqual({ pending: 0, cleared: 2 });
+  await expect.poll(() => page.evaluate(() => ({ pending: window.__merchantToastTimers.owned.size, cleared: window.__merchantToastTimers.cleared }))).toEqual({ pending: 0, cleared: clearedBeforeUnmount + 2 });
+});
+
+test('a toast burst retains timers only for the three visible notifications', async ({ page }) => {
+  await control(page, 'Toggle local toast provider');
+  await page.getByRole('button', { name: 'Local toast', exact: true }).evaluate(node => {
+    for (let i = 0; i < 5; i++) (node as HTMLButtonElement).click();
+  });
+  await expect(page.locator('.app-safe-toast > div')).toHaveCount(3);
+  await expect.poll(() => page.evaluate(() => window.__merchantToastTimers.owned.size)).toBe(3);
+  await control(page, 'Local toast');
+  await expect(page.locator('.app-safe-toast > div')).toHaveCount(3);
+  await expect.poll(() => page.evaluate(() => window.__merchantToastTimers.owned.size)).toBe(3);
+  await control(page, 'Toggle local toast provider');
+  await expect.poll(() => page.evaluate(() => window.__merchantToastTimers.owned.size)).toBe(0);
+});
+
+test('adding a toast does not renew an older notification or its exit animation', async ({ page }) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await control(page, 'First toast');
+  const first = page.locator('.app-safe-toast > div').filter({ hasText: 'First supplementary message.' });
+  await page.clock.fastForward(2000);
+  await control(page, 'Second toast');
+  const second = page.locator('.app-safe-toast > div').filter({ hasText: 'Second supplementary message.' });
+  await page.clock.fastForward(2200);
+  await expect(first).toHaveClass(/toast-leave/);
+  await expect(second).toHaveClass(/toast-enter/);
+  await page.clock.fastForward(100);
+  await control(page, 'Fourth toast');
+  await page.clock.fastForward(80);
+  await expect(first).toHaveCount(0);
+  await expect(second).toHaveClass(/toast-enter/);
+  await page.clock.fastForward(1820);
+  await expect(second).toHaveClass(/toast-leave/);
+});
+
+test('toast dismissal keeps tap and upward-swipe behavior without restarting an exit', async ({ page }) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await control(page, 'First toast');
+  const banner = page.locator('.app-safe-toast > div');
+  await banner.dispatchEvent('pointerdown', { pointerId: 1, clientY: 100 });
+  await banner.dispatchEvent('pointerup', { pointerId: 1, clientY: 130 });
+  await expect(banner).toHaveClass(/toast-enter/);
+  await banner.dispatchEvent('pointerdown', { pointerId: 1, clientY: 100 });
+  await banner.dispatchEvent('pointercancel', { pointerId: 1 });
+  await banner.dispatchEvent('pointerup', { pointerId: 1, clientY: 50 });
+  await expect(banner).toHaveClass(/toast-enter/);
+  await banner.dispatchEvent('pointerdown', { pointerId: 1, clientY: 100 });
+  await banner.dispatchEvent('pointerup', { pointerId: 1, clientY: 50 });
+  await expect(banner).toHaveClass(/toast-leave/);
+  await page.clock.fastForward(100);
+  await banner.dispatchEvent('pointerdown', { pointerId: 2, clientY: 100 });
+  await banner.dispatchEvent('pointerup', { pointerId: 2, clientY: 100 });
+  await page.clock.fastForward(80);
+  await expect(banner).toHaveCount(0);
+  await control(page, 'Second toast');
+  await banner.dispatchEvent('pointerdown', { pointerId: 3, clientY: 100 });
+  await banner.dispatchEvent('pointerup', { pointerId: 3, clientY: 100 });
+  await expect(banner).toHaveClass(/toast-leave/);
+  await page.clock.fastForward(180);
+  await expect(banner).toHaveCount(0);
 });
 
 test('a code switch keeps keyboard focus while its own mutation is pending', async ({ page, browserName }) => {

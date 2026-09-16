@@ -20,6 +20,7 @@ interface Toast {
   message: string;
   kind: ToastKind;
   leaving: boolean;
+  expiresAt: number;
 }
 
 interface ToastOptions {
@@ -50,58 +51,59 @@ export function toastDurationMs(): number {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(1);
-  const timers = useRef(new Map<number, number>());
-
-  useEffect(() => {
-    const ownedTimers = timers.current;
-    return () => {
-      for (const timer of ownedTimers.values()) window.clearTimeout(timer);
-      ownedTimers.clear();
-    };
-  }, []);
-
-  const clearTimer = useCallback((id: number) => {
-    const timer = timers.current.get(id);
-    if (timer !== undefined) window.clearTimeout(timer);
-    timers.current.delete(id);
-  }, []);
 
   // Leaving toasts stay in the list for the exit animation, then unmount.
   const dismiss = useCallback((id: number) => {
-    clearTimer(id);
-    setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, leaving: true } : t)));
-    timers.current.set(id, window.setTimeout(() => {
-      timers.current.delete(id);
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, TOAST_EXIT_DURATION_MS));
-  }, [clearTimer]);
+    const expiresAt = performance.now() + TOAST_EXIT_DURATION_MS;
+    setToasts((prev) => prev.map((t) => (
+      t.id === id && !t.leaving ? { ...t, leaving: true, expiresAt } : t
+    )));
+  }, []);
+
+  const remove = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
 
   const toast = useCallback((message: string, kind: ToastKind = "info", options?: ToastOptions) => {
     const id = nextId.current++;
     if (!options?.silent) {
       triggerHaptic(kind === "success" ? "success" : kind === "error" ? "error" : "light");
     }
-    setToasts((prev) => [...prev.slice(-2), { id, message, kind, leaving: false }]);
-    timers.current.set(id, window.setTimeout(() => dismiss(id), toastDurationMs()));
-  }, [dismiss]);
+    const expiresAt = performance.now() + toastDurationMs();
+    setToasts((prev) => [...prev.slice(-2), { id, message, kind, leaving: false, expiresAt }]);
+  }, []);
 
   const value = useMemo(() => ({ toast }), [toast]);
 
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {/* iOS banner: top on phones, top-trailing on desktop. Tap or swipe up to dismiss. */}
       <div aria-live="polite" aria-atomic="false" aria-relevant="additions" className="app-safe-toast pointer-events-none fixed top-[4.5rem] left-1/2 z-[80] flex w-full max-w-sm -translate-x-1/2 flex-col items-center gap-2 px-4 md:top-auto md:bottom-6">
         {toasts.map((t) => (
-          <ToastItem key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />
+          <ToastItem key={t.id} toast={t} onDismiss={dismiss} onRemove={remove} />
         ))}
       </div>
     </ToastContext.Provider>
   );
 }
 
-function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
+function ToastItem({ toast, onDismiss, onRemove }: {
+  toast: Toast;
+  onDismiss: (id: number) => void;
+  onRemove: (id: number) => void;
+}) {
   const pressRef = useRef<{ id: number; y: number } | null>(null);
+  const { id, leaving, expiresAt } = toast;
+
+  useEffect(() => {
+    // Absolute deadlines survive rerenders; unmount also cancels evicted banners.
+    const timer = window.setTimeout(
+      () => leaving ? onRemove(id) : onDismiss(id),
+      Math.max(0, Math.ceil(expiresAt - performance.now())),
+    );
+    return () => window.clearTimeout(timer);
+  }, [id, leaving, expiresAt, onDismiss, onRemove]);
+
   return (
     <div
       onPointerDown={(event) => {
@@ -112,7 +114,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
         pressRef.current = null;
         if (!press || press.id !== event.pointerId || toast.leaving) return;
         // A tap or an upward swipe both dismiss; a downward drag is left alone.
-        if (press.y - event.clientY > TOAST_SWIPE_DISMISS_PX || Math.abs(event.clientY - press.y) < 6) onDismiss();
+        if (press.y - event.clientY > TOAST_SWIPE_DISMISS_PX || Math.abs(event.clientY - press.y) < 6) onDismiss(toast.id);
       }}
       onPointerCancel={() => { pressRef.current = null; }}
       className={`${toast.leaving ? "toast-leave" : "toast-enter"} pointer-events-auto flex min-w-0 max-w-full cursor-default touch-pan-x select-none items-center gap-2.5 rounded-2xl border border-white/15 bg-neutral-900/95 py-2.5 pl-3.5 pr-5 shadow-[0_20px_50px_-10px_var(--shadow-strong)] backdrop-blur-2xl`}
