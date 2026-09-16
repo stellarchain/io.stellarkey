@@ -41,6 +41,7 @@ test("fee equivalent is granular, testnet-capable, and privacy-aware", () => {
   assert.match(component, /useWalletPreferences\(\)/);
   assert.match(component, /if \(privacyMode\) return null/);
   assert.match(component, /Local rate unavailable/);
+  assert.match(component, /className = "text-\[10\.5px\] font-normal text-neutral-400"/);
   assert.match(formatter, /fmtFiatMarketPrice/);
   assert.match(formatter, /amountToStroops/);
   assert.doesNotMatch(component, /fetchAssetPrices|getUnitPrice|useWallet\(\)/);

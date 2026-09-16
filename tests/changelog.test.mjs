@@ -44,7 +44,9 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   const source = read('CHANGELOG.md');
   const document = parseChangelog(source);
   assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.0.4', '1.0.3', '1.0.2', '1.0.1', '1.0.0']);
-  assert.deepEqual(document.releases[0], { version: 'Unreleased', date: null, categories: [] });
+  assert.deepEqual(document.releases[0], { version: 'Unreleased', date: null, categories: [{
+    name: 'Fixed', entries: ['Keep local-currency network-fee labels readable on raised dark review surfaces.'],
+  }] });
   assert.deepEqual(document.releases[1], {
     version: '1.0.4',
     date: '2026-09-16',
