@@ -1,11 +1,10 @@
 "use client";
 
 import { useId, useLayoutEffect, useMemo, useState } from "react";
-import { SectionHeader } from "@/components/ui";
 import { useWalletMarket } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { marketDataLabel } from "@/lib/prices";
-import { Button, ModalBody, ModalFooter, Notice, QuickAmountChips, Select } from "./ui";
+import { Button, ModalBody, ModalFooter, Notice, QuickAmountChips, SectionHeader, Select } from "./ui";
 import { IconSwap } from "./icons";
 
 interface UnitPriceOption {
@@ -95,9 +94,7 @@ export function CurrencyConverterModalBody({
 
   return (
     <ModalBody>
-      {/* Converter Card */}
       <div className="rounded-3xl bg-white/[0.03] border border-white/10 p-5 space-y-4 shadow-xl">
-        {/* From Input */}
         <div>
           <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5" htmlFor={fromAmountId}>
             Convert From
@@ -125,7 +122,6 @@ export function CurrencyConverterModalBody({
           </div>
         </div>
 
-        {/* Swap Invert Button */}
         <div className="flex items-center justify-center">
           <button
             type="button"
@@ -137,7 +133,6 @@ export function CurrencyConverterModalBody({
           </button>
         </div>
 
-        {/* To Output */}
         <div>
           <SectionHeader as="span" className="block mb-1.5">Converted Amount</SectionHeader>
           <div className="flex items-center gap-2">
@@ -171,7 +166,6 @@ export function CurrencyConverterModalBody({
           Price unavailable for {unavailableCode} right now. Conversions resume when market data returns.
         </Notice>
       ) : (
-        /* Rate Summary Banner */
         <div className="flex items-center justify-between px-2 text-[12.5px] text-neutral-300">
           <span>Exchange Rate:</span>
           <span className="mono font-semibold text-[#30D158]">
@@ -184,10 +178,8 @@ export function CurrencyConverterModalBody({
         </div>
       )}
 
-      {/* Quick Amount Presets */}
       <QuickAmountChips fill values={[10, 50, 100, 500, 1000]} onPick={setFromAmount} />
 
-      {/* DEX Swap Action if both are Stellar assets */}
       <ModalFooter
         secondary={
           canDEXSwap && onOpenSwap ? (

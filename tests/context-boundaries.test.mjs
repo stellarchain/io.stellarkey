@@ -97,6 +97,7 @@ test("merchant domain subscriptions exclude unrelated high-frequency state", () 
 });
 
 test("leaf wallet consumers avoid the compatibility-wide subscription", () => {
+  assert.doesNotMatch(source("src/components/DashboardPriceCard.tsx"), /\buseWallet\(\)/);
   assert.doesNotMatch(source("src/components/FiatValue.tsx"), /\buseWallet\(\)/);
   assert.doesNotMatch(source("src/components/CurrencyConverterModal.tsx"), /\buseWallet\(\)/);
   assert.doesNotMatch(source("src/components/CurrencyConverterModalBody.tsx"), /\buseWallet\(\)/);

@@ -1,15 +1,11 @@
-/**
- * Apple-style synthetic sound effects generated via Web Audio API.
- * Zero external audio files, zero network overhead, instant 60fps playback.
- */
-
 let audioCtx: AudioContext | null = null;
 const SOUND_PREF_KEY = "wallet.sound.v1";
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
   if (!audioCtx) {
-    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioContextClass = window.AudioContext ||
+      (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (AudioContextClass) {
       audioCtx = new AudioContextClass();
     }
