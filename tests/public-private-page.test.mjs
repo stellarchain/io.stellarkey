@@ -39,7 +39,7 @@ test('public copy uses the current release identity and preserves Protocol V2 li
   assert.match(about, /canonical archive.*encrypted backup/i);
   assert.match(page, /current application release.*1\.0\.0 application baseline/i);
   assert.doesNotMatch(page, /Peer relaying has been removed/i);
-  assert.match(security, /For release 1\.0\.3.*deferred.*VoiceOver.*NVDA.*not passed/is);
+  assert.match(security, /For release 1\.0\.4.*deferred.*VoiceOver.*NVDA.*not passed/is);
 });
 
 test('the public explainer matches the shipped V2 circuit and proving artifacts', () => {

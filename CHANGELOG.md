@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-09-16
+
 ### Fixed
 
 - Cancel notification timers when banners are removed or replaced, without restarting the remaining banners' display or exit deadlines.
@@ -23,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Build the pinned circuit analyzer with its locked dependencies in CI and release checks.
 - Run independent application, private UI and protocol verification jobs concurrently; publish the exact staged release only after every required gate succeeds.
 - Split hosted private-component checks across isolated Chromium and iPhone WebKit runners without reducing coverage, and reject lint warnings during verification.
+- Synchronize release markers and the whitepaper at 1.0.4, refreshing lockfile provenance without changing dependencies, Protocol V2 artifacts or the Testnet deployment.
+
+### Security
+
+- Record the maintainer's explicit continuation of the physical-device, VoiceOver/NVDA, passkey, Trezor and redistribution/origin sign-off deferral for 1.0.4. These checks are unperformed or unconfirmed, not passed; this exception grants no third-party license rights and does not approve real-value Private Payments.
 
 ## [1.0.3] - 2026-09-14
 

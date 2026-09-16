@@ -43,13 +43,43 @@ test('Unreleased accepts empty or categorized entries without changing the publi
 test('the changelog starts at the approved 1.0.0 baseline', () => {
   const source = read('CHANGELOG.md');
   const document = parseChangelog(source);
-  assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.0.3', '1.0.2', '1.0.1', '1.0.0']);
-  assert.deepEqual(document.releases[0].categories, []);
-  assert.equal(document.releases[1].date, '2026-09-14');
+  assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.0.4', '1.0.3', '1.0.2', '1.0.1', '1.0.0']);
+  assert.deepEqual(document.releases[0], { version: 'Unreleased', date: null, categories: [] });
+  assert.deepEqual(document.releases[1], {
+    version: '1.0.4',
+    date: '2026-09-16',
+    categories: [{
+      name: 'Fixed',
+      entries: [
+        "Cancel notification timers when banners are removed or replaced, without restarting the remaining banners' display or exit deadlines.",
+        'Ignore service-worker registration results after their UI owner unmounts, preventing stale update prompts and leaked listeners.',
+        'Keep the local production server running through malformed requests and unavailable build files, without serving the wallet without its generated security headers.',
+        "Show the same payment reference in a new invoice's preview and saved draft.",
+        'Keep invoice Open and Edit controls independently accessible by keyboard and touch, without nesting buttons or duplicating touch-target expansion.',
+        'Keep merchant Insights comparisons and the live-hour chart aligned with local clock time across daylight-saving changes.',
+      ],
+    }, {
+      name: 'Changed',
+      entries: [
+        'Reduce repeated work in merchant customer reconciliation and recent Insights calculations without caching customer or payment data.',
+        'Check pinned Rust formatting during local, CI and release verification, and remove unused dependency licence allowances.',
+        'Build the pinned circuit analyzer with its locked dependencies in CI and release checks.',
+        'Run independent application, private UI and protocol verification jobs concurrently; publish the exact staged release only after every required gate succeeds.',
+        'Split hosted private-component checks across isolated Chromium and iPhone WebKit runners without reducing coverage, and reject lint warnings during verification.',
+        'Synchronize release markers and the whitepaper at 1.0.4, refreshing lockfile provenance without changing dependencies, Protocol V2 artifacts or the Testnet deployment.',
+      ],
+    }, {
+      name: 'Security',
+      entries: [
+        "Record the maintainer's explicit continuation of the physical-device, VoiceOver/NVDA, passkey, Trezor and redistribution/origin sign-off deferral for 1.0.4. These checks are unperformed or unconfirmed, not passed; this exception grants no third-party license rights and does not approve real-value Private Payments.",
+      ],
+    }],
+  });
   assert.equal(document.releases[2].date, '2026-09-14');
-  assert.equal(document.releases[3].date, '2026-09-13');
+  assert.equal(document.releases[3].date, '2026-09-14');
   assert.equal(document.releases[4].date, '2026-09-13');
-  const notes = document.releases[4].categories.flatMap(({ entries }) => entries).join(' ');
+  assert.equal(document.releases[5].date, '2026-09-13');
+  const notes = document.releases[5].categories.flatMap(({ entries }) => entries).join(' ');
   assert.match(notes, /stable starting application baseline/);
   assert.match(notes, /unaudited.*Testnet-only/);
   assert.match(notes, /GitHub Actions/);
@@ -58,20 +88,20 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   assert.match(source, /semver\.org/);
 });
 
-test('all authoritative release markers agree on version 1.0.3', () => {
+test('all authoritative release markers agree on version 1.0.4', () => {
   const packageJson = JSON.parse(read('package.json'));
   const packageLock = JSON.parse(read('package-lock.json'));
   const brand = read('src/lib/brand.ts');
   const security = read('SECURITY.md');
   const readme = read('README.md');
 
-  assert.equal(packageJson.version, '1.0.3');
-  assert.equal(packageLock.version, '1.0.3');
-  assert.equal(packageLock.packages[''].version, '1.0.3');
-  assert.match(brand, /APPLICATION_VERSION = "1\.0\.3"/);
+  assert.equal(packageJson.version, '1.0.4');
+  assert.equal(packageLock.version, '1.0.4');
+  assert.equal(packageLock.packages[''].version, '1.0.4');
+  assert.match(brand, /APPLICATION_VERSION = "1\.0\.4"/);
   assert.match(security, /latest `1\.0\.x` release/i);
-  assert.match(security, /current supported release is `1\.0\.3`/i);
-  assert.match(readme, /current release is `1\.0\.3`/i);
+  assert.match(security, /current supported release is `1\.0\.4`/i);
+  assert.match(readme, /current release is `1\.0\.4`/i);
   assert.match(readme, /\[changelog\]\(CHANGELOG\.md\)/i);
 });
 

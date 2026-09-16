@@ -56,6 +56,15 @@ unconfirmed, not passed. This exception grants no third-party license rights,
 does not waive automated gates, and does not promote Private Payments beyond
 unaudited Testnet use.
 
+### v1.0.4 release exception
+
+On 2026-09-16 the maintainer explicitly continued the same deferral for release
+1.0.4: physical iPhone/iPad, VoiceOver/NVDA, passkey and Trezor checks, including
+Trezor redistribution and registered-origin sign-off. They remain unperformed or
+unconfirmed, not passed. This exception grants no third-party license rights,
+does not waive automated gates, and does not promote Private Payments beyond
+unaudited Testnet use.
+
 ### Required checks
 
 - On a real iPhone, test Safari onboarding, encrypted-backup restore, lock/unlock, form entry, safe areas, and Add to Home Screen cold launch. Verify pinch zoom and 200% reflow, VoiceOver, and system text without clipping controls or obscuring focus.
