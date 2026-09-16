@@ -1,3 +1,4 @@
+import { equalBytes } from '@noble/ciphers/utils.js';
 import { isPrivateIndex } from './indices';
 import {
   ActionKind,
@@ -81,13 +82,6 @@ function duplicateNoteId(commitment: Uint8Array, leafIndex: bigint): string {
 function decodeHex32(value: string, name: string): Uint8Array {
   if (!/^[0-9a-f]{64}$/.test(value)) throw new Error(`${name} must be 32-byte lowercase hex`);
   return Uint8Array.from(value.match(/../g) ?? [], byte => Number.parseInt(byte, 16));
-}
-
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.length !== right.length) return false;
-  let difference = 0;
-  for (let index = 0; index < left.length; index += 1) difference |= left[index] ^ right[index];
-  return difference === 0;
 }
 
 function cloneTree(tree: MerkleTree): MerkleTree {
