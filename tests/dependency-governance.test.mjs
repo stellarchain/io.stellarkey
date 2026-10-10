@@ -143,7 +143,7 @@ test("workflow JavaScript actions use reviewed Node 24 releases", () => {
     ["actions/attest-build-provenance", "4d101475d8b20a2381f78447822ac1eab6504dd8"],
     ["actions/upload-artifact", "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"],
     ["actions/download-artifact", "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"],
-    ["cloudflare/wrangler-action", "ebbaa1584979971c8614a24965b4405ff95890e0"],
+    ["cloudflare/wrangler-action", "953926a2e2182532811c01a25e53647d93bf07c0"],
   ]);
   for (const [action, reviewedSha] of reviewedActions) {
     const references = [

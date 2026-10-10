@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update Next.js and its ESLint configuration to 16.3.8, Stellar SDK to 17.2.1, and Node.js type definitions to 22.20.3.
+- Update the pinned Cloudflare Wrangler action to 4.1.3 and retain its reviewed Node 24 runtime requirement.
+
+### Fixed
+
+- Refresh Private Balance manifest and catalogue provenance after dependency changes so generated-file verification uses the current lockfiles.
+
+### Security
+
+- Update Axios, IP address parsing, image processing, source-map parsing, TOML parsing, PBKDF2 and brace expansion dependencies within their supported release series.
+
 ## [1.0.4] - 2026-09-16
 
 ### Fixed
