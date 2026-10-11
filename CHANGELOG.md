@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Update Axios, IP address parsing, image processing, source-map parsing, TOML parsing, PBKDF2 and brace expansion dependencies within their supported release series.
+- Bound recursive brace parsing in Next.js lint tooling with an exact, reviewed depth-guard backport and retain the complete dependency audit gate.
 
 ## [1.0.4] - 2026-09-16
 

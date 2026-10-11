@@ -77,6 +77,9 @@
     "typescript": "^6.0.3"
   },
   "overrides": {
+    "micromatch@4.0.8": {
+      "braces": "npm:@dieub/braces-depth-guard@3.0.3-pn.3"
+    },
     "@stellar/stellar-sdk@14.2.0": {
       "toml": "4.2.0"
     },
