@@ -63,6 +63,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
       entries: [
         'Update Axios, IP address parsing, image processing, source-map parsing, TOML parsing, PBKDF2 and brace expansion dependencies within their supported release series.',
         'Bound recursive brace parsing in Next.js lint tooling with an exact, reviewed depth-guard backport and retain the complete dependency audit gate.',
+        'Update protocol CLI brace expansion to 2.1.7 while preserving historical deployment evidence and binding the maintained browser lockfile into current build provenance.',
       ],
     }],
   });

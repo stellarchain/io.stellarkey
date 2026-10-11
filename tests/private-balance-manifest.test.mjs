@@ -358,6 +358,14 @@ test('manifest: toolchain provenance is fresh for the actual pinned build inputs
   assert.ok(inputs.length >= 9);
   assert.ok(inputs.includes('protocol/private-balance/scripts/build-private-balance-artifacts.mjs'));
   assert.ok(inputs.includes('package-lock.json'));
+  for (const input of [
+    'protocol/private-balance/packages/browser/package.json',
+    'protocol/private-balance/packages/browser/package-lock.json',
+    'protocol/private-balance/parameters/hpke-deployment-lock.json',
+    'protocol/private-balance/scripts/hpke-lock-provenance.mjs',
+  ]) {
+    assert.ok(inputs.includes(input), 'current browser maintenance and its verifier must be bound to build provenance');
+  }
   const hash = createHash('sha256');
   for (const input of inputs.sort()) {
     const file = join(process.cwd(), input);

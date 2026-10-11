@@ -1,5 +1,45 @@
 # Dependency security evidence
 
+## 2026-10-11 — protocol CLI brace expansion and deployment provenance
+
+PR #25 updates the standalone browser package's installed CLI chain:
+`snarkjs 0.7.6 → ejs 3.1.10 → jake 10.9.4 → filelist 1.0.6 → minimatch 5.1.9
+→ brace-expansion 2.1.7`. The upstream patch bounds nested parsing, makes comma
+parsing iterative and limits parser rewrites. The reviewed
+[2.1.4…2.1.7 runtime diff](https://github.com/juliangruber/brace-expansion/compare/v2.1.4...v2.1.7)
+retains the entry point, MIT license and `balanced-match` dependency. Relevant
+upstream advisories are [nested recursion](https://github.com/advisories/GHSA-qhr7-859c-m2p7),
+[comma parsing](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p) and
+[quadratic rewrites](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr).
+A fresh standalone `npm ci --ignore-scripts` and audit on 2026-10-11 reported
+**zero vulnerable packages and zero advisories**. This result applies to that
+45-package installation, not the root application or embedded browser bundles.
+Registry signature verification passed for all 44 installed dependencies;
+seven packages also had verified attestations.
+
+The original CI failed because `hpkeDependencyIntegritySha256` hashed the entire
+browser lockfile, including CLI tooling, and compared it with immutable Testnet
+deployment evidence. `parameters/hpke-deployment-lock.json` archives the original
+lock bytes (SHA-256 `312a82fc6626f2bb66b1a24f351f8e13f95bde25fa4de350a8b10d2f4fe7a6b7`);
+it is historical metadata, not an installation lockfile. The generator verifies
+its exact digest and compares the current lock against an explicit maintenance
+allowlist: the pinned brace patch and missing records for the already-declared
+`@noble/curves 2.3.0` and its `@noble/hashes 2.3.0` dependency. Those Noble records
+must exactly match the reviewed packages already installed by the application.
+No HPKE record or other unreviewed package or metadata change is allowed.
+
+The existing deployment comparison stays strict and its evidence is unchanged.
+Current build provenance additionally binds the maintained browser lock, package
+declarations, historical lock and verifier source into `toolchainLockSha256`.
+Regression tests reject historical corruption, HPKE drift, unrelated package
+changes and Noble substitutions. Tests also use the installed CLI's real glob
+adapter for ordinary matching, deeply nested input and the new rewrite limit.
+Protocol tests exercise actual installed HPKE/Noble imports and conversions;
+application, circuit and private UI verification remain required separately.
+This maintenance neither replaces cryptography nor updates past network
+observations. The root application's elliptic, embedded-bundle and remote-service
+limitations below remain applicable.
+
 ## 2026-10-11 — Next lint brace recursion
 
 CI at `567801be7a5ceccb6c72182689e6c47a9485a448` failed the full dependency
