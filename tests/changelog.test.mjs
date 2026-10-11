@@ -44,7 +44,28 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   const source = read('CHANGELOG.md');
   const document = parseChangelog(source);
   assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.0.4', '1.0.3', '1.0.2', '1.0.1', '1.0.0']);
-  assert.deepEqual(document.releases[0], { version: 'Unreleased', date: null, categories: [] });
+  assert.deepEqual(document.releases[0], {
+    version: 'Unreleased',
+    date: null,
+    categories: [{
+      name: 'Changed',
+      entries: [
+        'Update Next.js and its ESLint configuration to 16.3.8, Stellar SDK to 17.2.1, and Node.js type definitions to 22.20.3.',
+        'Update the pinned Cloudflare Wrangler action to 4.1.3 and retain its reviewed Node 24 runtime requirement.',
+      ],
+    }, {
+      name: 'Fixed',
+      entries: [
+        'Refresh Private Balance manifest and catalogue provenance after dependency changes so generated-file verification uses the current lockfiles.',
+      ],
+    }, {
+      name: 'Security',
+      entries: [
+        'Update Axios, IP address parsing, image processing, source-map parsing, TOML parsing, PBKDF2 and brace expansion dependencies within their supported release series.',
+        'Bound recursive brace parsing in Next.js lint tooling with an exact, reviewed depth-guard backport and retain the complete dependency audit gate.',
+      ],
+    }],
+  });
   assert.deepEqual(document.releases[1], {
     version: '1.0.4',
     date: '2026-09-16',

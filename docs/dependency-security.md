@@ -1,5 +1,58 @@
 # Dependency security evidence
 
+## 2026-10-11 — Next lint brace recursion
+
+CI at `567801be7a5ceccb6c72182689e6c47a9485a448` failed the full dependency
+audit on [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
+The installed development-only chain was `eslint-config-next 16.3.8 →
+@next/eslint-plugin-next 16.3.8 → fast-glob 3.3.1 → micromatch 4.0.8 → braces
+3.0.3`. Registry inspection found no patched upstream braces release; the newer
+Next lint package still depended on this chain.
+
+An override scoped to `micromatch@4.0.8` now resolves its `braces` import to
+`@dieub/braces-depth-guard@3.0.3-pn.3`, pinned exactly in the manifest and by
+SHA-512 in the lockfile. This is a small, third-party MIT backport, not an
+official braces release. Its new, single-maintainer provenance remains a
+maintenance consideration; replace the override when a compatible upstream
+fix is reviewed. The package's default `latest` tag points to an earlier build
+and must not be substituted for this exact version.
+
+The downloaded npm tarball matched its registry SHA-512. Every runtime file
+and the unchanged upstream MIT license matched tagged
+[source commit 305a2e4](https://github.com/dieub/braces-depth-guard/tree/305a2e4bfe324bb53c336c1b03387ee1251c926f).
+The runtime diff preserves the entry point and `fill-range` dependency, adds
+inclusive nesting/traversal bounds of 100, validates and snapshots limits, and
+rejects cyclic AST parent walks. There are no install hooks or new runtime
+imports. The registry provenance identifies that commit, tag and tarball digest;
+`npm audit signatures` verified the installed graph's supported signatures and
+attestations. The repository README still calls pn.3 an unpublished candidate;
+the registry artifact and matching tagged provenance establish the published
+version used here.
+
+Three security regressions failed on the original installed package and pass
+with the override: excessive nesting through Next's real root-directory glob
+adapter; string and direct-AST traversal limits; and invalid/changing input
+limits. A fourth test discovers ordinary brace/range directory globs and checks
+that Next's page-link rule still reports an actual invalid link through ESLint.
+The tagged fork's 152 non-shell parser, compiler, stringify, option and
+compatibility tests also passed in an isolated temporary directory. Its shell
+comparison suites were not run. These checks establish the depth correction,
+not merely disappearance of the original package name from npm audit.
+
+Fresh full and production audits each report **10 low vulnerable packages,
+one distinct elliptic advisory, and no moderate, high or critical findings**;
+both existing high-severity gates pass. Before this change, the full graph
+reported 15 packages (five high, ten low) across two distinct advisories.
+Parent package findings are not independent advisories. The recursion guard
+does not bound all possible expansion cardinalities or arbitrary malformed
+ASTs. This development-only override does not modify application cryptography,
+Trezor browser bundles or remote services; the existing runtime boundaries and
+elliptic limitations below remain in force. Refreshing generated provenance
+changed only the toolchain lockfile digest in two manifests, the manifest digest
+in the public catalogue, and two generated TypeScript pins. Cryptographic artifacts
+and deployment evidence are unchanged. A focused pass alone is not complete
+application or release verification.
+
 ## 2026-09-12 — development parser and complete application audit
 
 The installed chain `eslint 9.39.5 → @eslint/eslintrc 3.3.6 → js-yaml`
