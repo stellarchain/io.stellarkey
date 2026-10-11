@@ -16,6 +16,7 @@ import * as snarkjs from 'snarkjs';
 import { encodePointCompressedZkey } from './zkey-point-transport.mjs';
 import { POWERS_OF_TAU_SHA256 } from '../circuits/scripts/powers-of-tau.mjs';
 import { verifyProvingKey } from '../circuits/scripts/verify-proving-key.mjs';
+import { verifyHpkeLockMaintenance } from './hpke-lock-provenance.mjs';
 
 function sha256(buf) {
   return createHash('sha256').update(buf).digest('hex');
@@ -319,13 +320,20 @@ const baseManifest = {
       join(process.cwd(), 'protocol/private-balance/parameters/poseidon2-bn254-t4-v1.json'),
     )),
     hpkePackageVersion: '@hpke/core@1.9.0+@hpke/dhkem-x25519@1.8.0',
-    hpkeDependencyIntegritySha256: sha256(readFileSync(
-      join(process.cwd(), 'protocol/private-balance/packages/browser/package-lock.json'),
-    )),
+    hpkeDependencyIntegritySha256: verifyHpkeLockMaintenance({
+      baselineBytes: readFileSync('protocol/private-balance/parameters/hpke-deployment-lock.json'),
+      currentBytes: readFileSync('protocol/private-balance/packages/browser/package-lock.json'),
+      applicationLock: JSON.parse(readFileSync('package-lock.json')),
+      browserPackage: JSON.parse(readFileSync('protocol/private-balance/packages/browser/package.json')),
+    }),
     toolchainLockSha256: sha256Files([
       join(process.cwd(), 'package-lock.json'),
       join(process.cwd(), 'protocol/private-balance/Cargo.lock'),
       join(process.cwd(), 'protocol/private-balance/circuits/package-lock.json'),
+      join(process.cwd(), 'protocol/private-balance/packages/browser/package.json'),
+      join(process.cwd(), 'protocol/private-balance/packages/browser/package-lock.json'),
+      join(process.cwd(), 'protocol/private-balance/parameters/hpke-deployment-lock.json'),
+      join(process.cwd(), 'protocol/private-balance/scripts/hpke-lock-provenance.mjs'),
       join(process.cwd(), 'protocol/private-balance/rust-toolchain.toml'),
       join(process.cwd(), 'protocol/private-balance/parameters/generator.lock'),
       join(process.cwd(), 'protocol/private-balance/scripts/build-private-balance-artifacts.mjs'),
