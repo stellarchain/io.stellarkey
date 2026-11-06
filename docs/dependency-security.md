@@ -62,6 +62,100 @@ The lockfile SHA-256 identities for this evidence are:
 
 The sections below record historical Trezor 9 evidence and limitations; they do not describe the current production client graph.
 
+## 2026-10-11 — protocol CLI brace expansion and deployment provenance
+
+PR #25 updates the standalone browser package's installed CLI chain:
+`snarkjs 0.7.6 → ejs 3.1.10 → jake 10.9.4 → filelist 1.0.6 → minimatch 5.1.9
+→ brace-expansion 2.1.7`. The upstream patch bounds nested parsing, makes comma
+parsing iterative and limits parser rewrites. The reviewed
+[2.1.4…2.1.7 runtime diff](https://github.com/juliangruber/brace-expansion/compare/v2.1.4...v2.1.7)
+retains the entry point, MIT license and `balanced-match` dependency. Relevant
+upstream advisories are [nested recursion](https://github.com/advisories/GHSA-qhr7-859c-m2p7),
+[comma parsing](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p) and
+[quadratic rewrites](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr).
+A fresh standalone `npm ci --ignore-scripts` and audit on 2026-10-11 reported
+**zero vulnerable packages and zero advisories**. This result applies to that
+45-package installation, not the root application or embedded browser bundles.
+Registry signature verification passed for all 44 installed dependencies;
+seven packages also had verified attestations.
+
+The original CI failed because `hpkeDependencyIntegritySha256` hashed the entire
+browser lockfile, including CLI tooling, and compared it with immutable Testnet
+deployment evidence. `parameters/hpke-deployment-lock.json` archives the original
+lock bytes (SHA-256 `312a82fc6626f2bb66b1a24f351f8e13f95bde25fa4de350a8b10d2f4fe7a6b7`);
+it is historical metadata, not an installation lockfile. The generator verifies
+its exact digest and compares the current lock against an explicit maintenance
+allowlist: the pinned brace patch and missing records for the already-declared
+`@noble/curves 2.3.0` and its `@noble/hashes 2.3.0` dependency. Those Noble records
+must exactly match the reviewed packages already installed by the application.
+No HPKE record or other unreviewed package or metadata change is allowed.
+
+The existing deployment comparison stays strict and its evidence is unchanged.
+Current build provenance additionally binds the maintained browser lock, package
+declarations, historical lock and verifier source into `toolchainLockSha256`.
+Regression tests reject historical corruption, HPKE drift, unrelated package
+changes and Noble substitutions. Tests also use the installed CLI's real glob
+adapter for ordinary matching, deeply nested input and the new rewrite limit.
+Protocol tests exercise actual installed HPKE/Noble imports and conversions;
+application, circuit and private UI verification remain required separately.
+This maintenance neither replaces cryptography nor updates past network
+observations. The root application's elliptic, embedded-bundle and remote-service
+limitations below remain applicable.
+
+## 2026-10-11 — Next lint brace recursion
+
+CI at `567801be7a5ceccb6c72182689e6c47a9485a448` failed the full dependency
+audit on [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
+The installed development-only chain was `eslint-config-next 16.3.8 →
+@next/eslint-plugin-next 16.3.8 → fast-glob 3.3.1 → micromatch 4.0.8 → braces
+3.0.3`. Registry inspection found no patched upstream braces release; the newer
+Next lint package still depended on this chain.
+
+An override scoped to `micromatch@4.0.8` now resolves its `braces` import to
+`@dieub/braces-depth-guard@3.0.3-pn.3`, pinned exactly in the manifest and by
+SHA-512 in the lockfile. This is a small, third-party MIT backport, not an
+official braces release. Its new, single-maintainer provenance remains a
+maintenance consideration; replace the override when a compatible upstream
+fix is reviewed. The package's default `latest` tag points to an earlier build
+and must not be substituted for this exact version.
+
+The downloaded npm tarball matched its registry SHA-512. Every runtime file
+and the unchanged upstream MIT license matched tagged
+[source commit 305a2e4](https://github.com/dieub/braces-depth-guard/tree/305a2e4bfe324bb53c336c1b03387ee1251c926f).
+The runtime diff preserves the entry point and `fill-range` dependency, adds
+inclusive nesting/traversal bounds of 100, validates and snapshots limits, and
+rejects cyclic AST parent walks. There are no install hooks or new runtime
+imports. The registry provenance identifies that commit, tag and tarball digest;
+`npm audit signatures` verified the installed graph's supported signatures and
+attestations. The repository README still calls pn.3 an unpublished candidate;
+the registry artifact and matching tagged provenance establish the published
+version used here.
+
+Three security regressions failed on the original installed package and pass
+with the override: excessive nesting through Next's real root-directory glob
+adapter; string and direct-AST traversal limits; and invalid/changing input
+limits. A fourth test discovers ordinary brace/range directory globs and checks
+that Next's page-link rule still reports an actual invalid link through ESLint.
+The tagged fork's 152 non-shell parser, compiler, stringify, option and
+compatibility tests also passed in an isolated temporary directory. Its shell
+comparison suites were not run. These checks establish the depth correction,
+not merely disappearance of the original package name from npm audit.
+
+Fresh full and production audits each report **10 low vulnerable packages,
+one distinct elliptic advisory, and no moderate, high or critical findings**;
+both existing high-severity gates pass. Before this change, the full graph
+reported 15 packages (five high, ten low) across two distinct advisories.
+Parent package findings are not independent advisories. The recursion guard
+does not bound all possible expansion cardinalities or arbitrary malformed
+ASTs. This development-only override does not modify application cryptography,
+Trezor browser bundles or remote services; the existing runtime boundaries and
+elliptic limitations below remain in force. Refreshing generated provenance
+changed only the toolchain lockfile digest in two manifests, the manifest digest
+in the public catalogue, and two generated TypeScript pins. Cryptographic artifacts
+and deployment evidence are unchanged. A focused pass alone is not complete
+application or release verification.
+
+
 ## 2026-09-12 — development parser and complete application audit
 
 The installed chain `eslint 9.39.5 → @eslint/eslintrc 3.3.6 → js-yaml`

@@ -52,6 +52,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
     {
       "name": "Changed",
       "entries": [
+        "Update the pinned Cloudflare Wrangler action to 4.1.3 and retain its reviewed Node 24 runtime requirement.",
         "Update Next.js and its lint configuration to 16.4.2, React to 19.3.1, Stellar SDK to 17.3.0, and the browser test toolchain.",
         "Migrate optional hardware signing to Trezor Connect 10.0.1 and Suite Web, with the matching bootstrap-frame policy and device-protocol compatibility tests. The Suite core remains hosted by Trezor; its reference implementation is a development-only test dependency.",
         "Prepare application release 1.1.0 with synchronized version markers and whitepaper; Private Payments remains the V2.1 development protocol.",
@@ -61,6 +62,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
     {
       "name": "Fixed",
       "entries": [
+        "Refresh Private Balance build provenance while preserving the historical deployment lock and binding current browser maintenance inputs.",
         "Retain custom credential-header protection across JavaScript realms during HTTP redirects and correct IPv6 link-local and cross-family subnet classification in installed dependencies.",
         "Set the CMake compatibility policy for the pinned circuit analyzer's legacy Z3 build on hosted runners.",
         "Match wallet and merchant control accessible names to their visible labels and values."
@@ -69,6 +71,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
     {
       "name": "Security",
       "entries": [
+        "Apply compatible Axios, image-processing, source-map, TOML, PBKDF2 and brace-expansion patches, preserving the strict HPKE deployment-history checks.",
         "Preserve the reviewed recursion-depth guard in Next.js lint dependencies and check every public signal in the twelve-signal Rust verifier mutation suite.",
         "Update Rust constant-time utilities to ctutils 0.4.4 without changing the deployed pool Wasm.",
         "Record the maintainer-approved 1.1.0 exception for RUSTSEC-2026-0387 in Soroban host dependencies. The crypto-bigint advisory remains unresolved.",
