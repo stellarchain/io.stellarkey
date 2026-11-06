@@ -149,7 +149,7 @@ test("Gate A requires Linux circuit analysis and canonical macOS ARM64 reproduct
     const artifacts = job("private-artifacts");
     const aggregate = job("private-gate-a");
     assert.ok(circuits && artifacts && aggregate, "keep distinct circuit, artifact and required aggregate jobs");
-    assert.match(circuits, /runs-on: ubuntu-latest/);
+    assert.match(circuits, /runs-on: ubuntu-24\.04/);
     assert.match(circuits, /npm run private:gate-a/);
     assert.match(circuits, /circomspect --version 0\.9\.0 --locked/);
     assert.match(circuits, /audit --audit-level=high/);
