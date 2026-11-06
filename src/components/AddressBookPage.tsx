@@ -128,7 +128,7 @@ export function AddressBookPage({
         <button
           type="button"
           onClick={() => openEditor(null)}
-          className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-[var(--color-oncolor)] sm:w-auto sm:gap-1.5 sm:px-3.5 shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-all hover:bg-[#2492ff] active:scale-90"
+          className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-[var(--color-oncolor)] sm:w-auto sm:gap-1.5 sm:px-3.5 shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-[background-color,transform] hover:bg-[#2492ff] active:scale-90"
           title="Add Contact"
           aria-label="Add Contact"
         >
@@ -297,7 +297,7 @@ function ContactRow({
             triggerHaptic("selection");
             onSend();
           }}
-          className="flex items-center gap-1 rounded-full border border-[#0A84FF]/30 bg-[#0A84FF]/12 px-3 py-1 text-[11.5px] font-semibold text-[#0A84FF] transition-all hover:bg-[#0A84FF]/20 active:scale-95 md:opacity-0 md:group-hover:opacity-100"
+          className="flex items-center gap-1 rounded-full border border-[#0A84FF]/30 bg-[#0A84FF]/12 px-3 py-1 text-[11.5px] font-semibold text-[#0A84FF] transition-[background-color,opacity,transform] hover:bg-[#0A84FF]/20 active:scale-95 md:opacity-0 md:group-hover:opacity-100"
           title={`Send to ${contact.name}`}
         >
           <IconSend size={11} />
@@ -310,7 +310,7 @@ function ContactRow({
             triggerHaptic("selection");
             onToggleFavorite();
           }}
-          className={`flex h-7 w-7 items-center justify-center rounded-full text-[13px] transition-all active:scale-90 ${
+          className={`flex h-7 w-7 items-center justify-center rounded-full text-[13px] transition-[color,opacity,transform] active:scale-90 ${
             contact.favorite
               ? "text-[#FFD60A]"
               : "text-neutral-600 hover:text-[#FFD60A] md:opacity-0 md:group-hover:opacity-100"

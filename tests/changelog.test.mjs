@@ -49,6 +49,12 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   "date": null,
   "categories": [
     {
+      "name": "Changed",
+      "entries": [
+        "Animate only the changing properties on onboarding and address-book controls."
+      ]
+    },
+    {
       "name": "Fixed",
       "entries": [
         "Label zero-limit trustline operations as removals in wallet activity.",

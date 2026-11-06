@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Animate only the changing properties on onboarding and address-book controls.
+
 ### Fixed
 - Label zero-limit trustline operations as removals in wallet activity.
 - Keep signing disabled and show an explicit retry screen when wallet erasure leaves storage, merchant records, private records, service workers, or caches uncleared.

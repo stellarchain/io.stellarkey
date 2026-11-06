@@ -697,7 +697,7 @@ export function Onboarding() {
           }}
         >
           <span
-            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all ${
+            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors ${
               saved ? "border-[#0A84FF] bg-[#0A84FF] text-[var(--color-oncolor)]" : "border-white/20 bg-white/[0.05]"
             }`}
           >
@@ -788,7 +788,7 @@ export function Onboarding() {
                   setVerifyFailed(false);
                   setSelectedWords((prev) => [...prev, w]);
                 }}
-                className={`chip !py-1.5 !px-3.5 text-[13px] font-medium transition-all ${
+                className={`chip !py-1.5 !px-3.5 text-[13px] font-medium transition-[background-color,color,opacity,transform] ${
                   isPicked
                     ? "cursor-not-allowed bg-white/5 opacity-30"
                     : "hover:bg-white/[0.12] active:scale-95"
@@ -974,7 +974,7 @@ function StepShell({
           {Array.from({ length: total }, (_, i) => (
             <span
               key={i}
-              className={`h-1.5 rounded-full transition-all duration-300 ${
+              className={`h-1.5 rounded-full transition-[width,background-color] duration-300 ${
                 i + 1 < current
                   ? "w-5 bg-[#30D158]"
                   : i + 1 === current
