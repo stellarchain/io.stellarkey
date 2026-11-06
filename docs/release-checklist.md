@@ -2,6 +2,15 @@
 
 This wallet ships as static files and talks directly to user-selected Stellar services. It has no application backend, remote custody service, background worker, or server-side database.
 
+## 1.1.1 audit curation
+
+The maintainer subsequently requested review of both November 6 audit reports
+and inclusion of useful fixes in PR #40. The [audit disposition](release-audit-review-2026-11-06.md)
+records the selected fixes, their focused evidence, corrections to report
+claims, and remaining pagination/performance work. All prior complete
+application results below keep their original source identities; the final
+curated source requires a new clean-tree release verification and required CI.
+
 ## 1.1.1 replacement release preparation
 
 The 1.1.0 tag was created after clean local verification, PR CI and post-merge

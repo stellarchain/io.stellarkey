@@ -1,5 +1,18 @@
 # Dependency security evidence
 
+## 2026-11-06 — audit curation for the replacement candidate
+
+The subsequent audit curation advances Next.js/eslint-config-next to 16.4.5,
+Stellar SDK to 17.4.0 for the app and scoped Trezor reference adapter, and
+Tailwind to 4.3.4. This supersedes the earlier replacement snapshot's statement
+that only release-version fields change in the root lockfile. The nested npm
+and Cargo locks remain unchanged. Installed-parent and real adapter/schema
+checks passed (48 focused tests). Current provenance is regenerated from the
+1.1.1 root lock; historical deployment identity and cryptographic artifact
+hashes must remain unchanged. Full verification binds the final committed tree.
+See [audit disposition](release-audit-review-2026-11-06.md) for the selected
+signing, refresh, erasure and deadline fixes and remaining findings.
+
 ## 2026-11-06 — replacement candidate 1.1.1
 
 The unpublished 1.1.0 release run failed Chromium Select focus verification.

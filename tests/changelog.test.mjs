@@ -47,26 +47,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   assert.deepEqual(document.releases[0], {
   "version": "Unreleased",
   "date": null,
-  "categories": [
-    {
-      "name": "Changed",
-      "entries": [
-        "Update Next.js and its lint configuration to 16.4.5, Stellar SDK to 17.4.0 for the app and installed Trezor adapter, and Tailwind CSS to 4.3.4; refresh current artifact provenance without changing cryptographic artifacts or historical deployment bindings.",
-        "Animate only the changing properties on onboarding and address-book controls."
-      ]
-    },
-    {
-      "name": "Fixed",
-      "entries": [
-        "Announce incomplete erasure and initialize focus on its recovery heading when no newer control owns focus.",
-        "Label zero-limit trustline operations as removals in wallet activity.",
-        "Keep signing disabled and show an explicit retry screen when wallet erasure leaves storage, merchant records, private records, service workers, or caches uncleared.",
-        "Revalidate the reviewed wallet account, network, and session across batch payments, claims, merges, trustlines, multisig changes, co-signing, and reusable private payments before signing and submission.",
-        "Keep refresh callbacks bound to the visible account, network, and endpoint, remove redundant delayed refreshes, and release failed transaction-status polls for retry.",
-        "Bound Friendbot requests and error bodies, and time out stalled verified Private Payments artifact downloads without rejecting slow transfers that keep making progress."
-      ]
-    }
-  ]
+  "categories": []
 });
   assert.deepEqual(document.releases[1], {
   "version": "1.1.1",
@@ -75,13 +56,21 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
     {
       "name": "Changed",
       "entries": [
-        "Replace the unpublished 1.1.0 candidate after release verification exposed a dialog focus race; synchronize application versions and the whitepaper at 1.1.1."
+        "Replace the unpublished 1.1.0 candidate after release verification exposed a dialog focus race; synchronize application versions and the whitepaper at 1.1.1.",
+        "Update Next.js and its lint configuration to 16.4.5, Stellar SDK to 17.4.0 for the app and installed Trezor adapter, and Tailwind CSS to 4.3.4; refresh current artifact provenance without changing cryptographic artifacts or historical deployment bindings.",
+        "Animate only the changing properties on onboarding and address-book controls."
       ]
     },
     {
       "name": "Fixed",
       "entries": [
-        "Preserve focus in Select and menu portals when a dialog’s delayed initial focus runs after keyboard interaction."
+        "Preserve focus in Select and menu portals when a dialog’s delayed initial focus runs after keyboard interaction.",
+        "Announce incomplete erasure and initialize focus on its recovery heading when no newer control owns focus.",
+        "Label zero-limit trustline operations as removals in wallet activity.",
+        "Keep signing disabled and show an explicit retry screen when wallet erasure leaves storage, merchant records, private records, service workers, or caches uncleared.",
+        "Revalidate the reviewed wallet account, network, and session across batch payments, claims, merges, trustlines, multisig changes, co-signing, and reusable private payments before signing and submission.",
+        "Keep refresh callbacks bound to the visible account, network, and endpoint, remove redundant delayed refreshes, and release failed transaction-status polls for retry.",
+        "Bound Friendbot requests and error bodies, and time out stalled verified Private Payments artifact downloads without rejecting slow transfers that keep making progress."
       ]
     },
     {
