@@ -55,7 +55,7 @@ async function openSigningReview(page: Page) {
   await page.getByRole('button', { name: 'Prepare signing context', exact: true }).click();
   await expect(page.getByText('Your Assets', { exact: true })).toBeVisible();
   await expect(page.getByTestId('signing-ledger-ready')).toHaveText('true');
-  await page.getByRole('button', { name: 'Open account menu for Signing account', exact: true }).filter({ visible: true }).click();
+  await page.getByRole('button', { name: /^Open account menu for Signing account(?:\s|$)/ }).filter({ visible: true }).click();
   await expect(page.getByRole('menuitem', { name: /Other account/ })).toBeVisible();
   await page.keyboard.press('Control+s');
   const send = page.getByRole('dialog', { name: 'Send Payment', exact: true });
@@ -87,6 +87,7 @@ test('account values include saved private funds before selection and stay stabl
     await expect(second).toBeVisible();
     await expect(page.getByRole('button', { name: 'Total portfolio $26.50 USD', exact: true })).toBeVisible();
   }
+  await expect(page.getByRole('button', { name: /^Switch network: (Testnet|Mainnet)$/ })).toBeVisible();
   const accessibility = await new AxeBuilder({ page }).include('aside').analyze();
   expect(accessibility.violations.map(violation => ({ id: violation.id, impact: violation.impact, count: violation.nodes.length }))).toEqual([]);
   await page.getByRole('button', { name: 'Hide balances', exact: true }).click();

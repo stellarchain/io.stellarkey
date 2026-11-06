@@ -6,10 +6,6 @@ StellarKey's original source is available under `AGPL-3.0-or-later`. Dependencie
 
 ## Trezor Connect
 
-The optional hardware-wallet adapter depends on `@trezor/connect-web` 9.7.3. That package identifies its license as the **Trezor Reference Source License (T-RSL)**. It is not covered by StellarKey's AGPL license, and the published T-RSL text limits distribution outside a company. Retaining source-level support does not itself grant public redistribution rights.
+The optional hardware-wallet adapter uses `@trezor/connect-web` 10.0.1, published under the MIT license. Preserve its copyright and installed `LICENSE.md` notice when distributing the client. Trezor names and marks remain their owner's property; StellarKey does not claim affiliation or endorsement.
 
-Before publicly distributing a build containing Trezor Connect, obtain written permission or authorization from Trezor or replace the dependency with an implementation whose license permits the intended distribution. Preserve the installed package's `LICENSE.md` and verify the [license at the published 9.7.3 source commit](https://github.com/trezor/trezor-suite/blob/29fbfcb4a2f0e6b52c4eff8b6d133ee056905535/LICENSE.md). The license of a later development branch or prerelease does not change the terms of this installed version. Trezor names and marks belong to their respective owner; StellarKey does not claim affiliation or endorsement.
-
-## ua-parser-js
-
-Trezor Connect currently brings in `ua-parser-js` 2.x transitively. That package declares `AGPL-3.0-or-later`. Its source and license are available from <https://github.com/faisalman/ua-parser-js>. Re-run the production SBOM and license review whenever the dependency graph changes.
+The browser client delegates device transport and approval screens to Trezor Suite Web. The separately hosted Suite service is outside the application lockfile. The matching `@trezor/connect-core` 10.0.1 package is a development-only reference for schema and device-protocol tests and is not imported by application source. The release SBOM inventories the production client graph; development tools retain their own notices.

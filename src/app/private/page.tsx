@@ -23,7 +23,7 @@ import {
 } from "@/components/marketing/DocIcons";
 
 const description =
-  "Private Payments Protocol V2: on-device proofs, shielded notes, full-input exits, recovery limits, and the evidence still required before real-value use.";
+  "Private Payments Protocol V2.1: on-device proofs, shielded notes, uniform settlement legs, full-input exits, recovery limits, and the evidence still required before real-value use.";
 
 const highlights = [
   "Private: the asset, amount, recipient, and memo of an internal transfer stay encrypted. Public: money moving in or out, the submitting account, its network fee, and timing.",
@@ -183,7 +183,7 @@ function SendPipelineDiagram() {
     {
       n: "02 · prove — on this device",
       a: "builds a Groth16 proof over BN254",
-      b: "40,594 constraints · witness stays local",
+      b: "40,647 constraints · witness stays local",
     },
     {
       n: "03 · verify — on Stellar",
@@ -245,11 +245,11 @@ export default function PrivatePaymentsPage() {
       summary="A private balance inside the same wallet. The amount, the recipient, and the memo of a private transfer stay encrypted; the proof is built on your device and verified against the public Stellar ledger."
       highlights={highlights}
       sections={sections}
-      stamp={`StellarKey ${APPLICATION_VERSION} · Protocol V2 · Testnet development`}
+      stamp={`StellarKey ${APPLICATION_VERSION} · Protocol V2.1 · Testnet development`}
     >
         <section id="private-what"><h2><DocShieldDots />What it is</h2>
         <p>Private Payments is a shielded pool for configured XLM and USDC, driven from the wallet you already have. Funds you move into it are held as encrypted notes on this device and can change hands without publishing the amount, the recipient, or the memo; a zero-knowledge proof convinces a contract on the public Stellar ledger that every rule held, without showing it the contents. That one sentence is the whole promise. The rest of this page is the mechanism.</p>
-        <p>StellarKey {APPLICATION_VERSION} is the current application release, continuing the stable 1.0.0 application baseline. That application version is separate from Private Payments Protocol V2 and its unaudited Testnet-only status. One live, hash-pinned development pool on Testnet has XLM at registry index 0 and USDC at index 1. The pool started from fresh state on September 13, 2026. Only current deployment-bound notes, addresses, proofs and encrypted backups are supported; unsupported records are rejected without being rewritten.</p>
+        <p>StellarKey {APPLICATION_VERSION} is the current application release, continuing the stable 1.0.0 application baseline. That application version is separate from Private Payments Protocol V2.1 and its unaudited Testnet-only status. The replacement Protocol V2.1 pool artifacts are built and hash-pinned; until its Testnet deployment and evidence are verified, no development pool is published and Private Payments stays fail-closed in this build. Only current deployment-bound notes, addresses, proofs and encrypted backups are supported; unsupported records are rejected without being rewritten.</p>
         <p>Public reads on September 13, 2026 through SDF and Ankr corroborated the deployed executable hash. A separate synthetic XLM deposit, self-transfer and full-input exit confirmed on Testnet, with canonical archive rescans after each action. This was not a browser-wallet or USDC test, did not saturate the live tree, and is not an independent security audit. The deployment fixture still does not record a deployment transaction hash.</p>
         <p>The single-party key passes circuit/Powers-of-Tau compatibility verification, but anyone retaining its setup secret could forge proofs. Mainnet is refused independently. A public multi-party Phase 2 ceremony, independent circuit and contract review, broader payment and recovery evidence, and human/physical-device checks remain required before real-value use. The <a href="https://github.com/stellarchain/io.stellarkey/blob/main/docs/private-balance.md">maintained whitepaper</a> records the artifact identities, dated evidence and remaining limits.</p></section>
 
@@ -285,22 +285,22 @@ export default function PrivatePaymentsPage() {
         <p>Each proof has two input lanes, three output lanes, and a public value leg that is zero for a private transfer. Recipient, change and randomized dummy notes occupy fixed 370-byte output packages. Payments submit directly; there is no peer-fee route. A full-input exit uses the same proof shape without inserting its zero-value dummy outputs.</p>
         <ol className="prose-list">
         <li>The wallet selects the notes to spend. The proof anchors to any pool root from the last 1,440 ledgers, roughly the last two hours, so the transaction does not reveal how fresh your notes are.</li>
-        <li>An isolated worker builds the Groth16 proof on this device: the spent notes sit in the tree under the anchor root, the nullifiers are correctly derived, one private asset is conserved, and all three output commitments are well-formed. The circuit is 40,594 constraints with 11 public inputs, and no private proof witness is uploaded.</li>
+        <li>An isolated worker builds the Groth16 proof on this device: the spent notes sit in the tree under the anchor root, the nullifiers are correctly derived, one private asset is conserved, and all three output commitments are well-formed. The circuit is 40,647 constraints with 12 public inputs, and no private proof witness is uploaded.</li>
         <li>You explicitly authorize proof sharing, review the exact transaction and fees, and approve signing. Direct submission uses your own public Stellar account; another software account in this wallet may pay the network fee. The pool checks the nullifiers and records the encrypted packages. A normal private transfer appends three commitments; a full-input exit does not. RPC acceptance and timeout are not ledger confirmation.</li>
         <li>The recipient&apos;s wallet scans the pool&apos;s public record and trial-decrypts each envelope with its incoming viewing key. The one addressed to them opens; the rest are noise. There is no notification service, because a notification service would have to know.</li>
         </ol>
         <div className="tbl" style={{ padding: "1.25rem" }}><SendPipelineDiagram /></div>
-        <p>Artifact integrity is checked before use. The <a href="/protocol/private-balance/v1/manifest.json">public manifest</a> pins the files by SHA-256; its retained URL contains <span style={{ fontFamily: "var(--mono)" }}>v1</span>, but its protocol version is 2. Hash verification detects a mismatched file; it does not replace review of the software, circuit or setup.</p>
+        <p>Artifact integrity is checked before use. The <a href="/protocol/private-balance/v1/manifest.json">public manifest</a> pins the files by SHA-256; its retained URL contains <span style={{ fontFamily: "var(--mono)" }}>v1</span>, but its protocol version is 3. Hash verification detects a mismatched file; it does not replace review of the software, circuit or setup.</p>
         <div className="spec">
-          <div><DocChip /><b>Proof system</b><span>Groth16 over BN254 · 40,594 constraints · 11 public inputs</span></div>
+          <div><DocChip /><b>Proof system</b><span>Groth16 over BN254 · 40,647 constraints · 12 public inputs</span></div>
           <div><DocFile /><b>Hashing</b><span>Poseidon2 (BN254, t=4) commitments and nullifiers · ternary depth-64 tree</span></div>
-          <div><DocKey /><b>Proving key</b><span>17,722,398 bytes point-compressed in persistent cache · 26,308,892 bytes expanded in memory</span></div>
-          <div><DocCheck /><b>Witness builder</b><span>261,555-byte WASM witness builder, verified before use</span></div>
+          <div><DocKey /><b>Proving key</b><span>17,747,434 bytes point-compressed in persistent cache · 26,342,728 bytes expanded in memory</span></div>
+          <div><DocCheck /><b>Witness builder</b><span>261,959-byte WASM witness builder, verified before use</span></div>
         </div>
-        <p>The manifest records a 7,368,646-byte Brotli-compressed proving-key transfer; actual network transfer size depends on the host&apos;s content encoding. The application and service worker share the verified compressed artifact cache, retaining up to two completed revisions. One verified public proving key can be reused in memory; it is not an extra persistent copy. A corrupt cached file is discarded or refetched, and a downloaded file that fails verification cannot be used.</p></section>
+        <p>The manifest records a 7,372,402-byte Brotli-compressed proving-key transfer; actual network transfer size depends on the host&apos;s content encoding. The application and service worker share the verified compressed artifact cache, retaining up to two completed revisions. One verified public proving key can be reused in memory; it is not an extra persistent copy. A corrupt cached file is discarded or refetched, and a downloaded file that fails verification cannot be used.</p></section>
 
         <section id="private-exits"><h2><DocCoin />Withdrawals and capacity</h2>
-        <p>A full-input exit withdraws the entire value of its selected one or two notes without appending commitments. It can therefore work even when the commitment tree is full. This is not unlimited capacity or guaranteed withdrawal availability: usable roots, unspent notes, live contract/archive data, token backing and authorization, fees, and network availability still matter. A partial withdrawal that creates change still needs unused commitment capacity.</p>
+        <p>At verified tree saturation, a full-input exit withdraws the entire value of its selected one or two notes without appending commitments. Ordinary withdrawals append three commitments even when all outputs are dummy. A capacity exit remains distinguishable on the public ledger because it adds no commitments. It can therefore work even when the commitment tree is full. This is not unlimited capacity or guaranteed withdrawal availability: usable roots, unspent notes, live contract/archive data, token backing and authorization, fees, and network availability still matter. A partial withdrawal that creates change still needs unused commitment capacity.</p>
         <p>For balances spread across more notes, the wallet reviews a sequence of withdrawals using disjoint groups of one or two available notes. One approval covers at most 64 steps and 15 minutes, with per-step and cumulative fee limits. Each step must confirm on the ledger before the next is prepared. It is not one atomic aggregate withdrawal: interruption can leave a confirmed prefix, and further work needs a new review when the approval expires. Held notes are excluded from ordinary withdrawal selection.</p></section>
 
         <section id="private-receiving"><h2><DocFingerprint />Receiving privately</h2>

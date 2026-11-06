@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { APPLICATION_VERSION, BUILD_COMMIT, BUILD_IS_DIRTY } from "@/lib/brand";
 
 const SHELL_CACHE_PREFIX = "stellarkey-shell-";
 const DEV_SW_RELOAD_KEY = "stellarkey.dev-shell-reload.v1";
@@ -21,10 +22,43 @@ function isStellarKeyRegistration(registration: ServiceWorkerRegistration): bool
   );
 }
 
+function workerMatchesPage(worker: ServiceWorker, signal: AbortSignal): Promise<boolean> {
+  // A dirty checkout cannot identify its exact contents by commit alone.
+  if (BUILD_IS_DIRTY || !/^[0-9a-f]{40}$/.test(BUILD_COMMIT) || signal.aborted) {
+    return Promise.resolve(false);
+  }
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const finish = (matches: boolean) => {
+      window.clearTimeout(timeout);
+      signal.removeEventListener("abort", abort);
+      channel.port1.close();
+      channel.port2.close();
+      resolve(matches);
+    };
+    const abort = () => finish(false);
+    // Older workers do not understand GET_RELEASE. Keep their explicit update action.
+    const timeout = window.setTimeout(() => finish(false), 2_000);
+    signal.addEventListener("abort", abort, { once: true });
+    channel.port1.onmessage = ({ data }) => finish(
+      data?.commit === BUILD_COMMIT &&
+      data?.version === APPLICATION_VERSION &&
+      data?.sourceTree === "clean",
+    );
+    try {
+      worker.postMessage({ type: "GET_RELEASE" }, [channel.port2]);
+    } catch {
+      finish(false);
+    }
+  });
+}
+
 export function ServiceWorkerRegistration() {
   const [waiting, setWaiting] = useState<ServiceWorker | null>(null);
   const [activationRequested, setActivationRequested] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
   const reloadRequested = useRef(false);
+  const activateUpdateRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -75,11 +109,44 @@ export function ServiceWorkerRegistration() {
     let cancelled = false;
     let registration: ServiceWorkerRegistration | null = null;
     let installing: ServiceWorker | null = null;
+    let observedWorker: ServiceWorker | null = null;
+    let pageController = navigator.serviceWorker.controller;
+    let identityRequest: AbortController | null = null;
+    let activationTimeout: number | undefined;
+    let activationDeadline = 0;
+    let reloading = false;
+
+    const reload = () => {
+      if (reloading) return;
+      reloading = true;
+      reloadRequested.current = false;
+      window.clearTimeout(activationTimeout);
+      window.location.reload();
+    };
 
     const offerWaitingUpdate = () => {
-      if (navigator.serviceWorker.controller && registration?.waiting) {
-        setWaiting(registration.waiting);
+      if (cancelled) return;
+      identityRequest?.abort();
+      const controller = navigator.serviceWorker.controller;
+      const candidate = registration?.waiting ?? (controller !== pageController ? controller : null);
+      const worker = candidate?.state === "redundant" ? null : candidate;
+      if (worker !== observedWorker) {
+        observedWorker?.removeEventListener("statechange", offerWaitingUpdate);
+        observedWorker = worker;
+        observedWorker?.addEventListener("statechange", offerWaitingUpdate);
       }
+      if (!worker) {
+        setWaiting(null);
+        return;
+      }
+      const request = new AbortController();
+      identityRequest = request;
+      void workerMatchesPage(worker, request.signal).then((matches) => {
+        if (cancelled || request.signal.aborted) return;
+        // A fresh document may already be this release even while its offline
+        // worker waits for older tabs to close. Do not interrupt those tabs.
+        setWaiting(matches ? null : worker);
+      });
     };
     const onInstallingStateChange = () => {
       if (installing?.state === "installed") offerWaitingUpdate();
@@ -90,9 +157,46 @@ export function ServiceWorkerRegistration() {
       installing?.addEventListener("statechange", onInstallingStateChange);
     };
     const onControllerChange = () => {
-      if (!reloadRequested.current) return;
+      if (reloadRequested.current) {
+        // Background tabs can suspend timers; consent must still expire on time.
+        if (Date.now() >= activationDeadline) {
+          activationFailed();
+          return;
+        }
+        reload();
+        return;
+      }
+      if (!pageController) pageController = navigator.serviceWorker.controller;
+      offerWaitingUpdate();
+    };
+    const activationFailed = () => {
+      window.clearTimeout(activationTimeout);
       reloadRequested.current = false;
-      window.location.reload();
+      setActivationRequested(false);
+      setUpdateError("The update could not finish. Check your connection and try again.");
+      offerWaitingUpdate();
+    };
+    activateUpdateRef.current = () => {
+      if (cancelled || reloading || reloadRequested.current) return;
+      const worker = registration?.waiting ?? observedWorker;
+      if (!worker || worker.state === "redundant") {
+        offerWaitingUpdate();
+        return;
+      }
+      setUpdateError(null);
+      setActivationRequested(true);
+      if (worker.state === "activated") {
+        reload();
+        return;
+      }
+      reloadRequested.current = true;
+      activationDeadline = Date.now() + 15_000;
+      activationTimeout = window.setTimeout(activationFailed, 15_000);
+      try {
+        worker.postMessage({ type: "SKIP_WAITING" });
+      } catch {
+        activationFailed();
+      }
     };
     const register = async () => {
       try {
@@ -103,6 +207,7 @@ export function ServiceWorkerRegistration() {
         if (cancelled) return;
         registration = registered;
         registration.addEventListener("updatefound", onUpdateFound);
+        onUpdateFound();
         offerWaitingUpdate();
       } catch {
         // Service workers require HTTPS (or localhost), so LAN HTTP testing may reject this.
@@ -110,24 +215,26 @@ export function ServiceWorkerRegistration() {
     };
 
     navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+    window.addEventListener("pageshow", offerWaitingUpdate);
+    window.addEventListener("focus", offerWaitingUpdate);
     if (document.readyState === "complete") void register();
     else window.addEventListener("load", register, { once: true });
 
     return () => {
       cancelled = true;
+      identityRequest?.abort();
+      window.clearTimeout(activationTimeout);
+      reloadRequested.current = false;
+      activateUpdateRef.current = () => {};
       window.removeEventListener("load", register);
+      window.removeEventListener("pageshow", offerWaitingUpdate);
+      window.removeEventListener("focus", offerWaitingUpdate);
       navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
       registration?.removeEventListener("updatefound", onUpdateFound);
       installing?.removeEventListener("statechange", onInstallingStateChange);
+      observedWorker?.removeEventListener("statechange", offerWaitingUpdate);
     };
   }, []);
-
-  const activateUpdate = useCallback(() => {
-    if (!waiting || activationRequested) return;
-    reloadRequested.current = true;
-    setActivationRequested(true);
-    waiting.postMessage({ type: "SKIP_WAITING" });
-  }, [activationRequested, waiting]);
 
   if (!waiting) return null;
   return (
@@ -140,12 +247,12 @@ export function ServiceWorkerRegistration() {
       <span className="min-w-0">
         <span className="block text-[14px] font-semibold">Update ready</span>
         <span className="block text-[12px] text-neutral-400">
-          Reload when you are not signing or taking a payment.
+          {updateError ?? "Reload when you are not signing or taking a payment."}
         </span>
       </span>
       <button
         type="button"
-        onClick={activateUpdate}
+        onClick={() => activateUpdateRef.current()}
         disabled={activationRequested}
         className="min-h-11 shrink-0 rounded-xl bg-[#0A84FF] px-3 text-[13px] font-semibold disabled:opacity-60"
       >

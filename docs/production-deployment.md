@@ -129,15 +129,9 @@ Those checks are not evidence of a pass and the exception grants no license righ
 
 ## 2. Trezor production gate
 
-The source retains optional Trezor support, but `@trezor/connect-web` is separately licensed. Before distributing a production bundle containing it, obtain and archive written permission or authorization for the intended public distribution, or replace it with a permissibly licensed integration. Confirm the registered Trezor production origin is exactly `https://stellarkey.io`, the popup flow works from that origin, and the current dependency license notice is shipped. This is a release blocker, not a documentation-only check.
+The optional adapter uses the MIT-licensed `@trezor/connect-web@10.0.1` client and delegates approval and transport to Trezor Suite Web. Preserve the installed license notice and confirm that the production origin is exactly `https://stellarkey.io`. Verify the Suite Web bootstrap frame and popup from that origin, including cancellation, on-device address verification and signing. The matching reference core is a development-only test dependency; testing it does not establish the version or security of the hosted Suite deployment.
 
-The installed high/critical dependency gate passes as of 2026-09-07 after a scoped
-TOML parser override. Ten low-severity vulnerable packages remain under one
-`elliptic` advisory. The override does not update the SDK's prebundled browser
-parser or Trezor's remote popup core; review the [dependency evidence and runtime
-limits](dependency-security.md) before release. The installed stable 9.7.3 license,
-registered-origin approval, and physical-device checks still apply independently
-of the audit result.
+Review the current [dependency evidence and runtime limits](dependency-security.md), complete the physical-device checks, and require all automated gates. Historical Trezor 9 license exceptions do not certify this integration.
 
 ## 3. DNS, mail, and TLS
 

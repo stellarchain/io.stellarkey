@@ -15,14 +15,14 @@ const mutations = [
   {
     name: 'full-input exit zero-output binding',
     testName: 'full-input exits reject value in every output lane',
-    needle: '        exitKind.out * outputValue[j] === 0;',
-    replacement: '        exitKind.out * outputValue[j] * 0 === 0;',
+    needle: '        (1 - appendsField) * outputValue[j] === 0;',
+    replacement: '        (1 - appendsField) * outputValue[j] * 0 === 0;',
   },
   {
     name: 'deposit zero-root binding',
     testName: 'deposit bound to a nonzero anchor root',
-    needle: '    isDeposit * anchorRoot === 0;',
-    replacement: '    isDeposit * anchorRoot * 0 === 0;',
+    needle: '    isInflow * anchorRoot === 0;',
+    replacement: '    isInflow * anchorRoot * 0 === 0;',
   },
   {
     name: 'shared input ownership',
@@ -39,8 +39,8 @@ const mutations = [
   {
     name: 'hidden transfer asset sentinel',
     testName: 'rejects a public transfer asset and an invalid private asset',
-    needle: '    isTransfer * assetField === 0;',
-    replacement: '    isTransfer * assetField * 0 === 0;',
+    needle: '    isQuiet * assetField === 0;',
+    replacement: '    isQuiet * assetField * 0 === 0;',
   },
   {
     name: 'nonzero private action asset',

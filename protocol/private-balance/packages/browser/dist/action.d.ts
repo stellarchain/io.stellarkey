@@ -1,11 +1,5 @@
 export declare const DOMAIN_ACTION = "SKSB_ACTION_V1";
 export declare const DOMAIN_ASSET = "SKSB_ASSET_V1";
-export declare enum ActionKind {
-    Deposit = 1,
-    PrivateTransfer = 2,
-    Withdraw = 3,
-    FullInputExit = 4
-}
 export interface OutputPackageModel {
     cm: Uint8Array;
     recipientEnvelope: Uint8Array;
@@ -13,7 +7,6 @@ export interface OutputPackageModel {
 }
 export interface ActionModel {
     protocolVersion: number;
-    kind: ActionKind;
     assetIndex?: number;
     asset?: {
         kind: number;
@@ -23,7 +16,9 @@ export interface ActionModel {
     anchorRoot: Uint8Array;
     nullifiers: [Uint8Array, Uint8Array];
     outputs: [OutputPackageModel, OutputPackageModel, OutputPackageModel];
-    publicValue: bigint;
+    publicInflow: bigint;
+    publicOutflow: bigint;
+    appends: boolean;
     depositSource?: {
         kind: number;
         payload: Uint8Array;

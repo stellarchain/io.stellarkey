@@ -9,6 +9,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { TransactionBuilder } from '@stellar/stellar-sdk';
+import { TREE_CAPACITY } from '@stellarkey/private-balance';
+import { PrivateBalanceArchiveClient } from '../src/features/private-balance/runtime/archive-client.ts';
 import { planPrivateWithdrawal } from '../src/features/private-balance/runtime/coin-selection.ts';
 import { ACTORS, createPrivatePaymentsNetwork, format } from './helpers/private-payments-network.ts';
 
@@ -165,7 +167,7 @@ test('withdrawals: direct to another public account and to the sender\'s own acc
   } finally { net.restore(); }
 });
 
-test('multi-note full withdrawal advances the archive without adding leaves and survives seed-only recovery', async () => {
+test('multi-note full withdrawal appends like an ordinary withdrawal and survives seed-only recovery', async () => {
   const net = await network();
   try {
     for (const amount of ['3', '4', '5']) {
@@ -176,18 +178,18 @@ test('multi-note full withdrawal advances the archive without adding leaves and 
     assert.equal(notes.length, 3);
     const steps = planPrivateWithdrawal(notes, xlm('12'));
     assert.equal(steps.length, 2);
-    const leafIndex = net.records.at(-1).startingLeafIndex + 3n;
-    const root = net.records.at(-1).treeRootAfter;
+    let leafIndex = net.records.at(-1).startingLeafIndex + 3n;
     for (const step of steps) {
       const handle = await net.prepare('alice', { kind: 'withdraw', amount: format(BigInt(step.amountStroops)),
         publicRecipient: net.publicKey('alice'), selectedNoteIds: step.noteIds, requireFullInputExit: true });
-      assert.equal(handle.review.transaction.method, 'full_input_exit');
+      assert.equal(handle.review.transaction.method, 'withdraw');
+      assert.equal(handle.review.withdrawalTreeNextIndex, leafIndex);
       assert.equal(handle.review.changeValueStroops, '0');
       await net.submit(handle);
       await net.include(handle);
-      assert.equal(net.records.at(-1).actionKind, 4);
+      assert.equal(net.records.at(-1).appends, true);
       assert.equal(net.records.at(-1).startingLeafIndex, leafIndex);
-      assert.deepEqual(net.records.at(-1).treeRootAfter, root);
+      leafIndex += 3n;
     }
     assert.equal(net.records.length, 5);
     assert.equal(await spendable(net, 'alice'), '0');
@@ -195,6 +197,22 @@ test('multi-note full withdrawal advances the archive without adding leaves and 
     await net.forget('alice');
     assert.equal(await spendable(net, 'alice'), '0');
     await net.assertSettled();
+  } finally { net.restore(); }
+});
+
+test('a forged capacity counter cannot switch a verified ordinary withdrawal into an exit', async () => {
+  const net = await network();
+  try {
+    await fund(net);
+    const readHead = PrivateBalanceArchiveClient.prototype.readHead;
+    PrivateBalanceArchiveClient.prototype.readHead = async function () {
+      const head = await readHead.call(this);
+      return { ...head, tree: { ...head.tree, nextIndex: TREE_CAPACITY } };
+    };
+    await assert.rejects(net.prepare('alice', { kind: 'withdraw', amount: '100', publicRecipient: net.publicKey('alice') }),
+      /sync|checkpoint|changed/i);
+    assert.equal(net.simulations, 3, 'reject before proof sharing or simulation');
+    assert.equal((await net.balances('alice')).reserved, 0n);
   } finally { net.restore(); }
 });
 

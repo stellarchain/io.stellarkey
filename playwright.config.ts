@@ -52,12 +52,12 @@ export default defineConfig({
     },
     {
       name: "iphone-webkit",
-      testMatch: /(?:accessibility|theme|merchant-webkit|market-freshness|public-release|browser-smoke|public-private-continuity|overlay-contract|modal-motion|private-manifest-security|restore-feedback)\.spec\.ts/,
+      testMatch: /(?:accessibility|theme|merchant-webkit|market-freshness|public-release|browser-smoke|public-private-continuity|overlay-contract|modal-motion|private-manifest-security|restore-feedback|pwa-update|trezor-connection)\.spec\.ts/,
       use: { ...devices["iPhone 16"], serviceWorkers: "block" },
     },
     {
       name: "ipad-webkit",
-      testMatch: /(?:accessibility|theme|public-release|browser-smoke)\.spec\.ts/,
+      testMatch: /(?:accessibility|theme|public-release|browser-smoke|pwa-update|trezor-connection)\.spec\.ts/,
       use: { ...devices["iPad (gen 11)"] },
     },
   ],

@@ -67,6 +67,8 @@ test("wallet account surfaces use a quiet account-only mark", () => {
 
   const component = read("src/components/AccountMark.tsx");
   const dashboard = read("src/components/Dashboard.tsx");
+  const sidebar = read("src/components/dashboard/Sidebar.tsx");
+  const shellChrome = read("src/components/dashboard/ShellChrome.tsx");
   const settings = read("src/components/SettingsPage.tsx");
   const sharedUi = read("src/components/ui.tsx");
 
@@ -85,9 +87,10 @@ test("wallet account surfaces use a quiet account-only mark", () => {
   assert.match(component, /padding:\s*Math\.max\(2, Math\.round\(size \* 0\.14\)\)/);
   assert.doesNotMatch(component, /linear-gradient|seed\.slice/);
 
-  assert.match(dashboard, /import \{ AccountMark \} from "\.\/AccountMark";/);
+  assert.match(sidebar, /import \{ AccountMark \} from "\.\.\/AccountMark";/);
   assert.match(settings, /import \{ AccountMark \} from "\.\/AccountMark";/);
-  assert.equal(dashboard.match(/<AccountMark publicKey=\{/g)?.length, 5);
+  assert.equal(sidebar.match(/<AccountMark publicKey=\{/g)?.length, 2);
+  assert.equal(shellChrome.match(/<AccountMark publicKey=\{/g)?.length, 3);
   assert.equal(settings.match(/<AccountMark publicKey=\{/g)?.length, 4);
   assert.doesNotMatch(dashboard, /<Avatar seed=\{(?:activeAccount|acct)\.publicKey\}/);
   assert.doesNotMatch(settings, /<Avatar seed=\{(?:activeAccount|acct|a)\.publicKey\}/);

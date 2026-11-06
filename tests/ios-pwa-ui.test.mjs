@@ -87,7 +87,7 @@ test("standalone screens and overlays consume the iOS top safe area", () => {
   assert.match(css, /\.nav-blur\s*\{[\s\S]*?top:\s*0;/);
   assert.match(dashboard, /app-safe-dashboard/);
   assert.doesNotMatch(dashboard, /className="app-safe-top relative/);
-  assert.equal((dashboard.match(/app-safe-sticky-top/g) ?? []).length, 1);
+  assert.equal((read("src/components/dashboard/Sidebar.tsx").match(/app-safe-sticky-top/g) ?? []).length, 1);
   assert.match(
     dashboard,
     /<header className="app-scroll-sticky-top hidden md:flex[\s\S]*?sticky/,
@@ -125,13 +125,14 @@ test("unavailable browser storage exits startup loading with a recoverable scree
 
 test("the mobile wallet header begins directly below the iOS safe area", () => {
   const dashboard = read("src/components/Dashboard.tsx");
+  const shellChrome = read("src/components/dashboard/ShellChrome.tsx");
 
   assert.match(
     dashboard,
     /app-mobile-sticky-header md:hidden sticky[\s\S]*?<div className="flex h-\[44px\][^"\n]*min-w-0[^"\n]*items-center[^"\n]*justify-between[^"\n]*gap-1">/,
   );
   assert.match(
-    dashboard,
+    shellChrome,
     /className="flex min-h-11[^"\n]*min-w-0[^"\n]*items-center[^"\n]*rounded-full/,
   );
   assert.ok(

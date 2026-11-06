@@ -19,7 +19,7 @@ const manifest = JSON.parse(readFileSync(
 const vectors = JSON.parse(readFileSync(join(protocolDir, 'vectors/proofs-v1.json'), 'utf8'));
 const publicInputs = manifest?.constants?.publicInputs;
 
-if (vectors.schemaVersion !== 1 || vectors.protocolVersion !== 2 || !Array.isArray(vectors.proofs)) {
+if (vectors.schemaVersion !== 1 || vectors.protocolVersion !== 3 || manifest.protocolVersion !== 3 || !Array.isArray(vectors.proofs)) {
   throw new Error('Private proof vectors have an unsupported schema.');
 }
 if (!Number.isSafeInteger(publicInputs) || publicInputs <= 0) {

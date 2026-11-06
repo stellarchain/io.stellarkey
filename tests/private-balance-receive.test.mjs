@@ -98,7 +98,7 @@ test('protocol facts and the reuse caveat live in a collapsed disclosure', () =>
 
   assert.match(receive, /aria-expanded=\{aboutOpen\}/);
   assert.match(receive, /About this address/);
-  assert.match(receive, /Protocol V\$\{protocolVersion\}/);
+  assert.match(receive, /Protocol V\$\{formatPrivateProtocolVersion\(protocolVersion\)\}/);
   assert.match(receive, /Network/);
   assert.match(receive, /asset\?\.code/);
   assert.match(receive, /People you share it with can also recognize the same address/);

@@ -311,6 +311,11 @@ function u64(value: unknown, name: string): bigint {
   return parsed;
 }
 
+function booleanField(value: unknown, name: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(`${name} must be a bool`);
+  return value;
+}
+
 function bytes(value: unknown, length: number, name: string): Uint8Array {
   if (!(value instanceof Uint8Array) || value.length !== length) {
     throw new Error(`${name} must be ${length} bytes`);
@@ -361,22 +366,26 @@ function decodeOutput(value: unknown, name: string): ArchiveRecordModel['outputs
 
 function decodeRecord(value: unknown, name: string): ArchiveRecordModel {
   const record = object(value, name);
-  const actionKind = u32(record.action_kind, `${name}.action_kind`);
-  if (actionKind < 1 || actionKind > 4) throw new Error(`${name}.action_kind is invalid`);
+  const appends = booleanField(record.appends, `${name}.appends`);
   const asset = addressPayload(record.asset, `${name}.asset`);
   const assetIndex = record.asset_index === null || record.asset_index === undefined
     ? undefined
     : u32(record.asset_index, `${name}.asset_index`);
-  const boundaryAction = actionKind !== 2;
+  const publicInflow = u64(record.public_inflow, `${name}.public_inflow`);
+  const publicOutflow = u64(record.public_outflow, `${name}.public_outflow`);
+  if (publicInflow > 0n && publicOutflow > 0n) {
+    throw new Error(`${name} settles on both legs`);
+  }
+  const boundaryAction = publicInflow > 0n || publicOutflow > 0n;
   if (boundaryAction !== Boolean(asset) || boundaryAction !== (assetIndex !== undefined)) {
-    throw new Error(`${name} asset and index do not match the action kind`);
+    throw new Error(`${name} asset and index do not match its settlement legs`);
   }
   if (asset && asset.kind !== 1) throw new Error(`${name}.asset must be a contract address`);
   return {
     actionIndex: u128(record.action_index, `${name}.action_index`),
     ledgerSequence: u32(record.ledger_sequence, `${name}.ledger_sequence`),
     startingLeafIndex: u128(record.starting_leaf_index, `${name}.starting_leaf_index`),
-    actionKind,
+    appends,
     assetIndex,
     asset,
     actionNonce: bytes(record.action_nonce, 32, `${name}.action_nonce`),
@@ -391,7 +400,8 @@ function decodeRecord(value: unknown, name: string): ArchiveRecordModel {
       decodeOutput(record.output_1, `${name}.output_1`),
       decodeOutput(record.output_2, `${name}.output_2`),
     ],
-    publicValue: u64(record.public_value, `${name}.public_value`),
+    publicInflow,
+    publicOutflow,
     depositSource: addressPayload(record.deposit_source, `${name}.deposit_source`),
     publicRecipient: addressPayload(record.public_recipient, `${name}.public_recipient`),
   };

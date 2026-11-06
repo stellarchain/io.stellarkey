@@ -43,6 +43,7 @@ import { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS, privateActionClassicFeeStroops
 import { privateOutgoingHistoryMode, type PrivateOutgoingHistoryMode } from './outgoing-history';
 import { assertPrivateRecoveryReplacement, selectPrivateRecoveryInputs } from './spend-recovery';
 import { assertDirectPrivateSubmission } from './direct-submission';
+import { privateWithdrawalAppends } from './withdrawal-policy';
 
 export { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
 const MAX_RESOURCE_FEE_STROOPS = MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS;
@@ -83,6 +84,8 @@ export interface PreparedPrivateActionReview {
   publicRecipient: string | null;
   anchorExpiresAtLedger: number;
   latestLedger: number;
+  /** Fresh public count matched to the authenticated checkpoint before preparing a withdrawal. */
+  withdrawalTreeNextIndex?: bigint;
   transaction: PrivateBalanceTransactionReview;
 }
 
@@ -168,7 +171,9 @@ function commonContractAction(action: ActionModel) {
       { commitment: Uint8Array; recipientEnvelope: Uint8Array; outgoingEnvelope: Uint8Array },
       { commitment: Uint8Array; recipientEnvelope: Uint8Array; outgoingEnvelope: Uint8Array },
     ],
-    publicValue: action.publicValue,
+    publicInflow: action.publicInflow,
+    publicOutflow: action.publicOutflow,
+    appends: action.appends,
   };
 }
 
@@ -455,7 +460,8 @@ export async function preparePrivateBalanceActionFlow(input: {
         depositSource: publicAddressPayload(input.accountPublicKey),
       };
     } else {
-      if (!state.checkpoint || state.checkpoint.treeRoot !== hex(head.tree.currentRoot)) {
+      if (!state.checkpoint || state.checkpoint.treeRoot !== hex(head.tree.currentRoot) ||
+        state.checkpoint.nextLeafIndex !== head.tree.nextIndex) {
         throw new PrivateStaleChainStateError('Private Balance root changed. Sync and review again.');
       }
       anchorExpiresAtLedger = head.latestLedger + input.manifest.constants.rootWindowLedgers;
@@ -540,6 +546,7 @@ export async function preparePrivateBalanceActionFlow(input: {
         publicRecipient = input.draft.publicRecipient;
         intent = {
           kind: 'withdraw',
+          capacityExit: !privateWithdrawalAppends(head.tree.nextIndex),
           assetIndex: input.assetIndex,
           assetContractId: input.assetContractId,
           publicValue: amount.toString(),
@@ -615,13 +622,18 @@ export async function preparePrivateBalanceActionFlow(input: {
       throw new Error('Private Balance worker returned a mismatched reservation.');
     }
     if (recovery && (prepared.inputValue !== recovery.amount.toString() || prepared.changeValue !== '0' ||
-      prepared.action.publicValue !== 0n || !prepared.recipientOutputCommitment ||
+      prepared.action.publicInflow !== 0n || prepared.action.publicOutflow !== 0n ||
+      !prepared.recipientOutputCommitment ||
       !prepared.action.outputs.some(output => hex(output.cm) === prepared.recipientOutputCommitment))) {
       throw new Error('Private recovery worker returned a different self-transfer.');
     }
-    if (input.draft.kind === 'withdraw' && input.draft.requireFullInputExit &&
-      (prepared.action.kind !== 4 || prepared.changeValue !== '0' || prepared.inputValue !== amount.toString())) {
-      throw new Error('Private withdrawal worker did not prepare the approved full-input exit.');
+    if (input.draft.kind === 'withdraw') {
+      const appends = privateWithdrawalAppends(head.tree.nextIndex);
+      if (prepared.action.appends !== appends ||
+        ((!appends || input.draft.requireFullInputExit) &&
+          (prepared.changeValue !== '0' || prepared.inputValue !== amount.toString()))) {
+        throw new Error('Private withdrawal worker did not prepare the approved inputs and append policy.');
+      }
     }
     progress('loading-artifacts');
     const artifacts = await loadCircuitArtifacts(input.manifest);
@@ -636,30 +648,18 @@ export async function preparePrivateBalanceActionFlow(input: {
     const proof = proofFromHex(proved.sorobanProofHex);
     const builder = new PrivateBalanceTransactionBuilder(input.manifest);
     const common = commonContractAction(prepared.action);
-    const operation = input.draft.kind === 'deposit'
-      ? builder.buildDepositOperation({
-          action: {
-            ...common,
-            assetIndex: input.assetIndex,
-            depositSource: input.accountPublicKey,
-          },
-          proof,
-        })
-      : input.draft.kind === 'withdraw'
-        ? (prepared.action.kind === 4
-            ? builder.buildFullInputExitOperation.bind(builder)
-            : builder.buildWithdrawOperation.bind(builder))({
-            action: {
-              ...common,
-              assetIndex: input.assetIndex,
-              publicRecipient: publicRecipient!,
-            },
-            proof,
-          })
-        : builder.buildTransferOperation({
-            action: common,
-            proof,
-          });
+    const operation = builder.buildActionOperation({
+      action: {
+        ...common,
+        ...(input.draft.kind === 'deposit'
+          ? { assetIndex: input.assetIndex, depositSource: input.accountPublicKey }
+          : {}),
+        ...(input.draft.kind === 'withdraw'
+          ? { assetIndex: input.assetIndex, publicRecipient: publicRecipient! }
+          : {}),
+      },
+      proof,
+    });
     const proofBytes = Uint8Array.from(proved.sorobanProofHex.match(/../g) ?? [], value => Number.parseInt(value, 16));
     const proofHash = await computeSha256(proofBytes.buffer);
     const updatedAt = Math.max(createdAt, now());
@@ -768,6 +768,7 @@ export async function preparePrivateBalanceActionFlow(input: {
         publicRecipient,
         anchorExpiresAtLedger,
         latestLedger: head.latestLedger,
+        ...(input.draft.kind === 'withdraw' ? { withdrawalTreeNextIndex: head.tree.nextIndex } : {}),
         transaction: transactionReview,
       },
     };

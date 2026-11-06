@@ -8,16 +8,16 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8");
 
 test("the sidebar offers private, user-activated feedback beside the calculator", () => {
-  const dashboard = read("src/components/Dashboard.tsx");
-  const calculator = dashboard.indexOf('aria-label="Calculator"');
-  const feedback = dashboard.indexOf('aria-label="Send feedback"');
+  const sidebar = read("src/components/dashboard/Sidebar.tsx");
+  const calculator = sidebar.indexOf('aria-label="Calculator"');
+  const feedback = sidebar.indexOf('aria-label="Send feedback"');
 
   assert.notEqual(calculator, -1, "the calculator action must remain available");
   assert.notEqual(feedback, -1, "the feedback action needs an accessible name");
   assert.ok(feedback > calculator, "feedback must follow the calculator in the sidebar controls");
   assert.ok(feedback - calculator < 1_000, "feedback must remain directly beside the calculator");
 
-  const feedbackControl = dashboard.slice(feedback, feedback + 700);
+  const feedbackControl = sidebar.slice(feedback, feedback + 700);
   assert.match(feedbackControl, /decodeContactAddress\("support"\)/);
   assert.match(feedbackControl, /encodeURIComponent\("StellarKey feedback"\)/);
   assert.doesNotMatch(feedbackControl, /account|publicKey|secret|balance|transaction/i);
@@ -28,10 +28,10 @@ test("the shared icon set includes a dedicated feedback glyph", () => {
 });
 
 test("the controls above Lock Wallet share accessible hover and focus tooltips", () => {
-  const dashboard = read("src/components/Dashboard.tsx");
-  const footerStart = dashboard.indexOf("{/* Footer Controls */}");
-  const lockWallet = dashboard.indexOf(">Lock Wallet<", footerStart);
-  const controls = dashboard.slice(footerStart, lockWallet);
+  const sidebar = read("src/components/dashboard/Sidebar.tsx");
+  const footerStart = sidebar.indexOf("{/* Footer Controls */}");
+  const lockWallet = sidebar.indexOf(">Lock Wallet<", footerStart);
+  const controls = sidebar.slice(footerStart, lockWallet);
 
   for (const label of [
     "Refresh network data",
@@ -58,7 +58,7 @@ test("the shared tooltip links its trigger and supports pointer plus keyboard di
 });
 
 test("collapsed wallet and merchant sidebar controls use right-side tooltips", () => {
-  const dashboard = read("src/components/Dashboard.tsx");
+  const sidebar = read("src/components/dashboard/Sidebar.tsx");
 
   for (const label of [
     "Expand Sidebar",
@@ -76,16 +76,16 @@ test("collapsed wallet and merchant sidebar controls use right-side tooltips", (
   ]) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     assert.match(
-      dashboard,
+      sidebar,
       new RegExp(`<Tooltip label=(?:"${escaped}"|\\{sidebarCollapsed \\? "${escaped}" : null\\}) side="right">`),
     );
   }
 
-  assert.match(dashboard, /<Tooltip[\s\S]{0,240}Switch to Wallet[\s\S]{0,240}side="right"/);
-  assert.match(dashboard, /<Tooltip[\s\S]{0,240}Merchant settings[\s\S]{0,240}side="right"/);
-  assert.match(dashboard, /<Tooltip[\s\S]{0,240}acct\.label[\s\S]{0,240}side="right"/);
+  assert.match(sidebar, /<Tooltip[\s\S]{0,240}Switch to Wallet[\s\S]{0,240}side="right"/);
+  assert.match(sidebar, /<Tooltip[\s\S]{0,240}Merchant settings[\s\S]{0,240}side="right"/);
+  assert.match(sidebar, /<Tooltip[\s\S]{0,240}acct\.label[\s\S]{0,240}side="right"/);
   assert.ok(
-    dashboard.includes('<Tooltip label={`Network: ${network}`} side="right">'),
+    sidebar.includes('<Tooltip label={`Network: ${network}`} side="right">'),
     "the collapsed network control needs its current-network tooltip",
   );
 });

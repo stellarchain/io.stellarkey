@@ -1,7 +1,8 @@
 use crate::native_poseidon2::NativeTreeHashContext;
 use private_balance_protocol::{
-    action::{Action, ActionKind},
+    action::Action,
     archive::{ArchiveRecord, compute_genesis_record_hash},
+    constants::PROTOCOL_VERSION,
     encoding::compute_context_hash,
     tree::TreeState,
 };
@@ -18,7 +19,12 @@ pub struct ModelContext {
 
 impl ModelContext {
     pub fn context_hash(&self) -> [u8; 32] {
-        compute_context_hash(2, &self.network_id, &self.realm_id, &self.pool_id)
+        compute_context_hash(
+            PROTOCOL_VERSION,
+            &self.network_id,
+            &self.realm_id,
+            &self.pool_id,
+        )
     }
 
     pub fn genesis_record_hash(&self) -> [u8; 32] {
@@ -97,29 +103,22 @@ impl PoolModel {
             .asset
             .and_then(|asset| self.asset_public_balances.get(&asset).copied())
             .unwrap_or(0);
-        let next_asset_balance = match action.kind {
-            ActionKind::Deposit => {
-                if action.public_value == 0 {
-                    return Err("Zero deposit value".into());
-                }
-                current_asset_balance
-                    .checked_add(action.public_value)
-                    .ok_or_else(|| "Public balance overflow".to_string())?
+        let next_asset_balance = if action.public_inflow > 0 {
+            if action.public_outflow > 0 {
+                return Err("Both settlement legs carry value".into());
             }
-            ActionKind::PrivateTransfer => {
-                if action.public_value != 0 {
-                    return Err("Non-zero transfer public value".into());
-                }
-                current_asset_balance
+            current_asset_balance
+                .checked_add(action.public_inflow)
+                .ok_or_else(|| "Public balance overflow".to_string())?
+        } else if action.public_outflow > 0 {
+            if action.public_outflow > current_asset_balance {
+                return Err("Invalid withdrawal value".into());
             }
-            ActionKind::Withdraw | ActionKind::FullInputExit => {
-                if action.public_value == 0 || action.public_value > current_asset_balance {
-                    return Err("Invalid withdrawal value".into());
-                }
-                current_asset_balance
-                    .checked_sub(action.public_value)
-                    .ok_or_else(|| "Invalid withdrawal".to_string())?
-            }
+            current_asset_balance
+                .checked_sub(action.public_outflow)
+                .ok_or_else(|| "Invalid withdrawal".to_string())?
+        } else {
+            current_asset_balance
         };
 
         let mut next_nullifiers = self.nullifiers.clone();
@@ -131,7 +130,7 @@ impl PoolModel {
 
         let starting_leaf_index = self.tree.next_leaf_index;
         let mut next_tree = self.tree.clone();
-        let root_after = if action.kind == ActionKind::FullInputExit {
+        let root_after = if !action.appends {
             Ok(next_tree.root)
         } else {
             match tree_hash_context {
@@ -149,7 +148,7 @@ impl PoolModel {
             action_index: self.records.len() as u128,
             ledger_sequence,
             starting_leaf_index,
-            action_kind: action.kind as u8,
+            appends: action.appends,
             asset_index: action.asset_index,
             asset: action.asset,
             action_nonce: action.action_nonce,
@@ -157,7 +156,8 @@ impl PoolModel {
             tree_root_after: root_after,
             nullifiers: action.nullifiers,
             outputs: action.outputs.clone(),
-            public_value: action.public_value,
+            public_inflow: action.public_inflow,
+            public_outflow: action.public_outflow,
             deposit_source: action.deposit_source,
             public_recipient: action.public_recipient,
         };

@@ -14,7 +14,6 @@ const zkeyPath = join(buildDir, 'action_dev.zkey');
 const helperWasmPath = join(buildDir, 'gadgets_helper_js/gadgets_helper.wasm');
 const browserPackagePath = join(protocolDir, 'packages/browser/dist/index.js');
 const {
-  ActionKind,
   computeActionField,
   computeAssetField,
   computeContextField,
@@ -83,7 +82,7 @@ async function generateVectors() {
   const contextField = fieldDecimal(
     computeContextField(
       computeContextHash(
-        2,
+        3,
         networkId,
         realmId,
         poolId,
@@ -94,9 +93,10 @@ async function generateVectors() {
     fieldBytes(contextField),
     fieldBytes(secret),
   ));
-  const depActionKindField = '1';
   const depAnchorRoot = '0';
-  const depPublicValueField = '5000000';
+  const depPublicInflowField = '5000000';
+  const depPublicOutflowField = '0';
+  const depAppendsField = '1';
 
   const depGadgets = await evalGadgets({
     contextField,
@@ -124,8 +124,7 @@ async function generateVectors() {
   });
   const depDummyNullifiers = [dummyNullifier('901'), dummyNullifier('902')];
   const depAction = {
-    protocolVersion: 2,
-    kind: ActionKind.Deposit,
+    protocolVersion: 3,
     assetIndex: 0,
     asset,
     actionNonce: new Uint8Array(32).fill(0x11),
@@ -136,7 +135,9 @@ async function generateVectors() {
       outputPackage(depDummyOutput.noteCommitment, 0xac, 0xad),
       outputPackage(depSecondDummyOutput.noteCommitment, 0xae, 0xaf),
     ],
-    publicValue: 5_000_000n,
+    publicInflow: 5_000_000n,
+    publicOutflow: 0n,
+    appends: true,
     depositSource: { kind: 0, payload: new Uint8Array(32).fill(4) },
   };
   const depActionField = actionFieldDecimal(depAction);
@@ -145,9 +146,10 @@ async function generateVectors() {
     contextField,
     assetField,
     actionAssetField: assetField,
-    actionKindField: depActionKindField,
+    publicInflowField: depPublicInflowField,
+    publicOutflowField: depPublicOutflowField,
+    appendsField: depAppendsField,
     anchorRoot: depAnchorRoot,
-    publicValueField: depPublicValueField,
     actionField: depActionField,
     nullifier: depDummyNullifiers,
     outputCommitment: [
@@ -180,8 +182,9 @@ async function generateVectors() {
   const depositRes = await snarkjs.groth16.fullProve(depInputs, wasmPath, zkeyPath);
 
   // 2. Transfer Vector
-  const trActionKindField = '2';
-  const trPublicValueField = '0';
+  const trPublicInflowField = '0';
+  const trPublicOutflowField = '0';
+  const trAppendsField = '1';
   const in0Res = await evalGadgets({
     contextField,
     assetField,
@@ -221,8 +224,7 @@ async function generateVectors() {
   });
   const trDummyNullifier = dummyNullifier('903');
   const trAction = {
-    protocolVersion: 2,
-    kind: ActionKind.PrivateTransfer,
+    protocolVersion: 3,
     actionNonce: new Uint8Array(32).fill(0x22),
     anchorRoot: fromHex(BigInt(in0Res.merkleRoot).toString(16).padStart(64, '0')),
     nullifiers: [
@@ -234,7 +236,9 @@ async function generateVectors() {
       outputPackage(out1Res.noteCommitment, 0xcc, 0xcd),
       outputPackage(trFeeOutput.noteCommitment, 0xce, 0xcf),
     ],
-    publicValue: 0n,
+    publicInflow: 0n,
+    publicOutflow: 0n,
+    appends: true,
   };
   const trActionField = actionFieldDecimal(trAction);
 
@@ -242,9 +246,10 @@ async function generateVectors() {
     contextField,
     assetField: '0',
     actionAssetField: assetField,
-    actionKindField: trActionKindField,
+    publicInflowField: trPublicInflowField,
+    publicOutflowField: trPublicOutflowField,
+    appendsField: trAppendsField,
     anchorRoot: in0Res.merkleRoot,
-    publicValueField: trPublicValueField,
     actionField: trActionField,
     nullifier: [in0Res.nullifier, trDummyNullifier],
     outputCommitment: [out0Res.noteCommitment, out1Res.noteCommitment, trFeeOutput.noteCommitment],
@@ -269,8 +274,9 @@ async function generateVectors() {
   const transferRes = await snarkjs.groth16.fullProve(trInputs, wasmPath, zkeyPath);
 
   // 3. Withdraw Vector
-  const wdActionKindField = '3';
-  const wdPublicValueField = '7000000';
+  const wdPublicInflowField = '0';
+  const wdPublicOutflowField = '7000000';
+  const wdAppendsField = '1';
   const wdIn0Res = await evalGadgets({
     contextField,
     assetField,
@@ -309,8 +315,7 @@ async function generateVectors() {
   });
   const wdDummyNullifier = dummyNullifier('904');
   const wdAction = {
-    protocolVersion: 2,
-    kind: ActionKind.Withdraw,
+    protocolVersion: 3,
     assetIndex: 0,
     asset,
     actionNonce: new Uint8Array(32).fill(0x33),
@@ -324,7 +329,9 @@ async function generateVectors() {
       outputPackage(wdDummyOutput.noteCommitment, 0xdf, 0xe0),
       outputPackage(wdFeeOutput.noteCommitment, 0xe1, 0xe2),
     ],
-    publicValue: 7_000_000n,
+    publicInflow: 0n,
+    publicOutflow: 7_000_000n,
+    appends: true,
     publicRecipient: { kind: 0, payload: new Uint8Array(32).fill(5) },
   };
   const wdActionField = actionFieldDecimal(wdAction);
@@ -333,9 +340,10 @@ async function generateVectors() {
     contextField,
     assetField,
     actionAssetField: assetField,
-    actionKindField: wdActionKindField,
+    publicInflowField: wdPublicInflowField,
+    publicOutflowField: wdPublicOutflowField,
+    appendsField: wdAppendsField,
     anchorRoot: wdIn0Res.merkleRoot,
-    publicValueField: wdPublicValueField,
     actionField: wdActionField,
     nullifier: [wdIn0Res.nullifier, wdDummyNullifier],
     outputCommitment: [wdOut0Res.noteCommitment, wdDummyOutput.noteCommitment, wdFeeOutput.noteCommitment],
@@ -365,15 +373,16 @@ async function generateVectors() {
     computeCommitment(fieldBytes(contextField), fieldBytes(assetField), fieldBytes(owner), 0n, fieldBytes(wdInputs.outputRho[index])));
   const exitAction = {
     ...wdAction,
-    kind: ActionKind.FullInputExit,
     actionNonce: new Uint8Array(32).fill(0x44),
-    publicValue: 10_000_000n,
+    publicOutflow: 10_000_000n,
+    appends: false,
     outputs: wdAction.outputs.map((output, index) => ({ ...output, cm: exitCommitments[index] })),
   };
   const exitInputs = {
     ...wdInputs,
-    actionKindField: '4',
-    publicValueField: '10000000',
+    publicInflowField: '0',
+    publicOutflowField: '10000000',
+    appendsField: '0',
     actionField: actionFieldDecimal(exitAction),
     outputValue: ['0', '0', '0'],
     outputCommitment: exitCommitments.map(fieldDecimal),
@@ -382,7 +391,7 @@ async function generateVectors() {
 
   const vectors = {
     schemaVersion: 1,
-    protocolVersion: 2,
+    protocolVersion: 3,
     proofs: [
       // Synthetic public test vectors; no wallet session is involved.
       {

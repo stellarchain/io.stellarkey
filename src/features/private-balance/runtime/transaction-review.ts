@@ -128,7 +128,7 @@ function validateDepositAuthorization(
   const fields = action as Record<string, unknown>;
   if (
     fields.deposit_source !== request.source ||
-    typeof fields.public_value !== 'bigint'
+    typeof fields.public_inflow !== 'bigint'
   ) {
     throw new Error('Private deposit source or amount does not match the reviewed action');
   }
@@ -151,7 +151,7 @@ function validateDepositAuthorization(
     transferArgs.length !== 3 ||
     transferArgs[0] !== request.source ||
     transferArgs[1] !== request.manifest.poolContractId ||
-    transferArgs[2] !== fields.public_value
+    transferArgs[2] !== fields.public_inflow
   ) {
     throw new Error('Private deposit authorization contains an unexpected asset transfer');
   }
@@ -183,10 +183,21 @@ function invokedMethod(transaction: Transaction, poolContractId: string): Privat
     throw new Error('Private transaction pool contract does not match the manifest');
   }
   const functionName = invocation.functionName.toString();
-  if (!['deposit', 'transfer', 'withdraw', 'full_input_exit'].includes(functionName)) {
+  if (functionName !== 'action') {
     throw new Error('Private transaction method is unsupported');
   }
-  return functionName as PrivateBalanceTransactionReview['method'];
+  // Protocol V2.1 (wire version 3) exposes one entrypoint; the settlement legs and the appends
+  // flag classify the action from its public calldata alone.
+  const fields = scValToNative(invocation.args[0]) as {
+    public_inflow?: bigint;
+    public_outflow?: bigint;
+    appends?: boolean;
+  };
+  const inflow = BigInt(fields.public_inflow ?? 0);
+  const outflow = BigInt(fields.public_outflow ?? 0);
+  if (inflow > 0n) return 'deposit';
+  if (outflow > 0n) return fields.appends === false ? 'full_input_exit' : 'withdraw';
+  return 'transfer';
 }
 
 /**

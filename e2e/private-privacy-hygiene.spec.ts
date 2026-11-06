@@ -21,6 +21,7 @@ test('new shielded receive requests create an address only after private intent'
   await expect(dialog.getByTestId('receive-rotation-count')).toHaveText('1');
   await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'About this address', exact: true }).click();
+  await expect(dialog.getByText('Protocol V2.1', { exact: true })).toBeVisible();
   await expect(dialog.getByText(/public diversifier/)).toBeVisible();
   await expect(dialog.getByTestId('receive-rotation-count')).toHaveText('1');
 });

@@ -2,6 +2,104 @@
 
 This wallet ships as static files and talks directly to user-selected Stellar services. It has no application backend, remote custody service, background worker, or server-side database.
 
+## 1.1.0 release preparation
+
+Application version 1.1.0 uses Private Payments Protocol V2.1; the numbers identify
+different compatibility boundaries. The dated changelog entry is preparation,
+not evidence of publication. Earlier release exceptions do not carry over.
+The maintainer separately deferred the 1.1.0 manual checks on 2026-11-06, as
+recorded below; they remain unperformed or unconfirmed, not passed.
+Before upgrading a wallet with Protocol V2 private records, follow the
+[backup preservation and recovery guidance](private-balance-recovery.md#upgrading-from-104-protocol-v2).
+
+### Local candidate evidence — 2026-11-05–06
+
+`npm run verify:application` passed on 2026-11-06, from 01:16 to 01:39 UTC,
+on macOS ARM64 with Node 26.7.0 and npm 11.19.0. This covered the authoritative
+modified checkout, including the pre-existing V2.1 work and untracked source,
+based on HEAD `3098ed84293d5da04320311e6696279ff633666b`.
+The 1,010-path source snapshot and staged changes were unchanged throughout the
+run. Its SHA-256 fingerprint was
+`40640a0c16b1320c02260b3c8912d6eecf4e3fda3f7a70220824551edff6e365`:
+canonical JSON of HEAD, staged name/status, and sorted paths with content hashes
+and file modes, including tracked deletions and non-ignored untracked files.
+This evidence section and the dependency-evidence PR map were added afterward
+and receive separate documentation checks. The local export identifies version
+1.1.0 and `sourceTree: modified`; it is not a clean-source release attestation.
+
+| Check | Observed result |
+| --- | --- |
+| Application core | Passed: generated-artifact consistency, TypeScript, 2,079 root tests, 64 nested browser-protocol tests, zero-warning lint, both audit thresholds and two reporter probes. |
+| Required private browser suites | Passed: 16 overlay/manifest checks and 724 component checks across Chromium and iPhone WebKit; zero skips and zero failed attempts. |
+| Production verification | Passed: fixture cleanup before/after build, static export, five bundle tests, unchanged bundle budgets and 175 active browser checks. The normal matrix also recorded 387 project/fixture/live-test skips; these are not additional passes. |
+| Trezor Suite bootstrap | Passed in Chromium, iPhone WebKit and iPad WebKit using the installed client, production CSP and an intercepted synthetic approval page. No device approval or remote-core provenance is established by this test. |
+| `verify:private-rust` — Nov 5 | Failed its advisory gate. Formatting and all 57 default functional tests passed, with two opt-in tests ignored by that default invocation. Bans, licenses and sources passed; RUSTSEC-2026-0387 remains in crypto-bigint 0.5.5 through Soroban host dependencies. |
+| `verify:private-model` — Nov 5 | Passed the separately invoked 100,000-action recovery/corruption model in 407.21 seconds. |
+| `verify:private-circuits` — Nov 5 | Passed Circomspect, CIVER, both analyzer negative controls, proving-key validation, 14 circuit tests and all eight security-constraint mutation checks. |
+| `verify:private-artifacts` — Nov 5 | Passed two independent canonical rebuilds with byte-identical R1CS, witness Wasm and pool Wasm. |
+| `release:verify` | The Nov 5 attempt failed the clean-tree preflight. The checkout remains modified, so this release gate has not passed. |
+
+The unchanged Rust/circuit/model/artifact inputs retain their Nov 5 evidence.
+Those checks used Rust 1.97.1, Stellar CLI 27.0.0 and Circom 2.2.3.
+Circomspect 0.9.0 passed with its negative control. CIVER analyzed the pinned
+source `af7d4ed0325e6f7743d8a1ac0e415d0c69b8aae8` in an owned offline Linux
+container: 21 verified components, 190,043 verified constraints, zero failures
+and zero timeouts. The native macOS/Clang legacy-Z3 build failed; the Linux
+result is not evidence that this native build works. Canonical artifact builds
+reported a duplicate `ShieldedAction` specification-entry warning.
+
+Canonical SHA-256 artifact identities were:
+
+- R1CS: `b929074da90879626a0e2a1e01e2bb7624e50dfae4e894d2866a09e80e0c1a6e`.
+- Witness Wasm: `2f40e251d8266ba47d66d18c9f56674f29f939628f53767a49deae1104a2929a`.
+- Pool Wasm: `6273f471d0f95df23c0ace8354189f3e6a3ad8262d3c5c0162b049fa13a7040a`.
+
+The other ignored test, the research prototype
+`prototype::proof_verified_rollover_exit_and_host_costs`, was also invoked in an
+isolated workspace. It failed with both the original ctutils 0.4.2 and patched
+0.4.4 dependency. The cause remains unresolved; it is
+not counted as a pass. Rust test execution also regenerated the already-modified
+initialization/deposit snapshot. The original staged fixture deletion was
+preserved without restaging it.
+
+All wallet browser checks used isolated, non-usable synthetic fixtures with
+screenshots, traces and video disabled. Physical devices, human VoiceOver/NVDA,
+passkeys, manufacturer-origin sign-off and the other manual release items remain
+unperformed or unconfirmed. The fresh 1.1.0 deferral below records the maintainer’s
+subsequent decision; no prior release exception is applied automatically.
+At 01:39 UTC, the Rust advisory and clean-source requirement blocked publication.
+
+### Maintainer-approved advisory exception — 2026-11-06
+
+The maintainer subsequently authorized skipping RUSTSEC-2026-0387 for 1.1.0.
+The exception is restricted to that advisory ID in `deny.toml`; crypto-bigint
+0.5.5 remains installed through Soroban host dependencies. At 09:24 UTC,
+`npm run verify:private-rust` passed: formatting, 57 functional tests (two
+default opt-in skips), advisories with the approved exception, bans, licenses
+and sources. A control run with the previous configuration failed only on
+that advisory. No test snapshot, dependency lockfile or compiled protocol
+artifact changed during this rerun.
+
+This supersedes the advisory blocker in the earlier evidence. It does not
+establish a vulnerability fix, clean-source release verification, or manual
+device/accessibility approval. The clean-source requirement, other manual
+release items and unresolved research-prototype result remain as recorded
+above. See the [dependency security evidence](dependency-security.md#maintainer-approved-rust-advisory-exception--2026-11-06).
+
+The exception configuration SHA-256 is
+`23ffa67e25f0f28f01def8597ea1a69d4d3ee4f626409508d58108570d6074c7`;
+the Rust lockfile remains
+`c5ee622f47109654603aa119e47f2c6953b7bc1c6dc9dffafa9f97359e564b0b`.
+The updated release notes passed 42 focused documentation/policy tests, a new
+production build with fixture cleanup, and all three production changelog
+checks on Chromium, iPhone WebKit and iPad WebKit. Node 26.7.0, npm 11.19.0,
+Next.js 16.4.2 and macOS ARM64 match the earlier application verification
+environment. Application behavior, dependency locks, circuit sources and Rust
+implementation inputs remain unchanged, so their earlier results retain their
+original dates. The maintainer subsequently authorized committing the prepared
+candidate, including the existing V2.1 working changes, and creating release 1.1.0.
+Clean-tree release verification remains required before tagging.
+
 ## Automated release gate
 
 - Use Node 22.22.2+ and npm 11.19.0+ from the supported ranges in `package.json`.
@@ -65,6 +163,14 @@ unconfirmed, not passed. This exception grants no third-party license rights,
 does not waive automated gates, and does not promote Private Payments beyond
 unaudited Testnet use.
 
+### v1.1.0 release exception
+
+On 2026-11-06 the maintainer explicitly deferred the physical iPhone/iPad,
+VoiceOver/NVDA, passkey and Trezor checks for 1.1.0, including Trezor redistribution
+and registered-origin sign-off. These checks remain unperformed or unconfirmed,
+not passed. This release-specific exception grants no third-party license rights,
+does not waive automated gates, and does not approve real-value Private Payments.
+
 ### Required checks
 
 - On a real iPhone, test Safari onboarding, encrypted-backup restore, lock/unlock, form entry, safe areas, and Add to Home Screen cold launch. Verify pinch zoom and 200% reflow, VoiceOver, and system text without clipping controls or obscuring focus.
@@ -92,12 +198,4 @@ unaudited Testnet use.
 
 ## Remaining dependency boundary
 
-As checked on 2026-09-07, `@trezor/connect-web@9.7.3` remains the latest stable
-release. It is a regular production dependency loaded lazily for the optional
-Trezor UI. The production audit reports ten low-severity vulnerable packages
-associated with one `elliptic` advisory and no high/critical findings after the
-scoped TOML override. Review [the compatibility evidence and remaining embedded
-parser/remote-core limits](dependency-security.md); this is not an advisory waiver
-or proof that upstream popup code is patched. High/critical production findings,
-the Trezor redistribution authorization, registered origin, and physical-device
-checks remain release gates.
+Trezor Connect 10.0.1 now uses the MIT-licensed Suite Web client. Preserve its license notice, verify the production-origin bootstrap and popup, and complete real-device address, signing, cancellation and disconnect checks. The hosted Suite core remains separate from the locally installed reference used by automated tests. Current dependency and protocol security results are recorded in [dependency security evidence](dependency-security.md); a passing npm audit does not satisfy the separate Rust, circuit, physical-device or human accessibility gates.

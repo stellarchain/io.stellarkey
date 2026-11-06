@@ -1,6 +1,5 @@
 use crate::action::{
-    DepositAction, TransferAction, WithdrawAction, address_payload, contract_payload, from_deposit,
-    from_transfer, from_withdraw, public_signals,
+    ShieldedAction, address_payload, contract_payload, from_unified, public_signals,
 };
 use crate::archive::{self, ArchiveMeta};
 use crate::errors::PoolError;
@@ -10,7 +9,7 @@ use crate::generated_artifacts::{
 };
 use crate::storage::*;
 use crate::{nullifier, token};
-use private_balance_protocol::action::{Action as ProtocolAction, ActionKind, compute_asset_field};
+use private_balance_protocol::action::{Action as ProtocolAction, compute_asset_field};
 use private_balance_protocol::constants::{
     ADDRESS_CHECKSUM_BYTES, ADDRESS_CONTEXT_TAG_BYTES, PRIVATE_ADDRESS_ASCII_BYTES,
     PRIVATE_ADDRESS_PAYLOAD_BYTES, PROTOCOL_VERSION, ROOT_WINDOW_LEDGERS, TREE_ARITY,
@@ -125,12 +124,12 @@ fn execute_action(
     public_address: Option<&Address>,
     asset: Option<&AssetConfig>,
 ) -> Result<u128, PoolError> {
-    if action.kind == ActionKind::Deposit && deposits_paused(env) {
+    if action.public_inflow > 0 && deposits_paused(env) {
         return Err(PoolError::DepositsPaused);
     }
 
     let tree_before = get_tree(env);
-    if action.kind != ActionKind::Deposit {
+    if action.anchor_root != [0; 32] {
         let anchor_root = BytesN::from_array(env, &action.anchor_root);
         if anchor_root == tree_before.current_root {
             // The current root must remain spendable even after an idle root
@@ -140,18 +139,13 @@ fn execute_action(
         }
         known_root(env, &anchor_root)?;
     }
-    // Deposits have no real inputs. One durable dummy nullifier is sufficient
-    // to reject proof replay; the second public slot remains for fixed arity.
-    let persistent_nullifier_count = if action.kind == ActionKind::Deposit {
-        1
-    } else {
-        2
-    };
-    for nullifier in action.nullifiers.iter().take(persistent_nullifier_count) {
+    // Every action persists both public nullifiers. Dummy lanes derive fresh
+    // nonzero values, so nothing is distinguishable by its replay treatment.
+    for nullifier in action.nullifiers.iter() {
         nullifier::require_unspent(env, &BytesN::from_array(env, nullifier))?;
     }
 
-    if action.kind != ActionKind::FullInputExit && tree_before.next_index > TREE_CAPACITY - 3 {
+    if action.appends && tree_before.next_index > TREE_CAPACITY - 3 {
         return Err(PoolError::TreeFull);
     }
 
@@ -162,13 +156,13 @@ fn execute_action(
     }
 
     let action_index = get_meta(env).action_count;
-    for nullifier in action.nullifiers.iter().take(persistent_nullifier_count) {
+    for nullifier in action.nullifiers.iter() {
         nullifier::mark_spent(env, &BytesN::from_array(env, nullifier), action_index);
     }
 
     let mut tree = tree_before;
     let starting_leaf_index = tree.next_index;
-    if action.kind != ActionKind::FullInputExit {
+    if action.appends {
         for output in &action.outputs {
             append_leaf_to_frontier(env, &mut tree, &BytesN::from_array(env, &output.cm))?;
         }
@@ -188,22 +182,14 @@ fn execute_action(
     )?;
     debug_assert_eq!(action_index, record.action_index);
 
-    match action.kind {
-        ActionKind::Deposit => {
-            let source = public_address.ok_or(PoolError::InvalidActionShape)?;
-            let boundary_asset = asset.ok_or(PoolError::InvalidActionShape)?;
-            token::deposit(env, &boundary_asset.asset, source, action.public_value);
-        }
-        ActionKind::PrivateTransfer => {
-            if public_address.is_some() || asset.is_some() {
-                return Err(PoolError::InvalidActionShape);
-            }
-        }
-        ActionKind::Withdraw | ActionKind::FullInputExit => {
-            let recipient = public_address.ok_or(PoolError::InvalidActionShape)?;
-            let boundary_asset = asset.ok_or(PoolError::InvalidActionShape)?;
-            token::withdraw(env, &boundary_asset.asset, recipient, action.public_value);
-        }
+    if action.public_inflow > 0 {
+        let source = public_address.ok_or(PoolError::InvalidActionShape)?;
+        let boundary_asset = asset.ok_or(PoolError::InvalidActionShape)?;
+        token::deposit(env, &boundary_asset.asset, source, action.public_inflow);
+    } else if action.public_outflow > 0 {
+        let recipient = public_address.ok_or(PoolError::InvalidActionShape)?;
+        let boundary_asset = asset.ok_or(PoolError::InvalidActionShape)?;
+        token::withdraw(env, &boundary_asset.asset, recipient, action.public_outflow);
     }
     emit_shielded_action(env, &record);
 
@@ -334,62 +320,42 @@ impl PrivateBalancePool {
         }
     }
 
-    pub fn deposit(env: Env, action: DepositAction, proof: Proof) -> Result<u128, PoolError> {
+    /// The single shielded-action entrypoint. The settlement legs classify the
+    /// action: inflow-only deposits, outflow-only withdraws (with or without
+    /// change commitments), and two zero legs transfer internally.
+    pub fn action(env: Env, action: ShieldedAction, proof: Proof) -> Result<u128, PoolError> {
         let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
-        if deposits_paused(&env) {
-            return Err(PoolError::DepositsPaused);
+        let deposits = action.public_inflow > 0;
+        let public_address = action
+            .deposit_source
+            .clone()
+            .or_else(|| action.public_recipient.clone());
+        if deposits {
+            if deposits_paused(&env) {
+                return Err(PoolError::DepositsPaused);
+            }
+            if action.asset_index.is_none() {
+                return Err(PoolError::UnknownAsset);
+            }
         }
-        let source = action.deposit_source.clone();
-        let asset =
-            get_registered_asset(&env, action.asset_index).ok_or(PoolError::UnknownAsset)?;
-        if asset.status != AssetStatus::Active {
-            return Err(PoolError::AssetExitOnly);
-        }
-        let action = from_deposit(&action, &asset)?;
-        execute_action(&env, &config, &action, &proof, Some(&source), Some(&asset))
-    }
-
-    pub fn transfer(env: Env, action: TransferAction, proof: Proof) -> Result<u128, PoolError> {
-        let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
-        let action = from_transfer(&action)?;
-        execute_action(&env, &config, &action, &proof, None, None)
-    }
-
-    pub fn withdraw(env: Env, action: WithdrawAction, proof: Proof) -> Result<u128, PoolError> {
-        let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
-        let recipient = action.public_recipient.clone();
-        let asset =
-            get_registered_asset(&env, action.asset_index).ok_or(PoolError::UnknownAsset)?;
-        let action = from_withdraw(&action, &asset)?;
+        let asset = match action.asset_index {
+            Some(index) => {
+                let asset = get_registered_asset(&env, index).ok_or(PoolError::UnknownAsset)?;
+                if deposits && asset.status != AssetStatus::Active {
+                    return Err(PoolError::AssetExitOnly);
+                }
+                Some(asset)
+            }
+            None => None,
+        };
+        let action = from_unified(&action, asset.as_ref())?;
         execute_action(
             &env,
             &config,
             &action,
             &proof,
-            Some(&recipient),
-            Some(&asset),
-        )
-    }
-
-    /// Consumes selected inputs completely, without reserving output capacity.
-    pub fn full_input_exit(
-        env: Env,
-        action: WithdrawAction,
-        proof: Proof,
-    ) -> Result<u128, PoolError> {
-        let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
-        let recipient = action.public_recipient.clone();
-        let asset =
-            get_registered_asset(&env, action.asset_index).ok_or(PoolError::UnknownAsset)?;
-        let mut action = from_withdraw(&action, &asset)?;
-        action.kind = ActionKind::FullInputExit;
-        execute_action(
-            &env,
-            &config,
-            &action,
-            &proof,
-            Some(&recipient),
-            Some(&asset),
+            public_address.as_ref(),
+            asset.as_ref(),
         )
     }
 

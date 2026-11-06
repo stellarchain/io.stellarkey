@@ -27,7 +27,7 @@ async function authorize(page: Page) {
 
 test('preferred receive assets work without trustlines and MAX reserves the extra XLM and fee', async ({ page }) => {
   await prepare(page);
-  await page.getByRole('button', { name: 'You receive asset', exact: true }).click();
+  await page.getByRole('button', { name: /^You receive asset: / }).click();
   await expect(page.getByRole('option', { name: /EURC/ })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByText('Trustline included', { exact: true })).toBeVisible();

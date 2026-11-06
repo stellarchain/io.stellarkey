@@ -41,7 +41,7 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   assert.equal(brand.BRAND_NAME, "StellarKey");
   assert.equal(brand.BRAND_ORIGIN, "https://stellarkey.io");
   assert.equal(brand.SOURCE_REPOSITORY_URL, "https://github.com/stellarchain/io.stellarkey");
-  assert.equal(brand.APPLICATION_VERSION, "1.0.4");
+  assert.equal(brand.APPLICATION_VERSION, "1.1.0");
   assert.equal(brand.APPLICATION_VERSION, JSON.parse(read("package.json")).version);
   assert.match(nextConfig.env?.NEXT_PUBLIC_BUILD_COMMIT ?? "", /^[0-9a-f]{40}$/);
   assert.equal(brand.COPYRIGHT_OWNER, "StellarKey");
@@ -80,10 +80,10 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   assert.match(error, /Reload \{BRAND_NAME\}/);
   assert.match(error, /<main[^>]*id="app-content"/);
   assert.equal(packageJson.name, "stellarkey");
-  assert.equal(packageJson.version, "1.0.4");
+  assert.equal(packageJson.version, "1.1.0");
   assert.equal(packageLock.name, "stellarkey");
   assert.equal(packageLock.packages[""].name, "stellarkey");
-  assert.equal(packageLock.packages[""].version, "1.0.4");
+  assert.equal(packageLock.packages[""].version, "1.1.0");
   assert.match(read("src/lib/merchant/defaults.ts"), /appVersion: APPLICATION_VERSION/);
   assert.match(read("README.md"), /^# StellarKey$/m);
   assert.match(read("README.md"), /src="\.\/public\/stellarkey-logo-readme\.svg"/);
@@ -93,17 +93,17 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
 });
 
 test("the desktop sidebar presents the larger borderless StellarKey identity", () => {
-  const dashboard = read("src/components/Dashboard.tsx");
-  assert.match(dashboard, /<h1[^>]*>\s*\{BRAND_NAME\}\s*<\/h1>/);
-  assert.match(dashboard, />\s*Self-Custody Wallet\s*</);
-  assert.doesNotMatch(dashboard, />\s*Wallet\s*<\/h1>/);
-  assert.doesNotMatch(dashboard, />\s*Stellar Self-Custody\s*</);
-  assert.equal(dashboard.match(/<LogoMark size=\{30\} className="text-white" \/>/g)?.length, 2);
+  const sidebar = read("src/components/dashboard/Sidebar.tsx");
+  assert.match(sidebar, /<h1[^>]*>\s*\{BRAND_NAME\}\s*<\/h1>/);
+  assert.match(sidebar, />\s*Self-Custody Wallet\s*</);
+  assert.doesNotMatch(sidebar, />\s*Wallet\s*<\/h1>/);
+  assert.doesNotMatch(sidebar, />\s*Stellar Self-Custody\s*</);
+  assert.equal(sidebar.match(/<LogoMark size=\{30\} className="text-white" \/>/g)?.length, 2);
   assert.match(
-    dashboard,
+    sidebar,
     /<div className="flex min-w-0 items-center gap-1\.5">\s*<LogoMark size=\{30\} className="text-white" \/>/,
   );
-  assert.doesNotMatch(dashboard, /h-9 w-9[^\n]*border border-white\/10[^\n]*[\s\S]{0,120}<LogoMark/);
+  assert.doesNotMatch(sidebar, /h-9 w-9[^\n]*border border-white\/10[^\n]*[\s\S]{0,120}<LogoMark/);
 });
 
 test("the public README leads with the official identity and essential project paths", () => {

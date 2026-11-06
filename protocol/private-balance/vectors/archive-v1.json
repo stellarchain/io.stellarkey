@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "record": {
-    "protocolVersion": 2,
+    "protocolVersion": 3,
     "actionIndex": "0",
     "ledgerSequence": 100,
     "startingLeafIndex": "0",
-    "actionKind": 1,
+    "appends": true,
     "assetIndex": 0,
     "assetKind": 1,
     "assetPayloadFill": 136,
@@ -23,10 +23,11 @@
     "output2CommitmentFill": 9,
     "output2RecipientEnvelopeFill": 10,
     "output2OutgoingEnvelopeFill": 11,
-    "publicValue": 1000,
+    "publicInflow": 1000,
+    "publicOutflow": 0,
     "depositSourceKind": 0,
     "depositSourcePayloadFill": 170,
     "priorRecordHashFill": 85
   },
-  "expectedRecordHash": "f85a4f5f87d67b4b4bb1a61fb379d052cafba10a386fcd9f85e80a7baf48d59d"
+  "expectedRecordHash": "a334caa29c170b7b9c199bf58030261e44c2b28304b87bb221f735613094d712"
 }

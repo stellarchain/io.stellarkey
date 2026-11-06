@@ -210,8 +210,8 @@ const contractWasmSource = existsSync(contractWasmPath)
 if (!existsSync(contractWasmSource)) {
   throw new Error('Private Balance pool Wasm is missing. Run private:generate first.');
 }
-if (r1csInfo.nPubInputs !== 11) {
-  throw new Error(`Expected 11 public inputs, got ${r1csInfo.nPubInputs}`);
+if (r1csInfo.nPubInputs !== 12) {
+  throw new Error(`Expected 12 public inputs, got ${r1csInfo.nPubInputs}`);
 }
 const r1csConstraints = r1csInfo.nConstraints;
 if (typeof r1csInfo.curve.terminate === 'function') await r1csInfo.curve.terminate();
@@ -228,7 +228,7 @@ chmodSync(publicContractWasmPath, 0o644);
 
 const baseManifest = {
   schemaVersion: 1,
-  protocolVersion: 2,
+  protocolVersion: 3,
   artifactVersion: '2.0.0-dev',
   status: 'development',
   minimumStellarProtocol: 25,
@@ -292,7 +292,7 @@ const baseManifest = {
     treeDepth: 64,
     treeArity: 3,
     rootWindowLedgers: 1440,
-    publicInputs: 11,
+    publicInputs: 12,
     notePlaintextBytes: 128,
     recipientEnvelopeBytes: 181,
     outgoingEnvelopeBytes: 157,

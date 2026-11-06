@@ -16,7 +16,7 @@ test('homepage copy matches the current circuit and does not overclaim privacy o
   const metadata = read('src/app/page.tsx');
   const manifest = JSON.parse(read('public/protocol/private-balance/v1/manifest.json'));
   assert.ok(landing.includes(`${manifest.artifacts.r1csConstraints.toLocaleString('en-GB')} constraints`));
-  assert.match(landing, /Protocol V2.*unaudited.*Testnet-only/);
+  assert.match(landing, /Protocol V2\.1.*unaudited.*Testnet-only/);
   assert.match(landing, /public and verifiable.*private witness stays local/);
   assert.match(landing, /Pending-proof holds.*local metadata.*backup/);
   assert.match(landing, /does not process cards/);
@@ -27,7 +27,7 @@ test('homepage copy matches the current circuit and does not overclaim privacy o
   }
 });
 
-test('public copy uses the current release identity and preserves Protocol V2 limits', () => {
+test('public copy uses the current release identity and preserves Protocol V2.1 limits', () => {
   const about = read('src/app/about/page.tsx');
   const page = read('src/app/private/page.tsx');
   const security = read('src/app/security/page.tsx');
@@ -35,20 +35,20 @@ test('public copy uses the current release identity and preserves Protocol V2 li
     assert.doesNotMatch(source, /\b(?:Release|StellarKey)\s+1\.[2-5]\.\d+\b/i);
     assert.match(source, /APPLICATION_VERSION/);
   }
-  assert.match(about, /Protocol V2.*unaudited.*Testnet-only/i);
+  assert.match(about, /Protocol V2\.1.*unaudited.*Testnet-only/i);
   assert.match(about, /canonical archive.*encrypted backup/i);
   assert.match(page, /current application release.*1\.0\.0 application baseline/i);
   assert.doesNotMatch(page, /Peer relaying has been removed/i);
-  assert.match(security, /For release 1\.0\.4.*deferred.*VoiceOver.*NVDA.*not passed/is);
+  assert.match(security, /For release 1\.1\.0.*deferred.*VoiceOver.*NVDA.*not passed/is);
 });
 
-test('the public explainer matches the shipped V2 circuit and proving artifacts', () => {
+test('the public explainer matches the shipped V2.1 circuit and proving artifacts', () => {
   const page = read('src/app/private/page.tsx');
   const manifest = JSON.parse(read('public/protocol/private-balance/v1/manifest.json'));
   const { artifacts, constants } = manifest;
   const number = value => value.toLocaleString('en-GB');
   for (const fact of [
-    `Protocol V${manifest.protocolVersion}`,
+    'Protocol V2.1',
     `${number(artifacts.r1csConstraints)} constraints`,
     `${constants.publicInputs} public inputs`,
     `depth-${constants.treeDepth} tree`,
@@ -80,4 +80,19 @@ test('the public explainer keeps exit, recovery and metadata limits explicit', (
   assert.match(page, /stealth.*public Stellar accounts/is);
   assert.match(page, /public proving files.*request metadata/is);
   assert.doesNotMatch(page, /readable by no one|Your recovery phrase is enough|None of the proving machinery is taken on trust/);
+});
+
+
+test('protocol release V2.1 is displayed without changing wire version 3', async () => {
+  const { formatPrivateProtocolVersion } = await import('../src/features/private-balance/copy.ts');
+  assert.equal(typeof formatPrivateProtocolVersion, 'function');
+  assert.equal(formatPrivateProtocolVersion(3), '2.1');
+  assert.equal(formatPrivateProtocolVersion(2), '2');
+  const manifest = JSON.parse(read('public/protocol/private-balance/v1/manifest.json'));
+  assert.equal(manifest.protocolVersion, 3);
+  for (const file of ['ReceivePrivate.tsx', 'PrivateProtocolSettings.tsx']) {
+    const source = read(`src/features/private-balance/components/${file}`);
+    assert.match(source, /formatPrivateProtocolVersion\(protocolVersion\)/);
+    assert.doesNotMatch(source, /V\$\{protocolVersion\}/);
+  }
 });

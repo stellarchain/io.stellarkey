@@ -686,7 +686,7 @@ test(
       const exportSheet = page.getByRole("dialog", { name: /Export Report/ });
       await exportSheet.waitFor();
       await assertMobileSurface(page, "Tax Records export sheet");
-      await exportSheet.getByLabel("Export format").waitFor();
+      await exportSheet.getByRole('button', { name: /^Export format: / }).waitFor();
       await exportSheet.getByLabel("From").waitFor();
       await exportSheet.getByLabel("To").waitFor();
       const downloadPromise = page.waitForEvent("download");

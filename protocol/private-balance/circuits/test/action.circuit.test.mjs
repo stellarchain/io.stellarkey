@@ -49,10 +49,13 @@ async function normalizeActionInputs(input) {
     outputValue: [...input.outputValue],
     outputRho: [...input.outputRho],
     actionAssetField: input.actionAssetField ?? input.assetField,
-    assetField: String(input.actionKindField) === '2' && !input.preservePublicAsset
-      ? '0'
-      : input.assetField,
+    appendsField: input.appendsField ?? '1',
   };
+  // A quiet action (both settlement legs zero) is an internal transfer and
+  // must publish the zero asset sentinel unless the scenario preserves it.
+  const isQuiet = String(normalized.publicInflowField) === '0'
+    && String(normalized.publicOutflowField) === '0';
+  if (isQuiet && !normalized.preservePublicAsset) normalized.assetField = '0';
   delete normalized.preservePublicAsset;
   const privateFee = normalized.relayerFeeField ?? '0';
   delete normalized.relayerFeeField;
@@ -140,9 +143,10 @@ test('action circuit: every deposit exposes two nonzero nullifiers and commitmen
   await calculator.calculateWitness({
     contextField,
     assetField: '84',
-    actionKindField: '1',
+    publicInflowField: '5000000',
+    publicOutflowField: '0',
+    appendsField: '1',
     anchorRoot: '0',
-    publicValueField: '5000000',
     relayerFeeField: '0',
     actionField,
     nullifier: nullifiers,
@@ -204,9 +208,10 @@ async function buildOneInputTransfer(inputLane = 0, outputLane = 0, actionAssetF
   return {
     contextField,
     assetField: actionAssetField,
-    actionKindField: '2',
+    publicInflowField: '0',
+    publicOutflowField: '0',
+    appendsField: '1',
     anchorRoot: input.merkleRoot,
-    publicValueField: '0',
     relayerFeeField: '0',
     actionField,
     nullifier: atLane(
@@ -360,9 +365,10 @@ test('action circuit: two-input consolidation accepts both input permutations', 
     await calculator.calculateWitness({
       contextField,
       assetField: '84',
-      actionKindField: '2',
+      publicInflowField: '0',
+      publicOutflowField: '0',
+      appendsField: '1',
       anchorRoot: first.merkleRoot,
-      publicValueField: '0',
       relayerFeeField: '0',
       actionField,
       nullifier: lane.nullifier,
@@ -403,8 +409,9 @@ test('action circuit: full withdrawal still emits two randomized dummy commitmen
     rho: '70006',
     value: '0',
   });
-  witness.actionKindField = '3';
-  witness.publicValueField = '10000000';
+  witness.publicOutflowField = '10000000';
+  witness.publicInflowField = '0';
+  witness.appendsField = '1';
   witness.outputCommitment = [firstDummy.noteCommitment, secondDummy.noteCommitment];
   witness.outputOwnerCommitment = [firstDummy.ownerCommitment, secondDummy.ownerCommitment];
   witness.outputValue = ['0', '0'];
@@ -442,9 +449,10 @@ test('action circuit rejects malformed input selectors and lane witnesses', asyn
 test('full-input exits reject value in every output lane even with balanced conservation', async () => {
   const calculator = await getActionCalculator();
   const witness = await normalizeActionInputs(await buildOneInputTransfer());
-  witness.actionKindField = '4';
+  witness.appendsField = '0';
   witness.assetField = witness.actionAssetField;
-  witness.publicValueField = '10000000';
+  witness.publicOutflowField = '10000000';
+  witness.publicInflowField = '0';
   for (let lane = 0; lane < 3; lane++) {
     const output = await evalGadgets({ contextField: witness.contextField,
       ask: String(70001 + lane), nk: String(71001 + lane),
@@ -455,21 +463,31 @@ test('full-input exits reject value in every output lane even with balanced cons
     witness.outputValue[lane] = '0';
   }
   await calculator.calculateWitness(witness);
+  // Exact-input withdrawals use the normal append path while capacity remains.
+  await calculator.calculateWitness({ ...witness, appendsField: '1' });
   for (let lane = 0; lane < 3; lane++) {
     const malformed = structuredClone(witness);
     const output = await evalGadgets({ contextField: witness.contextField,
       ask: String(70001 + lane), nk: String(71001 + lane),
       rho: String(72001 + lane), value: '1' });
-    malformed.publicValueField = '9999999';
+    malformed.publicOutflowField = '9999999';
     malformed.outputValue[lane] = '1';
     malformed.outputCommitment[lane] = output.noteCommitment;
     await assert.rejects(calculator.calculateWitness(malformed), /Assert Failed|Error/);
     // The same balanced witness is valid for an ordinary change-producing withdrawal.
-    malformed.actionKindField = '3';
+    malformed.appendsField = '1';
     await calculator.calculateWitness(malformed);
   }
-  await assert.rejects(calculator.calculateWitness({ ...witness, publicValueField: '9999999' }), /Assert Failed|Error/);
-  await assert.rejects(calculator.calculateWitness({ ...witness, actionKindField: '5' }), /Assert Failed|Error/);
+  await assert.rejects(calculator.calculateWitness({ ...witness, publicOutflowField: '9999999' }), /Assert Failed|Error/);
+  // Both settlement legs at once, and a non-bit appends flag, are unrepresentable.
+  await assert.rejects(
+    calculator.calculateWitness({ ...witness, publicInflowField: '1' }),
+    /Assert Failed|Error/,
+  );
+  await assert.rejects(
+    calculator.calculateWitness({ ...witness, appendsField: '2' }),
+    /Assert Failed|Error/,
+  );
 });
 
 test('action circuit: deposit proof generation and verification', async () => {
@@ -478,9 +496,8 @@ test('action circuit: deposit proof generation and verification', async () => {
   const vk = JSON.parse(readFileSync(vkPath, 'utf8'));
 
   const contextField = '42';
-  const actionKindField = '1'; // Deposit
   const anchorRoot = '0';
-  const publicValueField = '5000000';
+  const publicInflowField = '5000000';
   const actionField = '123456';
 
   const helperRes = await evalGadgets({
@@ -507,9 +524,10 @@ test('action circuit: deposit proof generation and verification', async () => {
   const circuitInputs = {
     contextField,
     assetField: '84',
-    actionKindField,
+    publicInflowField,
+    publicOutflowField: '0',
+    appendsField: '1',
     anchorRoot,
-    publicValueField,
     relayerFeeField: '0',
     actionField,
     nullifier: [
@@ -540,22 +558,24 @@ test('action circuit: deposit proof generation and verification', async () => {
     wasmPath,
     zkeyPath,
   );
-  assert.equal(publicSignals.length, 11);
+  assert.equal(publicSignals.length, 12);
   assert.equal(publicSignals[0], contextField);
   assert.equal(publicSignals[1], '84');
-  assert.equal(publicSignals[2], actionKindField);
+  assert.equal(publicSignals[2], publicInflowField);
+  assert.equal(publicSignals[3], '0');
+  assert.equal(publicSignals[4], '1');
 
   const verified = await snarkjs.groth16.verify(vk, publicSignals, proof);
   assert.ok(verified, 'Deposit proof verified successfully');
 
   // Negative test: mutated public signal fails verification
   const badSignals = [...publicSignals];
-  badSignals[3] = '5000001';
+  badSignals[5] = '5000001';
   const badVerified = await snarkjs.groth16.verify(vk, badSignals, proof);
   assert.ok(!badVerified, 'Mutated proof must fail verification');
 
   const mutatedActionSignals = [...publicSignals];
-  mutatedActionSignals[5] = (BigInt(mutatedActionSignals[5]) + 1n).toString();
+  mutatedActionSignals[6] = (BigInt(mutatedActionSignals[6]) + 1n).toString();
   assert.equal(
     await snarkjs.groth16.verify(vk, mutatedActionSignals, proof),
     false,
@@ -567,8 +587,6 @@ test('action circuit: private transfer proof generation and verification', async
   const vk = JSON.parse(readFileSync(vkPath, 'utf8'));
 
   const contextField = '42';
-  const actionKindField = '2'; // PrivateTransfer
-  const publicValueField = '0';
   const actionField = '654321';
 
   // Input 0: real note
@@ -625,9 +643,10 @@ test('action circuit: private transfer proof generation and verification', async
   const circuitInputs = {
     contextField,
     assetField: '84',
-    actionKindField,
+    publicInflowField: '0',
+    publicOutflowField: '0',
+    appendsField: '1',
     anchorRoot,
-    publicValueField,
     relayerFeeField: '1000',
     actionField,
     nullifier: [inNf0, dummyNullifier(contextField, '903')],
@@ -666,8 +685,6 @@ test('action circuit: withdrawal proof generation and verification', async () =>
   const vk = JSON.parse(readFileSync(vkPath, 'utf8'));
 
   const contextField = '42';
-  const actionKindField = '3'; // Withdraw
-  const publicValueField = '7000000';
   const actionField = '987654';
 
   // Input 0: real note of 10,000,000
@@ -719,9 +736,10 @@ test('action circuit: withdrawal proof generation and verification', async () =>
   const circuitInputs = {
     contextField,
     assetField: '84',
-    actionKindField,
+    publicInflowField: '0',
+    publicOutflowField: '7000000',
+    appendsField: '1',
     anchorRoot,
-    publicValueField,
     relayerFeeField: '2000',
     actionField,
     nullifier: [inNf0, dummyNullifier(contextField, '904')],
@@ -781,9 +799,10 @@ test('action circuit rejects a deposit bound to a nonzero anchor root', async ()
     calculator.calculateWitness({
       contextField,
       assetField: '84',
-      actionKindField: '1',
+      publicInflowField: '5000000',
+      publicOutflowField: '0',
+      appendsField: '1',
       anchorRoot: '1',
-      publicValueField: '5000000',
       relayerFeeField: '0',
       actionField,
       nullifier: [
@@ -878,9 +897,10 @@ test('action circuit rejects inputs controlled by different spending keys', asyn
     calculator.calculateWitness({
       contextField,
       assetField: '84',
-      actionKindField: '2',
+      publicInflowField: '0',
+      publicOutflowField: '0',
+      appendsField: '1',
       anchorRoot: firstWithPath.merkleRoot,
-      publicValueField: '0',
       relayerFeeField: '0',
       actionField,
       nullifier: [firstWithPath.nullifier, secondNullifierUnderSharedNk],
@@ -931,9 +951,10 @@ test('action circuit rejects duplicate real output commitments', async () => {
     calculator.calculateWitness({
       contextField,
       assetField: '84',
-      actionKindField: '2',
+      publicInflowField: '0',
+      publicOutflowField: '0',
+      appendsField: '1',
       anchorRoot: input.merkleRoot,
-      publicValueField: '0',
       relayerFeeField: '0',
       actionField,
       nullifier: [input.nullifier, dummyNullifier(contextField, '907')],

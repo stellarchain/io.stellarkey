@@ -1,5 +1,6 @@
 const CACHE_PREFIX = "stellarkey-shell-";
 const BUILD_REVISION = "development"; // @generated-revision
+const BUILD_RELEASE = null; // @generated-release
 const PRECACHE_PATHS = new Set(["/", "/about", "/privacy", "/terms", "/security", "/support", "/changelog", "/favicon.ico", "/manifest.webmanifest", "/icon.svg", "/icon-192.png?v=2", "/icon-512.png?v=2", "/icon-maskable-192.png?v=2", "/icon-maskable-512.png?v=2", "/icon-maskable-1024.png?v=2", "/apple-icon.png", "/apple-icon1.png", "/apple-icon2.png", "/apple-touch-icon.png"]); // @generated-precache
 const PRIVATE_ARTIFACT_CACHE_PREFIX = "stellarkey-private-artifacts-v2-";
 const PRIVATE_ARTIFACT_REVISION = "development"; // @generated-private-artifact-revision
@@ -61,7 +62,7 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("message", (event) => {
-  if (event.data?.type !== "SKIP_WAITING") return;
+  if (event.data?.type !== "SKIP_WAITING" && event.data?.type !== "GET_RELEASE") return;
   if (!event.source || typeof event.source.url !== "string") return;
   let sourceOrigin;
   try {
@@ -70,6 +71,10 @@ self.addEventListener("message", (event) => {
     return;
   }
   if (sourceOrigin !== self.location.origin) return;
+  if (event.data.type === "GET_RELEASE") {
+    event.ports[0]?.postMessage(BUILD_RELEASE);
+    return;
+  }
   event.waitUntil(self.skipWaiting());
 });
 

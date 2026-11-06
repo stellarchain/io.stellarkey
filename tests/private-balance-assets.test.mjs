@@ -40,7 +40,7 @@ function poolDeployment(overrides = {}) {
 function developmentManifest(assetOverrides = assets()) {
   return validateManifest({
     schemaVersion: 1,
-    protocolVersion: 2,
+    protocolVersion: 3,
     artifactVersion: 'test',
     status: 'development',
     minimumStellarProtocol: 25,
@@ -64,7 +64,7 @@ function developmentManifest(assetOverrides = assets()) {
     },
     constants: {
       treeDepth: 64, treeArity: 3, rootWindowLedgers: 1440,
-      publicInputs: 11,
+      publicInputs: 12,
       notePlaintextBytes: 128, recipientEnvelopeBytes: 181,
       outgoingEnvelopeBytes: 157, outputPackageBytes: 370, outputsPerAction: 3,
       addressPayloadBytes: 84, addressAsciiBytes: 128,

@@ -4,6 +4,7 @@ import { assertDirectPrivateSubmission } from './direct-submission';
 import type { PreparedPrivateActionReview, PrivateActionDraft } from './action-flow';
 import type { PrivateActionSubmission } from './submission';
 import { assertSamePrivateFeePayer, type PrivateFeePayer } from './fee-policy';
+import { privateWithdrawalAppends } from './withdrawal-policy';
 
 export const PRIVATE_CHAINED_APPROVAL_WINDOW_SECONDS = 15 * 60;
 export const MAX_PRIVATE_CHAINED_STEPS = 64;
@@ -197,10 +198,15 @@ export async function runPrivateChainedSend(
       assertDirectPrivateSubmission(review);
       assertSamePrivateFeePayer(input.approval.feePayer, review.transaction.feePayer);
       if (withdrawal && input.draft.kind === 'withdraw') {
+        if (review.withdrawalTreeNextIndex === undefined) {
+          throw new PrivateChainedStepRejectedError('The withdrawal capacity checkpoint is missing.');
+        }
+        const appends = privateWithdrawalAppends(review.withdrawalTreeNextIndex);
         if (review.kind !== 'withdraw' || review.publicRecipient !== input.draft.publicRecipient ||
           review.amountStroops !== withdrawal.amountStroops || review.inputValueStroops !== withdrawal.inputValueStroops ||
           BigInt(review.changeValueStroops) !== BigInt(withdrawal.inputValueStroops) - BigInt(withdrawal.amountStroops) ||
-          review.transaction.method !== (withdrawal.fullInputExit ? 'full_input_exit' : 'withdraw') ||
+          (!appends && !withdrawal.fullInputExit) ||
+          review.transaction.method !== (appends ? 'withdraw' : 'full_input_exit') ||
           !review.selectedNoteIds || review.selectedNoteIds.length !== withdrawal.noteIds.length ||
           new Set(review.selectedNoteIds).size !== withdrawal.noteIds.length ||
           review.selectedNoteIds.some(id => !withdrawal.noteIds.includes(id))) {

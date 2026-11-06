@@ -2,7 +2,7 @@ mod common;
 
 use common::{MockNativeTokenClient, register_pool};
 use private_balance_pool::{
-    AssetStatus, OutputPackage, PoolError, PrivateBalancePoolClient, WithdrawAction,
+    AssetStatus, OutputPackage, PoolError, PrivateBalancePoolClient, ShieldedAction,
 };
 use private_balance_protocol::constants::ROOT_WINDOW_LEDGERS;
 use private_balance_verifier::types::ProofBytes;
@@ -87,12 +87,12 @@ fn test_pool_withdrawal() {
     let proof = proof_bytes.to_contract_proof(&env);
 
     let ctx_bytes = field_str_to_bytes(&wd_item.public_signals[0]);
-    let anchor_root_bytes = field_str_to_bytes(&wd_item.public_signals[3]);
-    let nf0_bytes = field_str_to_bytes(&wd_item.public_signals[6]);
-    let nf1_bytes = field_str_to_bytes(&wd_item.public_signals[7]);
-    let out_cm0_bytes = field_str_to_bytes(&wd_item.public_signals[8]);
-    let out_cm1_bytes = field_str_to_bytes(&wd_item.public_signals[9]);
-    let out_cm2_bytes = field_str_to_bytes(&wd_item.public_signals[10]);
+    let anchor_root_bytes = field_str_to_bytes(&wd_item.public_signals[5]);
+    let nf0_bytes = field_str_to_bytes(&wd_item.public_signals[7]);
+    let nf1_bytes = field_str_to_bytes(&wd_item.public_signals[8]);
+    let out_cm0_bytes = field_str_to_bytes(&wd_item.public_signals[9]);
+    let out_cm1_bytes = field_str_to_bytes(&wd_item.public_signals[10]);
+    let out_cm2_bytes = field_str_to_bytes(&wd_item.public_signals[11]);
 
     let context_field = BytesN::from_array(&env, &ctx_bytes);
     let anchor_root = BytesN::from_array(&env, &anchor_root_bytes);
@@ -113,7 +113,7 @@ fn test_pool_withdrawal() {
             .unwrap();
     });
 
-    let action = WithdrawAction {
+    let action = ShieldedAction {
         action_nonce: BytesN::from_array(&env, &[0x33; 32]),
         anchor_root,
         nullifier_0: nf0.clone(),
@@ -133,9 +133,12 @@ fn test_pool_withdrawal() {
             recipient_envelope: BytesN::from_array(&env, &[0xe1; 181]),
             outgoing_envelope: BytesN::from_array(&env, &[0xe2; 157]),
         },
-        asset_index: 0,
-        public_value: 7_000_000,
-        public_recipient: recipient.clone(),
+        public_inflow: 0,
+        public_outflow: 7_000_000,
+        appends: true,
+        asset_index: Some(0),
+        deposit_source: None,
+        public_recipient: Some(recipient.clone()),
     };
 
     assert_eq!(token_client.balance(&recipient), 0);
@@ -144,7 +147,7 @@ fn test_pool_withdrawal() {
     }));
 
     assert!(
-        pool_client.try_withdraw(&action, &proof).is_err(),
+        pool_client.try_action(&action, &proof).is_err(),
         "underfunded token movement must fail atomically",
     );
     assert_eq!(token_client.balance(&recipient), 0);
@@ -159,7 +162,7 @@ fn test_pool_withdrawal() {
     pool_client.set_asset_status(&0, &AssetStatus::ExitOnly);
 
     // Execute withdraw of 7,000,000 stroops
-    let action_index = pool_client.withdraw(&action, &proof);
+    let action_index = pool_client.action(&action, &proof);
 
     assert_eq!(action_index, 0);
     assert_eq!(token_client.balance(&recipient), 7_000_000);
@@ -186,13 +189,13 @@ fn paused_idle_pool_can_refresh_current_root_and_withdraw() {
     let file: ProofVectorFile = serde_json::from_str(&json_str).expect("parse proofs-v1.json");
     let wd_item = &file.proofs[2];
     let proof = proof_from_snarkjs(&wd_item.proof).to_contract_proof(&env);
-    let anchor_root = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[3]));
-    let nf0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[6]));
-    let nf1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[7]));
-    let out_cm0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[8]));
-    let out_cm1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[9]));
-    let out_cm2 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[10]));
-    let action = WithdrawAction {
+    let anchor_root = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[5]));
+    let nf0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[7]));
+    let nf1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[8]));
+    let out_cm0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[9]));
+    let out_cm1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[10]));
+    let out_cm2 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[11]));
+    let action = ShieldedAction {
         action_nonce: BytesN::from_array(&env, &[0x33; 32]),
         anchor_root: anchor_root.clone(),
         nullifier_0: nf0,
@@ -212,9 +215,12 @@ fn paused_idle_pool_can_refresh_current_root_and_withdraw() {
             recipient_envelope: BytesN::from_array(&env, &[0xe1; 181]),
             outgoing_envelope: BytesN::from_array(&env, &[0xe2; 157]),
         },
-        asset_index: 0,
-        public_value: 7_000_000,
-        public_recipient: recipient.clone(),
+        public_inflow: 0,
+        public_outflow: 7_000_000,
+        appends: true,
+        asset_index: Some(0),
+        deposit_source: None,
+        public_recipient: Some(recipient.clone()),
     };
 
     token_client.mint(&fixture.pool_id, &10_000_000);
@@ -258,7 +264,7 @@ fn paused_idle_pool_can_refresh_current_root_and_withdraw() {
     // transaction or an enabled deposit path.
     env.ledger()
         .set_sequence_number(refreshed.valid_until_ledger + 1);
-    assert_eq!(pool_client.withdraw(&action, &proof), 0);
+    assert_eq!(pool_client.action(&action, &proof), 0);
     assert_eq!(token_client.balance(&recipient), 7_000_000);
 }
 
@@ -284,32 +290,71 @@ fn full_input_exit_survives_saturation_and_shares_replay_protection() {
     let vector = &vectors.proofs[3];
     let field =
         |index: usize| BytesN::from_array(&env, &field_str_to_bytes(&vector.public_signals[index]));
-    let action = WithdrawAction {
+    // The full-input exit is an ordinary settled spend whose appends flag is
+    // false; no separate entrypoint or kind exists any more.
+    let action = ShieldedAction {
         action_nonce: BytesN::from_array(&env, &[0x44; 32]),
-        anchor_root: field(3),
-        nullifier_0: field(6),
-        nullifier_1: field(7),
+        anchor_root: field(5),
+        nullifier_0: field(7),
+        nullifier_1: field(8),
         output_0: OutputPackage {
-            commitment: field(8),
+            commitment: field(9),
             recipient_envelope: BytesN::from_array(&env, &[0xdd; 181]),
             outgoing_envelope: BytesN::from_array(&env, &[0xde; 157]),
         },
         output_1: OutputPackage {
-            commitment: field(9),
+            commitment: field(10),
             recipient_envelope: BytesN::from_array(&env, &[0xdf; 181]),
             outgoing_envelope: BytesN::from_array(&env, &[0xe0; 157]),
         },
         output_2: OutputPackage {
-            commitment: field(10),
+            commitment: field(11),
             recipient_envelope: BytesN::from_array(&env, &[0xe1; 181]),
             outgoing_envelope: BytesN::from_array(&env, &[0xe2; 157]),
         },
-        asset_index: 0,
-        public_value: 10_000_000,
-        public_recipient: recipient.clone(),
+        public_inflow: 0,
+        public_outflow: 10_000_000,
+        appends: false,
+        asset_index: Some(0),
+        deposit_source: None,
+        public_recipient: Some(recipient.clone()),
     };
     let proof = proof_from_snarkjs(&vector.proof).to_contract_proof(&env);
-    let normal_proof = proof_from_snarkjs(&vectors.proofs[2].proof).to_contract_proof(&env);
+    let normal_vector = &vectors.proofs[2];
+    let normal_field = |index: usize| {
+        BytesN::from_array(
+            &env,
+            &field_str_to_bytes(&normal_vector.public_signals[index]),
+        )
+    };
+    let normal_action = ShieldedAction {
+        action_nonce: BytesN::from_array(&env, &[0x45; 32]),
+        anchor_root: normal_field(5),
+        nullifier_0: normal_field(7),
+        nullifier_1: normal_field(8),
+        output_0: OutputPackage {
+            commitment: normal_field(9),
+            recipient_envelope: BytesN::from_array(&env, &[0xd0; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xd1; 157]),
+        },
+        output_1: OutputPackage {
+            commitment: normal_field(10),
+            recipient_envelope: BytesN::from_array(&env, &[0xd2; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xd3; 157]),
+        },
+        output_2: OutputPackage {
+            commitment: normal_field(11),
+            recipient_envelope: BytesN::from_array(&env, &[0xd4; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xd5; 157]),
+        },
+        public_inflow: 0,
+        public_outflow: 7_000_000,
+        appends: true,
+        asset_index: Some(0),
+        deposit_source: None,
+        public_recipient: Some(recipient.clone()),
+    };
+    let normal_proof = proof_from_snarkjs(&normal_vector.proof).to_contract_proof(&env);
     env.as_contract(&fixture.pool_id, || {
         let mut tree = storage::get_tree(&env);
         tree.current_root = action.anchor_root.clone();
@@ -323,21 +368,23 @@ fn full_input_exit_survives_saturation_and_shares_replay_protection() {
     pool.set_asset_status(&0, &AssetStatus::ExitOnly);
     let full = pool.tree_state();
     let before_meta = pool.archive_meta();
-    // A normal withdrawal proof cannot authorize the no-append mode.
+    // The appending action hits the capacity guard before proof verification.
     assert_eq!(
-        pool.try_full_input_exit(&action, &normal_proof),
-        Err(Ok(PoolError::InvalidProof))
-    );
-    assert_eq!(
-        pool.try_withdraw(&action, &proof),
+        pool.try_action(&normal_action, &normal_proof),
         Err(Ok(PoolError::TreeFull))
     );
+    // A non-appending action skips the capacity guard, so a proof bound to the
+    // appending shape fails verification instead.
+    assert_eq!(
+        pool.try_action(&action, &normal_proof),
+        Err(Ok(PoolError::InvalidProof))
+    );
     // Token failure must roll back the archive, nullifiers, and root renewal.
-    assert!(pool.try_full_input_exit(&action, &proof).is_err());
+    assert!(pool.try_action(&action, &proof).is_err());
     assert_eq!(pool.archive_meta(), before_meta);
     assert_eq!(pool.tree_state(), full);
     token.mint(&fixture.pool_id, &10_000_000);
-    let index = pool.full_input_exit(&action, &proof);
+    let index = pool.action(&action, &proof);
     assert_eq!(index, 1u128 << 100);
     assert_eq!(pool.tree_state(), full);
     assert_eq!(pool.archive_meta().action_count, index + 1);
@@ -346,13 +393,13 @@ fn full_input_exit_survives_saturation_and_shares_replay_protection() {
         storage::get_archive_record(&env, index).unwrap()
     });
     assert_eq!(record.starting_leaf_index, TREE_CAPACITY);
-    assert_eq!(record.action_kind, 4);
+    assert!(!record.appends);
     assert_eq!(
-        pool.try_full_input_exit(&action, &proof),
+        pool.try_action(&action, &proof),
         Err(Ok(PoolError::NullifierAlreadySpent))
     );
     assert_eq!(
-        pool.try_withdraw(&action, &normal_proof),
+        pool.try_action(&normal_action, &normal_proof),
         Err(Ok(PoolError::NullifierAlreadySpent))
     );
 }

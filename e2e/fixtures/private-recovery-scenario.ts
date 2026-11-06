@@ -102,16 +102,16 @@ export async function createPrivateRecoveryScenario(development: PrivateBalanceM
   manifest.artifacts.wasmSha256 = await computeSha256(artifacts.get('circuit.wasm')!.slice().buffer);
   manifest.artifacts.zkeySha256 = await computeSha256(artifacts.get('circuit.zkey')!.slice().buffer);
   manifest.artifacts.vkJsonSha256 = await computeSha256(artifacts.get('verification-key.json')!.slice().buffer);
-  const base = { protocolVersion: 2, networkId: decode(manifest.networkId), realmId: decode(manifest.realmId),
+  const base = { protocolVersion: 3, networkId: decode(manifest.networkId), realmId: decode(manifest.realmId),
     poolId: new Uint8Array(StrKey.decodeContract(manifest.poolContractId)), deploymentBindingHash: decode(manifest.deploymentBindingHash),
     addressPrefix: 'tskpay_' as const, assets: manifest.assets.map(({ index, contractId }) => ({ index, contractId })) };
-  const contextHash = computeContextHash(2, base.networkId, base.realmId, base.poolId);
+  const contextHash = computeContextHash(3, base.networkId, base.realmId, base.poolId);
   const contextField = computeContextField(contextHash);
   const actors = await Promise.all(names.map(async (name, index) => {
     const override = name === 'bob' ? options.bob : undefined;
     const accountPublicKey = new Uint8Array(override ? StrKey.decodeEd25519PublicKey(override.publicKey) : Keypair.fromRawEd25519Seed(bytes(11 + index)).rawPublicKey());
     const keyContext = { ...base, accountPublicKey, contextField };
-    const esk = await deriveExpandedSpendingKey(override?.root ?? new Uint8Array(64).fill(21 + index), 2, base.networkId, base.realmId, base.poolId, accountPublicKey, contextField);
+    const esk = await deriveExpandedSpendingKey(override?.root ?? new Uint8Array(64).fill(21 + index), 3, base.networkId, base.realmId, base.poolId, accountPublicKey, contextField);
     const diversifier = Uint8Array.of(0, 0, 0, index + 1);
     const identity = await deriveDiversifiedAddressKeys(esk.baseOwnerCommitment, esk.hpkePrivateKey, diversifier);
     const address = encodePrivateAddress({ deploymentTag: derivePrivateAddressDeploymentTag(base.deploymentBindingHash), diversifier,
@@ -136,13 +136,13 @@ export async function createPrivateRecoveryScenario(development: PrivateBalanceM
     const fields = { ...action };
     const actionIndex = BigInt(records.length);
     const startingLeafIndex = tree.nextIndex;
-    const record = { ...fields, actionKind: action.kind, actionIndex, ledgerSequence: 100 + records.length,
-      startingLeafIndex, treeRootAfter: (action.kind === 4 ? tree.currentRoot : await appendCommitments(tree, action.outputs.map(output => output.cm))).slice() };
-    transcriptHead = computeRecordHash(record, 2, transcriptHead);
+    const record = { ...fields, appends: action.appends, actionIndex, ledgerSequence: 100 + records.length,
+      startingLeafIndex, treeRootAfter: (!action.appends ? tree.currentRoot : await appendCommitments(tree, action.outputs.map(output => output.cm))).slice() };
+    transcriptHead = computeRecordHash(record, 3, transcriptHead);
     records.push(record);
   };
   const head = (): ArchiveHeadState => ({ latestLedger: 100 + records.length,
-    config: { protocolVersion: 2, networkId: base.networkId, realmId: base.realmId, guardian: manifest.guardianAddress,
+    config: { protocolVersion: 3, networkId: base.networkId, realmId: base.realmId, guardian: manifest.guardianAddress,
       initialAssetAdmin: manifest.assetAdminAddress, poseidon2ParameterHash: bytes(1), circuitHash: bytes(2), verificationKeyHash: bytes(3),
       treeDepth: manifest.constants.treeDepth, rootWindowLedgers: manifest.constants.rootWindowLedgers,
       deploymentBindingHash: base.deploymentBindingHash, contextHash, contextField },
@@ -261,11 +261,17 @@ export async function createPrivateRecoveryScenario(development: PrivateBalanceM
         }
         const invocation = operation.body.invokeHostFunctionOp.hostFunction.invokeContract;
         const auth: xdr.SorobanAuthorizationEntry[] = [];
-        if (invocation.functionName.toString() === 'deposit') {
-          const fields = scValToNative(invocation.args[0]) as { asset_index: number; public_value: bigint; deposit_source: string };
+        if (invocation.functionName.toString() !== 'action') {
+          throw new Error('Synthetic simulation requires the V3 action entrypoint');
+        }
+        const fields = scValToNative(invocation.args[0]) as { asset_index?: number; public_inflow: bigint; deposit_source?: string };
+        if (fields.public_inflow > 0n) {
+          if (fields.asset_index === undefined || fields.deposit_source === undefined) {
+            throw new Error('Synthetic deposit is missing its settlement endpoint');
+          }
           const transferOperation = new Contract(manifest.assets[fields.asset_index].contractId).call('transfer',
             Address.fromString(fields.deposit_source).toScVal(), Address.fromString(manifest.poolContractId).toScVal(),
-            nativeToScVal(fields.public_value));
+            nativeToScVal(fields.public_inflow));
           if (transferOperation.body.type !== 'invokeHostFunction' || transferOperation.body.invokeHostFunctionOp.hostFunction.type !== 'hostFunctionTypeInvokeContract') {
             throw new Error('Synthetic deposit requires a token transfer invocation');
           }

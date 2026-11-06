@@ -17,7 +17,7 @@ const TEST_PRIVATE_ADDRESS = encodePrivateAddress({
 
 const manifest = {
   schemaVersion: 1,
-  protocolVersion: 2,
+  protocolVersion: 3,
   artifactVersion: '1.0.0-dev',
   status: 'development',
   minimumStellarProtocol: 25,
@@ -56,7 +56,7 @@ const manifest = {
     treeDepth: 64,
     treeArity: 3,
     rootWindowLedgers: 1440,
-    publicInputs: 11,
+    publicInputs: 12,
     notePlaintextBytes: 128,
     recipientEnvelopeBytes: 181,
     outgoingEnvelopeBytes: 157,

@@ -141,7 +141,7 @@ export function computeDeploymentBindingHash(input) {
 function fixtureBinding({ realmId, poolContractId, guardianAddress, assetAdminAddress }) {
   const artifacts = protocolArtifactHashes();
   return {
-    protocolVersion: 2,
+    protocolVersion: 3,
     networkId: TESTNET_NETWORK_ID,
     realmId,
     poolContractId,
@@ -157,7 +157,7 @@ export function buildConstructorArguments(input) {
   const binding = fixtureBinding(input);
   const deploymentBindingHash = computeDeploymentBindingHash(binding);
   return [
-    '--protocol_version', '2',
+    '--protocol_version', '3',
     '--network_id', TESTNET_NETWORK_ID,
     '--realm_id', input.realmId,
     '--guardian', input.guardianAddress,

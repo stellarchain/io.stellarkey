@@ -66,9 +66,9 @@ async function workerHarness(t) {
 }
 
 async function identityFor(t, manifest, diversifier) {
-  const contextHash = computeContextHash(2, bytes(manifest.networkId), bytes(manifest.realmId), StrKey.decodeContract(manifest.poolContractId));
+  const contextHash = computeContextHash(3, bytes(manifest.networkId), bytes(manifest.realmId), StrKey.decodeContract(manifest.poolContractId));
   const contextField = computeContextField(contextHash);
-  const spendingKey = await deriveExpandedSpendingKey(root(), 2, bytes(manifest.networkId), bytes(manifest.realmId),
+  const spendingKey = await deriveExpandedSpendingKey(root(), 3, bytes(manifest.networkId), bytes(manifest.realmId),
     StrKey.decodeContract(manifest.poolContractId), StrKey.decodeEd25519PublicKey(account), contextField);
   const identity = await deriveDiversifiedAddressKeys(spendingKey.baseOwnerCommitment, spendingKey.hpkePrivateKey, diversifier);
   t.after(() => { identity.hpkePrivateKey.fill(0); wipePrivateBalanceSpendingKey(spendingKey); });
@@ -133,7 +133,7 @@ test('explicit address rotation retains issuance history and current-format rece
   for (const address of [legacy.address, replacement.address]) {
     const decoded = await decodePrivateAddress(address, legacy.prefix);
     const rho = new Uint8Array(32).fill(8);
-    const note = { protocolVersion: 2, flags: 0, value: 1n, diversifier: decoded.diversifier,
+    const note = { protocolVersion: 3, flags: 0, value: 1n, diversifier: decoded.diversifier,
       ownerCommitment: decoded.ownerCommitment, rho, memoLength: 0, memo: new Uint8Array(32), assetIndex: 0, reserved: new Uint8Array(11) };
     const commitment = computeCommitment(legacy.contextField, assetField, decoded.ownerCommitment, note.value, rho);
     const nonce = new Uint8Array(32).fill(9);

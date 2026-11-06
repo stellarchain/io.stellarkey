@@ -32,7 +32,7 @@ function requireU32(value: number, name: string): void {
 }
 
 function validateNote(note: NotePlaintext): void {
-  if (note.protocolVersion !== 2) throw new Error('Unsupported note protocol version');
+  if (note.protocolVersion !== 3) throw new Error('Unsupported note protocol version');
   if (note.flags !== 0 && note.flags !== 1) throw new Error('Unsupported note flags');
   if (
     note.value < 0n

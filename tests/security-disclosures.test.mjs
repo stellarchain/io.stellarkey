@@ -35,7 +35,7 @@ test("merchant PIN UI states its per-window deterrence boundary", () => {
   assert.match(staff, /local till deterrent/i);
 });
 
-test("the remaining Trezor advisory boundary distinguishes package counts and remote code", () => {
+test("Trezor 10 disclosures distinguish the installed client, development reference and hosted Suite core", () => {
   const security = read("src/app/security/page.tsx");
   const checklist = read("docs/release-checklist.md");
   const readme = read("README.md");
@@ -43,13 +43,25 @@ test("the remaining Trezor advisory boundary distinguishes package counts and re
   const packageJson = JSON.parse(read("package.json"));
   const combined = `${security}\n${checklist}\n${readme}`;
 
-  assert.equal(packageJson.dependencies["@trezor/connect-web"], "^9.7.3");
-  assert.ok(/ten low-severity vulnerable packages/.test(security), 'public security copy counts vulnerable packages');
-  assert.ok(/one.*elliptic.*advisory/is.test(security), 'public security copy identifies the single remaining advisory');
-  assert.ok(/override.*does not.*(?:prebundl|embedded).*remote/is.test(security), 'public security copy limits the override to installed dependencies');
-  assert.doesNotMatch(security, /ten low-severity\s*<code>elliptic<\/code>\s*advisories/i);
-  assert.match(combined, /Bitcoin|UTXO/i);
+  assert.equal(packageJson.dependencies["@trezor/connect-web"], "^10.0.1");
+  assert.equal(packageJson.dependencies["@trezor/connect-core"], undefined);
+  assert.equal(packageJson.devDependencies["@trezor/connect-core"], "10.0.1");
+  assert.equal(packageJson.overrides['@stellar/stellar-sdk@14.2.0'], undefined);
+  assert.match(security, /zero vulnerable packages/i);
+  assert.match(security, /reference.*development tests.*not bundled/is);
+  assert.match(security, /do not establish.*deployed version.*hosted Suite service/is);
+  assert.doesNotMatch(security, /ten low-severity|embedded parser remains vulnerable/i);
+  assert.match(combined, /physical-device compatibility|physical-device checks/i);
   assert.match(combined, /high and critical.*release-blocking/is);
   assert.match(security, /optional.*laz(?:y|ily)|laz(?:y|ily).*optional/is);
   assert.match(hardware, /import\("@trezor\/connect-web"\)/);
+});
+
+test("release 1.1.0 records the fresh manual deferral without claiming a pass", () => {
+  for (const source of [read("src/app/security/page.tsx"), read("docs/release-checklist.md")]) {
+    assert.match(source, /(?:release 1\.1\.0|v1\.1\.0 release exception)/i);
+    assert.match(source, /unperformed or unconfirmed,[\s\S]*?not passed/i);
+    assert.match(source, /does not waive automated gates/i);
+    assert.match(source, /does not approve real-value Private Payments/i);
+  }
 });

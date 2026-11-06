@@ -69,6 +69,7 @@ export function renderServiceWorker({
   html,
   htmlDocuments = html,
   revision,
+  release = null,
   privateArtifacts = [],
   privateArtifactRevision = revision,
 }) {
@@ -80,11 +81,13 @@ export function renderServiceWorker({
   }
   const paths = discoverShellPaths(htmlDocuments);
   const revisionLine = /^const BUILD_REVISION = .*; \/\/ @generated-revision$/m;
+  const releaseLine = /^const BUILD_RELEASE = .*; \/\/ @generated-release$/m;
   const precacheLine = /^const PRECACHE_PATHS = .*; \/\/ @generated-precache$/m;
   const privateRevisionLine = /^const PRIVATE_ARTIFACT_REVISION = .*; \/\/ @generated-private-artifact-revision$/m;
   const privateArtifactsLine = /^const PRIVATE_ARTIFACT_HASHES = .*; \/\/ @generated-private-artifacts$/m;
   if (
     !revisionLine.test(template) ||
+    !releaseLine.test(template) ||
     !precacheLine.test(template) ||
     !privateRevisionLine.test(template) ||
     !privateArtifactsLine.test(template)
@@ -93,6 +96,7 @@ export function renderServiceWorker({
   }
   return template
     .replace(revisionLine, `const BUILD_REVISION = ${JSON.stringify(revision)}; // @generated-revision`)
+    .replace(releaseLine, `const BUILD_RELEASE = ${JSON.stringify(release)}; // @generated-release`)
     .replace(
       precacheLine,
       `const PRECACHE_PATHS = new Set(${JSON.stringify(paths)}); // @generated-precache`,
@@ -146,20 +150,23 @@ async function buildRevision(template, shellPaths) {
 }
 
 export async function generateServiceWorker() {
-  const [template, htmlDocuments, privateManifestSource] = await Promise.all([
+  const [template, htmlDocuments, privateManifestSource, releaseSource] = await Promise.all([
     readFile(templatePath, "utf8"),
     Promise.all(
       PUBLIC_DOCUMENT_PATHS.map(async (route) => readFile(await resolveOutputFile(route), "utf8")),
     ),
     readFile(privateManifestPath, "utf8"),
+    readFile(path.join(outputRoot, "release.json"), "utf8"),
   ]);
   const privateManifest = JSON.parse(privateManifestSource);
   const privateArtifacts = privateArtifactsFromManifest(privateManifest);
   const revision = await buildRevision(template, discoverShellPaths(htmlDocuments));
+  const { commit, version, sourceTree } = JSON.parse(releaseSource);
   const worker = renderServiceWorker({
     template,
     htmlDocuments,
     revision,
+    release: { commit, version, sourceTree },
     privateArtifacts,
     privateArtifactRevision: privateArtifactRevision(privateManifest, privateArtifacts),
   });

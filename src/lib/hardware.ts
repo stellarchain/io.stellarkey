@@ -58,9 +58,8 @@ let trezorConnectPromise: Promise<TrezorConnectApi> | null = null;
  * touches `window`/USB at import time, so it must never run during
  * SSR/prerender. `warmTrezorConnect()` kicks this off when a Trezor UI opens
  * so the user's actual click can start the device interaction immediately.
- * The popup-hosted core keeps WebUSB on Trezor's own origin. The iframe core
- * cannot reach local transports reliably under current browser Local Network
- * Access restrictions and can leave device calls pending indefinitely.
+ * Suite Web owns the device transport and approval UI. Keeping this explicit
+ * preserves the browser flow without probing a local Suite desktop connection.
  */
 function loadTrezorConnect(): Promise<TrezorConnectApi> {
   if (!trezorConnectPromise) {
@@ -74,8 +73,7 @@ function loadTrezorConnect(): Promise<TrezorConnectApi> {
               typeof window !== "undefined" ? window.location.origin : BRAND_ORIGIN,
             appName: BRAND_NAME,
           },
-          coreMode: "popup",
-          interactionTimeout: 120,
+          coreMode: "suite-web",
         });
         return tc;
       })
@@ -95,10 +93,11 @@ export function warmTrezorConnect(): void {
   });
 }
 
-function trezorError(payload: unknown, fallback: string): Error {
+function trezorError(serializedError: unknown, fallback: string): Error {
   const msg =
-    payload && typeof payload === "object" && "error" in payload
-      ? String((payload as { error: unknown }).error)
+    serializedError && typeof serializedError === "object" && "message" in serializedError
+      && typeof serializedError.message === "string" && serializedError.message.trim()
+      ? serializedError.message
       : fallback;
   return new Error(msg);
 }
@@ -114,7 +113,7 @@ export async function connectTrezorDevice(index = 0): Promise<HardwareAccountInf
   const tc = await loadTrezorConnect();
   const res = await tc.stellarGetAddress({ path, showOnTrezor: true });
   if (!res.success) {
-    throw trezorError(res.payload, "Trezor address request was rejected.");
+    throw trezorError(res.error, "Trezor address request was rejected.");
   }
   if (!StrKey.isValidEd25519PublicKey(res.payload.address)) {
     throw new Error("Trezor returned an invalid Stellar address.");
@@ -140,7 +139,7 @@ export async function verifyTrezorAddress(path: string, expectedPublicKey: strin
   const tc = await loadTrezorConnect();
   const res = await tc.stellarGetAddress({ path, showOnTrezor: true });
   if (!res.success) {
-    throw trezorError(res.payload, "Trezor address verification was rejected.");
+    throw trezorError(res.error, "Trezor address verification was rejected.");
   }
   if (!StrKey.isValidEd25519PublicKey(res.payload.address)) {
     throw new Error("Trezor returned an invalid Stellar address.");
@@ -351,7 +350,7 @@ function toTrezorOperation(
         trustor: op.trustor,
         assetCode: op.assetCode,
         assetType: op.assetCode.length <= 4 ? 1 : 2,
-        authorize: op.authorize === 1,
+        authorize: op.authorize,
       };
     case "setOptions":
       return {
@@ -446,7 +445,7 @@ export async function signTrezorTransaction(
     },
   });
   if (!res.success) {
-    throw trezorError(res.payload, "Trezor signing was rejected.");
+    throw trezorError(res.error, "Trezor signing was rejected.");
   }
   const publicKeyBytes = Buffer.from(StrKey.decodeEd25519PublicKey(expectedPublicKey));
   const returnedPublicKey = (res.payload as { publicKey?: unknown }).publicKey;

@@ -1,5 +1,67 @@
 # Dependency security evidence
 
+## 2026-11-05 — Trezor Suite Web and application 1.1.0 preparation
+
+The application now uses the MIT-licensed `@trezor/connect-web 10.0.1` thin client in explicit `suite-web` mode. This retains a browser approval flow without probing the local Suite desktop WebSocket. The document CSP permits `https://suite.trezor.io` as a frame source, and the host keeps `same-origin-allow-popups`. Trezor Suite owns the device transport and approval UI; the application lockfile does not pin the hosted service.
+
+The matching `@trezor/connect-core 10.0.1` is a development-only reference for actual schema and device-protocol tests. Its `@trezor/network-stellar 10.0.1` dependency pins Stellar SDK 17.0.0 upstream; a scoped override uses the application's reviewed 17.3.0 SDK. Tests exercise its installed metadata resolver, transaction builders, decimal conversion, strict operation schema and device messages. They cover numeric trust authorization, serialized cancellation errors, signer identity, signature verification and revoked-session cleanup. These synthetic checks do not establish physical-device behavior or the deployed Suite version.
+
+The old SDK-14 TOML and protobuf overrides are removed with the Trezor 9 production graph. Compatible patches update HTTP redirects, IP classification, brace expansion, source maps, TOML parsing and schema tooling. Fresh production npm audit reports **zero vulnerable packages and zero advisories**. The full graph reports **eight moderate vulnerable packages across one distinct minimatch advisory**, with no high or critical findings. The circuit tooling separately reports **15 low vulnerable packages across one distinct elliptic advisory**; its audit is independent of the application graph. Package findings include transitive parents and are not independent advisory counts. The current high-severity audit gates remain unchanged.
+
+The exact micromatch-scoped braces recursion guard already reviewed on upstream main is retained even though the current audit omits that finding. Actual Next glob parsing and lint-rule tests verify the bound and ordinary behavior.
+
+Nested browser CLI lock maintenance and its strict historical HPKE verifier are reconciled from upstream main. The original deployment-lock digest and every HPKE record stay fixed; current toolchain provenance binds the maintained locks and verifier. No network deployment, signing or transaction submission is authorized by this preparation.
+
+The compatible ctutils 0.4.4 patch addresses [RUSTSEC-2026-0385](https://rustsec.org/advisories/RUSTSEC-2026-0385.html). An isolated canonical build produced exactly the existing pool Wasm SHA-256 after that patch. The separate crypto-bigint 0.5.5 advisory [RUSTSEC-2026-0387](https://rustsec.org/advisories/RUSTSEC-2026-0387.html) remains in Soroban host dependencies. The currently advertised crypto-bigint fix is 0.7.6, outside those parent requirements. The Nov 5 verification did not ignore this advisory and failed its advisory gate. No cryptographic replacement or major Soroban upgrade was made. The maintainer subsequently authorized the specific exception below; application, circuit, reproducibility, clean-worktree and human/device gates remain separate requirements.
+
+### Maintainer-approved Rust advisory exception — 2026-11-06
+
+The maintainer explicitly requested skipping RUSTSEC-2026-0387 for the 1.1.0
+candidate. `protocol/private-balance/deny.toml` now ignores that advisory ID with
+the approval date, affected crypto-bigint 0.5.5/Soroban host chain and a reason
+to revisit the exception when a compatible upstream fix is available. This is
+an accepted advisory exception, not a dependency fix. The two pre-existing
+advisory exceptions, other advisory checks, bans, licenses and source policy
+were unchanged. No crate version or compiled protocol artifact changed.
+
+At 09:24 UTC, `npm run verify:private-rust` passed with 57 functional tests and
+two default opt-in skips. Cargo-deny 0.20.2 reported all four policy categories
+passing. A control run using the previous configuration and the same locked
+dependency graph failed only on RUSTSEC-2026-0387. Existing contract test
+snapshots were backed up before the rerun and remained byte-identical.
+
+### PR integration and validation — 2026-11-06
+
+All ten open PR dependency changes are incorporated into the local 1.1.0
+candidate. GitHub still showed the same open PR heads at 01:25 UTC, and v1.0.4
+remained the latest published release. These are local integration results;
+the PRs have not been merged or closed.
+
+| PRs | Local integration |
+| --- | --- |
+| #28, #36 | Trezor Connect 10.0.1 with Suite Web and the new response/operation schema. |
+| #35, #38 | Next.js 16.4.2 supersedes the 16.4.1-only update, alongside Stellar SDK 17.3.0 and React/React DOM 19.3.1. |
+| #32 | axe 4.14.0, Playwright 1.64.1, Node types 22.20.5 range and matching Next lint configuration. |
+| #39 | follow-redirects 1.16.2, tested through the installed Stellar HTTP parent. |
+| #37 | ip-address 10.7.6 supersedes 10.7.5, tested through the installed Trezor reference SOCKS parent. |
+| #31 | SHA-pinned setup-node 7.1.0. |
+| #29 | SHA-pinned upload-artifact 7.0.2. |
+| #30 | SHA-pinned download-artifact 8.0.2. |
+
+The full application verification passed at 01:39 UTC. Detailed results,
+snapshot identity, intentional skips, the earlier Rust failure and manual
+release requirements are recorded in the [release checklist](release-checklist.md).
+The lockfile SHA-256 identities for this evidence are:
+
+| Lockfile | SHA-256 |
+| --- | --- |
+| Root npm | `4d0532930f4d1cb5b5927835024922ad79ba33337cfa2193c4c18cd134081940` |
+| Rust workspace | `c5ee622f47109654603aa119e47f2c6953b7bc1c6dc9dffafa9f97359e564b0b` |
+| Circuit npm | `1bca41795ed9f68cfb38aa14a4da2961dba5bca894427c2d3ece863eec23b7ee` |
+| Browser-protocol npm | `f1cc01b02c5de27ee6fc41c58482f2b83f584cd73e2b80d8cd47cb7d17e61ed7` |
+
+The sections below record historical Trezor 9 evidence and limitations; they do not describe the current production client graph.
+
 ## 2026-10-11 — protocol CLI brace expansion and deployment provenance
 
 PR #25 updates the standalone browser package's installed CLI chain:
@@ -92,6 +154,7 @@ changed only the toolchain lockfile digest in two manifests, the manifest digest
 in the public catalogue, and two generated TypeScript pins. Cryptographic artifacts
 and deployment evidence are unchanged. A focused pass alone is not complete
 application or release verification.
+
 
 ## 2026-09-12 — development parser and complete application audit
 

@@ -34,20 +34,6 @@ if (typeof window !== "undefined") {
 
 
 
-export interface DepositAction {
-  action_nonce: Buffer;
-  anchor_root: Buffer;
-  asset_index: u32;
-  deposit_source: string;
-  nullifier_0: Buffer;
-  nullifier_1: Buffer;
-  output_0: OutputPackage;
-  output_1: OutputPackage;
-  output_2: OutputPackage;
-  public_value: u64;
-}
-
-
 export interface OutputPackage {
   commitment: Buffer;
   outgoing_envelope: Buffer;
@@ -55,29 +41,28 @@ export interface OutputPackage {
 }
 
 
-export interface TransferAction {
+/**
+ * The one calldata shape for every shielded action. Protocol V3 publishes no
+ * action kind: the settlement legs classify the action (inflow-only is a
+ * deposit, outflow-only a withdrawal, both zero an internal transfer) and
+ * `appends` selects whether the three commitments enter the tree. Which legs
+ * carry value is already visible from the ledger token movement, so these
+ * public fields add no information beyond it, while a published kind did.
+ */
+export interface ShieldedAction {
   action_nonce: Buffer;
   anchor_root: Buffer;
+  appends: boolean;
+  asset_index: Option<u32>;
+  deposit_source: Option<string>;
   nullifier_0: Buffer;
   nullifier_1: Buffer;
   output_0: OutputPackage;
   output_1: OutputPackage;
   output_2: OutputPackage;
-  public_value: u64;
-}
-
-
-export interface WithdrawAction {
-  action_nonce: Buffer;
-  anchor_root: Buffer;
-  asset_index: u32;
-  nullifier_0: Buffer;
-  nullifier_1: Buffer;
-  output_0: OutputPackage;
-  output_1: OutputPackage;
-  output_2: OutputPackage;
-  public_recipient: string;
-  public_value: u64;
+  public_inflow: u64;
+  public_outflow: u64;
+  public_recipient: Option<string>;
 }
 
 export const PoolError = {
@@ -119,9 +104,9 @@ export interface ArchiveMeta {
 
 export interface ArchiveRecord {
   action_index: u128;
-  action_kind: u32;
   action_nonce: Buffer;
   anchor_root: Buffer;
+  appends: boolean;
   asset: Option<string>;
   asset_index: Option<u32>;
   deposit_source: Option<string>;
@@ -131,8 +116,9 @@ export interface ArchiveRecord {
   output_0: OutputPackage;
   output_1: OutputPackage;
   output_2: OutputPackage;
+  public_inflow: u64;
+  public_outflow: u64;
   public_recipient: Option<string>;
-  public_value: u64;
   starting_leaf_index: u128;
   tree_root_after: Buffer;
 }
@@ -199,24 +185,17 @@ export interface Client {
   asset: ({index}: {index: u32}, options?: MethodOptions) => Promise<AssembledTransaction<Result<AssetConfig>>>
 
   /**
+   * Construct and simulate a action transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * The single shielded-action entrypoint. The settlement legs classify the
+   * action: inflow-only deposits, outflow-only withdraws (with or without
+   * change commitments), and two zero legs transfer internally.
+   */
+  action: ({action, proof}: {action: ShieldedAction, proof: Proof}, options?: MethodOptions) => Promise<AssembledTransaction<Result<u128>>>
+
+  /**
    * Construct and simulate a config transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
   config: (options?: MethodOptions) => Promise<AssembledTransaction<PoolConfig>>
-
-  /**
-   * Construct and simulate a deposit transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   */
-  deposit: ({action, proof}: {action: DepositAction, proof: Proof}, options?: MethodOptions) => Promise<AssembledTransaction<Result<u128>>>
-
-  /**
-   * Construct and simulate a transfer transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   */
-  transfer: ({action, proof}: {action: TransferAction, proof: Proof}, options?: MethodOptions) => Promise<AssembledTransaction<Result<u128>>>
-
-  /**
-   * Construct and simulate a withdraw transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   */
-  withdraw: ({action, proof}: {action: WithdrawAction, proof: Proof}, options?: MethodOptions) => Promise<AssembledTransaction<Result<u128>>>
 
   /**
    * Construct and simulate a add_asset transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -260,12 +239,6 @@ export interface Client {
    * Construct and simulate a deposits_paused transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
   deposits_paused: (options?: MethodOptions) => Promise<AssembledTransaction<boolean>>
-
-  /**
-   * Construct and simulate a full_input_exit transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-   * Consumes selected inputs completely, without reserving output capacity.
-   */
-  full_input_exit: ({action, proof}: {action: WithdrawAction, proof: Proof}, options?: MethodOptions) => Promise<AssembledTransaction<Result<u128>>>
 
   /**
    * Construct and simulate a set_asset_status transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -312,10 +285,8 @@ export class Client extends ContractClient {
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAAAQAAAAAAAAAAAAAADURlcG9zaXRBY3Rpb24AAAAAAAAKAAAAAAAAAAxhY3Rpb25fbm9uY2UAAAPuAAAAIAAAAAAAAAALYW5jaG9yX3Jvb3QAAAAD7gAAACAAAAAAAAAAC2Fzc2V0X2luZGV4AAAAAAQAAAAAAAAADmRlcG9zaXRfc291cmNlAAAAAAATAAAAAAAAAAtudWxsaWZpZXJfMAAAAAPuAAAAIAAAAAAAAAALbnVsbGlmaWVyXzEAAAAD7gAAACAAAAAAAAAACG91dHB1dF8wAAAH0AAAAA1PdXRwdXRQYWNrYWdlAAAAAAAAAAAAAAhvdXRwdXRfMQAAB9AAAAANT3V0cHV0UGFja2FnZQAAAAAAAAAAAAAIb3V0cHV0XzIAAAfQAAAADU91dHB1dFBhY2thZ2UAAAAAAAAAAAAADHB1YmxpY192YWx1ZQAAAAY=",
-        "AAAAAQAAAAAAAAAAAAAADU91dHB1dFBhY2thZ2UAAAAAAAADAAAAAAAAAApjb21taXRtZW50AAAAAAPuAAAAIAAAAAAAAAARb3V0Z29pbmdfZW52ZWxvcGUAAAAAAAPuAAAAnQAAAAAAAAAScmVjaXBpZW50X2VudmVsb3BlAAAAAAPuAAAAtQ==",
-        "AAAAAQAAAAAAAAAAAAAADlRyYW5zZmVyQWN0aW9uAAAAAAAIAAAAAAAAAAxhY3Rpb25fbm9uY2UAAAPuAAAAIAAAAAAAAAALYW5jaG9yX3Jvb3QAAAAD7gAAACAAAAAAAAAAC251bGxpZmllcl8wAAAAA+4AAAAgAAAAAAAAAAtudWxsaWZpZXJfMQAAAAPuAAAAIAAAAAAAAAAIb3V0cHV0XzAAAAfQAAAADU91dHB1dFBhY2thZ2UAAAAAAAAAAAAACG91dHB1dF8xAAAH0AAAAA1PdXRwdXRQYWNrYWdlAAAAAAAAAAAAAAhvdXRwdXRfMgAAB9AAAAANT3V0cHV0UGFja2FnZQAAAAAAAAAAAAAMcHVibGljX3ZhbHVlAAAABg==",
-        "AAAAAQAAAAAAAAAAAAAADldpdGhkcmF3QWN0aW9uAAAAAAAKAAAAAAAAAAxhY3Rpb25fbm9uY2UAAAPuAAAAIAAAAAAAAAALYW5jaG9yX3Jvb3QAAAAD7gAAACAAAAAAAAAAC2Fzc2V0X2luZGV4AAAAAAQAAAAAAAAAC251bGxpZmllcl8wAAAAA+4AAAAgAAAAAAAAAAtudWxsaWZpZXJfMQAAAAPuAAAAIAAAAAAAAAAIb3V0cHV0XzAAAAfQAAAADU91dHB1dFBhY2thZ2UAAAAAAAAAAAAACG91dHB1dF8xAAAH0AAAAA1PdXRwdXRQYWNrYWdlAAAAAAAAAAAAAAhvdXRwdXRfMgAAB9AAAAANT3V0cHV0UGFja2FnZQAAAAAAAAAAAAAQcHVibGljX3JlY2lwaWVudAAAABMAAAAAAAAADHB1YmxpY192YWx1ZQAAAAY=",
+      new ContractSpec([ "AAAAAQAAAAAAAAAAAAAADU91dHB1dFBhY2thZ2UAAAAAAAADAAAAAAAAAApjb21taXRtZW50AAAAAAPuAAAAIAAAAAAAAAARb3V0Z29pbmdfZW52ZWxvcGUAAAAAAAPuAAAAnQAAAAAAAAAScmVjaXBpZW50X2VudmVsb3BlAAAAAAPuAAAAtQ==",
+        "AAAAAQAAAbRUaGUgb25lIGNhbGxkYXRhIHNoYXBlIGZvciBldmVyeSBzaGllbGRlZCBhY3Rpb24uIFByb3RvY29sIFYzIHB1Ymxpc2hlcyBubwphY3Rpb24ga2luZDogdGhlIHNldHRsZW1lbnQgbGVncyBjbGFzc2lmeSB0aGUgYWN0aW9uIChpbmZsb3ctb25seSBpcyBhCmRlcG9zaXQsIG91dGZsb3ctb25seSBhIHdpdGhkcmF3YWwsIGJvdGggemVybyBhbiBpbnRlcm5hbCB0cmFuc2ZlcikgYW5kCmBhcHBlbmRzYCBzZWxlY3RzIHdoZXRoZXIgdGhlIHRocmVlIGNvbW1pdG1lbnRzIGVudGVyIHRoZSB0cmVlLiBXaGljaCBsZWdzCmNhcnJ5IHZhbHVlIGlzIGFscmVhZHkgdmlzaWJsZSBmcm9tIHRoZSBsZWRnZXIgdG9rZW4gbW92ZW1lbnQsIHNvIHRoZXNlCnB1YmxpYyBmaWVsZHMgYWRkIG5vIGluZm9ybWF0aW9uIGJleW9uZCBpdCwgd2hpbGUgYSBwdWJsaXNoZWQga2luZCBkaWQuAAAAAAAAAA5TaGllbGRlZEFjdGlvbgAAAAAADQAAAAAAAAAMYWN0aW9uX25vbmNlAAAD7gAAACAAAAAAAAAAC2FuY2hvcl9yb290AAAAA+4AAAAgAAAAAAAAAAdhcHBlbmRzAAAAAAEAAAAAAAAAC2Fzc2V0X2luZGV4AAAAA+gAAAAEAAAAAAAAAA5kZXBvc2l0X3NvdXJjZQAAAAAD6AAAABMAAAAAAAAAC251bGxpZmllcl8wAAAAA+4AAAAgAAAAAAAAAAtudWxsaWZpZXJfMQAAAAPuAAAAIAAAAAAAAAAIb3V0cHV0XzAAAAfQAAAADU91dHB1dFBhY2thZ2UAAAAAAAAAAAAACG91dHB1dF8xAAAH0AAAAA1PdXRwdXRQYWNrYWdlAAAAAAAAAAAAAAhvdXRwdXRfMgAAB9AAAAANT3V0cHV0UGFja2FnZQAAAAAAAAAAAAANcHVibGljX2luZmxvdwAAAAAAAAYAAAAAAAAADnB1YmxpY19vdXRmbG93AAAAAAAGAAAAAAAAABBwdWJsaWNfcmVjaXBpZW50AAAD6AAAABM=",
         "AAAABAAAAAAAAAAAAAAACVBvb2xFcnJvcgAAAAAAABUAAAAAAAAAEkFscmVhZHlJbml0aWFsaXplZAAAAAAAAQAAAAAAAAATVW5zdXBwb3J0ZWRQcm90b2NvbAAAAAACAAAAAAAAABRJbnZhbGlkQ29uZmlndXJhdGlvbgAAAAMAAAAAAAAADkRlcG9zaXRzUGF1c2VkAAAAAAAEAAAAAAAAABJJbnZhbGlkQWN0aW9uU2hhcGUAAAAAAAUAAAAAAAAAFE5vbmNhbm9uaWNhbEVuY29kaW5nAAAABgAAAAAAAAANSW52YWxpZEFtb3VudAAAAAAAAAcAAAAAAAAAC1Vua25vd25Sb290AAAAAAgAAAAAAAAAC1Jvb3RFeHBpcmVkAAAAAAkAAAAAAAAAFU51bGxpZmllckFscmVhZHlTcGVudAAAAAAAAAoAAAAAAAAAEUludmFsaWRDb21taXRtZW50AAAAAAAACwAAAAAAAAAMSW52YWxpZFByb29mAAAADAAAAAAAAAAIVHJlZUZ1bGwAAAANAAAAAAAAABNBY3Rpb25Db3VudE92ZXJmbG93AAAAAA4AAAAAAAAADkFyY2hpdmVDb3JydXB0AAAAAAAPAAAAAAAAABRVbmF1dGhvcml6ZWRHdWFyZGlhbgAAABAAAAAAAAAAFkFzc2V0QWxyZWFkeVJlZ2lzdGVyZWQAAAAAABEAAAAAAAAADFVua25vd25Bc3NldAAAABIAAAAAAAAADUFzc2V0RXhpdE9ubHkAAAAAAAATAAAAAAAAABJBc3NldEluZGV4T3ZlcmZsb3cAAAAAABQAAAAAAAAAE05vUGVuZGluZ0Fzc2V0QWRtaW4AAAAAFQ==",
         "AAAABQAAAAAAAAAAAAAACkFzc2V0QWRkZWQAAAAAAAEAAAALYXNzZXRfYWRkZWQAAAAAAgAAAAAAAAAFaW5kZXgAAAAAAAAEAAAAAAAAAAAAAAAFYXNzZXQAAAAAAAATAAAAAAAAAAI=",
         "AAAABQAAAAAAAAAAAAAADkRlcG9zaXRzUGF1c2VkAAAAAAABAAAABnBhdXNlZAAAAAAAAQAAAAAAAAAGcGF1c2VkAAAAAAABAAAAAAAAAAA=",
@@ -324,7 +295,7 @@ export class Client extends ContractClient {
         "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",
-        "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",
+        "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",
@@ -333,10 +304,8 @@ export class Client extends ContractClient {
         "AAAAAQAAAAAAAAAAAAAAC1RyZWVTdG9yYWdlAAAAAAMAAAAAAAAADGN1cnJlbnRfcm9vdAAAA+4AAAAgAAAAAAAAAAhmcm9udGllcgAAA+oAAAPuAAAAIAAAAAAAAAAKbmV4dF9pbmRleAAAAAAACg==",
         "AAAAAQAAAAAAAAAAAAAADlNwZW50TnVsbGlmaWVyAAAAAAACAAAAAAAAAA9zcGVudF9hdF9hY3Rpb24AAAAACgAAAAAAAAAPc3BlbnRfYXRfbGVkZ2VyAAAAAAQ=",
         "AAAAAAAAAAAAAAAFYXNzZXQAAAAAAAABAAAAAAAAAAVpbmRleAAAAAAAAAQAAAABAAAD6QAAB9AAAAALQXNzZXRDb25maWcAAAAH0AAAAAlQb29sRXJyb3IAAAA=",
+        "AAAAAAAAAMlUaGUgc2luZ2xlIHNoaWVsZGVkLWFjdGlvbiBlbnRyeXBvaW50LiBUaGUgc2V0dGxlbWVudCBsZWdzIGNsYXNzaWZ5IHRoZQphY3Rpb246IGluZmxvdy1vbmx5IGRlcG9zaXRzLCBvdXRmbG93LW9ubHkgd2l0aGRyYXdzICh3aXRoIG9yIHdpdGhvdXQKY2hhbmdlIGNvbW1pdG1lbnRzKSwgYW5kIHR3byB6ZXJvIGxlZ3MgdHJhbnNmZXIgaW50ZXJuYWxseS4AAAAAAAAGYWN0aW9uAAAAAAACAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAAOU2hpZWxkZWRBY3Rpb24AAAAAAAAAAAAFcHJvb2YAAAAAAAfQAAAABVByb29mAAAAAAAAAQAAA+kAAAAKAAAH0AAAAAlQb29sRXJyb3IAAAA=",
         "AAAAAAAAAAAAAAAGY29uZmlnAAAAAAAAAAAAAQAAB9AAAAAKUG9vbENvbmZpZwAA",
-        "AAAAAAAAAAAAAAAHZGVwb3NpdAAAAAACAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAANRGVwb3NpdEFjdGlvbgAAAAAAAAAAAAAFcHJvb2YAAAAAAAfQAAAABVByb29mAAAAAAAAAQAAA+kAAAAKAAAH0AAAAAlQb29sRXJyb3IAAAA=",
-        "AAAAAAAAAAAAAAAIdHJhbnNmZXIAAAACAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAAOVHJhbnNmZXJBY3Rpb24AAAAAAAAAAAAFcHJvb2YAAAAAAAfQAAAABVByb29mAAAAAAAAAQAAA+kAAAAKAAAH0AAAAAlQb29sRXJyb3IAAAA=",
-        "AAAAAAAAAAAAAAAId2l0aGRyYXcAAAACAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAAOV2l0aGRyYXdBY3Rpb24AAAAAAAAAAAAFcHJvb2YAAAAAAAfQAAAABVByb29mAAAAAAAAAQAAA+kAAAAKAAAH0AAAAAlQb29sRXJyb3IAAAA=",
         "AAAAAAAAAAAAAAAJYWRkX2Fzc2V0AAAAAAAAAQAAAAAAAAAFYXNzZXQAAAAAAAATAAAAAQAAA+kAAAAEAAAH0AAAAAlQb29sRXJyb3IAAAA=",
         "AAAAAAAAAMVSZS1yZWdpc3RlcnMgdGhlIGN1cnJlbnQgdHJlZSByb290IHdpdGhvdXQgbW92aW5nIHZhbHVlLiBUaGlzIGlzCnBlcm1pc3Npb25sZXNzIHNvIGFuIGlkbGUgcG9vbCByZW1haW5zIHNwZW5kYWJsZSB3aGlsZSBkZXBvc2l0cyBhcmUKcGF1c2VkLCBhbmQgcmVwZWF0ZWQgY2FsbHMgb25seSByZWZyZXNoIHRoZSBzYW1lIGNhbm9uaWNhbCByb290LgAAAAAAAAp0b3VjaF9yb290AAAAAAAAAAAAAQAAA+kAAAfQAAAACUtub3duUm9vdAAAAAAAB9AAAAAJUG9vbEVycm9yAAAA",
         "AAAAAAAAAAAAAAAKdHJlZV9zdGF0ZQAAAAAAAAAAAAEAAAfQAAAAC1RyZWVTdG9yYWdlAA==",
@@ -346,7 +315,6 @@ export class Client extends ContractClient {
         "AAAAAAAAAAAAAAAMYXJjaGl2ZV9tZXRhAAAAAAAAAAEAAAfQAAAAC0FyY2hpdmVNZXRhAA==",
         "AAAAAAAAAAAAAAANX19jb25zdHJ1Y3RvcgAAAAAAAAsAAAAAAAAAEHByb3RvY29sX3ZlcnNpb24AAAAEAAAAAAAAAApuZXR3b3JrX2lkAAAAAAPuAAAAIAAAAAAAAAAIcmVhbG1faWQAAAPuAAAAIAAAAAAAAAAIZ3VhcmRpYW4AAAATAAAAAAAAAAthc3NldF9hZG1pbgAAAAATAAAAAAAAABhwb3NlaWRvbjJfcGFyYW1ldGVyX2hhc2gAAAPuAAAAIAAAAAAAAAAMY2lyY3VpdF9oYXNoAAAD7gAAACAAAAAAAAAAFXZlcmlmaWNhdGlvbl9rZXlfaGFzaAAAAAAAA+4AAAAgAAAAAAAAAAp0cmVlX2RlcHRoAAAAAAAEAAAAAAAAABNyb290X3dpbmRvd19sZWRnZXJzAAAAAAQAAAAAAAAAF2RlcGxveW1lbnRfYmluZGluZ19oYXNoAAAAA+4AAAAgAAAAAA==",
         "AAAAAAAAAAAAAAAPZGVwb3NpdHNfcGF1c2VkAAAAAAAAAAABAAAAAQ==",
-        "AAAAAAAAAEdDb25zdW1lcyBzZWxlY3RlZCBpbnB1dHMgY29tcGxldGVseSwgd2l0aG91dCByZXNlcnZpbmcgb3V0cHV0IGNhcGFjaXR5LgAAAAAPZnVsbF9pbnB1dF9leGl0AAAAAAIAAAAAAAAABmFjdGlvbgAAAAAH0AAAAA5XaXRoZHJhd0FjdGlvbgAAAAAAAAAAAAVwcm9vZgAAAAAAB9AAAAAFUHJvb2YAAAAAAAABAAAD6QAAAAoAAAfQAAAACVBvb2xFcnJvcgAAAA==",
         "AAAAAAAAAAAAAAAQc2V0X2Fzc2V0X3N0YXR1cwAAAAIAAAAAAAAABWluZGV4AAAAAAAABAAAAAAAAAAGc3RhdHVzAAAAAAfQAAAAC0Fzc2V0U3RhdHVzAAAAAAEAAAPpAAAAAgAAB9AAAAAJUG9vbEVycm9yAAAA",
         "AAAAAAAAAAAAAAASYWNjZXB0X2Fzc2V0X2FkbWluAAAAAAAAAAAAAQAAA+kAAAACAAAH0AAAAAlQb29sRXJyb3IAAAA=",
         "AAAAAAAAAAAAAAATcGVuZGluZ19hc3NldF9hZG1pbgAAAAAAAAAAAQAAA+gAAAAT",
@@ -358,10 +326,8 @@ export class Client extends ContractClient {
   }
   public readonly fromJSON = {
     asset: this.txFromJSON<Result<AssetConfig>>,
+        action: this.txFromJSON<Result<u128>>,
         config: this.txFromJSON<PoolConfig>,
-        deposit: this.txFromJSON<Result<u128>>,
-        transfer: this.txFromJSON<Result<u128>>,
-        withdraw: this.txFromJSON<Result<u128>>,
         add_asset: this.txFromJSON<Result<u32>>,
         touch_root: this.txFromJSON<Result<KnownRoot>>,
         tree_state: this.txFromJSON<TreeStorage>,
@@ -370,7 +336,6 @@ export class Client extends ContractClient {
         asset_index: this.txFromJSON<Option<u32>>,
         archive_meta: this.txFromJSON<ArchiveMeta>,
         deposits_paused: this.txFromJSON<boolean>,
-        full_input_exit: this.txFromJSON<Result<u128>>,
         set_asset_status: this.txFromJSON<Result<void>>,
         accept_asset_admin: this.txFromJSON<Result<void>>,
         pending_asset_admin: this.txFromJSON<Option<string>>,

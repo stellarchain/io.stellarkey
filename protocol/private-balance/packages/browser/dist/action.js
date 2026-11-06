@@ -4,13 +4,6 @@ import { equalBytes } from './hash.js';
 export const DOMAIN_ACTION = 'SKSB_ACTION_V1';
 export const DOMAIN_ASSET = 'SKSB_ASSET_V1';
 const MAX_PUBLIC_VALUE = (1n << 63n) - 1n;
-export var ActionKind;
-(function (ActionKind) {
-    ActionKind[ActionKind["Deposit"] = 1] = "Deposit";
-    ActionKind[ActionKind["PrivateTransfer"] = 2] = "PrivateTransfer";
-    ActionKind[ActionKind["Withdraw"] = 3] = "Withdraw";
-    ActionKind[ActionKind["FullInputExit"] = 4] = "FullInputExit";
-})(ActionKind || (ActionKind = {}));
 function isZero(bytes) {
     return bytes.every((byte) => byte === 0);
 }
@@ -54,10 +47,21 @@ function validateAssetBoundary(action) {
     }
 }
 function validateAction(action) {
-    if (action.protocolVersion !== 2)
+    if (action.protocolVersion !== 3)
         throw new Error('Unsupported action protocol version');
-    if (![ActionKind.Deposit, ActionKind.PrivateTransfer, ActionKind.Withdraw, ActionKind.FullInputExit].includes(action.kind)) {
-        throw new Error('Invalid action kind');
+    if (action.publicInflow < 0n
+        || action.publicInflow > MAX_PUBLIC_VALUE
+        || action.publicOutflow < 0n
+        || action.publicOutflow > MAX_PUBLIC_VALUE) {
+        throw new Error('Invalid public value');
+    }
+    if (action.publicInflow > 0n && action.publicOutflow > 0n) {
+        throw new Error('At most one settlement leg may carry value');
+    }
+    if (!action.appends && action.publicOutflow === 0n) {
+        // Deposits and transfers exist through their commitments; only a settled
+        // spend may skip the append.
+        throw new Error('Non-appending actions must settle value');
     }
     validateAssetBoundary(action);
     requireLength('Action nonce', action.actionNonce, 32);
@@ -88,24 +92,20 @@ function validateAction(action) {
             }
         }
     }
-    if (action.publicValue < 0n || action.publicValue > MAX_PUBLIC_VALUE) {
-        throw new Error('Invalid public value');
-    }
     const anchorIsZero = isZero(action.anchorRoot);
     if (action.nullifiers.some(isZero))
         throw new Error('Nullifiers must be nonzero');
     if (equalBytes(action.nullifiers[0], action.nullifiers[1])) {
         throw new Error('Nullifiers must differ');
     }
-    if (action.kind === ActionKind.Deposit) {
+    if (action.publicInflow > 0n) {
         if (!anchorIsZero) {
             throw new Error('Invalid deposit private slots');
         }
-        if (action.publicValue === 0n ||
-            !action.asset ||
-            action.assetIndex === undefined ||
-            !action.depositSource ||
-            action.publicRecipient) {
+        if (!action.asset
+            || action.assetIndex === undefined
+            || !action.depositSource
+            || action.publicRecipient) {
             throw new Error('Invalid deposit public boundary');
         }
         validateAddress(action.depositSource, 'Deposit source');
@@ -113,24 +113,19 @@ function validateAction(action) {
     }
     if (anchorIsZero)
         throw new Error('Invalid private spend slots');
-    if (action.kind === ActionKind.PrivateTransfer) {
-        if (action.publicValue !== 0n
-            || action.asset
-            || action.assetIndex !== undefined
+    if (action.publicOutflow > 0n) {
+        if (!action.asset
+            || action.assetIndex === undefined
             || action.depositSource
-            || action.publicRecipient) {
-            throw new Error('Private transfer must not expose a boundary asset or address');
+            || !action.publicRecipient) {
+            throw new Error('Invalid withdrawal public boundary');
         }
+        validateAddress(action.publicRecipient, 'Public recipient');
         return;
     }
-    if (action.publicValue === 0n
-        || !action.asset
-        || action.assetIndex === undefined
-        || action.depositSource
-        || !action.publicRecipient) {
-        throw new Error('Invalid withdrawal public boundary');
+    if (action.asset || action.assetIndex !== undefined || action.depositSource || action.publicRecipient) {
+        throw new Error('Internal transfers must not expose a boundary asset or address');
     }
-    validateAddress(action.publicRecipient, 'Public recipient');
 }
 export function serializeCanonicalActionBytes(action, networkId, realmId, poolId) {
     validateAction(action);
@@ -150,7 +145,7 @@ export function serializeCanonicalActionBytes(action, networkId, realmId, poolId
         buf.push(b);
     for (const b of poolId)
         buf.push(b);
-    buf.push(action.kind);
+    buf.push(action.appends ? 1 : 0);
     encodeOptionalAddress(action.asset, buf);
     encodeU32Be(action.assetIndex ?? 0, buf);
     for (const b of action.actionNonce)
@@ -176,7 +171,8 @@ export function serializeCanonicalActionBytes(action, networkId, realmId, poolId
         for (const b of action.outputs[index].outgoingEnvelope)
             buf.push(b);
     }
-    encodeU64Be(action.publicValue, buf);
+    encodeU64Be(action.publicInflow, buf);
+    encodeU64Be(action.publicOutflow, buf);
     encodeOptionalAddress(action.depositSource, buf);
     encodeOptionalAddress(action.publicRecipient, buf);
     return Uint8Array.from(buf);
@@ -198,15 +194,17 @@ export async function computePublicSignals(action, contextField, networkId, real
     validateAction(action);
     const assetField = action.asset ? computeAssetField(action.asset) : new Uint8Array(32);
     const actionField = computeActionField(action, networkId, realmId, poolId);
-    const kindField = new Uint8Array(32);
-    kindField[31] = action.kind;
-    const valField = bigintTo32Bytes(action.publicValue);
+    const inflowField = bigintTo32Bytes(action.publicInflow);
+    const outflowField = bigintTo32Bytes(action.publicOutflow);
+    const appendsField = new Uint8Array(32);
+    appendsField[31] = action.appends ? 1 : 0;
     return [
         contextField,
         assetField,
-        kindField,
+        inflowField,
+        outflowField,
+        appendsField,
         action.anchorRoot,
-        valField,
         actionField,
         action.nullifiers[0],
         action.nullifiers[1],

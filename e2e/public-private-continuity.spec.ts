@@ -163,7 +163,7 @@ test("Public and Private remain one continuous Send dialog", async ({ page }) =>
     for (let index = 0; index < 3; index += 1) {
       await publicTab.click();
       await expect(publicTab).toHaveAttribute("aria-selected", "true");
-      await expect(dialog.getByLabel("Asset")).toBeVisible();
+      await expect(dialog.getByRole('button', { name: /^Asset: / })).toBeVisible();
       await privateTab.click();
       await expect(privateTab).toHaveAttribute("aria-selected", "true");
       await expect(dialog.getByRole("status", { name: "Opening private payment" })).toBeVisible();
@@ -175,7 +175,7 @@ test("Public and Private remain one continuous Send dialog", async ({ page }) =>
     await (await deliveredChunk).finished();
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await expect(publicTab).toHaveAttribute("aria-selected", "true");
-    await expect(dialog.getByLabel("Asset")).toBeVisible();
+    await expect(dialog.getByRole('button', { name: /^Asset: / })).toBeVisible();
     await expect(dialog.getByText(/Turn on Private Payments|Review Private Send/i)).toHaveCount(0);
     await expectStableContinuity(page, shellId);
     await privateTab.click();
@@ -184,7 +184,7 @@ test("Public and Private remain one continuous Send dialog", async ({ page }) =>
     for (let index = 0; index < 3; index += 1) {
       await publicTab.click();
       await expect(publicTab).toHaveAttribute("aria-selected", "true");
-      await expect(dialog.getByLabel("Asset")).toBeVisible();
+      await expect(dialog.getByRole('button', { name: /^Asset: / })).toBeVisible();
       await expect(dialog.getByText(/Turn on Private Payments|Review Private Send/i)).toHaveCount(0);
       await privateTab.click();
       await expect(privateTab).toHaveAttribute("aria-selected", "true");
@@ -242,60 +242,69 @@ test("Public and Private remain one continuous Receive dialog", async ({ page })
 });
 
 test("Public and Private remain one continuous Add dialog", async ({ page }) => {
-  await importTestWallet(page);
-  const trigger = page.getByRole("main").getByRole("button", { name: "Add", exact: true }).first();
-
   let releasePublicChunk!: () => void;
   const publicChunkGate = new Promise<void>((resolve) => {
     releasePublicChunk = resolve;
   });
   let heldChunk = false;
+  // Gate the panel itself: an unrelated background chunk can arrive first.
+  // Inspect fixed public code only, never wallet content.
   await page.route("**/_next/static/chunks/**", async (route: Route) => {
-    if (!heldChunk && route.request().resourceType() === "script") {
+    if (route.request().resourceType() !== "script") return route.continue();
+    const response = await route.fetch();
+    const body = await response.body();
+    if (!heldChunk && body.includes(Buffer.from("Custom asset issuer address"))) {
       heldChunk = true;
       await publicChunkGate;
     }
-    await route.continue();
+    await route.fulfill({ response, body });
   });
-  await trigger.click();
+  try {
+    await importTestWallet(page);
+    const trigger = page.getByRole("main").getByRole("button", { name: "Add", exact: true }).first();
+    await trigger.click();
 
-  const dialog = page.getByRole("dialog", { name: "Add Assets", exact: true });
-  const shellId = "add-public-private-shell";
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("status", { name: "Opening public assets" })).toBeVisible();
-  await expectDialogInsideViewport(page);
-  await installContinuityObserver(page, shellId);
+    const dialog = page.getByRole("dialog", { name: "Add Assets", exact: true });
+    const shellId = "add-public-private-shell";
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("status", { name: "Opening public assets" })).toBeVisible();
+    await expectDialogInsideViewport(page);
+    await installContinuityObserver(page, shellId);
 
-  releasePublicChunk();
+    expect(heldChunk).toBe(true);
+    releasePublicChunk();
 
-  const tablist = dialog.getByRole("tablist", { name: "Where to add funds" });
-  const publicTab = tablist.getByRole("tab", { name: "Public", exact: true });
-  const privateTab = await requirePrivateTab(dialog, "Where to add funds");
-  await expect(publicTab).toHaveAttribute("aria-selected", "true");
-  await expect(dialog.getByLabel("Search verified assets", { exact: true })).toBeVisible();
-  await expect(dialog.getByLabel("Custom asset code", { exact: true })).toBeVisible();
-  await expect(dialog.getByLabel("Custom asset issuer address", { exact: true })).toBeVisible();
-
-  await privateTab.click();
-  await expect(privateTab).toHaveAttribute("aria-selected", "true");
-  await expect(privateTab).toBeFocused();
-  await expect(dialog.getByText(/Turn on Private Payments/i).first()).toBeVisible();
-  await expectStableContinuity(page, shellId);
-
-  for (let index = 0; index < 3; index += 1) {
-    await publicTab.click();
+    const tablist = dialog.getByRole("tablist", { name: "Where to add funds" });
+    const publicTab = tablist.getByRole("tab", { name: "Public", exact: true });
+    const privateTab = await requirePrivateTab(dialog, "Where to add funds");
     await expect(publicTab).toHaveAttribute("aria-selected", "true");
-    await expect(dialog.getByPlaceholder(/Search popular tokens/)).toBeVisible();
-    await expect(dialog.getByText(/Turn on Private Payments/i)).toHaveCount(0);
+    await expect(dialog.getByLabel("Search verified assets", { exact: true })).toBeVisible();
+    await expect(dialog.getByLabel("Custom asset code", { exact: true })).toBeVisible();
+    await expect(dialog.getByLabel("Custom asset issuer address", { exact: true })).toBeVisible();
+
     await privateTab.click();
     await expect(privateTab).toHaveAttribute("aria-selected", "true");
-  }
-  await expectStableContinuity(page, shellId);
+    await expect(privateTab).toBeFocused();
+    await expect(dialog.getByText(/Turn on Private Payments/i).first()).toBeVisible();
+    await expectStableContinuity(page, shellId);
 
-  await publicTab.click();
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(dialog).toBeHidden();
-  await expect(trigger).toBeFocused();
+    for (let index = 0; index < 3; index += 1) {
+      await publicTab.click();
+      await expect(publicTab).toHaveAttribute("aria-selected", "true");
+      await expect(dialog.getByPlaceholder(/Search popular tokens/)).toBeVisible();
+      await expect(dialog.getByText(/Turn on Private Payments/i)).toHaveCount(0);
+      await privateTab.click();
+      await expect(privateTab).toHaveAttribute("aria-selected", "true");
+    }
+    await expectStableContinuity(page, shellId);
+
+    await publicTab.click();
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+  } finally {
+    releasePublicChunk();
+  }
 });
 
 test("critical public payment fields keep programmatic labels", async ({ page }) => {

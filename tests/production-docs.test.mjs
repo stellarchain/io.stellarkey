@@ -120,10 +120,12 @@ test("Trezor remains an explicit separately licensed production boundary", () =>
   const deployment = read("docs/production-deployment.md");
 
   assert.match(notices, /@trezor\/connect-web/);
-  assert.match(notices, /Trezor Reference Source License/i);
-  assert.match(notices, /not covered by StellarKey(?:'s)? AGPL/i);
-  assert.match(notices, /written (?:permission|authorization)/i);
-  assert.match(deployment, /Trezor.*written (?:permission|authorization)/is);
+  assert.match(notices, /10\.0\.1.*MIT license/i);
+  assert.match(notices, /Preserve.*copyright.*LICENSE\.md/is);
+  assert.match(notices, /separately hosted Suite service.*outside.*lockfile/is);
+  assert.match(notices, /development-only.*not imported by application source/is);
+  assert.match(deployment, /Trezor Suite Web/i);
+  assert.doesNotMatch(notices, /Trezor Reference Source License/i);
   assert.match(deployment, /production origin/i);
 });
 
