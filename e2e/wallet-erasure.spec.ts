@@ -12,7 +12,9 @@ test('incomplete erasure remains truthful, accessible, and retryable', async ({ 
   });
   await page.goto('/private-component-fixture');
   await page.getByRole('button', { name: 'Test erasure recovery', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Wallet erasure incomplete', exact: true })).toBeVisible();
+  const heading = page.getByRole('heading', { name: 'Wallet erasure incomplete', exact: true });
+  await expect(heading).toBeVisible();
+  await expect(heading).toBeFocused();
   await expect(page.getByText(/Your wallet has not been changed|Nothing has been overwritten/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Export recovery data' })).toHaveCount(0);
   const violations = (await new AxeBuilder({ page }).include('main').analyze()).violations;

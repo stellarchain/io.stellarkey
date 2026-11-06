@@ -58,6 +58,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
     {
       "name": "Fixed",
       "entries": [
+        "Announce incomplete erasure and initialize focus on its recovery heading when no newer control owns focus.",
         "Label zero-limit trustline operations as removals in wallet activity.",
         "Keep signing disabled and show an explicit retry screen when wallet erasure leaves storage, merchant records, private records, service workers, or caches uncleared.",
         "Revalidate the reviewed wallet account, network, and session across batch payments, claims, merges, trustlines, multisig changes, co-signing, and reusable private payments before signing and submission.",
