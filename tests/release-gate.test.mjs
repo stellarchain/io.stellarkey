@@ -154,7 +154,7 @@ test("Gate A requires Linux circuit analysis and canonical macOS ARM64 reproduct
     assert.match(circuits, /circomspect --version 0\.9\.0 --locked/);
     assert.match(circuits, /audit --audit-level=high/);
     assert.doesNotMatch(circuits, /private:check-reproducible/);
-    assert.match(artifacts, /runs-on: macos-15/);
+    assert.match(artifacts, /^    runs-on: macos-15$/m);
     assert.match(artifacts, /rustup toolchain install 1\.97\.1 --profile minimal/);
     assert.match(artifacts, /rustup target add wasm32v1-none --toolchain 1\.97\.1/);
     assert.match(artifacts, /--tag v2\.2\.3 --locked circom/);
@@ -215,9 +215,9 @@ test("hosted browser gates use native macOS WebKit without reducing the matrix",
     const workflow = read(name);
     const application = workflow.split("\n  application:")[1].split("\n  private-ui:")[0];
     const privateUi = workflow.split("\n  private-ui:")[1].split(/\n  [a-z][a-z-]*:/)[0];
-    assert.match(application, /runs-on: macos-15/);
+    assert.match(application, /^    runs-on: macos-15-intel$/m);
     assert.match(application, /npm run verify:application:production/);
-    assert.match(privateUi, /runs-on: macos-15/);
+    assert.match(privateUi, /^    runs-on: macos-15-intel$/m);
     assert.match(privateUi, /browser: \[desktop-chromium, iphone-webkit\]/);
     assert.match(privateUi, /npm run test:e2e:private-ui/);
     assert.match(privateUi, /npm run test:e2e:private-components/);

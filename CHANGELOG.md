@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Run the complete hosted browser gates on standard macOS Intel runners after ARM capacity failures, retaining canonical artifact reproduction on macOS ARM64.
+
 ## [1.1.1] - 2026-11-06
 
 ### Changed

@@ -1,5 +1,17 @@
 # Dependency security evidence
 
+## 2026-11-06 — hosted browser runner capacity
+
+On source 5348f32, GitHub cancelled both queued browser jobs and canonical
+reproduction after about fifteen minutes: their annotations reported failure
+to acquire a hosted runner and macOS ARM capacity constraints. Rust security,
+Linux circuit analysis and CodeQL passed; Gate A correctly remained failed.
+Application and private-UI jobs now use standard `macos-15-intel` runners,
+including in the release workflow, with the same full browser matrix and native
+animation assertions. Canonical reproduction remains on `macos-15` ARM64;
+exact runner-policy tests enforce both choices. This is a capacity adjustment,
+not a waived check or a replacement for ARM64 canonical reproduction.
+
 ## 2026-11-06 — audit curation for the replacement candidate
 
 The subsequent audit curation advances Next.js/eslint-config-next to 16.4.5,

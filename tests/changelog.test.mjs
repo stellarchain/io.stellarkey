@@ -47,7 +47,14 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   assert.deepEqual(document.releases[0], {
   "version": "Unreleased",
   "date": null,
-  "categories": []
+  "categories": [
+    {
+      "name": "Changed",
+      "entries": [
+        "Run the complete hosted browser gates on standard macOS Intel runners after ARM capacity failures, retaining canonical artifact reproduction on macOS ARM64."
+      ]
+    }
+  ]
 });
   assert.deepEqual(document.releases[1], {
   "version": "1.1.1",
