@@ -462,6 +462,7 @@ interface RawOperation {
   buy_amount?: string;
   asset?: string;
   balance_id?: string;
+  limit?: string;
   into?: string;
 }
 
@@ -627,7 +628,7 @@ function mapOperation(op: RawOperation, publicKey: string): ActivityItem {
     case "change_trust":
       return {
         ...base,
-        title: "Trustline Added",
+        title: typeof op.limit === "string" && /^0(?:\.0+)?$/.test(op.limit) ? "Trustline Removed" : "Trustline Added",
         direction: "neutral",
         amount: null,
         assetCode: op.asset_code ?? null,
