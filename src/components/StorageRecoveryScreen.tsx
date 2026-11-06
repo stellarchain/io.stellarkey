@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { StorageIssue } from "@/lib/storage-load";
 import { Button } from "./ui";
 import { IconAlert, IconDownload, LogoMark } from "./icons";
@@ -20,8 +21,10 @@ export function StorageRecoveryScreen({
   onReset,
 }: {
   issue: StorageIssue;
-  onReset: () => void;
+  onReset: () => void | Promise<void>;
 }) {
+  const [busy, setBusy] = useState(false);
+  const erasureIncomplete = issue.kind === "erasure-incomplete";
   const storageUnavailable = issue.kind === "unavailable";
 
   return (
@@ -32,16 +35,27 @@ export function StorageRecoveryScreen({
           <IconAlert size={22} />
         </span>
         <h1 className="display-h mt-4 text-[24px] font-bold text-white">
-          {storageUnavailable ? "Browser storage unavailable" : "Wallet data needs recovery"}
+          {erasureIncomplete ? "Wallet erasure incomplete" : storageUnavailable ? "Browser storage unavailable" : "Wallet data needs recovery"}
         </h1>
         <p className="mt-2 text-[13.5px] leading-relaxed text-neutral-400">{issue.message}</p>
         <p className="mt-2 text-[12.5px] leading-relaxed text-neutral-500">
-          {storageUnavailable
+          {erasureIncomplete
+            ? "Keep this page open to retry. Signing remains disabled while cleanup is incomplete."
+            : storageUnavailable
             ? "Your wallet has not been changed. Check this site's storage permissions, then reload the app."
             : "Nothing has been overwritten. Export the original record before deciding whether to erase it."}
         </p>
         <div className="mt-7 space-y-3">
-          {storageUnavailable ? (
+          {erasureIncomplete ? (
+            <Button variant="danger" className="w-full" loading={busy} loadingLabel="Retrying cleanup"
+              onClick={async () => {
+                if (busy) return;
+                setBusy(true);
+                try { await onReset(); } finally { setBusy(false); }
+              }}>
+              Retry erasure
+            </Button>
+          ) : storageUnavailable ? (
             <Button className="w-full" onClick={() => window.location.reload()}>
               Try again
             </Button>

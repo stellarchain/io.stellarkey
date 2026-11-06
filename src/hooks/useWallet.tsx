@@ -1945,51 +1945,56 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     // can fail. A broken IndexedDB/service-worker implementation must never
     // leave an unlocked wallet or recoverable credentials behind.
     lockVaultAndReset(false);
-    invalidateWalletLifecycle();
-    if (notifyPeers) walletCoordinationRef.current?.post("wallet-reset");
-    await withWalletLifecycleLock(async () => {
-      wipeVault();
-      clearDurableMergeReconciliations(
-        window.localStorage,
-        MERGE_RECONCILIATION_STORAGE_KEY,
-      );
-      clearDurablePendingTransactions(
-        window.localStorage,
-        PENDING_TX_STORAGE_KEY,
-      );
-      try {
-        window.sessionStorage.clear();
-      } catch {
-        // Vault erasure above remains authoritative.
-      }
-      const cleanupTasks: Array<() => Promise<unknown>> = [];
-      if (typeof indexedDB !== "undefined") {
-        cleanupTasks.push(
-          async () => {
-            const { getMerchantRepository } = await import("@/lib/merchant/repository");
-            return getMerchantRepository().clear();
-          },
-          () => new IndexedDbEncryptedRecordDriver().removePrefix("private:"),
-        );
-      }
-      if ("serviceWorker" in navigator) {
-        cleanupTasks.push(async () => {
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          await Promise.allSettled(registrations.map((registration) => registration.unregister()));
-        });
-      }
-      if ("caches" in globalThis) {
-        cleanupTasks.push(async () => {
-          const names = await globalThis.caches.keys();
-          await Promise.allSettled(
-            names
-              .filter((name) => name.startsWith("stellarkey-"))
-              .map((name) => globalThis.caches.delete(name)),
+    try {
+      invalidateWalletLifecycle();
+      if (notifyPeers) walletCoordinationRef.current?.post("wallet-reset");
+      await withWalletLifecycleLock(async () => {
+        let vaultErasureFailed = false;
+        try { wipeVault(); } catch { vaultErasureFailed = true; }
+        const requireCleanup = async (tasks: Promise<unknown>[]) => {
+          const results = await Promise.allSettled(tasks);
+          if (results.some(result => result.status === "rejected")) {
+            throw new Error("Local cleanup is incomplete.");
+          }
+        };
+        const cleanupTasks: Array<() => Promise<unknown>> = [
+          async () => clearDurableMergeReconciliations(window.localStorage, MERGE_RECONCILIATION_STORAGE_KEY),
+          async () => clearDurablePendingTransactions(window.localStorage, PENDING_TX_STORAGE_KEY),
+          async () => window.sessionStorage.clear(),
+        ];
+        if (typeof indexedDB !== "undefined") {
+          cleanupTasks.push(
+            async () => {
+              const { getMerchantRepository } = await import("@/lib/merchant/repository");
+              return getMerchantRepository().clear();
+            },
+            () => new IndexedDbEncryptedRecordDriver().removePrefix("private:"),
           );
-        });
-      }
-      await Promise.allSettled(cleanupTasks.map((task) => Promise.resolve().then(task)));
-    });
+        }
+        if ("serviceWorker" in navigator) {
+          cleanupTasks.push(async () => {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await requireCleanup(registrations.map(registration => registration.unregister()));
+          });
+        }
+        if ("caches" in globalThis) {
+          cleanupTasks.push(async () => {
+            const names = await globalThis.caches.keys();
+            await requireCleanup(names.filter(name => name.startsWith("stellarkey-"))
+              .map(name => globalThis.caches.delete(name)));
+          });
+        }
+        await requireCleanup(cleanupTasks.map(task => Promise.resolve().then(task)));
+        if (vaultErasureFailed) throw new Error("Vault erasure is incomplete.");
+      });
+    } catch {
+      // The original confirmation may already be unmounted after locking.
+      // A provider-owned recovery screen keeps failures and retry visible.
+      setVaultStorageIssue({ kind: "erasure-incomplete", raw: "", message:
+        "Signing is disabled. Erasure is incomplete and some local wallet data may remain. Retry cleanup; if it keeps failing, clear this site’s storage in your browser settings." });
+      setPhase("recovery");
+      return;
+    }
     setAccounts([]);
     setArchivedAccounts([]);
     setActiveId(null);

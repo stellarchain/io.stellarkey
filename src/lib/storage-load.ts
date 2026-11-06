@@ -1,5 +1,5 @@
 export interface StorageIssue {
-  kind: "corrupt" | "future" | "unavailable";
+  kind: "corrupt" | "future" | "unavailable" | "erasure-incomplete";
   raw: string;
   message: string;
   version?: number;
