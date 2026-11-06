@@ -37,6 +37,22 @@ internal audit reports in the public documentation directory. The reports were
 preserved outside that directory and their release disposition retained here.
 Neither policy nor the privacy restrictions is relaxed.
 
+The corrected attempt at 5348f32 passed 2,402 root tests, 64 browser-protocol
+tests, lint/audits/privacy probes and all 16 required private UI checks. Its
+734-case component matrix recorded 733 passes and one iPhone SVG-opener
+precondition failure before focus-restoration assertions. Twenty-four isolated
+instrumented repetitions passed; its original cause remains unconfirmed.
+The synthetic SVG test now explicitly maintains body focus during a real
+pointer activation. All 12 repeated positive cases passed. A targeted control
+that deliberately ignores SVG pointer openers failed the actual focus-return
+assertion in all four engine/motion cases, preserving regression sensitivity.
+No application focus code or animation assertion changed in this test adjustment.
+
+The same source's hosted run recorded successful Rust security, Linux circuit
+analysis and CodeQL. Three queued ARM macOS jobs failed to acquire runners after
+about fifteen minutes, so Gate A remained red. Browser jobs now use standard
+macOS Intel runners; canonical reproduction retains its mandatory ARM64 host.
+
 Earlier full application results below retain their original source identities.
 The corrected candidate requires a new clean-tree release verification, required
 CI and release-workflow gates; those earlier runs do not validate it.

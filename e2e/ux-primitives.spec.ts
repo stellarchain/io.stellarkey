@@ -505,6 +505,11 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       await page.evaluate(() => {
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         document.addEventListener('pointerdown', event => {
+          // Establish the body-focus branch explicitly on this synthetic
+          // opener. Native pointer focus varies with WebKit scheduling; the
+          // real SVG pointer and eventual restoration remain under test.
+          event.preventDefault();
+          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
           window.__syntheticSvgPointer = { svg: event.target instanceof SVGElement, bodyFocused: document.activeElement === document.body };
         }, { capture: true, once: true });
       });
