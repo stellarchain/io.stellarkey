@@ -21,7 +21,10 @@ The workflows install the following pinned toolchains. For local verification:
 3. Build CIVER from https://github.com/costa-group/circom_civer.git at exact commit
    af7d4ed0325e6f7743d8a1ac0e415d0c69b8aae8. Set CIVER_SOURCE_COMMIT to that
    verified checkout identity and CIVER_CIRCOM to its civer_circom executable.
-4. Run the circuit check on Linux and canonical reproduction on macOS ARM64.
+4. Build the pinned analyzer with GCC 12 (`CC=gcc-12 CXX=g++-12`) on Ubuntu 24.04;
+   the legacy Z3 dependency does not compile with GCC 15 template-body checks.
+   The hosted circuit jobs pin that image and compiler while preserving the analyzer source and lockfile.
+   Run the circuit check on Linux and canonical reproduction on macOS ARM64.
    Neither result replaces the other. Record commands, environments, source
    identities, exit codes and timestamps; unchanged prior evidence must be labelled
    with its original date and scope, never presented as a fresh run.

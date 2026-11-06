@@ -14,7 +14,7 @@ permissions:
 jobs:
   private-circuits:
     name: Private Balance Circuit Analysis
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -33,6 +33,9 @@ jobs:
         env:
           # The pinned Z3 source predates the minimum policy supported by CMake 4.
           CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+          # z3-sys 0.7.1 vendors Z3 that predates GCC 15 template-body diagnostics.
+          CC: gcc-12
+          CXX: g++-12
         run: |
           git clone --no-checkout https://github.com/costa-group/circom_civer.git "$RUNNER_TEMP/circom_civer"
           git -C "$RUNNER_TEMP/circom_civer" checkout --detach "$CIVER_SOURCE_COMMIT"
