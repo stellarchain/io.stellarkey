@@ -47,14 +47,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   assert.deepEqual(document.releases[0], {
   "version": "Unreleased",
   "date": null,
-  "categories": [
-    {
-      "name": "Changed",
-      "entries": [
-        "Run the complete hosted browser gates on standard macOS Intel runners after ARM capacity failures, retaining canonical artifact reproduction on macOS ARM64."
-      ]
-    }
-  ]
+  "categories": []
 });
   assert.deepEqual(document.releases[1], {
   "version": "1.1.1",
@@ -65,7 +58,8 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
       "entries": [
         "Replace the unpublished 1.1.0 candidate after release verification exposed a dialog focus race; synchronize application versions and the whitepaper at 1.1.1.",
         "Update Next.js and its lint configuration to 16.4.5, Stellar SDK to 17.4.0 for the app and installed Trezor adapter, and Tailwind CSS to 4.3.4; refresh current artifact provenance without changing cryptographic artifacts or historical deployment bindings.",
-        "Animate only the changing properties on onboarding and address-book controls."
+        "Animate only the changing properties on onboarding and address-book controls.",
+        "Run the complete hosted browser gates on standard macOS Intel runners after ARM capacity failures, retaining canonical artifact reproduction on macOS ARM64."
       ]
     },
     {
