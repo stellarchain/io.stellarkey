@@ -296,7 +296,6 @@ export function BatchSendModalBody({
       });
       setSubmission(result);
       triggerHaptic(result.status === "status_unknown" ? "warning" : "success");
-      window.setTimeout(() => void refresh(), 4000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Batch transaction failed.");
       triggerHaptic("error");

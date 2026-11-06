@@ -771,7 +771,6 @@ function SendInner({
         }
         setStage("done");
         triggerHaptic("success");
-        window.setTimeout(() => void refresh(), 4000);
         return;
       }
       const reviewed = requireCurrentPublicPaymentReview(publicReview, {
@@ -815,7 +814,6 @@ function SendInner({
       }
       setStage("done");
       triggerHaptic("success");
-      window.setTimeout(() => void refresh(), 4000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Transaction failed.");
       setStage("review");

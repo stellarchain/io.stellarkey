@@ -987,7 +987,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [commitSigningPasswordRequired]);
 
   const refreshAccountData = useCallback(async () => {
-    if (!activeAccount) return;
+    const ownsWallet = () => signingContextRef.current === signingContext &&
+      endpointRevisionRef.current === endpointRevision;
+    if (!activeAccount || !ownsWallet()) return;
     const request = accountRefreshLane.begin();
     const generation = ++refreshGeneration.current;
     const cacheKey = `${network}:${endpointRevision}:${activeAccount.publicKey}`;
@@ -1010,6 +1012,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setDataError(null);
     try {
       const api = await loadWalletApi();
+      if (!ownsWallet() || !request.isCurrent()) return;
       const resources = await settleResourceMap({
         accountSnapshot: api.fetchAccountSnapshot(
           activeAccount.publicKey,
@@ -1030,7 +1033,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           request.signal,
         ),
       });
-      if (generation !== refreshGeneration.current || !request.isCurrent()) return;
+      if (generation !== refreshGeneration.current || !request.isCurrent() || !ownsWallet()) return;
       const minimumBalance = resources.accountSnapshot.ok && resources.baseReserve.ok
         ? api.minimumNativeBalanceForSnapshot(
             resources.accountSnapshot.value,
@@ -1098,7 +1101,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       setDataError(describeResourceFailures(resources));
     } catch (error) {
-      if (generation === refreshGeneration.current && request.isCurrent()) {
+      if (generation === refreshGeneration.current && request.isCurrent() && ownsWallet()) {
         const message = error instanceof Error ? error.message : "Unable to refresh wallet data.";
         setDataError(message);
         setAccountPortfolioSnapshots((previous) => ({
@@ -1114,9 +1117,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }));
       }
     } finally {
-      if (generation === refreshGeneration.current && request.isCurrent()) setDataLoading(false);
+      if (generation === refreshGeneration.current && request.isCurrent() && ownsWallet()) setDataLoading(false);
     }
-  }, [accountRefreshLane, activeAccount, endpointRevision, network]);
+  }, [accountRefreshLane, activeAccount, endpointRevision, network, signingContext]);
 
   const refreshMarketData = useCallback(async () => {
     if (!activeAccount) return;
@@ -1449,20 +1452,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const expired = transaction.expiresAt !== undefined &&
       transaction.expiresAt * 1000 <= now;
     const manualCheck = pendingTransactionNeedsManualCheck(transaction, now);
-    const api = await loadWalletApi();
-    const expiredLookup = expired && transaction.expiresAt !== undefined
-      ? await api.resolveCanonicalTransaction(
-          transaction.network,
-          transaction.hash,
-          transaction.expiresAt,
-        )
-      : null;
-    const outcome = expiredLookup
-      ? resolutionForExpiredLookup(expiredLookup)
-      : await api.waitForTransaction(transaction.network, transaction.hash);
-    if (startedGeneration === trackingTaskGeneration.current) {
-      pendingPolls.current.delete(identity);
-    }
+    // Import/network failures are unresolved status, never rejection or
+    // confirmation. Always relinquish this generation's latch so manual and
+    // bounded automatic retries can acquire it again.
+    const { expiredLookup, outcome } = await (async () => {
+      try {
+        const api = await loadWalletApi();
+        const expiredLookup = expired && transaction.expiresAt !== undefined
+          ? await api.resolveCanonicalTransaction(transaction.network, transaction.hash, transaction.expiresAt)
+          : null;
+        const outcome = expiredLookup
+          ? resolutionForExpiredLookup(expiredLookup)
+          : await api.waitForTransaction(transaction.network, transaction.hash);
+        return { expiredLookup, outcome };
+      } catch {
+        return { expiredLookup: null, outcome: null };
+      } finally {
+        if (startedGeneration === trackingTaskGeneration.current) pendingPolls.current.delete(identity);
+      }
+    })();
     if (!isTrackingTaskCurrent(
       startedGeneration,
       trackingTaskGeneration.current,
