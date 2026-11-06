@@ -213,6 +213,23 @@ test("generated workers precache only same-origin shell resources", async () => 
   assert.equal(paths.some((path) => path.includes("horizon.stellar.org")), false);
 });
 
+test("a worker reports its own release identity only to same-origin clients", async () => {
+  const { renderServiceWorker } = await generatorDomain();
+  const release = { commit: 'a'.repeat(40), version: '1.0.4', sourceTree: 'clean' };
+  const source = renderServiceWorker({
+    template: readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8'),
+    html: '', revision: 'identity-test', release,
+  });
+  const worker = evaluateWorker(source, new MemoryCacheStorage());
+  const replies = [];
+  const message = { data: { type: 'GET_RELEASE' }, ports: [{ postMessage: value => replies.push(value) }] };
+  worker.listeners.get('message')({ ...message, source: { url: 'https://other.example/' } });
+  assert.equal(replies.length, 0);
+  worker.listeners.get('message')({ ...message, source: { url: `${ORIGIN}/app` } });
+  assert.equal(JSON.stringify(replies[0]), JSON.stringify(release));
+  assert.equal(worker.skipped(), 0, 'reading identity never activates a worker');
+});
+
 test("lazy chunks never fall back to an older shell cache or the immutable HTTP cache", () => {
   const source = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
   const lazyShell = source.split('if (!isShellAsset(url)) return;')[1] ?? "";
