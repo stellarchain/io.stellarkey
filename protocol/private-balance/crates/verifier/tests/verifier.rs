@@ -80,8 +80,8 @@ fn test_verify_vectors() {
         let env = Env::default();
         env.cost_estimate().budget().reset_unlimited();
 
-        assert_eq!(item.public_signals.len(), 11);
-        let mut signals = [[0u8; 32]; 11];
+        assert_eq!(item.public_signals.len(), 12);
+        let mut signals = [[0u8; 32]; 12];
         for (signal, value) in signals.iter_mut().zip(&item.public_signals) {
             *signal = field_str_to_bytes(value);
         }
@@ -95,7 +95,7 @@ fn test_verify_vectors() {
         );
         assert!(
             env.cost_estimate().budget().cpu_instruction_cost() < 30_000_000,
-            "the 11-signal batched verifier must remain below its measured 30M-instruction ceiling",
+            "the 12-signal batched verifier must remain below its measured 30M-instruction ceiling",
         );
     }
 }

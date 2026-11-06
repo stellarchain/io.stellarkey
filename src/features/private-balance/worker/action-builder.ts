@@ -1,6 +1,5 @@
 import { equalBytes } from '@noble/ciphers/utils.js';
 import {
-  ActionKind,
   TREE_DEPTH,
   bytesToBigint,
   computeCommitment,
@@ -62,6 +61,8 @@ interface TransferIntent {
 
 interface WithdrawIntent {
   kind: 'withdraw';
+  /** Set only after the caller verifies that the current tree has no append capacity. */
+  capacityExit?: boolean;
   assetIndex: number;
   assetContractId: string;
   publicValue: string;
@@ -297,7 +298,7 @@ async function createOutput(input: {
           input.priorCommitments.some(prior => equalBytes(prior, commitment))
         ) continue;
         noteBytes = encodeNotePlaintext({
-          protocolVersion: 2,
+          protocolVersion: 3,
           flags: input.real ? 0 : 1,
           value: input.value,
           diversifier: input.diversifier,
@@ -331,7 +332,7 @@ async function createOutput(input: {
           ephemeralPublicKey: output.recipientEnvelope.slice(5, 37),
           aad: outgoingAad,
           plaintext: () => encodeOutgoingPlaintext({
-            protocolVersion: 2, flags: input.real ? 0 : 1, value: input.value,
+            protocolVersion: 3, flags: input.real ? 0 : 1, value: input.value,
             diversifier: input.diversifier, ownerCommitment: input.recipientOwnerCommitment,
             recipientHpkePublicKey: input.recipientHpkePublicKey, memoLength: memo.length,
             memo: memo.bytes, assetIndex: input.assetIndex, reserved: new Uint8Array(11),
@@ -502,8 +503,9 @@ export async function preparePrivateAction(
     throw new Error('Private asset index is invalid');
   }
   const preparedInputs = await prepareInputs(input);
-  let publicValue: bigint;
-  let kind: ActionKind;
+  let publicInflow = 0n;
+  let publicOutflow = 0n;
+  let appends: boolean;
   let depositSource: PublicAddressPayload | undefined;
   let publicRecipient: PublicAddressPayload | undefined;
   let outputSpecs: Array<{
@@ -561,13 +563,12 @@ export async function preparePrivateAction(
   };
 
   if (input.intent.kind === 'deposit') {
-    kind = ActionKind.Deposit;
-    publicValue = parseValue(input.intent.publicValue, 'Deposit value');
+    appends = true;
+    publicInflow = parseValue(input.intent.publicValue, 'Deposit value');
     depositSource = input.intent.depositSource;
-    outputSpecs = [await selfOutput(publicValue, input.intent.memo)];
+    outputSpecs = [await selfOutput(publicInflow, input.intent.memo)];
   } else if (input.intent.kind === 'transfer') {
-    kind = ActionKind.PrivateTransfer;
-    publicValue = 0n;
+    appends = true;
     const amount = parseValue(input.intent.amount, 'Private transfer value');
     if (preparedInputs.total < amount) throw new Error('Private balance is insufficient');
     const recipient = await decodePrivateAddress(
@@ -589,11 +590,16 @@ export async function preparePrivateAction(
       outputSpecs.push(await selfOutput(change));
     }
   } else {
-    publicValue = parseValue(input.intent.publicValue, 'Withdrawal value');
-    if (preparedInputs.total < publicValue) throw new Error('Private balance is insufficient');
+    publicOutflow = parseValue(input.intent.publicValue, 'Withdrawal value');
+    if (preparedInputs.total < publicOutflow) throw new Error('Private balance is insufficient');
     publicRecipient = input.intent.publicRecipient;
-    const change = preparedInputs.total - publicValue;
-    kind = change === 0n ? ActionKind.FullInputExit : ActionKind.Withdraw;
+    const change = preparedInputs.total - publicOutflow;
+    if (input.intent.capacityExit && change !== 0n) {
+      throw new Error('Private capacity exit cannot create change. Withdraw the selected inputs in full.');
+    }
+    // Exact-input withdrawals retain the ordinary public append pattern.
+    // Only an explicitly requested capacity exit skips its dummy commitments.
+    appends = input.intent.capacityExit !== true;
     outputSpecs = change > 0n ? [await selfOutput(change)] : [];
   }
 
@@ -630,8 +636,7 @@ export async function preparePrivateAction(
   const anchorRoot = input.intent.kind === 'deposit' ? ZERO_32.slice() : input.intent.anchorRoot.slice();
   const action: ActionModel = {
     protocolVersion: input.keyContext.protocolVersion,
-    kind,
-    ...(kind === ActionKind.PrivateTransfer ? {} : { assetIndex: input.intent.assetIndex, asset }),
+    ...(publicInflow === 0n && publicOutflow === 0n ? {} : { assetIndex: input.intent.assetIndex, asset }),
     actionNonce,
     anchorRoot,
     nullifiers: [
@@ -655,7 +660,9 @@ export async function preparePrivateAction(
         outgoingEnvelope: outputs[2].outgoingEnvelope,
       },
     ],
-    publicValue,
+    publicInflow,
+    publicOutflow,
+    appends,
     depositSource,
     publicRecipient,
   };
@@ -672,20 +679,21 @@ export async function preparePrivateAction(
   const changeValue = input.intent.kind === 'transfer'
     ? selectedInputTotal - parseValue(input.intent.amount, 'Private transfer value')
     : input.intent.kind === 'withdraw'
-      ? selectedInputTotal - publicValue
+      ? selectedInputTotal - publicOutflow
       : 0n;
   const circuitInputs: CircuitInputs = {
     contextField: publicSignals[0],
     assetField: publicSignals[1],
     actionAssetField: fieldString(assetField),
-    actionKindField: publicSignals[2],
-    anchorRoot: publicSignals[3],
-    publicValueField: publicSignals[4],
-    actionField: publicSignals[5],
-    nullifier: [publicSignals[6], publicSignals[7]],
-    outputCommitment: [publicSignals[8], publicSignals[9], publicSignals[10]],
-    ask: kind === ActionKind.Deposit ? '0' : fieldString(input.esk.ask),
-    nk: kind === ActionKind.Deposit ? '0' : fieldString(input.esk.nk),
+    publicInflowField: publicSignals[2],
+    publicOutflowField: publicSignals[3],
+    appendsField: publicSignals[4],
+    anchorRoot: publicSignals[5],
+    actionField: publicSignals[6],
+    nullifier: [publicSignals[7], publicSignals[8]],
+    outputCommitment: [publicSignals[9], publicSignals[10], publicSignals[11]],
+    ask: publicInflow > 0n ? '0' : fieldString(input.esk.ask),
+    nk: publicInflow > 0n ? '0' : fieldString(input.esk.nk),
     inputReal: preparedInputs.witnesses.map(witness => witness.real ? '1' : '0'),
     inputDummySecret: preparedInputs.witnesses.map(witness => fieldString(witness.dummySecret)),
     inputOwnerCommitment: preparedInputs.witnesses.map(witness => fieldString(witness.ownerCommitment)),
@@ -701,14 +709,13 @@ export async function preparePrivateAction(
     outputValue: outputs.map(output => output.value.toString()),
     outputRho: outputs.map(output => fieldString(output.rho)),
   };
-  if (selectedInputTotal + (kind === ActionKind.Deposit ? publicValue : 0n) !==
-      privateOutputTotal + ((kind === ActionKind.Withdraw || kind === ActionKind.FullInputExit) ? publicValue : 0n)) {
+  if (selectedInputTotal + publicInflow !== privateOutputTotal + publicOutflow) {
     throw new Error('Private action value conservation failed');
   }
 
   return {
     action,
-    actionField: publicSignalBytes[5],
+    actionField: publicSignalBytes[6],
     publicSignals,
     circuitInputs,
     reservedNoteIds: preparedInputs.selectedNoteIds,

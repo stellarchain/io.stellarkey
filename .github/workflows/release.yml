@@ -14,7 +14,7 @@ permissions:
 jobs:
   private-circuits:
     name: Private Balance Circuit Analysis
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -22,7 +22,7 @@ jobs:
       CIVER_SOURCE_COMMIT: af7d4ed0325e6f7743d8a1ac0e415d0c69b8aae8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.22.2
           cache: npm
@@ -30,6 +30,12 @@ jobs:
       - run: corepack install
       - run: rustup toolchain install 1.97.1 --profile minimal
       - name: Build pinned CIVER analyzer
+        env:
+          # The pinned Z3 source predates the minimum policy supported by CMake 4.
+          CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+          # z3-sys 0.7.1 vendors Z3 that predates GCC 15 template-body diagnostics.
+          CC: gcc-12
+          CXX: g++-12
         run: |
           git clone --no-checkout https://github.com/costa-group/circom_civer.git "$RUNNER_TEMP/circom_civer"
           git -C "$RUNNER_TEMP/circom_civer" checkout --detach "$CIVER_SOURCE_COMMIT"
@@ -60,7 +66,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.22.2
           cache: npm
@@ -91,7 +97,8 @@ jobs:
           test "$ARTIFACT_RESULT" = success
 
   application:
-    runs-on: ubuntu-latest
+    # Native WebKit timing: Linux backdrop-filter rendering regresses in r2370+.
+    runs-on: macos-15
     timeout-minutes: 90
     permissions:
       contents: read
@@ -101,7 +108,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.22.2
           cache: npm
@@ -119,7 +126,7 @@ jobs:
       - run: node scripts/create-release-artifact.mjs --commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
       - name: Stage the verified public release bundle
         id: bundle
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-${{ github.sha }}-${{ github.run_attempt }}
           path: |
@@ -132,7 +139,8 @@ jobs:
           retention-days: 7
 
   private-ui:
-    runs-on: ubuntu-latest
+    # Native WebKit timing: Linux backdrop-filter rendering regresses in r2370+.
+    runs-on: macos-15
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -144,7 +152,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.22.2
           cache: npm
@@ -176,7 +184,7 @@ jobs:
           ARTIFACT_ID: ${{ needs.application.outputs.artifact-id }}
         run: '[[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]'
       - name: Download this run's exact staged bundle
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ needs.application.outputs.artifact-id }}
           path: release-artifacts

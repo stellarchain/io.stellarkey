@@ -2,7 +2,7 @@ import { StrKey } from '@stellar/stellar-sdk';
 import type { AccountMeta } from '../../../lib/types';
 
 /** Maximum Soroban resource fee accepted by any reviewed Private Balance action. */
-export const MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS = 10_000_000n;
+export const MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS = 20_000_000n;
 
 /** Alternate public fee account; absence retains ordinary active-account fees. */
 export interface PrivateFeePayer {

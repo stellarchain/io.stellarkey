@@ -102,7 +102,7 @@ test("one shared visible build identity covers every route shell", () => {
   for (const shell of [
     "src/components/PublicFooter.tsx",
     "src/components/marketing/MarketingChrome.tsx",
-    "src/components/Dashboard.tsx",
+    "src/components/dashboard/Sidebar.tsx",
     "src/components/Onboarding.tsx",
     "src/components/StorageRecoveryScreen.tsx",
   ]) {

@@ -28,7 +28,7 @@ test('a disclosed spend retains its unknown-status warning even when the cause i
 });
 
 test('the real SDK preparation refuses cold-restoration fees without raising the action cap', async () => {
-  assert.equal(MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS, 10_000_000n);
+  assert.equal(MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS, 20_000_000n);
   const source = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
   const poolContractId = StrKey.encodeContract(Buffer.alloc(32, 91));
   const operation = new Contract(poolContractId).call('touch_root');

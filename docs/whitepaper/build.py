@@ -33,7 +33,7 @@ def generate():
     revision = re.search(r"Document revision:\*\* ([\d-]+)", paper).group(1)
     baseline = re.search(r"Implementation baseline:\*\* `(v\d+\.\d+\.\d+)`", paper).group(1)
     if baseline != f"v{version}":
-        raise ValueError("The paper must reference the current immutable release tag.")
+        raise ValueError("The paper must reference the current application release target.")
     if version != json.loads((ROOT / "package.json").read_text())["version"]:
         raise ValueError("Update the paper's application version before building.")
     if run(["pandoc", "--version"]).splitlines()[0] != "pandoc 3.11":
@@ -97,10 +97,10 @@ def generate():
                         raise ValueError("Citation has no bibliography entry.")
                     return {"t": "RawInline", "c": ["latex", r"\cite{" + ",".join(keys) + "}" + citation[2]]}
             if value.get("t") == "CodeBlock" and value["c"][1] == (
-                "sum(private inputs) + public deposit\n"
-                "  = sum(private outputs) + public withdrawal"
+                "sum(private inputs) + public inflow\n"
+                "  = sum(private outputs) + public outflow"
             ):
-                return {"t": "RawBlock", "c": ["latex", r"\[\sum v_{\mathrm{in}} + v_{\mathrm{deposit}} = \sum v_{\mathrm{out}} + v_{\mathrm{withdrawal}}.\]"]}
+                return {"t": "RawBlock", "c": ["latex", r"\[\sum v_{\mathrm{in}} + v_{\mathrm{inflow}} = \sum v_{\mathrm{out}} + v_{\mathrm{outflow}}.\]"]}
             return {key: transform(item) for key, item in value.items()}
 
         return run(["pandoc", "--from=json", "--to=latex", "--wrap=auto"], json.dumps(transform(document)))

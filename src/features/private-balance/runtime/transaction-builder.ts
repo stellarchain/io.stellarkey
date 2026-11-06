@@ -13,24 +13,17 @@ export interface ContractOutputPackage {
   outgoingEnvelope: Uint8Array;
 }
 
-interface CommonContractAction {
+export interface ContractAction {
   actionNonce: Uint8Array;
   anchorRoot: Uint8Array;
   nullifiers: [Uint8Array, Uint8Array];
   outputs: [ContractOutputPackage, ContractOutputPackage, ContractOutputPackage];
-  publicValue: bigint;
-}
-
-export interface DepositContractAction extends CommonContractAction {
-  assetIndex: number;
-  depositSource: string;
-}
-
-export type TransferContractAction = CommonContractAction;
-
-export interface WithdrawContractAction extends CommonContractAction {
-  assetIndex: number;
-  publicRecipient: string;
+  publicInflow: bigint;
+  publicOutflow: bigint;
+  appends: boolean;
+  assetIndex?: number;
+  depositSource?: string;
+  publicRecipient?: string;
 }
 
 function requireLength(name: string, bytes: Uint8Array, expected: number): void {
@@ -67,15 +60,31 @@ function encodeOutput(output: ContractOutputPackage, index: number): xdr.ScVal {
   ]);
 }
 
-function commonActionEntries(action: CommonContractAction): Array<readonly [string, xdr.ScVal]> {
+function optionalAddress(address: string | undefined): xdr.ScVal {
+  if (address === undefined) return xdr.ScVal.scvVoid();
+  return Address.fromString(address).toScVal();
+}
+
+function encodeAction(action: ContractAction): xdr.ScVal {
   requireLength('Action nonce', action.actionNonce, 32);
   requireLength('Anchor root', action.anchorRoot, 32);
   requireLength('Nullifier 0', action.nullifiers[0], 32);
   requireLength('Nullifier 1', action.nullifiers[1], 32);
-  if (action.publicValue < 0n || action.publicValue > (1n << 63n) - 1n) {
-    throw new Error('Public value must fit the protocol amount range');
+  for (const [name, value] of [
+    ['Public inflow', action.publicInflow],
+    ['Public outflow', action.publicOutflow],
+  ] as const) {
+    if (value < 0n || value > (1n << 63n) - 1n) {
+      throw new Error(`${name} must fit the protocol amount range`);
+    }
   }
-  return [
+  if (action.publicInflow > 0n && action.publicOutflow > 0n) {
+    throw new Error('At most one settlement leg may carry value');
+  }
+  if (!action.appends && action.publicOutflow === 0n) {
+    throw new Error('Non-appending actions must settle value');
+  }
+  return scMap([
     ['action_nonce', xdr.ScVal.scvBytes(action.actionNonce)],
     ['anchor_root', xdr.ScVal.scvBytes(action.anchorRoot)],
     ['nullifier_0', xdr.ScVal.scvBytes(action.nullifiers[0])],
@@ -83,8 +92,18 @@ function commonActionEntries(action: CommonContractAction): Array<readonly [stri
     ['output_0', encodeOutput(action.outputs[0], 0)],
     ['output_1', encodeOutput(action.outputs[1], 1)],
     ['output_2', encodeOutput(action.outputs[2], 2)],
-    ['public_value', nativeToScVal(action.publicValue)],
-  ];
+    ['public_inflow', nativeToScVal(action.publicInflow)],
+    ['public_outflow', nativeToScVal(action.publicOutflow)],
+    ['appends', nativeToScVal(action.appends)],
+    [
+      'asset_index',
+      action.assetIndex === undefined
+        ? xdr.ScVal.scvVoid()
+        : nativeToScVal(action.assetIndex, { type: 'u32' }),
+    ],
+    ['deposit_source', optionalAddress(action.depositSource)],
+    ['public_recipient', optionalAddress(action.publicRecipient)],
+  ]);
 }
 
 export class PrivateBalanceTransactionBuilder {
@@ -98,50 +117,12 @@ export class PrivateBalanceTransactionBuilder {
     return this.contract.call('touch_root');
   }
 
-  public buildDepositOperation(params: {
-    action: DepositContractAction;
+  /// Protocol V2.1 (wire version 3) exposes one shielded-action entrypoint; the settlement legs
+  /// inside the action decide whether it deposits, transfers, or withdraws.
+  public buildActionOperation(params: {
+    action: ContractAction;
     proof: ContractProof;
   }): xdr.Operation {
-    const action = scMap([
-      ...commonActionEntries(params.action),
-      ['asset_index', nativeToScVal(params.action.assetIndex, { type: 'u32' })],
-      ['deposit_source', Address.fromString(params.action.depositSource).toScVal()],
-    ]);
-    return this.contract.call('deposit', action, encodeProof(params.proof));
+    return this.contract.call('action', encodeAction(params.action), encodeProof(params.proof));
   }
-
-  public buildTransferOperation(params: {
-    action: TransferContractAction;
-    proof: ContractProof;
-  }): xdr.Operation {
-    return this.contract.call(
-      'transfer',
-      scMap(commonActionEntries(params.action)),
-      encodeProof(params.proof),
-    );
-  }
-
-  public buildWithdrawOperation(params: {
-    action: WithdrawContractAction;
-    proof: ContractProof;
-  }): xdr.Operation {
-    const action = scMap([
-      ...commonActionEntries(params.action),
-      ['asset_index', nativeToScVal(params.action.assetIndex, { type: 'u32' })],
-      ['public_recipient', Address.fromString(params.action.publicRecipient).toScVal()],
-    ]);
-    return this.contract.call('withdraw', action, encodeProof(params.proof));
-  }
-  public buildFullInputExitOperation(params: {
-    action: WithdrawContractAction;
-    proof: ContractProof;
-  }): xdr.Operation {
-    const action = scMap([
-      ...commonActionEntries(params.action),
-      ['asset_index', nativeToScVal(params.action.assetIndex, { type: 'u32' })],
-      ['public_recipient', Address.fromString(params.action.publicRecipient).toScVal()],
-    ]);
-    return this.contract.call('full_input_exit', action, encodeProof(params.proof));
-  }
-
 }

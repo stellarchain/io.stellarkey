@@ -20,7 +20,7 @@ test("keeps setup and private receive operable across supported browsers", async
   await installPrivateBalanceNetworkSupport(context);
   await importLiveWallet(page, senderSecret);
   const region = await setupPrivateBalance(page);
-  await expect(region.getByRole("button", { name: /^Open private XLM\. Ready\./ })).toBeVisible({
+  await expect(region.getByRole("button", { name: /^Open private XLM\. Ready\b/ })).toBeVisible({
     timeout: 180_000,
   });
 

@@ -123,7 +123,7 @@ export async function createOutputPackage(recipientHpkePk, diversifier, noteByte
     if (outputIndex !== 0 && outputIndex !== 1 && outputIndex !== 2) {
         throw new Error('Invalid output index');
     }
-    const info = deriveHpkeInfo(2, contextHash);
+    const info = deriveHpkeInfo(3, contextHash);
     const aad = deriveHpkeAad(contextHash, cm, actionNonce, outputIndex);
     let ephemeralPrivateKey = null;
     let sharedSecret = null;
@@ -185,16 +185,27 @@ export async function openRecipientEnvelope(recipientHpkeSk, recipientEnvelope, 
         if (viewTag !== deriveViewTag(sharedSecret, contextHash, encPk, recipientPublicKey))
             return null;
         const ownerCommitment = computeDiversifiedOwnerCommitment(baseOwnerCommitment, diversifier);
-        const info = deriveHpkeInfo(2, contextHash);
         const aad = deriveHpkeAad(contextHash, cm, actionNonce, outputIndex);
         const skR = await suite.kem.deserializePrivateKey(diversified.hpkePrivateKey);
-        const recipientContext = await suite.createRecipientContext({
-            recipientKey: skR,
-            enc: encPk,
-            info,
-        });
-        const pt = await recipientContext.open(ct, aad);
-        plaintextBytes = new Uint8Array(pt);
+        // Early V3 development clients wrote V3 notes with the V2 HPKE info domain.
+        // Read those envelopes without emitting more of them. The supplied V3 context,
+        // authenticated plaintext version and full commitment are still required.
+        for (const envelopeVersion of [3, 2]) {
+            try {
+                const recipientContext = await suite.createRecipientContext({
+                    recipientKey: skR,
+                    enc: encPk,
+                    info: deriveHpkeInfo(envelopeVersion, contextHash),
+                });
+                plaintextBytes = new Uint8Array(await recipientContext.open(ct, aad));
+                break;
+            }
+            catch {
+                // A fresh recipient context is needed for each independent info domain.
+            }
+        }
+        if (!plaintextBytes)
+            return null;
         const note = decodeNotePlaintext(plaintextBytes);
         if (!equalBytes(note.diversifier, diversifier))
             return null;

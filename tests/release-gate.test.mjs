@@ -149,7 +149,7 @@ test("Gate A requires Linux circuit analysis and canonical macOS ARM64 reproduct
     const artifacts = job("private-artifacts");
     const aggregate = job("private-gate-a");
     assert.ok(circuits && artifacts && aggregate, "keep distinct circuit, artifact and required aggregate jobs");
-    assert.match(circuits, /runs-on: ubuntu-latest/);
+    assert.match(circuits, /runs-on: ubuntu-24\.04/);
     assert.match(circuits, /npm run private:gate-a/);
     assert.match(circuits, /circomspect --version 0\.9\.0 --locked/);
     assert.match(circuits, /audit --audit-level=high/);
@@ -208,6 +208,21 @@ test("hosted application gates allow the complete private and public browser mat
       "cold toolchain installs and the complete synthetic browser matrix need a 90-minute job budget");
     assert.doesNotMatch(job, /continue-on-error:\s*true|--grep-invert|--max-failures/);
   }
+});
+
+test("hosted browser gates use native macOS WebKit without reducing the matrix", () => {
+  for (const name of [".github/workflows/ci.yml", ".github/workflows/release.yml"]) {
+    const workflow = read(name);
+    const application = workflow.split("\n  application:")[1].split("\n  private-ui:")[0];
+    const privateUi = workflow.split("\n  private-ui:")[1].split(/\n  [a-z][a-z-]*:/)[0];
+    assert.match(application, /runs-on: macos-15/);
+    assert.match(application, /npm run verify:application:production/);
+    assert.match(privateUi, /runs-on: macos-15/);
+    assert.match(privateUi, /browser: \[desktop-chromium, iphone-webkit\]/);
+    assert.match(privateUi, /npm run test:e2e:private-ui/);
+    assert.match(privateUi, /npm run test:e2e:private-components/);
+  }
+  assert.doesNotMatch(read("e2e/modal-motion.spec.ts"), /page\.clock\.install/);
 });
 
 test("the isolated Private Payments Gate A installs its internal browser package", () => {

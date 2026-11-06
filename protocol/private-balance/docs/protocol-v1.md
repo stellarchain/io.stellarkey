@@ -1,8 +1,14 @@
-# StellarKey Shielded Balance Protocol Specification (V2)
+# StellarKey Shielded Balance Protocol Specification (V2.1)
+
+Protocol release V2.1 retains encoded protocol identifier `3` (u16 `0x0003`),
+including the manifest `protocolVersion`, key derivation, note/context encodings,
+and HPKE info. The release name is not a decimal value to serialize. This naming
+change does not alter keys, proof artifacts, or the deployed contract. Earlier
+development source comments may call wire identifier 3 “V3”.
 
 ## 1. Status and deployment boundary
 
-Shielded Balance V2 is an opt-in note pool implemented by a Soroban contract, a Groth16 circuit,
+Shielded Balance V2.1 is an opt-in note pool implemented by a Soroban contract, a Groth16 circuit,
 and a local browser wallet. One deployment owns one shielded tree and an append-only,
 administrator-curated asset registry. The network, realm, initial asset administrator, guardian,
 circuit hash, verification-key hash, and Poseidon2 parameter hash are deployment-bound.
@@ -17,7 +23,7 @@ not real value or Mainnet.
 
 - Field: BN254 scalar field `Fr`, modulus
   `21888242871839275222246405745257275088548364400416034343698204186575808495617`.
-- Proof: Groth16 with 11 public inputs. The current `--O2` circuit has 40,594 constraints and uses
+- Proof: Groth16 with 12 public inputs. The current `--O2` circuit has 40,647 constraints and uses
   the pinned power-17 Powers-of-Tau transcript.
 - Hash: Poseidon2 over BN254 `Fr`, width 4, rate 3, capacity 1, `x^5` S-box, 8 full rounds, 56
   partial rounds, and the implementation's length IV `N * 2^64`.
@@ -79,18 +85,24 @@ cell initialized to `3 * 2^64`, returning the first state element. It is a three
 three-wide permutation.
 
 Deposit, Transfer and Withdraw append three leaves and return `TreeFull` when fewer
-than three remain. FullInputExit (kind 4, entrypoint `full_input_exit`) proves that
+than three remain. A non-appending outflow (`appends=false` on the shared `action` entrypoint) proves that
 all output values are zero and the selected input total equals public withdrawal.
 It skips the append guard, preserves root/frontier/leaf count, and remains usable
 at saturation subject to normal proof, nullifier, token and ledger conditions.
-Both modes share real nullifiers; changing action kind cannot replay a spent note.
+Both modes share real nullifiers; changing append mode cannot replay a spent note.
+The wallet uses the non-appending mode only when fewer than three leaves remain
+in a fresh head matched to its authenticated checkpoint. Ordinary withdrawals,
+including exact-input withdrawals, append three commitments. The contract permits
+non-appending outflows before saturation; this wallet policy is not a consensus
+privacy guarantee. Non-appending outflows reveal that their selected inputs left
+no private change, but do not reveal the holder's other notes.
 
 Positions and archive counters use u128 and 16-byte big-endian canonical encoding.
 The browser uses BigInt and strict decimal strings in storage. A record binds its
 independent action index and starting leaf position. Exits advance only the former;
 clients must never infer the leaf count as three times the archive action count.
 Both the finite `3^64` leaf bound and u128 archive bound remain explicit. Multi-note
-full-balance withdrawals use consecutive <=2-input exits, not consolidation; the
+full-balance withdrawals use consecutive <=2-input withdrawals, not consolidation; the
 wallet's one-approval 64-step/15-minute bound and fee caps remain in effect.
 
 ## 5. Nullifiers and fixed arity
@@ -100,19 +112,18 @@ binds a fresh secret and context, uses its own domain, and omits a lane number. 
 between real and dummy nullifiers privately, requires both public slots to be non-zero and distinct,
 and constrains real lanes to the anchor root.
 
-Transfers and withdrawals persist both nullifiers. Deposits have no real input and publicly reveal
-their action kind, so the contract persists only the first dummy nullifier as an exact-proof replay
-key. Persisting neither would allow replay; persisting the second adds no replay protection.
+Every accepted action persists both nullifiers, including both dummy nullifiers
+for deposits. All actions use the same replay-protection path.
 
 ## 6. Value balance and actions
 
 Values are 63-bit unsigned integers. Each input and output value is range constrained. The circuit
 computes one total equality:
 
-`sum(inputs) + publicDeposit = sum(outputs) + publicWithdrawal`.
+`sum(inputs) + publicInflow = sum(outputs) + publicOutflow`.
 
-Only one total needs an additional 63-bit decomposition after equality. The public action kind
-selects these external flows:
+Only one total needs an additional 63-bit decomposition after equality. Public inflow and outflow cannot both be nonzero. These settlement legs
+select the external flows without publishing a separate action-kind field:
 
 - Deposit: a public source, registry index, asset, and amount enter the pool; both private input
   lanes are dummy.
@@ -123,13 +134,14 @@ selects these external flows:
 - FullInputExit: the same boundary fields as Withdraw, but all three output values
   are zero and public value equals the full selected input value. No leaves append.
 
-The eleven public signals, in verifier order, are the deployment context field, boundary asset
-field, action kind, anchor root, public value, canonical action field, two nullifiers, and three
-output commitments. The boundary asset field is zero for a transfer and equals the registered full
+The twelve public signals, in verifier order, are the deployment context field, boundary asset
+field, public inflow, public outflow, append flag, anchor root, canonical action field,
+two nullifiers, and three output commitments. The boundary asset field is zero for a transfer and equals the registered full
 asset field for a deposit or withdrawal. A separate private action asset field binds every real
 input and all three output commitments, and must equal the public field at transparent boundaries.
 The action field is the canonical external hash of the network, realm, pool, optional boundary
-asset/index, nonce, anchor root, complete output packages, and public endpoints. It contains no
+asset/index, nonce, anchor root, complete output packages, inflow, outflow, append
+flag, and public endpoints. It contains no
 relayer or relayer-fee field. Its explicit non-zero circuit constraint gives it a non-zero Groth16
 input coefficient; mutating it invalidates a proof. The contract derives that field itself and
 independently validates canonical non-zero, distinct slots before accepting the proof.
@@ -144,6 +156,11 @@ Each output package contains a 181-byte recipient envelope and a 157-byte outgoi
 recipient envelope lets the incoming viewing key test and open owned notes. The outgoing envelope
 is authenticated under the outgoing viewing key and lets a seed-restored sender recover an external
 recipient fingerprint and memo. Change and dummy envelopes use the same fixed sizes.
+
+New recipient envelopes use the V2.1 HPKE info context. The reader also accepts
+early V2.1 development envelopes written with HPKE info version 2, while requiring
+authenticated V2.1 note plaintext, the supplied deployment context, and the full
+commitment. This does not accept obsolete V2 notes or migrate V2 deployments.
 
 Envelope associated data binds the deployment and output context. Encryption is intentionally
 outside the Groth16 circuit: a valid commitment does not prove that its envelope is decryptable.

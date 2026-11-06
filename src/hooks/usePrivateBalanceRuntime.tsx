@@ -246,7 +246,7 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   receiveSessionId: null,
   publicAddress: null,
   networkLabel: 'Testnet',
-  protocolVersion: 2,
+  protocolVersion: 3,
   noteCount: 0,
   activities: [],
   pendingActions: [],

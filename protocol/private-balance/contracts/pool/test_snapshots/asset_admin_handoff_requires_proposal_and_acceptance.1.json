@@ -326,7 +326,7 @@
                               "symbol": "circuit_hash"
                             },
                             "val": {
-                              "bytes": "b59eaddeb2ec6eac403d2c2adee693ea2446abb094edcdd6f309456e1d77ae2f"
+                              "bytes": "b929074da90879626a0e2a1e01e2bb7624e50dfae4e894d2866a09e80e0c1a6e"
                             }
                           },
                           {
@@ -334,7 +334,7 @@
                               "symbol": "context_field"
                             },
                             "val": {
-                              "bytes": "14fd932e233ff5479ed10b551280b65bb0a86d2cd826e23d398fb957a171e05f"
+                              "bytes": "0e505a05af730c858b79566bcfa8628dfd0faa49dc1c4d173cd1764341abec44"
                             }
                           },
                           {
@@ -342,7 +342,7 @@
                               "symbol": "context_hash"
                             },
                             "val": {
-                              "bytes": "87020046c3f819cfec2387b8f7bfcb424fea9fd3bc9de6695c4ef08f9b7afab9"
+                              "bytes": "c2d251acbdf21c456a4dc3b5cd47bcebf0395313e32c89a89fb0a1c1acc7bb07"
                             }
                           },
                           {
@@ -350,7 +350,7 @@
                               "symbol": "deployment_binding_hash"
                             },
                             "val": {
-                              "bytes": "ebac3a68c95871f527ddeb638615ae9926c64b0ef6264523e63f5def62bcf9ed"
+                              "bytes": "0eb666056f53bea4f4c76f61e80fa2a7f3c3ab6b384ea50cfc043a7b814a31d3"
                             }
                           },
                           {
@@ -390,7 +390,7 @@
                               "symbol": "protocol_version"
                             },
                             "val": {
-                              "u32": 2
+                              "u32": 3
                             }
                           },
                           {
@@ -422,7 +422,7 @@
                               "symbol": "verification_key_hash"
                             },
                             "val": {
-                              "bytes": "4c39e247db8e932695e881041e94337d28858208f04b477b32d51604bb3c03bc"
+                              "bytes": "b1c7c7c087da2e0649af69c1c022272bea2d5fbfd9abe6d82019448f6a4cd53c"
                             }
                           }
                         ]
@@ -463,7 +463,7 @@
                               "symbol": "transcript_head"
                             },
                             "val": {
-                              "bytes": "b6990a22462662c82cc309f0b445e4e5fc7d11c0eb8bda1be77c42e14b897467"
+                              "bytes": "da35dc98315ff19d6c45c87b4f34aff7b5bd43a22c0dd15774ad83ceef211e1c"
                             }
                           }
                         ]

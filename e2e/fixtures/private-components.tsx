@@ -127,7 +127,7 @@ function DiscoveryProviderChecks() {
     const originalFetch = window.fetch;
     const decode = (value: string) => Uint8Array.from(value.match(/../g)!, byte => Number.parseInt(byte, 16));
     const marker = () => new Uint8Array(32).fill(1);
-    const contextHash = computeContextHash(2, decode(developmentManifest.networkId), decode(developmentManifest.realmId), new Uint8Array(StrKey.decodeContract(developmentManifest.poolContractId)));
+    const contextHash = computeContextHash(developmentManifest.protocolVersion, decode(developmentManifest.networkId), decode(developmentManifest.realmId), new Uint8Array(StrKey.decodeContract(developmentManifest.poolContractId)));
     const pause = async (stage: 'init' | 'prefix' | 'address-cas') => {
       if (!gate.armed || gate.mode !== stage) return;
       gate.armed = false;
@@ -151,10 +151,10 @@ function DiscoveryProviderChecks() {
       : { sequence, hash: developmentManifest.deploymentCheckpoint.hash }; };
     archive.readHead = async function () {
       if (gate.mode === 'off') return originals.readHead.call(this);
-      return { latestLedger: 1, config: { protocolVersion: 2, networkId: decode(developmentManifest.networkId),
+      return { latestLedger: 1, config: { protocolVersion: developmentManifest.protocolVersion, networkId: decode(developmentManifest.networkId),
         realmId: decode(developmentManifest.realmId), guardian: developmentManifest.guardianAddress,
         initialAssetAdmin: developmentManifest.assetAdminAddress, poseidon2ParameterHash: marker(), circuitHash: marker(),
-        verificationKeyHash: marker(), treeDepth: 17, rootWindowLedgers: 1440,
+        verificationKeyHash: marker(), treeDepth: developmentManifest.constants.treeDepth, rootWindowLedgers: developmentManifest.constants.rootWindowLedgers,
         deploymentBindingHash: decode(developmentManifest.deploymentBindingHash), contextHash, contextField: computeContextField(contextHash) },
       meta: { actionCount: 0n, transcriptHead: computeGenesisRecordHash(contextHash, decode(developmentManifest.deploymentBindingHash)) },
       tree: await createEmptyTree() };

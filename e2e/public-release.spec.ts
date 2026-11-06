@@ -242,7 +242,7 @@ test("the changelog publishes the current release as semantic text", async ({ pa
     expect(category).toMatch(/^(Added|Changed|Deprecated|Removed|Fixed|Security)$/);
   }
   await expect(currentRelease.getByRole("heading", { level: 2, name: APPLICATION_VERSION })).toBeVisible();
-  await expect(currentRelease.locator('time[datetime="2026-09-16"]')).toHaveText("16 September 2026");
+  await expect(currentRelease.locator('time[datetime="2026-11-06"]')).toHaveText("6 November 2026");
   await expect(page.getByRole("link", { name: /source repository/i })).toHaveAttribute(
     "href",
     "https://github.com/stellarchain/io.stellarkey",
@@ -255,12 +255,12 @@ test("the landing page tells the private payments story with its limits attached
 
   await expect(page.getByRole("heading", { level: 2, name: "Then it goes quiet." })).toBeVisible();
   const act = page.locator("#private");
-  await expect(act).toContainText("Protocol V2");
+  await expect(act).toContainText("Protocol V2.1");
   await expect(act).toContainText("unaudited, Testnet-only");
   await expect(act).toContainText("public by design");
   await expect(act).toContainText("Privacy grows with more independent activity");
   await expect(act).toContainText("not a guarantee");
-  await expect(page.locator("#private-how")).toContainText("40,594 constraints");
+  await expect(page.locator("#private-how")).toContainText("40,647 constraints");
   await expect(page.locator("#private-how")).toContainText("private witness stays local");
   await expect(
     page.locator("#private-how").getByRole("link", { name: "Read exactly how it works →" }),

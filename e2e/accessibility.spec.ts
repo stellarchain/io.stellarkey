@@ -224,7 +224,14 @@ async function prepareImportedWallet(
 
   await importTestWallet(page);
   await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
-  if (auditEntrySurfaces) await expectAccessibleSurface(page, "dashboard", browserName);
+  if (auditEntrySurfaces) {
+    const privateAssets = page.getByRole("region", { name: "Your Private Assets", exact: true });
+    await expect(privateAssets).toBeVisible();
+    const privateRows = privateAssets.getByRole("button", { name: /^Open private / });
+    await expect(privateRows.first()).toBeVisible();
+    await expect(privateRows.first()).toHaveAccessibleName(/^Open private (XLM|USDC)\.\s+Not enabled\s+Turn on$/);
+    await expectAccessibleSurface(page, "dashboard", browserName);
+  }
 }
 
 async function openWalletSettings(page: Page): Promise<void> {
@@ -481,6 +488,12 @@ test("critical merchant screens remain operable and accessible", async ({ page, 
       ).toHaveAttribute("aria-current", "page");
     }
     await expectAccessibleSurface(page, `merchant ${destination.toLowerCase()}`, browserName);
+    if (destination === "Catalogue") {
+      const layout = page.getByRole("group", { name: "Catalogue layout", exact: true });
+      await layout.getByRole("button", { name: "Tiles", exact: true }).click();
+      await expectAccessibleSurface(page, "merchant catalogue tiles", browserName);
+      await layout.getByRole("button", { name: "Rows", exact: true }).click();
+    }
   }
 
   await clickMerchantSection(page, "Invoices");

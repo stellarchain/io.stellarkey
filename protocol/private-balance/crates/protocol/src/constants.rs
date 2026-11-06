@@ -1,4 +1,4 @@
-pub const PROTOCOL_VERSION: u16 = 2;
+pub const PROTOCOL_VERSION: u16 = 3;
 pub const TREE_ARITY: usize = 3;
 pub const TREE_INNER_DEPTH: usize = 17;
 pub const TREE_OUTER_DEPTH: usize = 47;

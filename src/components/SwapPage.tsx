@@ -478,7 +478,7 @@ function SwapForm({
               ? "border-[#0A84FF]/45 bg-[#0A84FF]/15 text-[#64D2FF]"
               : "border-white/10 bg-white/[0.055] text-neutral-300 hover:bg-white/[0.1] hover:text-white"
           }`}
-          aria-label="Slippage Settings"
+          aria-label={`Slippage Settings: Slippage ${slippage}%`}
         >
           <IconSliders size={14} />
           <span>Slippage {slippage}%</span>

@@ -3,9 +3,7 @@ mod common;
 use common::{payload, register_pool};
 use private_balance_pool::{archive, storage};
 use private_balance_protocol::{
-    action::{Action, ActionKind},
-    constants::PROTOCOL_VERSION,
-    encryption::OutputPackage,
+    action::Action, constants::PROTOCOL_VERSION, encryption::OutputPackage,
 };
 use soroban_sdk::{BytesN, Env};
 
@@ -22,7 +20,6 @@ fn deposit(index: u32, source: (u8, [u8; 32]), asset: (u8, [u8; 32])) -> Action 
     second_nullifier[28..].copy_from_slice(&(index + 301).to_be_bytes());
     Action {
         protocol_version: PROTOCOL_VERSION,
-        kind: ActionKind::Deposit,
         asset_index: Some(0),
         asset: Some(asset),
         action_nonce: [index as u8; 32],
@@ -45,7 +42,9 @@ fn deposit(index: u32, source: (u8, [u8; 32]), asset: (u8, [u8; 32])) -> Action 
                 outgoing_envelope: [index as u8 + 4; 157],
             },
         ],
-        public_value: 1,
+        public_inflow: 1,
+        public_outflow: 0,
+        appends: true,
         deposit_source: Some(source),
         public_recipient: None,
     }

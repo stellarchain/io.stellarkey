@@ -61,6 +61,30 @@ test("the first worker install does not show a false update prompt", async ({ pa
   await expect(page.getByRole("status").filter({ hasText: "Update ready" })).toHaveCount(0);
 });
 
+test("the installed worker identifies the release it actually cached", async ({ page, request }) => {
+  const release = await (await request.get("/release.json")).json();
+  await page.goto("/app", { waitUntil: "domcontentloaded" });
+  const identity = await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.ready;
+    return new Promise((resolve, reject) => {
+      const channel = new MessageChannel();
+      const timeout = setTimeout(() => {
+        channel.port1.close();
+        channel.port2.close();
+        reject(new Error("Synthetic release identity request timed out"));
+      }, 5_000);
+      channel.port1.onmessage = ({ data }) => {
+        clearTimeout(timeout);
+        channel.port1.close();
+        channel.port2.close();
+        resolve(data);
+      };
+      registration.active?.postMessage({ type: "GET_RELEASE" }, [channel.port2]);
+    });
+  });
+  expect(identity).toEqual({ commit: release.commit, version: release.version, sourceTree: release.sourceTree });
+});
+
 test("an empty iOS Home Screen launch explains the local-storage handoff and leads with restore", async ({ context }) => {
   await context.addInitScript(() => {
     Object.defineProperty(navigator, "standalone", { configurable: true, value: true });

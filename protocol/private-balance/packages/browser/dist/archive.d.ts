@@ -6,7 +6,7 @@ export interface ArchiveRecordModel {
     actionIndex: bigint;
     ledgerSequence: number;
     startingLeafIndex: bigint;
-    actionKind: number;
+    appends: boolean;
     assetIndex?: number;
     asset?: {
         kind: number;
@@ -17,7 +17,8 @@ export interface ArchiveRecordModel {
     treeRootAfter: Uint8Array;
     nullifiers: [Uint8Array, Uint8Array];
     outputs: [OutputPackageModel, OutputPackageModel, OutputPackageModel];
-    publicValue: bigint;
+    publicInflow: bigint;
+    publicOutflow: bigint;
     depositSource?: {
         kind: number;
         payload: Uint8Array;

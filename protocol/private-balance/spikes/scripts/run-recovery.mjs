@@ -10,7 +10,6 @@ import { Aes128Gcm, CipherSuite, HkdfSha256 } from '@hpke/core';
 import { DhkemX25519HkdfSha256 } from '@hpke/dhkem-x25519';
 import { StrKey } from '@stellar/stellar-sdk';
 import {
-  ActionKind,
   appendCommitments,
   computeCommitment,
   computeAssetField,
@@ -120,7 +119,7 @@ async function deterministicOutputPackage({
 }) {
   const sender = await suite.createSenderContext({
     recipientPublicKey,
-    info: deriveHpkeInfo(2, contextHash),
+    info: deriveHpkeInfo(3, contextHash),
     ekm: deterministicEkm(actionIndex, outputIndex, actionNonce),
   });
   const ciphertext = new Uint8Array(await sender.seal(
@@ -214,13 +213,13 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
   const accountPublicKey = bytes(5);
   const deploymentBindingHash = bytes(6);
   const externalAccountPublicKey = bytes(9);
-  const contextHash = computeContextHash(2, networkId, realmId, poolId);
+  const contextHash = computeContextHash(3, networkId, realmId, poolId);
   const contextField = computeContextField(contextHash);
   const walletSeed = bytes(7);
   const externalSeed = bytes(8);
   const walletKeys = await deriveKeysFromSeed(
     walletSeed,
-    2,
+    3,
     networkId,
     realmId,
     poolId,
@@ -229,7 +228,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
   );
   const externalKeys = await deriveKeysFromSeed(
     externalSeed,
-    2,
+    3,
     networkId,
     realmId,
     poolId,
@@ -267,7 +266,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       : externalKeys.ownerCommitment;
     const actionNonce = u64Field(options.actionCount + actionIndex + 1);
     const note = {
-      protocolVersion: 2,
+      protocolVersion: 3,
       flags: 0,
       value,
       diversifier,
@@ -283,7 +282,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       ? walletKeys.hpkePublicKey
       : externalKeys.hpkePublicKey;
     const outgoingPlaintext = encodeOutgoingPlaintext({
-      protocolVersion: 2,
+      protocolVersion: 3,
       flags: 0,
       value,
       diversifier,
@@ -328,7 +327,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
         dummyRho,
       );
       const dummyNoteBytes = encodeNotePlaintext({
-        protocolVersion: 2,
+        protocolVersion: 3,
         flags: 1,
         value: 0n,
         diversifier,
@@ -340,7 +339,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
         reserved: new Uint8Array(11),
       });
       const dummyOutgoingPlaintext = encodeOutgoingPlaintext({
-        protocolVersion: 2,
+        protocolVersion: 3,
         flags: 1,
         value: 0n,
         diversifier,
@@ -385,22 +384,25 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       payload: owned ? accountPublicKey : externalAccountPublicKey,
     };
     const action = {
-      protocolVersion: 2,
-      kind: ActionKind.Deposit,
+      protocolVersion: 3,
       assetIndex,
       asset,
       actionNonce,
       anchorRoot: new Uint8Array(32),
       nullifiers,
       outputs,
-      publicValue: value,
+      publicInflow: value,
+      publicOutflow: 0n,
+      appends: true,
       depositSource,
     };
     const record = {
       actionIndex: BigInt(actionIndex),
       ledgerSequence: actionIndex + 1,
       startingLeafIndex: BigInt(actionIndex * 3),
-      actionKind: ActionKind.Deposit,
+      appends: true,
+      publicInflow: value,
+      publicOutflow: 0n,
       assetIndex,
       asset,
       actionNonce,
@@ -412,7 +414,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       depositSource,
     };
     records.push(record);
-    priorRecordHash = computeRecordHash(record, 2, priorRecordHash);
+    priorRecordHash = computeRecordHash(record, 3, priorRecordHash);
     if (owned) expectedBalance += value;
     if ((actionIndex + 1) % 1_000 === 0) {
       sampleMemory();
@@ -429,7 +431,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
     records,
     viewingKey: toViewingKey(walletKeys),
     context: {
-      protocolVersion: 2,
+      protocolVersion: 3,
       networkId,
       realmId,
       poolId,

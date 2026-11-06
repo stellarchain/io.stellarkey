@@ -7,20 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-06
+
 ### Changed
 
-- Update Next.js and its ESLint configuration to 16.3.8, Stellar SDK to 17.2.1, and Node.js type definitions to 22.20.3.
 - Update the pinned Cloudflare Wrangler action to 4.1.3 and retain its reviewed Node 24 runtime requirement.
+- Update Next.js and its lint configuration to 16.4.2, React to 19.3.1, Stellar SDK to 17.3.0, and the browser test toolchain.
+- Migrate optional hardware signing to Trezor Connect 10.0.1 and Suite Web, with the matching bootstrap-frame policy and device-protocol compatibility tests. The Suite core remains hosted by Trezor; its reference implementation is a development-only test dependency.
+- Prepare application release 1.1.0 with synchronized version markers and whitepaper; Private Payments remains the V2.1 development protocol.
+- Refresh the pinned Node setup and artifact upload/download Actions used by CI and release verification.
 
 ### Fixed
 
-- Refresh Private Balance manifest and catalogue provenance after dependency changes so generated-file verification uses the current lockfiles.
+- Run the complete browser verification matrix on macOS with Playwright 1.65.0, preserving native animation checks despite Linux WebKit rendering regressions.
+- Pin hosted circuit analysis to Ubuntu 24.04 and GCC 12 so the unchanged legacy Z3 dependency builds after the ubuntu-latest image migration.
+- Refresh Private Balance build provenance while preserving the historical deployment lock and binding current browser maintenance inputs.
+- Retain custom credential-header protection across JavaScript realms during HTTP redirects and correct IPv6 link-local and cross-family subnet classification in installed dependencies.
+- Set the CMake compatibility policy for the pinned circuit analyzer's legacy Z3 build on hosted runners.
+- Match wallet and merchant control accessible names to their visible labels and values.
 
 ### Security
 
-- Update Axios, IP address parsing, image processing, source-map parsing, TOML parsing, PBKDF2 and brace expansion dependencies within their supported release series.
-- Bound recursive brace parsing in Next.js lint tooling with an exact, reviewed depth-guard backport and retain the complete dependency audit gate.
-- Update protocol CLI brace expansion to 2.1.7 while preserving historical deployment evidence and binding the maintained browser lockfile into current build provenance.
+- Apply compatible Axios, image-processing, source-map, TOML, PBKDF2 and brace-expansion patches, preserving the strict HPKE deployment-history checks.
+- Preserve the reviewed recursion-depth guard in Next.js lint dependencies and check every public signal in the twelve-signal Rust verifier mutation suite.
+- Update Rust constant-time utilities to ctutils 0.4.4 without changing the deployed pool Wasm.
+- Record the maintainer-approved 1.1.0 exception for RUSTSEC-2026-0387 in Soroban host dependencies. The crypto-bigint advisory remains unresolved.
+- Record the maintainer’s explicit 1.1.0 deferral of physical-device, VoiceOver/NVDA, passkey, Trezor and redistribution/origin sign-off checks. They remain unperformed or unconfirmed, not passed; this grants no third-party license rights or approval for real-value Private Payments.
+
+## [1.0.5] - 2026-09-22
+
+### Changed
+
+- Prepare application release 1.0.5 with synchronized version markers and whitepaper; name the Private Payments protocol release V2.1 while retaining encoded protocol identifier 3.
+
+- Private Payments Protocol V2.1 uses one entrypoint and archive-record shape with proof-bound public inflow, outflow, and append fields. Ordinary withdrawals append three commitments even when no private change remains. At verified tree saturation, exact-input withdrawals can skip appending; these capacity exits remain publicly distinguishable. Boundary deposits and withdrawals remain public, and every action persists both nullifiers.
+
+- Raise the maximum reviewed private-action resource fee from 1 XLM to 2 XLM for the V2.1 development pool; the separate classic inclusion fee and explicit approval remain in force.
+
+### Security
+
+- Remove published action-kind labels and the normal-wallet append distinction between exact-input and change-producing withdrawals. Match the fresh capacity counter to the authenticated checkpoint before choosing exit mode, and reject a worker or withdrawal-chain review that changes the expected append policy.
+
+### Removed
+
+- Removed the published action kind from proofs, the pool contract entrypoints, and the authenticated archive records. Current clients support only the replacement V2.1 development pool; V2 deployment-bound notes, addresses, proofs, and encrypted backups are rejected rather than migrated.
+
+### Fixed
+
+- Verify that independently rebuilt R1CS, witness Wasm, and pool Wasm match the checked-in artifacts and published manifest hashes.
+- Explain incompatible or damaged Private Payments backup records without exposing their contents, and preserve the existing wallet when validation fails. Public-only backups remain compatible.
+
+- Derive V2.1 backup storage keys correctly during import. Encrypt new V2.1 recipient envelopes with the V2.1 HPKE context while retaining authenticated recovery of early V2.1 development envelopes written with the V2 HPKE context. Obsolete V2 note plaintexts remain rejected.
+
+- Validate V2.1 proof-vector metadata and restore the security-constraint mutation checks after the circuit migration.
+- Stop offering an already-loaded release after a refresh, reconcile stale offline-worker update banners, and make stalled activation retryable without clearing wallet data or forcing other open tabs to reload.
 
 ## [1.0.4] - 2026-09-16
 

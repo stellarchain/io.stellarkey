@@ -162,7 +162,7 @@ export function deriveHpkeAad(
 }
 
 function validateOutgoingPlaintext(plaintext: OutgoingPlaintext): void {
-  if (plaintext.protocolVersion !== 2) throw new Error('Unsupported outgoing plaintext version');
+  if (plaintext.protocolVersion !== 3) throw new Error('Unsupported outgoing plaintext version');
   if (plaintext.flags !== 0 && plaintext.flags !== OUTGOING_DUMMY_FLAG) {
     throw new Error('Unsupported outgoing plaintext flags');
   }

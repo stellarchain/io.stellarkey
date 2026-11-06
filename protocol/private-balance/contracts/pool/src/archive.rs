@@ -17,7 +17,7 @@ pub struct ArchiveRecord {
     pub action_index: u128,
     pub ledger_sequence: u32,
     pub starting_leaf_index: u128,
-    pub action_kind: u32,
+    pub appends: bool,
     pub asset_index: Option<u32>,
     pub asset: Option<Address>,
     pub action_nonce: BytesN<32>,
@@ -28,7 +28,8 @@ pub struct ArchiveRecord {
     pub output_0: OutputPackage,
     pub output_1: OutputPackage,
     pub output_2: OutputPackage,
-    pub public_value: u64,
+    pub public_inflow: u64,
+    pub public_outflow: u64,
     pub deposit_source: Option<Address>,
     pub public_recipient: Option<Address>,
 }
@@ -57,7 +58,7 @@ pub(crate) fn protocol_record(record: &ArchiveRecord) -> Result<ProtocolArchiveR
         action_index: record.action_index,
         ledger_sequence: record.ledger_sequence,
         starting_leaf_index: record.starting_leaf_index,
-        action_kind: u8::try_from(record.action_kind).map_err(|_| PoolError::ArchiveCorrupt)?,
+        appends: record.appends,
         asset_index: record.asset_index,
         asset: optional_payload(&record.asset)?,
         action_nonce: record.action_nonce.to_array(),
@@ -69,7 +70,8 @@ pub(crate) fn protocol_record(record: &ArchiveRecord) -> Result<ProtocolArchiveR
             protocol_output(&record.output_1),
             protocol_output(&record.output_2),
         ],
-        public_value: record.public_value,
+        public_inflow: record.public_inflow,
+        public_outflow: record.public_outflow,
         deposit_source: optional_payload(&record.deposit_source)?,
         public_recipient: optional_payload(&record.public_recipient)?,
     })
@@ -86,18 +88,18 @@ pub fn append_record(
     env: &Env,
     action: &Action,
     asset: Option<&AssetConfig>,
-    signals: &[[u8; 32]; 11],
+    signals: &[[u8; 32]; 12],
     starting_leaf_index: u128,
     tree_root_after: &BytesN<32>,
     public_address: Option<&Address>,
 ) -> Result<ArchiveRecord, PoolError> {
     let mut meta = storage::get_meta(env);
     let action_index = meta.action_count;
-    if signals[6] != action.nullifiers[0]
-        || signals[7] != action.nullifiers[1]
-        || signals[8] != action.outputs[0].cm
-        || signals[9] != action.outputs[1].cm
-        || signals[10] != action.outputs[2].cm
+    if signals[7] != action.nullifiers[0]
+        || signals[8] != action.nullifiers[1]
+        || signals[9] != action.outputs[0].cm
+        || signals[10] != action.outputs[1].cm
+        || signals[11] != action.outputs[2].cm
     {
         return Err(PoolError::ArchiveCorrupt);
     }
@@ -108,34 +110,31 @@ pub fn append_record(
         return Err(PoolError::ArchiveCorrupt);
     }
 
-    let (deposit_source, public_recipient) = match action.kind {
-        private_balance_protocol::action::ActionKind::Deposit => {
-            let source = public_address.ok_or(PoolError::InvalidActionShape)?;
-            if action.deposit_source != Some(address_payload(source)?) {
-                return Err(PoolError::ArchiveCorrupt);
-            }
-            (Some(source.clone()), None)
+    // The submitter's role follows the settlement legs: an inflow names the
+    // source, an outflow names the recipient, a quiet action names nobody.
+    let (deposit_source, public_recipient) = if action.public_inflow > 0 {
+        let source = public_address.ok_or(PoolError::InvalidActionShape)?;
+        if action.deposit_source != Some(address_payload(source)?) {
+            return Err(PoolError::ArchiveCorrupt);
         }
-        private_balance_protocol::action::ActionKind::PrivateTransfer => {
-            if public_address.is_some() {
-                return Err(PoolError::InvalidActionShape);
-            }
-            (None, None)
+        (Some(source.clone()), None)
+    } else if action.public_outflow > 0 {
+        let recipient = public_address.ok_or(PoolError::InvalidActionShape)?;
+        if action.public_recipient != Some(address_payload(recipient)?) {
+            return Err(PoolError::ArchiveCorrupt);
         }
-        private_balance_protocol::action::ActionKind::Withdraw
-        | private_balance_protocol::action::ActionKind::FullInputExit => {
-            let recipient = public_address.ok_or(PoolError::InvalidActionShape)?;
-            if action.public_recipient != Some(address_payload(recipient)?) {
-                return Err(PoolError::ArchiveCorrupt);
-            }
-            (None, Some(recipient.clone()))
+        (None, Some(recipient.clone()))
+    } else {
+        if public_address.is_some() {
+            return Err(PoolError::InvalidActionShape);
         }
+        (None, None)
     };
     let record = ArchiveRecord {
         action_index,
         ledger_sequence: env.ledger().sequence(),
         starting_leaf_index,
-        action_kind: action.kind as u32,
+        appends: action.appends,
         asset_index: asset.map(|value| value.index),
         asset: asset.map(|value| value.asset.clone()),
         action_nonce: BytesN::from_array(env, &action.action_nonce),
@@ -158,7 +157,8 @@ pub fn append_record(
             recipient_envelope: BytesN::from_array(env, &action.outputs[2].recipient_envelope),
             outgoing_envelope: BytesN::from_array(env, &action.outputs[2].outgoing_envelope),
         },
-        public_value: action.public_value,
+        public_inflow: action.public_inflow,
+        public_outflow: action.public_outflow,
         deposit_source,
         public_recipient,
     };

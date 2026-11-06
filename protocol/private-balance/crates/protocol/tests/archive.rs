@@ -23,7 +23,7 @@ fn test_archive_record_hash_chain() {
         action_index: 0,
         ledger_sequence: 100,
         starting_leaf_index: 0,
-        action_kind: 1,
+        appends: true,
         asset_index: Some(0),
         asset: Some((
             fill(&["record", "assetKind"]),
@@ -50,13 +50,14 @@ fn test_archive_record_hash_chain() {
                 outgoing_envelope: [11; 157],
             },
         ],
-        public_value: 1000,
+        public_inflow: 1000,
+        public_outflow: 0,
         deposit_source: Some((0, [fill(&["record", "depositSourcePayloadFill"]); 32])),
         public_recipient: None,
     };
 
     let prior = [fill(&["record", "priorRecordHashFill"]); 32];
-    let rh = rec.compute_record_hash(2, &prior);
+    let rh = rec.compute_record_hash(3, &prior);
     assert_eq!(
         hex::encode(rh),
         vector["expectedRecordHash"].as_str().unwrap()

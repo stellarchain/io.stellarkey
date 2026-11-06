@@ -5,8 +5,7 @@ use private_balance_protocol::field::bytes_to_field;
 #[test]
 fn test_action_canonical_bytes_and_signals() {
     let action = Action {
-        protocol_version: 2,
-        kind: ActionKind::PrivateTransfer,
+        protocol_version: 3,
         asset_index: None,
         asset: None,
         action_nonce: [0x11u8; 32],
@@ -29,7 +28,9 @@ fn test_action_canonical_bytes_and_signals() {
                 outgoing_envelope: [0xaa; 157],
             },
         ],
-        public_value: 0,
+        public_inflow: 0,
+        public_outflow: 0,
+        appends: true,
         deposit_source: None,
         public_recipient: None,
     };
@@ -40,12 +41,12 @@ fn test_action_canonical_bytes_and_signals() {
     let context_field = bytes_to_field(&[0x99u8; 32]);
 
     let signals = action.compute_public_signals(&context_field, &net_id, &realm_id, &pool_id);
-    assert_eq!(signals.len(), 11);
+    assert_eq!(signals.len(), 12);
     assert_eq!(signals[0], context_field);
     assert_eq!(signals[1], [0; 32]);
-    assert_eq!(signals[3], action.anchor_root);
-    assert_ne!(signals[5], [0; 32]);
-    assert_eq!(signals[10], action.outputs[2].cm);
+    assert_eq!(signals[5], action.anchor_root);
+    assert_ne!(signals[6], [0; 32]);
+    assert_eq!(signals[11], action.outputs[2].cm);
     assert!(action.validate_public_shape().is_ok());
 
     let mut leaked_asset = action.clone();

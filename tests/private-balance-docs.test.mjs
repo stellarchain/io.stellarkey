@@ -212,8 +212,8 @@ test('the whitepaper keeps contract restoration distinct from getters and the pr
   const paper = read('private-balance.md');
   const feePolicy = readSource('src/features/private-balance/runtime/fee-policy.ts');
   const cap = BigInt(feePolicy.match(/MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS = ([\d_]+)n/)?.[1].replaceAll('_', ''));
-  assert.equal(cap, 10_000_000n);
-  assert.ok(paper.includes(`${formatNumber(cap)} stroops (1 XLM)`));
+  assert.equal(cap, 20_000_000n);
+  assert.ok(paper.includes(`${formatNumber(cap)} stroops (2 XLM)`));
   assert.match(paper, /separate from the reviewed classic inclusion fee/);
   assert.match(paper, /unsigned review rejects fee-bump envelopes supplied by another party/);
   assert.match(paper, /resource fee is charged once/);

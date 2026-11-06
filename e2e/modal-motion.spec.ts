@@ -19,6 +19,9 @@ declare global {
       min: { width: number; height: number };
       closingAnimation: string;
       openAnimation: string;
+      closingStartedAt: number | null;
+      removedAt: number | null;
+      closingDurationMs: number;
     };
   }
 }
@@ -56,12 +59,17 @@ async function observeExit(dialog: Locator): Promise<void> {
       min: { width: shell.offsetWidth, height: shell.offsetHeight },
       closingAnimation: "",
       openAnimation: getComputedStyle(shell).animationName,
+      closingStartedAt: null as number | null,
+      removedAt: null as number | null,
+      closingDurationMs: 0,
     };
     window.__modalExit = record;
     const sampleClosing = () => {
       if (backdrop.dataset.overlayState === "closing") {
         record.sawClosing = true;
+        record.closingStartedAt ??= performance.now();
         record.closingAnimation = getComputedStyle(shell).animationName;
+        record.closingDurationMs = parseFloat(getComputedStyle(shell).animationDuration) * 1000;
         record.min = {
           width: Math.min(record.min.width, shell.offsetWidth),
           height: Math.min(record.min.height, shell.offsetHeight),
@@ -71,13 +79,13 @@ async function observeExit(dialog: Locator): Promise<void> {
     // A short crossfade may finish before a busy browser renders another frame.
     // Observe the actual closing commit as well; frame counts remain RAF-only.
     const observer = new MutationObserver(() => {
-      if (!backdrop.isConnected) { observer.disconnect(); return; }
+      if (!backdrop.isConnected) { record.removedAt ??= performance.now(); observer.disconnect(); return; }
       sampleClosing();
     });
     observer.observe(backdrop, { attributes: true, attributeFilter: ['data-overlay-state'] });
     if (backdrop.parentElement) observer.observe(backdrop.parentElement, { childList: true });
     const sample = () => {
-      if (!backdrop.isConnected) { observer.disconnect(); return; }
+      if (!backdrop.isConnected) { record.removedAt ??= performance.now(); observer.disconnect(); return; }
       if (backdrop.dataset.overlayState === 'closing') record.closingFrames += 1;
       sampleClosing();
       requestAnimationFrame(sample);
@@ -101,6 +109,10 @@ test.describe("normal motion", () => {
     expect(exit?.min.height ?? 0, "the shell keeps its height through the exit").toBeGreaterThanOrEqual((exit?.before.height ?? 0) - 1);
     expect(exit?.min.width ?? 0, "the shell keeps its width through the exit").toBeGreaterThanOrEqual((exit?.before.width ?? 0) - 1);
     expect(exit?.closingAnimation).toMatch(/^(dialogOut|sheetOut)$/);
+    expect(exit?.closingDurationMs ?? 0).toBeGreaterThan(0);
+    expect(exit?.removedAt ?? 0).toBeGreaterThan(0);
+    expect((exit?.removedAt ?? 0) - (exit?.closingStartedAt ?? 0) + 1,
+      "the shell stays mounted for its CSS exit duration").toBeGreaterThanOrEqual(exit?.closingDurationMs ?? Infinity);
   });
 
   test("dialogs present as a bottom sheet on compact widths and a card above them", async ({ page }) => {
@@ -210,14 +222,15 @@ test.describe("reduced motion", () => {
     await importTestWallet(page);
     const dialog = await openSend(page);
     await observeExit(dialog);
-    const started = Date.now();
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
     await expect(dialog).toBeHidden();
-    const elapsed = Date.now() - started;
     const exit = await page.evaluate(() => window.__modalExit);
     expect(exit?.openAnimation).toBe("fadeIn");
     expect(exit?.sawClosing).toBe(true);
     expect(exit?.closingAnimation).toBe("fadeOut");
+    const elapsed = (exit?.removedAt ?? Infinity) - (exit?.closingStartedAt ?? 0);
+    expect(elapsed + 1, "the shell stays mounted for the reduced-motion crossfade")
+      .toBeGreaterThanOrEqual(exit?.closingDurationMs ?? Infinity);
     expect(elapsed).toBeLessThan(1500);
   });
 });

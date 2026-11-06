@@ -68,11 +68,11 @@ test('manifest: validates real manifest.json successfully', () => {
 
   const manifest = validateManifest(raw);
   assert.equal(manifest.schemaVersion, 1);
-  assert.equal(manifest.protocolVersion, 2);
+  assert.equal(manifest.protocolVersion, 3);
   assert.equal(manifest.status, 'development');
   assert.equal(manifest.constants.treeDepth, 64);
   assert.equal(manifest.constants.treeArity, 3);
-  assert.equal(manifest.constants.publicInputs, 11);
+  assert.equal(manifest.constants.publicInputs, 12);
   assert.equal(manifest.constants.outputsPerAction, 3);
   assert.equal(manifest.constants.rootWindowLedgers, 1440);
   assert.equal(manifest.constants.addressPayloadBytes, PRIVATE_ADDRESS_PAYLOAD_BYTES);
@@ -136,7 +136,7 @@ test('manifest: rejects malformed manifest', () => {
   assert.throws(() => validateManifest(null), /Manifest must be a non-null object/);
   assert.throws(() => validateManifest({ schemaVersion: 2 }), /Unsupported schemaVersion/);
   assert.throws(() => validateManifest({ schemaVersion: 1, protocolVersion: 1 }), /Unsupported protocolVersion/);
-  assert.throws(() => validateManifest({ schemaVersion: 1, protocolVersion: 2, status: 'invalid' }), /Invalid manifest status/);
+  assert.throws(() => validateManifest({ schemaVersion: 1, protocolVersion: 3, status: 'invalid' }), /Invalid manifest status/);
 });
 
 test('manifest: requires one administrator and contiguous asset registry metadata', () => {

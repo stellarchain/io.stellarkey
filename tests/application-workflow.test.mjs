@@ -15,6 +15,19 @@ const scripts = JSON.parse(read('package.json')).scripts;
 const workflow = name => load(read(`.github/workflows/${name}.yml`));
 const commands = job => job.steps.flatMap(step => step.run ? [step.run.trim()] : []);
 
+test('pinned CIVER builds retain the legacy Z3 compiler and CMake compatibility', () => {
+  for (const name of ['ci', 'release']) {
+    const step = workflow(name).jobs['private-circuits'].steps.find(step =>
+      step.run?.includes('--locked -p civer_circom'));
+    assert.ok(step, `${name} must build the pinned analyzer`);
+    assert.equal(step.env?.CMAKE_POLICY_VERSION_MINIMUM, '3.5');
+    assert.equal(workflow(name).jobs['private-circuits']['runs-on'], 'ubuntu-24.04');
+    assert.equal(step.env?.CC, 'gcc-12');
+    assert.equal(step.env?.CXX, 'g++-12');
+    assert.equal(step['continue-on-error'], undefined);
+  }
+});
+
 test('splitting application verification preserves the complete ordered local gate', () => {
   assert.equal(applicationVerificationCommand(scripts),
     'npm run private:check-generated && npm run typecheck && npm test && npm run test:private-protocol && npm run lint && npm run audit:prod && npm run audit:all && npm run test:e2e:reporter && npm run test:e2e:private-ui && npm run test:e2e:private-components && npm run check:fixture-clean && npm run build && npm run check:fixture-clean && npm run test:bundle && npm run check:bundle && playwright test');

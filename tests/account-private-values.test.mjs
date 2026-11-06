@@ -7,7 +7,7 @@ import * as React from 'react';
 
 // Exercise the production account-list JSX with isolated, unusable account data.
 // No wallet is unlocked, browser state captured, or network request made.
-const source = readFileSync(new URL('../src/components/Dashboard.tsx', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../src/components/dashboard/Sidebar.tsx', import.meta.url), 'utf8');
 const sidebar = source.slice(source.indexOf('{/* Accounts Subgroup'), source.indexOf('{/* Footer Controls */}'));
 const expression = sidebar.slice(sidebar.indexOf('{!sidebarCollapsed') + 1, sidebar.lastIndexOf('}') );
 const compiled = ts.transpileModule(`(${expression})`, {
@@ -36,7 +36,7 @@ function environment(activeId = 'a', privacyMode = false) {
     accountTotals: totals, activeAccountXlm: totals[`synthetic-${activeId}`].xlm,
     activeAccountTotalUsd: totals[`synthetic-${activeId}`].usd,
     network: 'testnet', fiatCurrency: 'USD', fiatRates: {}, fmtAmount: value => String(Number(value)),
-    fmtFiat: value => `$${value}`, setAddAccountOpen() {}, selectAccount() {}, triggerHaptic() {},
+    fmtFiat: value => `$${value}`, onAddAccount() {}, selectAccount() {}, triggerHaptic() {},
     AccountMark: () => null, IconTrezor: () => null, IconLedger: () => null };
 }
 function nodes(tree) {

@@ -1391,6 +1391,7 @@ interface NormalizedTransactionNotes {
 }
 
 class BackupTransactionNotesError extends Error {}
+class BackupPrivateRecordsError extends Error {}
 
 function isTxNoteEnvelope(value: unknown): value is TxNoteEnvelope {
   if (!value || typeof value !== "object") return false;
@@ -1662,7 +1663,7 @@ async function prepareDecodedBackup(
             );
             sessionRoot = derivePrivacySessionRoot(
               rawSeed,
-              2, // Protocol V2 deployment-bound storage key domain.
+              3, // Protocol V2.1 (wire version 3) deployment-bound storage key domain.
               decodePrivacyContextHex(context.networkId, "Network ID"),
               decodePrivacyContextHex(context.realmId, "Realm ID"),
               decodePrivacyContextHex(context.poolId, "Pool ID"),
@@ -1686,6 +1687,10 @@ async function prepareDecodedBackup(
             throw new Error("Private Balance checkpoint deployment binding does not match.");
           }
         },
+      }).catch(() => {
+        throw new BackupPrivateRecordsError(
+          "The backup's Private Payments records could not be authenticated. They may use an unsupported protocol or be damaged. Keep the original backup and existing browser data; do not reset the wallet. Older private records need their original compatible release.",
+        );
       });
       preparedPrivateBalanceStore = JSON.stringify(prepared.archive);
       if (prepared.omittedRecords > 0) {
@@ -1700,7 +1705,7 @@ async function prepareDecodedBackup(
     }
     return { encryptedContacts, encryptedTxNotes, preparedPrivateBalanceStore, warnings };
   } catch (error) {
-    if (error instanceof BackupTransactionNotesError) throw error;
+    if (error instanceof BackupTransactionNotesError || error instanceof BackupPrivateRecordsError) throw error;
     throw new Error("The backup could not unlock or validate its encrypted wallet data.");
   } finally {
     zeroKey(merchantKey);

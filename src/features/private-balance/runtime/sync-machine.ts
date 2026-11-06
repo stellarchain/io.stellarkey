@@ -166,7 +166,7 @@ async function readAllArchiveCommitments(
       ) {
         throw new Error('Private Balance archive Merkle rebuild records are not sequential');
       }
-      if (record.actionKind !== 4) {
+      if (record.appends) {
         commitments.push(...record.outputs.map(output => output.cm));
         nextLeafIndex += 3n;
       }
@@ -474,7 +474,7 @@ async function syncPrivateBalanceOnce(
     await recordVerifiedPrivateBalanceCommitments(
       input.storageContext,
       records[0].startingLeafIndex,
-      records.flatMap(record => record.actionKind === 4 ? [] : record.outputs.map(output => output.cm)),
+      records.flatMap(record => record.appends ? record.outputs.map(output => output.cm) : [] as Uint8Array[]),
       input.publicCacheDriver,
     );
     const batchCursor = lastRecord.actionIndex + 1n;
@@ -483,7 +483,7 @@ async function syncPrivateBalanceOnce(
       if ((merkleCheckpoint?.cursor ?? 0n) !== priorCursor) {
         throw new Error('Private Balance Merkle cache cursor is not contiguous with archive sync');
       }
-      const commitments = records.flatMap(record => record.actionKind === 4 ? [] : record.outputs.map(output => output.cm));
+      const commitments = records.flatMap(record => record.appends ? record.outputs.map(output => output.cm) : [] as Uint8Array[]);
       await recordVerifiedPrivateBalanceMerkleBatch(input.storageContext, {
         deploymentBindingHash: input.deploymentBindingHash,
         priorCursor,
@@ -567,7 +567,7 @@ async function syncPrivateBalanceOnce(
       tree.nextIndex !== initialHead.tree.nextIndex ||
       !equalBytes(tree.currentRoot, initialHead.tree.currentRoot)
     ) {
-      throw new Error('Private Balance reconstructed state does not match the contract head');
+      throw new Error(`Private Balance reconstructed state does not match the contract head [lastActionIndex=${state.checkpoint?.lastActionIndex} expected=${initialHead.meta.actionCount - 1n} rootMatch=${tree && equalBytes(tree.currentRoot, initialHead.tree.currentRoot)} nextIndex=${tree?.nextIndex} expectedIndex=${initialHead.tree.nextIndex}]`);
     }
     await requirePrivateBalanceMerkleCheckpoint(
       input.storageContext,

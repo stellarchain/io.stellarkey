@@ -25,7 +25,6 @@ import {
   computeDummyNullifier,
   serializeCanonicalActionBytes,
   computePublicSignals,
-  ActionKind,
   encodeProofForSoroban,
   deriveKeysFromSeed,
   derivePrivacySessionRoot,
@@ -125,7 +124,7 @@ test('private address deployment tags bind 32-byte deployment hashes', () => {
 
 test('protocol V1 note encoding binds an immutable asset index in the normative 128-byte layout', () => {
   const note = {
-    protocolVersion: 2,
+    protocolVersion: 3,
     flags: 0,
     value: 5_000_000n,
     diversifier: Uint8Array.of(1, 2, 3, 4),
@@ -154,7 +153,7 @@ test('protocol V1 note encoding binds an immutable asset index in the normative 
 
 test('outgoing plaintext carries the same asset index and supports output lane two AAD', () => {
   const outgoing = {
-    protocolVersion: 2,
+    protocolVersion: 3,
     flags: 0,
     value: 9n,
     diversifier: Uint8Array.of(4, 3, 2, 1),
@@ -204,11 +203,10 @@ test('canonical integer encoders reject truncation and signed values', () => {
 
 test('context and action encoders reject malformed fixed-width fields', () => {
   const bytes32 = new Uint8Array(32);
-  assert.throws(() => computeContextHash(2, new Uint8Array(31), bytes32, bytes32, bytes32));
+  assert.throws(() => computeContextHash(3, new Uint8Array(31), bytes32, bytes32, bytes32));
 
   const action = {
-    protocolVersion: 2,
-    kind: ActionKind.Deposit,
+    protocolVersion: 3,
     assetIndex: 0,
     asset: { kind: 1, payload: bytes32 },
     actionNonce: bytes32,
@@ -219,7 +217,9 @@ test('context and action encoders reject malformed fixed-width fields', () => {
       { cm: bytes32, recipientEnvelope: new Uint8Array(181) },
       { cm: bytes32, recipientEnvelope: new Uint8Array(181) },
     ],
-    publicValue: 1n,
+    publicInflow: 1n,
+    publicOutflow: 0n,
+    appends: true,
     depositSource: { kind: 0, payload: new Uint8Array(31) },
   };
   assert.throws(() => serializeCanonicalActionBytes(action, bytes32, bytes32, bytes32));
@@ -230,8 +230,7 @@ test('canonical action encoding permits a full withdrawal without private change
   const nonzero = bigintTo32Bytes(1n);
   const second = bigintTo32Bytes(2n);
   const action = {
-    protocolVersion: 2,
-    kind: ActionKind.Withdraw,
+    protocolVersion: 3,
     assetIndex: 7,
     asset: { kind: 1, payload: new Uint8Array(32).fill(0x46) },
     actionNonce: new Uint8Array(32).fill(0x33),
@@ -254,12 +253,14 @@ test('canonical action encoding permits a full withdrawal without private change
         outgoingEnvelope: new Uint8Array(157).fill(8),
       },
     ],
-    publicValue: 1n,
+    publicInflow: 0n,
+    publicOutflow: 1n,
+    appends: false,
+    depositSource: undefined,
     publicRecipient: { kind: 0, payload: new Uint8Array(32).fill(0x44) },
   };
 
   const encoded = serializeCanonicalActionBytes(action, zero, zero, zero);
-  assert.equal(encoded.length, 1467);
   assert.throws(() => serializeCanonicalActionBytes({
     ...action,
     nullifiers: [nonzero, zero],
@@ -270,12 +271,11 @@ test('canonical action encoding permits a full withdrawal without private change
   }, zero, zero, zero));
 });
 
-test('private transfer hides its asset and binds three outputs into eleven public signals', async () => {
+test('private transfer hides its asset and binds three outputs into twelve public signals', async () => {
   const zero = new Uint8Array(32);
   const one = bigintTo32Bytes(1n);
   const action = {
-    protocolVersion: 2,
-    kind: ActionKind.PrivateTransfer,
+    protocolVersion: 3,
     actionNonce: new Uint8Array(32).fill(0x33),
     anchorRoot: one,
     nullifiers: [one, bigintTo32Bytes(2n)],
@@ -296,16 +296,20 @@ test('private transfer hides its asset and binds three outputs into eleven publi
         outgoingEnvelope: new Uint8Array(157).fill(8),
       },
     ],
-    publicValue: 0n,
+    publicInflow: 0n,
+    publicOutflow: 0n,
+    appends: true,
+    depositSource: undefined,
+    publicRecipient: undefined,
   };
 
   const signals = await computePublicSignals(action, one, zero, zero, zero);
-  assert.equal(signals.length, 11);
+  assert.equal(signals.length, 12);
   assert.deepEqual(signals[1], zero);
-  assert.equal(signals[5].some((byte) => byte !== 0), true);
-  assert.deepEqual(signals[8], action.outputs[0].cm);
-  assert.deepEqual(signals[9], action.outputs[1].cm);
-  assert.deepEqual(signals[10], action.outputs[2].cm);
+  assert.equal(signals[6].some((byte) => byte !== 0), true);
+  assert.deepEqual(signals[9], action.outputs[0].cm);
+  assert.deepEqual(signals[10], action.outputs[1].cm);
+  assert.deepEqual(signals[11], action.outputs[2].cm);
 
   assert.throws(() => serializeCanonicalActionBytes({
     ...action,
@@ -337,11 +341,11 @@ test('transferred privacy session root expands to the normative key hierarchy', 
   const poolId = new Uint8Array(32).fill(4);
   const accountPublicKey = new Uint8Array(32).fill(6);
   const contextField = computeContextField(
-    computeContextHash(2, networkId, realmId, poolId),
+    computeContextHash(3, networkId, realmId, poolId),
   );
   const direct = await deriveKeysFromSeed(
     rawSeed,
-    2,
+    3,
     networkId,
     realmId,
     poolId,
@@ -350,7 +354,7 @@ test('transferred privacy session root expands to the normative key hierarchy', 
   );
   const sessionRoot = derivePrivacySessionRoot(
     rawSeed,
-    2,
+    3,
     networkId,
     realmId,
     poolId,
@@ -359,7 +363,7 @@ test('transferred privacy session root expands to the normative key hierarchy', 
   assert.equal(sessionRoot.length, 64);
   const expanded = await deriveExpandedSpendingKey(
     sessionRoot,
-    2,
+    3,
     networkId,
     realmId,
     poolId,

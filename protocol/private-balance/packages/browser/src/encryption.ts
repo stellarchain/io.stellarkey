@@ -194,7 +194,7 @@ export async function createOutputPackage(
   if (outputIndex !== 0 && outputIndex !== 1 && outputIndex !== 2) {
     throw new Error('Invalid output index');
   }
-  const info = deriveHpkeInfo(2, contextHash);
+  const info = deriveHpkeInfo(3, contextHash);
   const aad = deriveHpkeAad(contextHash, cm, actionNonce, outputIndex);
   let ephemeralPrivateKey: Uint8Array | null = null;
   let sharedSecret: Uint8Array | null = null;
@@ -295,18 +295,26 @@ export async function openRecipientEnvelope(
       diversifier,
     );
 
-    const info = deriveHpkeInfo(2, contextHash);
     const aad = deriveHpkeAad(contextHash, cm, actionNonce, outputIndex);
 
     const skR = await suite.kem.deserializePrivateKey(diversified.hpkePrivateKey);
-    const recipientContext = await suite.createRecipientContext({
-      recipientKey: skR,
-      enc: encPk,
-      info,
-    });
-
-    const pt = await recipientContext.open(ct, aad);
-    plaintextBytes = new Uint8Array(pt);
+    // Early V3 development clients wrote V3 notes with the V2 HPKE info domain.
+    // Read those envelopes without emitting more of them. The supplied V3 context,
+    // authenticated plaintext version and full commitment are still required.
+    for (const envelopeVersion of [3, 2]) {
+      try {
+        const recipientContext = await suite.createRecipientContext({
+          recipientKey: skR,
+          enc: encPk,
+          info: deriveHpkeInfo(envelopeVersion, contextHash),
+        });
+        plaintextBytes = new Uint8Array(await recipientContext.open(ct, aad));
+        break;
+      } catch {
+        // A fresh recipient context is needed for each independent info domain.
+      }
+    }
+    if (!plaintextBytes) return null;
     const note = decodeNotePlaintext(plaintextBytes);
     if (!equalBytes(note.diversifier, diversifier)) return null;
     if (!equalBytes(note.ownerCommitment, ownerCommitment)) return null;

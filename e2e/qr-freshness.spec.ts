@@ -44,7 +44,7 @@ test('receive follower takeover and reusable-only recovery are explicit', async 
   await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Remove synthetic reusable address', exact: true }).click();
   await expect(dialog.getByRole('button', { name: 'Copy Address', exact: true })).toBeVisible();
-  const type = dialog.getByRole('button', { name: 'Private receive address type', exact: true });
+  const type = dialog.getByRole('button', { name: /^Private receive address type: /, exact: true });
   await type.press('ArrowDown');
   await dialog.getByRole('option', { name: 'Shielded', exact: true }).press('End');
   await dialog.getByRole('option', { name: 'Reusable', exact: true }).press('Enter');
@@ -109,14 +109,14 @@ test('receive QR and download never describe a stale payload; leaving clears ren
   await expect(dialog.locator('img')).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Complete next synthetic QR' }).click();
   await expect(dialog.locator('img')).toHaveCount(1);
-  await dialog.getByRole('button', { name: 'Private receive address type', exact: true }).click();
+  await dialog.getByRole('button', { name: /^Private receive address type: /, exact: true }).click();
   await dialog.getByRole('option', { name: 'Reusable', exact: true }).click();
   await expect(dialog.getByTestId('qr-request-count')).toHaveText(String(initial + 3));
   await expect(dialog.locator('img')).toHaveCount(0);
   await publicTab.click();
   await dialog.getByRole('button', { name: 'Complete next synthetic QR' }).click();
   await expect(dialog.locator('img, a[download]')).toHaveCount(0);
-  await expect(dialog.getByRole('button', { name: 'Private receive address type' })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: /^Private receive address type: / })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('button', { name: 'Open QR freshness checks' })).toBeFocused();

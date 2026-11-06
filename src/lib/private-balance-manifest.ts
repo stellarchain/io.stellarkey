@@ -119,7 +119,7 @@ const EXPECTED_CONSTANTS: PrivateBalanceConstants = {
   treeDepth: 64,
   treeArity: 3,
   rootWindowLedgers: 1440,
-  publicInputs: 11,
+  publicInputs: 12,
   notePlaintextBytes: 128,
   recipientEnvelopeBytes: 181,
   outgoingEnvelopeBytes: 157,
@@ -324,7 +324,7 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
   if (obj.schemaVersion !== 1) {
     throw new Error(`Unsupported schemaVersion: ${String(obj.schemaVersion)}`);
   }
-  if (obj.protocolVersion !== 2) {
+  if (obj.protocolVersion !== 3) {
     throw new Error(`Unsupported protocolVersion: ${String(obj.protocolVersion)}`);
   }
   if (
@@ -415,7 +415,7 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
 
   const parsed: PrivateBalanceManifest = {
     schemaVersion: 1,
-    protocolVersion: 2,
+    protocolVersion: 3,
     artifactVersion: string(obj.artifactVersion, 'artifactVersion'),
     status: obj.status as PrivateBalanceManifest['status'],
     minimumStellarProtocol: integer(obj.minimumStellarProtocol, 'minimumStellarProtocol'),

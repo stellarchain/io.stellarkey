@@ -32,7 +32,7 @@ const hex = value => Buffer.from(value).toString('hex');
 
 async function fixture() {
   const context = {
-    protocolVersion: 2,
+    protocolVersion: 3,
     networkId: bytes(1),
     realmId: bytes(2),
     poolId: bytes(3),
@@ -182,8 +182,9 @@ test('action builder creates a fixed-shape deposit with private dummy lanes', as
   });
 
   assert.deepEqual(prepared.reservedNoteIds, []);
-  assert.equal(prepared.action.kind, 1);
-  assert.equal(prepared.action.publicValue, 5_000_000n);
+  assert.equal(prepared.action.publicInflow, 5_000_000n);
+  assert.equal(prepared.action.publicOutflow, 0n);
+  assert.equal(prepared.action.appends, true);
   assert.deepEqual(prepared.circuitInputs.inputReal, ['0', '0']);
   assert.equal(prepared.circuitInputs.inputDummySecret.every(value => value !== '0'), true);
   assert.equal(prepared.action.nullifiers.every(value => value.some(byte => byte !== 0)), true);
@@ -226,7 +227,7 @@ test('action builder creates a fixed-shape deposit with private dummy lanes', as
   assert.deepEqual(outgoingFlags.sort(), [0, 1, 1]);
   const outgoingDiversifiers = prepared.action.outputs.map(output => hex(output.recipientEnvelope.slice(1, 5)));
   assert.equal(new Set(outgoingDiversifiers).size, 1, 'all lanes hide behind one clear action diversifier');
-  assert.equal(prepared.publicSignals.length, 11);
+  assert.equal(prepared.publicSignals.length, 12);
 });
 
 test('rotating the receive address cannot corrupt canonical self outputs', async () => {
@@ -282,7 +283,7 @@ test('minimized outgoing history replaces every lane before action hashing witho
   const prepared = await preparePrivateAction({ esk: owner, keyContext, availableNotes: [], merklePaths: [],
     intent: { kind: 'deposit', assetIndex: 0, assetContractId, publicValue: '50',
       depositSource: { kind: 0, payload: keyContext.accountPublicKey }, outgoingHistory: 'minimized' } });
-  const contextHash = computeContextHash(2, keyContext.networkId, keyContext.realmId, keyContext.poolId);
+  const contextHash = computeContextHash(3, keyContext.networkId, keyContext.realmId, keyContext.poolId);
   let recoveredValue = 0n;
   for (const [lane, output] of prepared.action.outputs.entries()) {
     assert.equal(output.outgoingEnvelope.length, 157);
@@ -304,7 +305,7 @@ test('minimized outgoing history replaces every lane before action hashing witho
 
 test('full seed scans preserve balances and spends when future outgoing details are omitted', async t => {
   const { keyContext, owner, recipientAddress, assetContractId } = await fixture();
-  const contextHash = computeContextHash(2, keyContext.networkId, keyContext.realmId, keyContext.poolId);
+  const contextHash = computeContextHash(3, keyContext.networkId, keyContext.realmId, keyContext.poolId);
   const context = { ...keyContext, contextHash, accountAddress: { kind: 0, payload: keyContext.accountPublicKey } };
   const ownAddress = encodePrivateAddress({ deploymentTag: derivePrivateAddressDeploymentTag(keyContext.deploymentBindingHash),
     diversifier: new Uint8Array(4), ownerCommitment: owner.ownerCommitment, hpkePublicKey: owner.hpkePublicKey }, 'tskpay_');
@@ -318,7 +319,7 @@ test('full seed scans preserve balances and spends when future outgoing details 
       const fields = { ...action };
       delete fields.protocolVersion;
       delete fields.kind;
-      records.push({ ...fields, actionKind: action.kind, actionIndex: BigInt(index), ledgerSequence: 100 + index,
+      records.push({ ...fields, appends: true, actionIndex: BigInt(index), ledgerSequence: 100 + index,
         startingLeafIndex: BigInt(index * 3), treeRootAfter: await appendCommitments(tree, action.outputs.map(output => output.cm)) });
     }
     return records;
@@ -383,6 +384,34 @@ test('full seed scans preserve balances and spends when future outgoing details 
   assert.equal(history.notes.filter(note => note.status === 'unspent').reduce((sum, note) => sum + BigInt(note.value), 0n), 40n);
 });
 
+test('withdrawals append even without change unless capacity exit is explicitly requested', async () => {
+  const { keyContext, owner, assetContractId, assetField } = await fixture();
+  const rho = bigintTo32Bytes(11n);
+  const commitment = computeCommitment(keyContext.contextField, assetField, owner.ownerCommitment, 10n, rho);
+  const note = { id: hex(commitment), commitment: hex(commitment), value: '10', assetIndex: 0,
+    assetContractId, diversifier: '00000000', ownerCommitment: hex(owner.ownerCommitment),
+    leafIndex: 0n, actionIndex: 0n, rho: hex(rho), memoHex: '', senderFingerprintHex: '', status: 'unspent', createdAt: 0 };
+  const tree = await MerkleNodeStore.fromCommitments([commitment]);
+  const merklePaths = [await tree.getPath(0n)];
+  const build = (publicValue, capacityExit) => preparePrivateAction({ esk: owner, keyContext,
+    availableNotes: [note], merklePaths,
+    intent: { kind: 'withdraw', assetIndex: 0, assetContractId, publicValue, capacityExit,
+      publicRecipient: { kind: 0, payload: bytes(12) }, selectedNoteIds: [note.id],
+      anchorRoot: tree.currentRoot, anchorExpiresAtLedger: 2000 } });
+
+  for (const amount of ['6', '10']) {
+    const normal = await build(amount);
+    assert.equal(normal.action.appends, true, 'exact-input and change-producing withdrawals share append behavior');
+    assert.equal(normal.circuitInputs.appendsField, '1');
+    assert.equal(normal.action.outputs.length, 3);
+  }
+  const exit = await build('10', true);
+  assert.equal(exit.action.appends, false);
+  assert.equal(exit.circuitInputs.appendsField, '0');
+  assert.deepEqual(exit.circuitInputs.outputValue, ['0', '0', '0']);
+  await assert.rejects(build('6', true), /capacity exit.*change/i);
+});
+
 test('action builder creates an exact one-note transfer witness with self change', async () => {
   const { keyContext, owner, recipient, recipientAddress, assetContractId, assetField } = await fixture();
   const rho = bigintTo32Bytes(11n);
@@ -443,7 +472,7 @@ test('action builder creates an exact one-note transfer witness with self change
   assert.equal(prepared.action.outputs[0].cm.some(byte => byte !== 0), true);
   assert.equal(prepared.action.outputs[1].cm.some(byte => byte !== 0), true);
   assert.equal(prepared.action.outputs.every(output => output.outgoingEnvelope.length === 157), true);
-  assert.equal(prepared.publicSignals.length, 11);
+  assert.equal(prepared.publicSignals.length, 12);
   const tamperedPath = {
     ...merklePath,
     siblings: merklePath.siblings.map((siblings, index) => (

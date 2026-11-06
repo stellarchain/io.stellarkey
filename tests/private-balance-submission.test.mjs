@@ -52,7 +52,7 @@ test('action controllers publish terminal status outside remountable modal state
 
 function reviewedFixture() {
   const signer = Keypair.random();
-  const operation = new PrivateBalanceTransactionBuilder({ poolContractId }).buildTransferOperation({
+  const operation = new PrivateBalanceTransactionBuilder({ poolContractId }).buildActionOperation({
     action: {
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 2),
@@ -74,7 +74,12 @@ function reviewedFixture() {
           outgoingEnvelope: bytes(157, 12),
         },
       ],
-      publicValue: 0n,
+      publicInflow: 0n,
+      publicOutflow: 0n,
+      appends: true,
+      assetIndex: undefined,
+      depositSource: undefined,
+      publicRecipient: undefined,
     },
     proof: { a: bytes(64, 8), b: bytes(128, 9), c: bytes(64, 10) },
   });

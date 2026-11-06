@@ -38,7 +38,7 @@ test("runs a verified recovery scan directly through the selected RPC", async ({
   const asset = page.getByRole("dialog", { name: "XLM", exact: true });
   await asset.getByRole("button", { name: "Close", exact: true }).last().click();
 
-  await expect(region.getByRole("button", { name: /^Open private XLM\. Ready\./ })).toBeVisible({
+  await expect(region.getByRole("button", { name: /^Open private XLM\. Ready\b/ })).toBeVisible({
     timeout: 180_000,
   });
   await openPrivateDetails(page, region);

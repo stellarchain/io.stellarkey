@@ -1,19 +1,17 @@
 use crate::{model::ModelContext, native_poseidon2::NativeTreeHashContext};
 use private_balance_protocol::{
-    action::{Action, ActionKind},
-    archive::ArchiveRecord,
-    constants::PROTOCOL_VERSION,
-    tree::TreeState,
+    action::Action, archive::ArchiveRecord, constants::PROTOCOL_VERSION, tree::TreeState,
 };
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoveredPublicActivity {
     pub action_index: u128,
-    pub action_kind: ActionKind,
+    pub appends: bool,
     pub asset_index: Option<u32>,
     pub asset: Option<(u8, [u8; 32])>,
-    pub public_value: u64,
+    pub public_inflow: u64,
+    pub public_outflow: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -105,53 +103,40 @@ fn replay_record(
     let next_transcript_head =
         record.compute_record_hash(PROTOCOL_VERSION, &accumulator.transcript_head);
 
-    let kind = match record.action_kind {
-        1 => ActionKind::Deposit,
-        2 => ActionKind::PrivateTransfer,
-        3 => ActionKind::Withdraw,
-        4 => ActionKind::FullInputExit,
-        _ => return Err(format!("Invalid action kind at action {action_index}")),
-    };
     let current_asset_balance = record
         .asset
         .and_then(|asset| accumulator.asset_public_balances.get(&asset).copied())
         .unwrap_or(0);
-    let next_asset_balance = match kind {
-        ActionKind::Deposit => {
-            if record.public_value == 0 {
-                return Err(format!("Zero deposit value at action {action_index}"));
-            }
-            current_asset_balance
-                .checked_add(record.public_value)
-                .ok_or_else(|| format!("Public balance overflow at action {action_index}"))?
+    let next_asset_balance = if record.public_inflow > 0 {
+        if record.public_outflow > 0 {
+            return Err(format!(
+                "Both settlement legs carry value at action {action_index}"
+            ));
         }
-        ActionKind::PrivateTransfer => {
-            if record.public_value != 0 {
-                return Err(format!(
-                    "Non-zero transfer public value at action {action_index}"
-                ));
-            }
-            current_asset_balance
+        current_asset_balance
+            .checked_add(record.public_inflow)
+            .ok_or_else(|| format!("Public balance overflow at action {action_index}"))?
+    } else if record.public_outflow > 0 {
+        if record.public_outflow > current_asset_balance {
+            return Err(format!("Invalid withdrawal value at action {action_index}"));
         }
-        ActionKind::Withdraw | ActionKind::FullInputExit => {
-            if record.public_value == 0 || record.public_value > current_asset_balance {
-                return Err(format!("Invalid withdrawal value at action {action_index}"));
-            }
-            current_asset_balance
-                .checked_sub(record.public_value)
-                .ok_or_else(|| format!("Invalid withdrawal at action {action_index}"))?
-        }
+        current_asset_balance
+            .checked_sub(record.public_outflow)
+            .ok_or_else(|| format!("Invalid withdrawal at action {action_index}"))?
+    } else {
+        current_asset_balance
     };
     let action = Action {
         protocol_version: PROTOCOL_VERSION,
-        kind,
         asset_index: record.asset_index,
         asset: record.asset,
         action_nonce: record.action_nonce,
         anchor_root: record.anchor_root,
         nullifiers: record.nullifiers,
         outputs: record.outputs.clone(),
-        public_value: record.public_value,
+        public_inflow: record.public_inflow,
+        public_outflow: record.public_outflow,
+        appends: record.appends,
         deposit_source: record.deposit_source,
         public_recipient: record.public_recipient,
     };
@@ -167,7 +152,7 @@ fn replay_record(
         }
     }
 
-    let root_after = if kind == ActionKind::FullInputExit {
+    let root_after = if !record.appends {
         Ok(accumulator.tree.root)
     } else {
         match tree_hash_context {
@@ -197,10 +182,11 @@ fn replay_record(
         .ok_or_else(|| format!("Aggregate public balance overflow at action {action_index}"))?;
     accumulator.activities.push(RecoveredPublicActivity {
         action_index,
-        action_kind: kind,
+        appends: record.appends,
         asset_index: record.asset_index,
         asset: record.asset,
-        public_value: record.public_value,
+        public_inflow: record.public_inflow,
+        public_outflow: record.public_outflow,
     });
     accumulator.transcript_head = next_transcript_head;
     Ok(())
