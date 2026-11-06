@@ -210,6 +210,21 @@ test("hosted application gates allow the complete private and public browser mat
   }
 });
 
+test("hosted browser gates use native macOS WebKit without reducing the matrix", () => {
+  for (const name of [".github/workflows/ci.yml", ".github/workflows/release.yml"]) {
+    const workflow = read(name);
+    const application = workflow.split("\n  application:")[1].split("\n  private-ui:")[0];
+    const privateUi = workflow.split("\n  private-ui:")[1].split(/\n  [a-z][a-z-]*:/)[0];
+    assert.match(application, /runs-on: macos-15/);
+    assert.match(application, /npm run verify:application:production/);
+    assert.match(privateUi, /runs-on: macos-15/);
+    assert.match(privateUi, /browser: \[desktop-chromium, iphone-webkit\]/);
+    assert.match(privateUi, /npm run test:e2e:private-ui/);
+    assert.match(privateUi, /npm run test:e2e:private-components/);
+  }
+  assert.doesNotMatch(read("e2e/modal-motion.spec.ts"), /page\.clock\.install/);
+});
+
 test("the isolated Private Payments Gate A installs its internal browser package", () => {
   const circuits = JSON.parse(
     read("protocol/private-balance/circuits/package.json"),

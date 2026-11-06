@@ -108,7 +108,8 @@ jobs:
         working-directory: protocol/private-balance
 
   application:
-    runs-on: ubuntu-latest
+    # Native WebKit timing: Linux backdrop-filter rendering regresses in r2370+.
+    runs-on: macos-15
     timeout-minutes: 90
     permissions:
       contents: read
@@ -131,7 +132,8 @@ jobs:
       - run: test -f out/index.html
 
   private-ui:
-    runs-on: ubuntu-latest
+    # Native WebKit timing: Linux backdrop-filter rendering regresses in r2370+.
+    runs-on: macos-15
     timeout-minutes: 90
     strategy:
       fail-fast: false

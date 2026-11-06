@@ -98,9 +98,6 @@ test.describe("normal motion", () => {
 
   test("closing a dialog plays its exit lifecycle without collapsing the shell", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "no-preference" });
-    // Control timers and RAF on the same timeline: Linux mobile WebKit can
-    // throttle native RAF beyond the exit duration while timers keep running.
-    await page.clock.install();
     await importTestWallet(page);
     const dialog = await openSend(page);
     await observeExit(dialog);

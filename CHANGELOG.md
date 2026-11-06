@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Run the complete browser verification matrix on macOS with Playwright 1.65.0, preserving native animation checks despite Linux WebKit rendering regressions.
 - Pin hosted circuit analysis to Ubuntu 24.04 and GCC 12 so the unchanged legacy Z3 dependency builds after the ubuntu-latest image migration.
 - Refresh Private Balance build provenance while preserving the historical deployment lock and binding current browser maintenance inputs.
 - Retain custom credential-header protection across JavaScript realms during HTTP redirects and correct IPv6 link-local and cross-family subnet classification in installed dependencies.

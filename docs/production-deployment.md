@@ -78,6 +78,11 @@ preserves the local `verify:application` coverage and two-worker component limit
 per runner, without cancelling the other browser when one fails. Publication
 requires the whole matrix to succeed, not just one browser.
 
+Application and private-UI jobs use macOS 15 for native WebKit rendering.
+Linux WebKit's upstream backdrop-filter regression can starve animation frames;
+this platform choice preserves the full Chromium/iPhone/iPad matrix and native
+animation assertions. Rust security and circuit analysis retain Linux runners.
+
 The application job stages only the public release archive, SBOM, inventory and
 checksums. It does not publish a release. The `release` job waits for Gate A,
 application and private UI success, downloads the staging artifact by its exact

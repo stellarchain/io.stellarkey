@@ -1,5 +1,30 @@
 # Dependency security evidence
 
+## 2026-11-06 — Linux WebKit verification toolchain
+
+Playwright 1.65.0 supersedes the 1.64.1 update proposed in PR #32. Its
+WebKit revision 2388 replaces revision 2370, but overlapping blur layers still
+affect native frame timing on Linux, as described in the upstream
+[Linux backdrop-filter rendering regression](https://github.com/microsoft/playwright/issues/43426).
+The [stable release](https://github.com/microsoft/playwright/releases/tag/v1.65.0)
+retains support for the project's Node versions. CI and release application
+and private-UI jobs use macOS 15 for the complete existing browser matrix.
+Rust and circuit analysis remain on Linux. The normal modal-exit check uses
+native browser animation frames; no clock simulation or application-style
+change is used to work around the Linux renderer. Original click and geometry
+assertions remain required.
+
+The installed 1.65.0 runner still captures matcher ARIA context through
+`Frame.expect` and writes it through `ArtifactsRecorder`/`buildErrorContext`.
+Live wallet tests therefore remain blocked. Screenshots, traces and video stay
+off; only isolated non-usable synthetic fixtures are allowed. The privacy
+reporter probes and the complete browser matrix must pass on this version.
+
+The root lockfile change refreshes only current local build provenance and its
+cascading manifest/catalogue pins. The historical HPKE deployment-lock digest,
+protocol artifacts and deployment identity remain fixed. Earlier results below
+retain their original source and toolchain identities.
+
 ## 2026-11-05 — Trezor Suite Web and application 1.1.0 preparation
 
 The application now uses the MIT-licensed `@trezor/connect-web 10.0.1` thin client in explicit `suite-web` mode. This retains a browser approval flow without probing the local Suite desktop WebSocket. The document CSP permits `https://suite.trezor.io` as a frame source, and the host keeps `same-origin-allow-popups`. Trezor Suite owns the device transport and approval UI; the application lockfile does not pin the hosted service.
