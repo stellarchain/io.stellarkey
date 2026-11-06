@@ -67,11 +67,8 @@ export async function openPrivateBalance(page: Page): Promise<Locator> {
 /** Reads the verified XLM value from the integrated private-asset row. */
 export async function expectPrivateBalance(region: Locator, amount: string): Promise<void> {
   const canonicalAmount = Number(amount).toFixed(7);
-  await expect(
-    region.getByRole("button", {
-      name: new RegExp(`^Open private XLM\\. Ready\\. ${canonicalAmount.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")} XLM$`),
-    }),
-  ).toBeVisible({ timeout: 180_000 });
+  const row = region.getByRole("button", { name: /^Open private XLM\. Ready\b/ });
+  await expect(row.getByText(canonicalAmount, { exact: true })).toBeVisible({ timeout: 180_000 });
 }
 
 /**
@@ -95,14 +92,14 @@ export async function setupPrivateBalance(page: Page): Promise<Locator> {
     throw new Error("Private Payments setup failed; an alert is visible.");
   }
   await expect(dialog).toBeHidden();
-  await expect(region.getByRole("button", { name: /^Open private XLM\. Ready\./ })).toBeVisible({
+  await expect(region.getByRole("button", { name: /^Open private XLM\. Ready\b/ })).toBeVisible({
     timeout: 180_000,
   });
   return region;
 }
 
 export async function openPrivateDetails(page: Page, region: Locator): Promise<Locator> {
-  await region.getByRole("button", { name: /^Open private XLM\. Ready\./ }).click();
+  await region.getByRole("button", { name: /^Open private XLM\. Ready\b/ }).click();
   const asset = page.getByRole("dialog", { name: "XLM", exact: true });
   await expect(asset).toBeVisible();
   await asset.getByRole("button", { name: "Private Payments settings" }).click();

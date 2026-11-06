@@ -171,7 +171,7 @@ test("dashboard balances and controls adapt to the narrowest supported iPhone", 
   );
   assert.match(
     shellChrome,
-    /aria-label=\{`Open account menu for \$\{activeAccount\.label\}`\}[\s\S]*?className="flex min-h-11 min-w-0 flex-1/,
+    /className="flex min-h-11 min-w-0 flex-1[\s\S]*?<span className="sr-only">Open account menu for <\/span>/,
   );
   assert.match(dashboard, /data-mobile-asset-toolbar/);
   assert.match(dashboard, /className="min-w-0 max-w-\[48%\] text-right"/);

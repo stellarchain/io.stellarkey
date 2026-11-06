@@ -46,7 +46,7 @@ async function feeProvider(page: Page, mode: 'deposit' | 'recovery') {
 }
 
 async function chooseTreasury(page: Page) {
-  const select = page.getByRole('button', { name: 'Network fee account', exact: true });
+  const select = page.getByRole('button', { name: /^Network fee account: /, exact: true });
   await expect(select).toHaveText('Synthetic Owner');
   await expect(page.getByTestId('recovery-provider-account-count')).toHaveText('5');
   await select.scrollIntoViewIfNeeded();
@@ -108,7 +108,7 @@ for (const mode of ['deposit', 'recovery'] as const) test(`private fee payer act
     await expect(dialog.getByText('Verifying on Stellar — your balance updates in a moment')).toBeVisible();
     await dialog.getByRole('button', { name: 'Done', exact: true }).click();
     await page.getByRole('button', { name: 'Add · private balance', exact: true }).click();
-    await expect(dialog.getByRole('button', { name: 'Network fee account', exact: true })).toHaveText('Synthetic Owner');
+    await expect(dialog.getByRole('button', { name: /^Network fee account: /, exact: true })).toHaveText('Synthetic Owner');
   }
 });
 
@@ -227,7 +227,7 @@ for (const presentation of ['reduced-motion', 'animated', '200-percent-reflow'] 
   await expect(page.getByTestId('recovery-provider-phase')).toHaveText('current');
   await expect(page.getByTestId('recovery-provider-submissions')).toHaveText('0');
   await expect(page.getByTestId('recovery-provider-signs')).toHaveText('0');
-  const type = dialog.getByRole('button', { name: 'Private receive address type', exact: true });
+  const type = dialog.getByRole('button', { name: /^Private receive address type: /, exact: true });
   await type.press('ArrowDown');
   await dialog.getByRole('option', { name: 'Shielded', exact: true }).press('End');
   await expect(type).toHaveText('Shielded');
@@ -254,7 +254,7 @@ for (const presentation of ['reduced-motion', 'animated', '200-percent-reflow'] 
   await dialog.getByRole('button', { name: 'New address', exact: true }).click();
   await expect(page.getByTestId('recovery-provider-rotation')).toHaveText('waiting');
   await expect(type).toBeDisabled();
-  await expect(dialog.getByRole('button', { name: 'Asset', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: /^Asset: /, exact: true })).toBeDisabled();
   await expect(publicTab).toBeDisabled();
   await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeDisabled();
   await dialog.press('Escape');

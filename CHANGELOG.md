@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Reconcile offline release update prompts without clearing wallet data or forcing other tabs to reload.
+- Match wallet and merchant control accessible names to their visible labels and values.
 
 ### Security
 

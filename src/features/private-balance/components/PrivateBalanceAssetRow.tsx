@@ -74,19 +74,21 @@ export function PrivateBalanceAssetRow({
     <button
       type="button"
       onClick={onOpen}
-      aria-label={`Open private ${assetCode}. ${detail}. ${!paymentsEnabled ? 'Turn on' : !ready ? 'Add Funds' : privacyMode ? 'Balance hidden' : `${amount} ${assetCode}`}`}
       className={`row-hover flex w-full min-w-0 items-center gap-3.5 px-4 py-3.5 text-left ${separated ? 'ios-sep' : ''}`}
     >
-      <AssetAvatar
-        code={asset.code}
-        isNative={asset.kind === 'native'}
-        logoUrl={known?.iconUrl}
-        background={known?.color}
-        privatePayment
-      />
+      <span className="sr-only">{`Open private ${assetCode}.`}</span>
+      <span aria-hidden="true" className="inline-flex shrink-0">
+        <AssetAvatar
+          code={asset.code}
+          isNative={asset.kind === 'native'}
+          logoUrl={known?.iconUrl}
+          background={known?.color}
+          privatePayment
+        />
+      </span>
 
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15.5px] font-semibold leading-tight text-white">
+        <span aria-hidden="true" className="block truncate text-[15.5px] font-semibold leading-tight text-white">
           {assetCode}
         </span>
         <span className="mt-0.5 block truncate text-[12px] leading-tight text-neutral-400">
@@ -96,7 +98,9 @@ export function PrivateBalanceAssetRow({
 
       <span className="min-w-0 max-w-[48%] text-right">
         <span className={`${paymentsEnabled && ready ? 'mono ' : ''}block break-words text-[13px] font-medium leading-tight text-white sm:text-[15.5px]`}>
-          {!paymentsEnabled ? 'Turn on' : !ready ? 'Add Funds' : privacyMode ? '••••••' : amount}
+          {!paymentsEnabled ? 'Turn on' : !ready ? 'Add Funds' : privacyMode ? (
+            <><span aria-hidden="true">••••••</span><span className="sr-only">Balance hidden</span></>
+          ) : amount}
         </span>
         {fiat && (
           <span className="block break-words text-[11px] leading-tight text-neutral-400 sm:text-[12px]">

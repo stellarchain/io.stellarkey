@@ -360,7 +360,9 @@ test('automatic local tabs keep their existing arrow activation', async ({ page 
 for (const size of ['md', 'sm']) {
   test(`Field reaches the actual ${size} Select trigger and retains its descriptions when errors clear`, async ({ page }) => {
     const field = page.getByTestId(`select-field-${size}`);
-    const trigger = field.getByRole('button', { name: `Synthetic ${size} field`, exact: true });
+    const trigger = field.getByRole('button', { name: new RegExp(`^Synthetic ${size} field: `), exact: true });
+    const visibleTriggerText = (await trigger.innerText()).replace(/\s+/g, ' ').trim();
+    await expect(trigger).toHaveAccessibleName(`Synthetic ${size} field: ${visibleTriggerText}`);
     await page.setViewportSize({ width: 320, height: 568 });
     expect(await field.evaluate(node => {
       const bounds = node.getBoundingClientRect();
@@ -1013,7 +1015,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
 }
 
 test('Select exposes real option focus, skips disabled options, and closes only itself', async ({ page }) => {
-  const trigger = page.getByRole('button', { name: 'Synthetic asset', exact: true });
+  const trigger = page.getByRole('button', { name: /^Synthetic asset: /, exact: true });
   await trigger.press('ArrowDown');
   const listbox = page.getByRole('listbox', { name: 'Synthetic asset' });
   await expect(listbox).toBeVisible();
@@ -1045,7 +1047,7 @@ test('Select exposes real option focus, skips disabled options, and closes only 
 });
 
 test('Select Tab resumes the containing dialog sequence and empty lists stay operable', async ({ page }) => {
-  const trigger = page.getByRole('button', { name: 'Synthetic asset', exact: true });
+  const trigger = page.getByRole('button', { name: /^Synthetic asset: /, exact: true });
   await trigger.press('ArrowDown');
   await page.keyboard.press('Tab');
   await expect(page.getByRole('listbox')).toBeHidden();
@@ -1059,7 +1061,7 @@ test('Select Tab resumes the containing dialog sequence and empty lists stay ope
 });
 
 test('Select selects the focused option identity after live reordering', async ({ page }) => {
-  const trigger = page.getByRole('button', { name: 'Synthetic asset', exact: true });
+  const trigger = page.getByRole('button', { name: /^Synthetic asset: /, exact: true });
   await trigger.press('ArrowDown');
   await expect(page.getByRole('option', { name: 'Alpha', exact: true })).toBeFocused();
   await page.keyboard.press('ArrowDown');
@@ -1078,7 +1080,7 @@ test('Select selects the focused option identity after live reordering', async (
 
 for (const action of ['Remove', 'Disable']) {
   test(`Select ${action.toLowerCase()}d focused options do not leave stale selection or focus`, async ({ page }) => {
-    const trigger = page.getByRole('button', { name: 'Synthetic asset', exact: true });
+    const trigger = page.getByRole('button', { name: /^Synthetic asset: /, exact: true });
     await trigger.press('ArrowDown');
     await expect(page.getByRole('option', { name: 'Alpha', exact: true })).toBeFocused();
     await page.keyboard.press('ArrowDown');
@@ -1096,7 +1098,7 @@ for (const action of ['Remove', 'Disable']) {
 }
 
 test('Select keeps an empty refreshed listbox focused without submitting a stale option', async ({ page }) => {
-  const trigger = page.getByRole('button', { name: 'Synthetic asset', exact: true });
+  const trigger = page.getByRole('button', { name: /^Synthetic asset: /, exact: true });
   await trigger.press('ArrowDown');
   await expect(page.getByRole('option', { name: 'Alpha', exact: true })).toBeFocused();
   await page.keyboard.press('ArrowDown');
@@ -1112,19 +1114,19 @@ test('Select keeps an empty refreshed listbox focused without submitting a stale
 });
 
 test('Select disabled during navigation removes its popup and prevents stale choices', async ({ page }) => {
-  await page.getByRole('button', { name: 'Synthetic asset', exact: true }).click();
+  await page.getByRole('button', { name: /^Synthetic asset: /, exact: true }).click();
   await expect(page.getByRole('listbox')).toBeVisible();
   await expect(page.getByRole('option', { name: 'Alpha', exact: true })).toBeFocused();
   await page.getByRole('button', { name: 'Toggle select disabled' }).evaluate(node => (node as HTMLButtonElement).click());
   await expect(page.getByRole('listbox')).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Synthetic asset', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Synthetic asset: /, exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Toggle empty options' })).toBeFocused();
   await expect.poll(() => page.getByRole('dialog', { name: 'Synthetic UX primitives' })
     .evaluate(node => node.contains(document.activeElement))).toBe(true);
 });
 
 test('disabling a Select does not steal focus already moved to another control', async ({ page }) => {
-  await page.getByRole('button', { name: 'Synthetic asset', exact: true }).click();
+  await page.getByRole('button', { name: /^Synthetic asset: /, exact: true }).click();
   await expect(page.getByRole('option', { name: 'Alpha', exact: true })).toBeFocused();
   const other = page.getByRole('button', { name: 'Toggle select disabled', exact: true });
   await other.focus();
@@ -1231,7 +1233,7 @@ test('HashValue shares generic copy feedback without moving focus or reading cli
 });
 
 test('open primitives have accessible names and no blocking axe violations', async ({ page, browserName }) => {
-  await page.getByRole('button', { name: 'Synthetic asset', exact: true }).click();
+  await page.getByRole('button', { name: /^Synthetic asset: /, exact: true }).click();
   await expect(page.getByRole('listbox')).toBeVisible();
   // Audit the settled open surfaces after their finite entrance animations.
   await page.locator('[role="dialog"], [role="listbox"]').evaluateAll(async elements => {

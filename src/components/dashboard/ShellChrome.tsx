@@ -181,9 +181,9 @@ export function AccountMenu({
         ) : (
           <button
             {...triggerProps}
-            aria-label={`Open account menu for ${activeAccount.label}`}
             className="flex min-h-11 min-w-0 flex-1 w-full max-w-[240px] sm:max-w-[260px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-[background-color,transform] cursor-pointer"
           >
+            <span className="sr-only">Open account menu for </span>
             <AccountMark publicKey={activeAccount.publicKey} size={28} />
             <span className="text-left min-w-0 max-w-[110px]">
               <span className="block truncate text-[13.5px] font-semibold leading-tight text-white">

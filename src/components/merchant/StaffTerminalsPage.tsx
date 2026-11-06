@@ -258,7 +258,6 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                         key={member.id}
                         type="button"
                         aria-pressed={current}
-                        aria-label={current ? `${member.name}, current operator` : `Switch to ${member.name}`}
                         disabled={current}
                         onClick={() => {
                           setOperatorTargetId(member.id);
@@ -270,7 +269,8 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                             : "border-white/[0.08] bg-white/[0.04] active:bg-white/[0.1]"
                         }`}
                       >
-                        <span data-mobile-overflow="true" className="relative inline-flex">
+                        {!current && <span className="sr-only">Switch to </span>}
+                        <span aria-hidden="true" data-mobile-overflow="true" className="relative inline-flex">
                           <Avatar seed={member.name} size={34} />
                           {current && (
                             <span
@@ -281,7 +281,9 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                         </span>
                         <span className="w-full truncate text-[11.5px] font-semibold text-white">
                           {member.name.split(" ")[0]}
+                          <span className="sr-only">{member.name.slice(member.name.split(" ")[0].length)}</span>
                         </span>
+                        {current && <span className="sr-only">, current operator</span>}
                       </button>
                     );
                   })}
@@ -869,12 +871,12 @@ function StaffRow({
     <button
       type="button"
       onClick={onOpen}
-      aria-label={`Edit ${member.name}`}
       className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#0A84FF] ${
         sep ? "ios-sep" : ""
       }`}
     >
-      <Avatar seed={member.name} size={34} />
+      <span className="sr-only">Edit </span>
+      <span aria-hidden="true"><Avatar seed={member.name} size={34} /></span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="truncate text-[15.5px] font-normal leading-tight text-white">

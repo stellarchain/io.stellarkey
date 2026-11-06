@@ -163,7 +163,7 @@ test("Public and Private remain one continuous Send dialog", async ({ page }) =>
     for (let index = 0; index < 3; index += 1) {
       await publicTab.click();
       await expect(publicTab).toHaveAttribute("aria-selected", "true");
-      await expect(dialog.getByLabel("Asset")).toBeVisible();
+      await expect(dialog.getByRole('button', { name: /^Asset: / })).toBeVisible();
       await privateTab.click();
       await expect(privateTab).toHaveAttribute("aria-selected", "true");
       await expect(dialog.getByRole("status", { name: "Opening private payment" })).toBeVisible();
@@ -175,7 +175,7 @@ test("Public and Private remain one continuous Send dialog", async ({ page }) =>
     await (await deliveredChunk).finished();
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await expect(publicTab).toHaveAttribute("aria-selected", "true");
-    await expect(dialog.getByLabel("Asset")).toBeVisible();
+    await expect(dialog.getByRole('button', { name: /^Asset: / })).toBeVisible();
     await expect(dialog.getByText(/Turn on Private Payments|Review Private Send/i)).toHaveCount(0);
     await expectStableContinuity(page, shellId);
     await privateTab.click();
@@ -184,7 +184,7 @@ test("Public and Private remain one continuous Send dialog", async ({ page }) =>
     for (let index = 0; index < 3; index += 1) {
       await publicTab.click();
       await expect(publicTab).toHaveAttribute("aria-selected", "true");
-      await expect(dialog.getByLabel("Asset")).toBeVisible();
+      await expect(dialog.getByRole('button', { name: /^Asset: / })).toBeVisible();
       await expect(dialog.getByText(/Turn on Private Payments|Review Private Send/i)).toHaveCount(0);
       await privateTab.click();
       await expect(privateTab).toHaveAttribute("aria-selected", "true");

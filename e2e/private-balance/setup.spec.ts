@@ -19,7 +19,7 @@ test("sets up a fresh profile and renders its private receive address", async ({
   const region = await setupPrivateBalance(page);
 
   // Receive only needs the durable private address — no sync gating.
-  await expect(region.getByRole("button", { name: /^Open private XLM\. Ready\./ })).toBeVisible();
+  await expect(region.getByRole("button", { name: /^Open private XLM\. Ready\b/ })).toBeVisible();
   const dialog = await openPrivateReceive(page);
   await expect(dialog.getByAltText(/receive address QR code$/)).toBeVisible({
     timeout: 30_000,

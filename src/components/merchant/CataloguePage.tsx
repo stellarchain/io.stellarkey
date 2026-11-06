@@ -294,11 +294,11 @@ function ItemRow({
     <button
       type="button"
       onClick={onOpen}
-      aria-label={`Edit ${item.name}`}
       className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left ${
         sep ? "ios-sep" : ""
       } ${item.active ? "" : "opacity-60"}`}
     >
+      <span className="sr-only">Edit </span>
       <span
         aria-hidden="true"
         className="row-icon text-[12.5px] font-bold"
@@ -367,7 +367,6 @@ function ItemTile({
     <button
       type="button"
       onClick={onOpen}
-      aria-label={`Edit ${item.name}`}
       className={`flex min-h-[112px] flex-col justify-between rounded-[18px] p-3 text-left transition-transform active:scale-[0.97] ${
         item.active ? "" : "opacity-55"
       }`}
@@ -376,6 +375,7 @@ function ItemTile({
         boxShadow: `inset 0 0 0 0.5px color-mix(in srgb, ${item.colour} 45%, transparent)`,
       }}
     >
+      <span className="sr-only">Edit </span>
       <span className="flex items-start justify-between gap-2">
         <span className="mono text-[10.5px] tracking-wide text-neutral-300">
           {item.sku}

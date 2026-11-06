@@ -1516,6 +1516,11 @@ export function Select({
   const typeahead = useRef({ text: "", at: 0 });
   const selectedIndex = options.findIndex((o) => o.value === value);
   const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined;
+  const triggerText = selected
+    ? selected.triggerLabel ?? (size === "md" && selected.sublabel
+      ? `${selected.label} · ${selected.sublabel}`
+      : selected.label)
+    : placeholder;
   const close = useCallback((reason?: "escape" | "outside") => {
     popupHadFocus.current = false;
     setActiveValue(null);
@@ -1635,7 +1640,7 @@ export function Select({
     "aria-haspopup": "listbox",
     "aria-expanded": open,
     "aria-controls": open ? listboxId : undefined,
-    "aria-label": ariaLabel,
+    "aria-label": ariaLabel && triggerText ? `${ariaLabel}: ${triggerText}` : ariaLabel,
     "aria-describedby": ariaDescribedBy,
     "aria-invalid": ariaInvalid,
     onClick: () => (open ? closeMenu() : openMenu()),

@@ -641,7 +641,7 @@ export function DashboardSidebar({
                 <Tooltip label="Switch network">
                   <button
                     type="button"
-                    aria-label="Switch network"
+                    aria-label={`Switch network: ${network === "testnet" ? "Testnet" : "Mainnet"}`}
                     onClick={() => {
                       triggerHaptic("selection");
                       onOpenNetwork();
