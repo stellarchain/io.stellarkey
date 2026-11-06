@@ -70,7 +70,7 @@ export function BatchSendModalBody({
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
   const { contacts } = useWalletContacts();
   const { submissionStatus } = useWalletSubmission();
-  const { sendBatch, refresh } = useWalletTransactions();
+  const { sendBatch } = useWalletTransactions();
   const { toast } = useToast();
   const [assetKey, setAssetKey] = useState("native");
   const memoInputId = useId();

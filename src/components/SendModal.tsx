@@ -317,7 +317,6 @@ function SendInner({
     submitStealthPayment,
     prepareCosignPayment,
     cosignTransaction,
-    refresh,
   } = useWalletTransactions();
   const prefillError = prefill
     ? validateSep7PayRequest(prefill, NETWORKS[network].networkPassphrase)
