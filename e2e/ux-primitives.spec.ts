@@ -505,6 +505,11 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       await page.evaluate(() => {
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         document.addEventListener('pointerdown', event => {
+          // Establish the body-focus branch explicitly on this synthetic
+          // opener. Native pointer focus varies with WebKit scheduling; the
+          // real SVG pointer and eventual restoration remain under test.
+          event.preventDefault();
+          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
           window.__syntheticSvgPointer = { svg: event.target instanceof SVGElement, bodyFocused: document.activeElement === document.body };
         }, { capture: true, once: true });
       });
@@ -1246,3 +1251,54 @@ test('open primitives have accessible names and no blocking axe violations', asy
     .disableRules(browserName === 'webkit' ? ['color-contrast'] : []).analyze();
   expect(result.violations.filter(item => ['critical', 'serious'].includes(item.impact ?? '')).length).toBe(0);
 });
+
+
+for (const motion of ['reduce', 'no-preference'] as const) {
+  test.describe(`Modal portalled focus ${motion}`, () => {
+    test.use({ contextOptions: { reducedMotion: motion } });
+    for (const control of ['Select', 'Dropdown'] as const) {
+      test(`Modal initializer preserves newer focus in its portalled ${control}`, async ({ page }) => {
+        const dialog = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeHidden();
+        const opener = page.getByRole('button', { name: 'Open UX primitive checks', exact: true });
+        await expect(opener).toBeFocused();
+        await page.clock.install();
+        await page.clock.pauseAt(new Date(Date.now() + 1000));
+        await opener.press('Enter');
+        await expect(dialog).toBeVisible();
+        const trigger = control === 'Select'
+          ? page.getByRole('button', { name: /^Synthetic asset: /, exact: true })
+          : page.getByRole('button', { name: 'Synthetic actions', exact: true });
+        await trigger.press('ArrowDown');
+        const popup = page.getByRole(control === 'Select' ? 'listbox' : 'menu');
+        const option = popup.getByRole(control === 'Select' ? 'option' : 'menuitem',
+          { name: control === 'Select' ? 'Alpha' : 'One', exact: true });
+        // Dropdown's automatic focus waits for RAF too. Place newer explicit
+        // focus before either initializer runs, then detect even a transient steal.
+        if (control === 'Dropdown') await option.focus();
+        await expect(option).toBeFocused();
+        await option.evaluate(node => {
+          (node as HTMLElement).dataset.syntheticFocusLosses = '0';
+          node.addEventListener('blur', () => {
+            const element = node as HTMLElement;
+            element.dataset.syntheticFocusLosses = String(Number(element.dataset.syntheticFocusLosses) + 1);
+          });
+        });
+        expect(await dialog.locator('[data-modal-shell]').evaluate(node => node.contains(document.activeElement))).toBe(false);
+        expect(await dialog.evaluate(node => node.contains(document.activeElement))).toBe(true);
+        await page.clock.runFor(17);
+        await expect(option).toBeFocused();
+        await expect(option).toHaveAttribute('data-synthetic-focus-losses', '0');
+        await page.clock.resume();
+        await page.keyboard.press('End');
+        await expect(popup.getByRole(control === 'Select' ? 'option' : 'menuitem',
+          { name: control === 'Select' ? 'Delta' : 'Four', exact: true })).toBeFocused();
+        await page.keyboard.press('Escape');
+        await expect(popup).toBeHidden();
+        await expect(trigger).toBeFocused();
+        await expect(dialog).toBeVisible();
+      });
+    }
+  });
+}

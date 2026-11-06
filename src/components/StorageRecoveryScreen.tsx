@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useRef, useState } from "react";
 import type { StorageIssue } from "@/lib/storage-load";
 import { Button } from "./ui";
 import { IconAlert, IconDownload, LogoMark } from "./icons";
@@ -20,9 +21,15 @@ export function StorageRecoveryScreen({
   onReset,
 }: {
   issue: StorageIssue;
-  onReset: () => void;
+  onReset: () => void | Promise<void>;
 }) {
+  const [busy, setBusy] = useState(false);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const erasureIncomplete = issue.kind === "erasure-incomplete";
   const storageUnavailable = issue.kind === "unavailable";
+  useLayoutEffect(() => {
+    if (erasureIncomplete && document.activeElement === document.body) heading.current?.focus();
+  }, [erasureIncomplete]);
 
   return (
     <main data-app-surface className="app-safe-top flex min-h-screen items-center justify-center px-5 py-10">
@@ -31,17 +38,28 @@ export function StorageRecoveryScreen({
         <span className="mx-auto mt-6 flex h-12 w-12 items-center justify-center rounded-full bg-[#FF9F0A]/15 text-[#FF9F0A]">
           <IconAlert size={22} />
         </span>
-        <h1 className="display-h mt-4 text-[24px] font-bold text-white">
-          {storageUnavailable ? "Browser storage unavailable" : "Wallet data needs recovery"}
+        <h1 ref={heading} tabIndex={-1} className="display-h mt-4 text-[24px] font-bold text-white">
+          {erasureIncomplete ? "Wallet erasure incomplete" : storageUnavailable ? "Browser storage unavailable" : "Wallet data needs recovery"}
         </h1>
-        <p className="mt-2 text-[13.5px] leading-relaxed text-neutral-400">{issue.message}</p>
+        <p role={erasureIncomplete ? "alert" : undefined} className="mt-2 text-[13.5px] leading-relaxed text-neutral-400">{issue.message}</p>
         <p className="mt-2 text-[12.5px] leading-relaxed text-neutral-500">
-          {storageUnavailable
+          {erasureIncomplete
+            ? "Keep this page open to retry. Signing remains disabled while cleanup is incomplete."
+            : storageUnavailable
             ? "Your wallet has not been changed. Check this site's storage permissions, then reload the app."
             : "Nothing has been overwritten. Export the original record before deciding whether to erase it."}
         </p>
         <div className="mt-7 space-y-3">
-          {storageUnavailable ? (
+          {erasureIncomplete ? (
+            <Button variant="danger" className="w-full" loading={busy} loadingLabel="Retrying cleanup"
+              onClick={async () => {
+                if (busy) return;
+                setBusy(true);
+                try { await onReset(); } finally { setBusy(false); }
+              }}>
+              Retry erasure
+            </Button>
+          ) : storageUnavailable ? (
             <Button className="w-full" onClick={() => window.location.reload()}>
               Try again
             </Button>

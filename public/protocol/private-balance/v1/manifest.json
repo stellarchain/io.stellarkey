@@ -89,7 +89,7 @@
     "poseidonParametersSha256": "6ecf310eeece863dcb24370c6668cfe42808ac1cdb25c30f4b85461ab37789a8",
     "hpkePackageVersion": "@hpke/core@1.9.0+@hpke/dhkem-x25519@1.8.0",
     "hpkeDependencyIntegritySha256": "312a82fc6626f2bb66b1a24f351f8e13f95bde25fa4de350a8b10d2f4fe7a6b7",
-    "toolchainLockSha256": "12d9d97f114f9c32ae46e1f7f521d70ab011f4200532a0ceec7a7521c6a94c2c",
+    "toolchainLockSha256": "468b4b28af79a10007ce2a3b5c928febd3ff5b57eaee951e3ecd7922b1e6bc51",
     "powersOfTauSha256": "f807e065fde53f72f4bf4d57140fab85b26daa6cc95bdfec7cce93622b3a367c",
     "zkeyVerified": true,
     "ceremonyTranscriptRoot": "0000000000000000000000000000000000000000000000000000000000000000",

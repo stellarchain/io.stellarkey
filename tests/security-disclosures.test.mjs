@@ -57,9 +57,9 @@ test("Trezor 10 disclosures distinguish the installed client, development refere
   assert.match(hardware, /import\("@trezor\/connect-web"\)/);
 });
 
-test("release 1.1.0 records the fresh manual deferral without claiming a pass", () => {
+test("release 1.1.1 records the fresh manual deferral without claiming a pass", () => {
   for (const source of [read("src/app/security/page.tsx"), read("docs/release-checklist.md")]) {
-    assert.match(source, /(?:release 1\.1\.0|v1\.1\.0 release exception)/i);
+    assert.match(source, /(?:release 1\.1\.1|v1\.1\.1 release exception)/i);
     assert.match(source, /unperformed or unconfirmed,[\s\S]*?not passed/i);
     assert.match(source, /does not waive automated gates/i);
     assert.match(source, /does not approve real-value Private Payments/i);

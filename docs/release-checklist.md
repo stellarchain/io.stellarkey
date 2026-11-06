@@ -2,6 +2,100 @@
 
 This wallet ships as static files and talks directly to user-selected Stellar services. It has no application backend, remote custody service, background worker, or server-side database.
 
+## 1.1.1 audit curation
+
+The maintainer requested review of both November 6 audits and useful fixes in
+PR #40. Their original reports and uncommitted source work remain preserved in
+the authoritative audit checkout; full internal audit evidence stays outside
+the public release documentation set.
+
+Included fixes bind refresh publication and all transaction-signing flows to
+the reviewed wallet context, release failed status-poll ownership for retry,
+report partial erasure with a provider-owned recovery screen, bound Friendbot
+error-body and artifact waits, label trustline removals, narrow six transitions,
+and update reviewed application dependencies. Cryptographic artifacts and
+historical deployment bindings remain unchanged.
+
+Focused red/green evidence includes 335 signing/adapter tests, 54 delayed
+synthetic-hardware/queued-POST cases, 43 erasure/storage/changelog checks,
+both Chromium/iPhone erasure-recovery accessibility cases, and 48 installed
+dependency/hardware checks. Counts overlap and are not unique coverage totals.
+The Friendbot audit patch was tightened to include error-body consumption;
+CSV already used the neutral Trustline label, so no export change was needed.
+The report's claim that no other lockfiles exist was incorrect: nested npm
+and Cargo locks remain distinct verification inputs.
+
+Claim discovery beyond the first 20 balances and the unprofiled provider
+subscription refactor remain follow-ups. One abandoned-backup-read failure in
+the audit has an unconfirmed cause; its unchanged full production check remains
+required. No isolated repetition replaces that failed attempt.
+
+The first curated clean-source attempt at 272e7d2 ran all 2,402 root tests:
+2,400 passed and two policy assertions failed. One needed the new mandatory
+erasure spec added to its explicit expected suite; the other correctly rejected
+internal audit reports in the public documentation directory. The reports were
+preserved outside that directory and their release disposition retained here.
+Neither policy nor the privacy restrictions is relaxed.
+
+The corrected attempt at 5348f32 passed 2,402 root tests, 64 browser-protocol
+tests, lint/audits/privacy probes and all 16 required private UI checks. Its
+734-case component matrix recorded 733 passes and one iPhone SVG-opener
+precondition failure before focus-restoration assertions. Twenty-four isolated
+instrumented repetitions passed; its original cause remains unconfirmed.
+The synthetic SVG test now explicitly maintains body focus during a real
+pointer activation. All 12 repeated positive cases passed. A targeted control
+that deliberately ignores SVG pointer openers failed the actual focus-return
+assertion in all four engine/motion cases, preserving regression sensitivity.
+No application focus code or animation assertion changed in this test adjustment.
+
+The same source's hosted run recorded successful Rust security, Linux circuit
+analysis and CodeQL. Three queued ARM macOS jobs failed to acquire runners after
+about fifteen minutes, so Gate A remained red. Browser jobs now use standard
+macOS Intel runners; canonical reproduction retains its mandatory ARM64 host.
+
+The 81ed3b2 local attempt again passed core and required private UI checks.
+It was deliberately interrupted during components when hosted Intel setup
+exposed the missing `darwin-x64` Stellar CLI archive pin. The owned fixture was
+byte-checked and removed after its process group exited; cleanup verification
+passed. This interrupted attempt is not a full pass. The official 27.0.0 Intel
+archive was independently downloaded and matched its published SHA-256 and
+19,666,612-byte length; its archive contains only `stellar`. The installer keeps
+the same exact version/source-revision check and rejects unsupported hosts.
+All five installer tests pass with the additional supported-host expectation.
+
+Earlier full application results below retain their original source identities.
+The corrected candidate requires a new clean-tree release verification, required
+CI and release-workflow gates; those earlier runs do not validate it.
+
+## 1.1.1 replacement release preparation
+
+The 1.1.0 tag was created after clean local verification, PR CI and post-merge
+CI passed. Its release run [42221483313](https://github.com/stellarchain/io.stellarkey/actions/runs/42221483313)
+then failed Chromium Select focus checks. Publication and deployment remained
+blocked; the remaining jobs were cancelled after reproducing the underlying
+race in both Chromium and iPhone WebKit. The immutable tag is retained.
+
+A paused-initializer regression failed on the original code: newer focus in a
+Select portal was overwritten because the initializer checked only the dialog
+panel. The owning backdrop also contains its Select/menu portals. Checking that
+owner preserves newer focus. The first fix run passed 30 focused cases; expanded
+Select/Dropdown coverage under normal and reduced motion passed 48 cases without
+retries, and 17 modal-focus unit tests passed. The initial expanded Dropdown
+setup waited for its deferred focus while the clock was paused; the corrected
+fixture places explicit newer focus and verifies zero transient focus losses.
+One additional fixture setup attempt failed before its test assertions in that
+initial expanded run; its cause remains unconfirmed. The corrected final
+48-case run completed without failed attempts or retries.
+
+The replacement application version is 1.1.1; Private Payments remains V2.1.
+Full clean-source application verification and required CI remain mandatory.
+The maintainer’s manual-check deferral and exact Rust advisory exception apply
+to this same ongoing release task; no completed release exception is inherited.
+The separately approved production deployment still targets Cloudflare Pages
+project `stellarkey` and https://stellarkey.io. No network contract deployment or
+real-value use is authorized. Historical evidence below retains its original
+source, version and observation time.
+
 ## 1.1.0 release preparation
 
 Application version 1.1.0 uses Private Payments Protocol V2.1; the numbers identify
@@ -170,6 +264,16 @@ VoiceOver/NVDA, passkey and Trezor checks for 1.1.0, including Trezor redistribu
 and registered-origin sign-off. These checks remain unperformed or unconfirmed,
 not passed. This release-specific exception grants no third-party license rights,
 does not waive automated gates, and does not approve real-value Private Payments.
+
+### v1.1.1 release exception — replacement candidate
+
+The maintainer’s 2026-11-06 instruction to defer physical iPhone/iPad,
+VoiceOver/NVDA, passkey and Trezor checks continues for the replacement candidate
+in this same release task, including redistribution and registered-origin
+sign-off. These checks remain unperformed or unconfirmed, not passed. No new
+physical or human evidence is claimed. This grants no third-party license
+rights, waives no automated gate and does not approve real-value Private Payments.
+The exact RUSTSEC-2026-0387 exception continues; no other advisory ID was added.
 
 ### Required checks
 

@@ -147,6 +147,7 @@ export async function applyMultisigConfig(params: {
   hardwareSigner?: HardwareSigner;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
+  beforeSign?: () => void;
 }): Promise<MultisigConfigOutcome> {
   const { network, accountPublicKey, config } = params;
 
@@ -322,8 +323,10 @@ export async function applyMultisigConfig(params: {
 
   const tx = builder.setTimeout(180).build();
   const review = reviewTransactionEnvelope(tx.toXdr(), network);
+  params.beforeSign?.();
   if (kp) tx.sign(kp);
   else if (params.hardwareSigner) await signHardwareTx(tx, params.hardwareSigner);
+  params.beforeSign?.();
   assertReviewTimeValid(review);
 
   const context: AuthorizationContext = {
@@ -354,7 +357,7 @@ export async function applyMultisigConfig(params: {
 
   try {
     assertReviewTimeValid(review);
-    const result = await submitSignedTx(tx, network, 15_000, params.onPrepared);
+    const result = await submitSignedTx(tx, network, 15_000, params.onPrepared, params.beforeSign);
     return {
       submission: result,
       xdr: tx.toXdr(),
@@ -376,6 +379,7 @@ export async function disableMultisig(params: {
   hardwareSigner?: HardwareSigner;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
+  beforeSign?: () => void;
   expectedAuthorityFingerprint: string;
 }): Promise<MultisigConfigOutcome> {
   return applyMultisigConfig({
@@ -861,6 +865,7 @@ export async function cosignTransaction(params: {
   softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   onPrepared?: SubmissionPreparedCallback;
+  beforeSign?: () => void;
 }): Promise<CosignOutcome> {
   const review = reviewTransactionEnvelope(params.xdr, params.network);
   if (!params.confirmedNetwork) {
@@ -903,8 +908,10 @@ export async function cosignTransaction(params: {
     if (publicKey !== params.signerPublicKey) {
       throw new SendError("Signing credential does not match the selected account.");
     }
+    params.beforeSign?.();
     if (kp) tx.sign(kp);
     else if (params.hardwareSigner) await signHardwareTx(tx, params.hardwareSigner);
+    params.beforeSign?.();
     assertReviewTimeValid(review);
     addedSignature = true;
     evaluation = authorizationEvaluationFromContext(tx, context);
@@ -917,7 +924,7 @@ export async function cosignTransaction(params: {
   if (authorizations.every((entry) => entry.satisfied)) {
     try {
       assertReviewTimeValid(review);
-      const res = await submitSignedTx(tx, params.network, 15_000, params.onPrepared);
+      const res = await submitSignedTx(tx, params.network, 15_000, params.onPrepared, params.beforeSign);
       return {
         submission: res,
         xdr: tx.toXdr(),

@@ -98,7 +98,7 @@ jobs:
 
   application:
     # Native WebKit timing: Linux backdrop-filter rendering regresses in r2370+.
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 90
     permissions:
       contents: read
@@ -140,7 +140,7 @@ jobs:
 
   private-ui:
     # Native WebKit timing: Linux backdrop-filter rendering regresses in r2370+.
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 90
     strategy:
       fail-fast: false

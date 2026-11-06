@@ -987,7 +987,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [commitSigningPasswordRequired]);
 
   const refreshAccountData = useCallback(async () => {
-    if (!activeAccount) return;
+    const ownsWallet = () => signingContextRef.current === signingContext &&
+      endpointRevisionRef.current === endpointRevision;
+    if (!activeAccount || !ownsWallet()) return;
     const request = accountRefreshLane.begin();
     const generation = ++refreshGeneration.current;
     const cacheKey = `${network}:${endpointRevision}:${activeAccount.publicKey}`;
@@ -1010,6 +1012,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setDataError(null);
     try {
       const api = await loadWalletApi();
+      if (!ownsWallet() || !request.isCurrent()) return;
       const resources = await settleResourceMap({
         accountSnapshot: api.fetchAccountSnapshot(
           activeAccount.publicKey,
@@ -1030,7 +1033,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           request.signal,
         ),
       });
-      if (generation !== refreshGeneration.current || !request.isCurrent()) return;
+      if (generation !== refreshGeneration.current || !request.isCurrent() || !ownsWallet()) return;
       const minimumBalance = resources.accountSnapshot.ok && resources.baseReserve.ok
         ? api.minimumNativeBalanceForSnapshot(
             resources.accountSnapshot.value,
@@ -1098,7 +1101,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       setDataError(describeResourceFailures(resources));
     } catch (error) {
-      if (generation === refreshGeneration.current && request.isCurrent()) {
+      if (generation === refreshGeneration.current && request.isCurrent() && ownsWallet()) {
         const message = error instanceof Error ? error.message : "Unable to refresh wallet data.";
         setDataError(message);
         setAccountPortfolioSnapshots((previous) => ({
@@ -1114,9 +1117,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }));
       }
     } finally {
-      if (generation === refreshGeneration.current && request.isCurrent()) setDataLoading(false);
+      if (generation === refreshGeneration.current && request.isCurrent() && ownsWallet()) setDataLoading(false);
     }
-  }, [accountRefreshLane, activeAccount, endpointRevision, network]);
+  }, [accountRefreshLane, activeAccount, endpointRevision, network, signingContext]);
 
   const refreshMarketData = useCallback(async () => {
     if (!activeAccount) return;
@@ -1449,20 +1452,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const expired = transaction.expiresAt !== undefined &&
       transaction.expiresAt * 1000 <= now;
     const manualCheck = pendingTransactionNeedsManualCheck(transaction, now);
-    const api = await loadWalletApi();
-    const expiredLookup = expired && transaction.expiresAt !== undefined
-      ? await api.resolveCanonicalTransaction(
-          transaction.network,
-          transaction.hash,
-          transaction.expiresAt,
-        )
-      : null;
-    const outcome = expiredLookup
-      ? resolutionForExpiredLookup(expiredLookup)
-      : await api.waitForTransaction(transaction.network, transaction.hash);
-    if (startedGeneration === trackingTaskGeneration.current) {
-      pendingPolls.current.delete(identity);
-    }
+    // Import/network failures are unresolved status, never rejection or
+    // confirmation. Always relinquish this generation's latch so manual and
+    // bounded automatic retries can acquire it again.
+    const { expiredLookup, outcome } = await (async () => {
+      try {
+        const api = await loadWalletApi();
+        const expiredLookup = expired && transaction.expiresAt !== undefined
+          ? await api.resolveCanonicalTransaction(transaction.network, transaction.hash, transaction.expiresAt)
+          : null;
+        const outcome = expiredLookup
+          ? resolutionForExpiredLookup(expiredLookup)
+          : await api.waitForTransaction(transaction.network, transaction.hash);
+        return { expiredLookup, outcome };
+      } catch {
+        return { expiredLookup: null, outcome: null };
+      } finally {
+        if (startedGeneration === trackingTaskGeneration.current) pendingPolls.current.delete(identity);
+      }
+    })();
     if (!isTrackingTaskCurrent(
       startedGeneration,
       trackingTaskGeneration.current,
@@ -1937,51 +1945,56 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     // can fail. A broken IndexedDB/service-worker implementation must never
     // leave an unlocked wallet or recoverable credentials behind.
     lockVaultAndReset(false);
-    invalidateWalletLifecycle();
-    if (notifyPeers) walletCoordinationRef.current?.post("wallet-reset");
-    await withWalletLifecycleLock(async () => {
-      wipeVault();
-      clearDurableMergeReconciliations(
-        window.localStorage,
-        MERGE_RECONCILIATION_STORAGE_KEY,
-      );
-      clearDurablePendingTransactions(
-        window.localStorage,
-        PENDING_TX_STORAGE_KEY,
-      );
-      try {
-        window.sessionStorage.clear();
-      } catch {
-        // Vault erasure above remains authoritative.
-      }
-      const cleanupTasks: Array<() => Promise<unknown>> = [];
-      if (typeof indexedDB !== "undefined") {
-        cleanupTasks.push(
-          async () => {
-            const { getMerchantRepository } = await import("@/lib/merchant/repository");
-            return getMerchantRepository().clear();
-          },
-          () => new IndexedDbEncryptedRecordDriver().removePrefix("private:"),
-        );
-      }
-      if ("serviceWorker" in navigator) {
-        cleanupTasks.push(async () => {
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          await Promise.allSettled(registrations.map((registration) => registration.unregister()));
-        });
-      }
-      if ("caches" in globalThis) {
-        cleanupTasks.push(async () => {
-          const names = await globalThis.caches.keys();
-          await Promise.allSettled(
-            names
-              .filter((name) => name.startsWith("stellarkey-"))
-              .map((name) => globalThis.caches.delete(name)),
+    try {
+      invalidateWalletLifecycle();
+      if (notifyPeers) walletCoordinationRef.current?.post("wallet-reset");
+      await withWalletLifecycleLock(async () => {
+        let vaultErasureFailed = false;
+        try { wipeVault(); } catch { vaultErasureFailed = true; }
+        const requireCleanup = async (tasks: Promise<unknown>[]) => {
+          const results = await Promise.allSettled(tasks);
+          if (results.some(result => result.status === "rejected")) {
+            throw new Error("Local cleanup is incomplete.");
+          }
+        };
+        const cleanupTasks: Array<() => Promise<unknown>> = [
+          async () => clearDurableMergeReconciliations(window.localStorage, MERGE_RECONCILIATION_STORAGE_KEY),
+          async () => clearDurablePendingTransactions(window.localStorage, PENDING_TX_STORAGE_KEY),
+          async () => window.sessionStorage.clear(),
+        ];
+        if (typeof indexedDB !== "undefined") {
+          cleanupTasks.push(
+            async () => {
+              const { getMerchantRepository } = await import("@/lib/merchant/repository");
+              return getMerchantRepository().clear();
+            },
+            () => new IndexedDbEncryptedRecordDriver().removePrefix("private:"),
           );
-        });
-      }
-      await Promise.allSettled(cleanupTasks.map((task) => Promise.resolve().then(task)));
-    });
+        }
+        if ("serviceWorker" in navigator) {
+          cleanupTasks.push(async () => {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await requireCleanup(registrations.map(registration => registration.unregister()));
+          });
+        }
+        if ("caches" in globalThis) {
+          cleanupTasks.push(async () => {
+            const names = await globalThis.caches.keys();
+            await requireCleanup(names.filter(name => name.startsWith("stellarkey-"))
+              .map(name => globalThis.caches.delete(name)));
+          });
+        }
+        await requireCleanup(cleanupTasks.map(task => Promise.resolve().then(task)));
+        if (vaultErasureFailed) throw new Error("Vault erasure is incomplete.");
+      });
+    } catch {
+      // The original confirmation may already be unmounted after locking.
+      // A provider-owned recovery screen keeps failures and retry visible.
+      setVaultStorageIssue({ kind: "erasure-incomplete", raw: "", message:
+        "Signing is disabled. Erasure is incomplete and some local wallet data may remain. Retry cleanup; if it keeps failing, clear this site’s storage in your browser settings." });
+      setPhase("recovery");
+      return;
+    }
     setAccounts([]);
     setArchivedAccounts([]);
     setActiveId(null);
@@ -2527,8 +2540,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (activeAccount.watchOnly) {
       throw new Error("This is a watch-only account — switch to a signing account to send.");
     }
+    const beforeSign = captureSigningContext();
     const stealth = await loadStealthPaymentApi();
     const hw = hardwareSignerFor(activeAccount);
+    if (hw) hw.assertSessionActive = beforeSign;
     return withAuthorizedSigningSecret("Send private payment", activeAccount, hw, softwareSigner => runTrackedBroadcast(
       "Reusable private payment",
       undefined,
@@ -2539,10 +2554,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         softwareSigner,
         hardwareSigner: hw,
         onPrepared,
+        beforeSign,
       }),
       result => result,
-    ));
-  }, [activeAccount, network, runTrackedBroadcast, withAuthorizedSigningSecret]);
+      undefined,
+      beforeSign,
+    ), beforeSign);
+  }, [activeAccount, captureSigningContext, network, runTrackedBroadcast, withAuthorizedSigningSecret]);
 
   const sendBatch = useCallback(
     async (params: {
@@ -2558,8 +2576,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (activeAccount.watchOnly) {
         throw new Error("Watch-only accounts cannot sign transactions.");
       }
+      const beforeSign = captureSigningContext();
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
+      if (hw) hw.assertSessionActive = beforeSign;
       return withAuthorizedSigningSecret("Send multiple payments", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Batch Payment",
         undefined,
@@ -2570,18 +2590,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           ...params,
           feeStroops: recommendedBaseFeeStroops,
           onPrepared,
+          beforeSign,
         }),
         (result) => result,
-      ));
+        undefined,
+        beforeSign,
+      ), beforeSign);
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
+    [activeAccount, captureSigningContext, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const claimAirdrops = useCallback(
     async (balanceIds: string[]) => {
       if (!activeAccount) throw new Error("No active account");
+      const beforeSign = captureSigningContext();
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
+      if (hw) hw.assertSessionActive = beforeSign;
       return withAuthorizedSigningSecret("Claim pending asset", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Airdrop claim",
         undefined,
@@ -2592,11 +2617,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           balanceIds,
           feeStroops: recommendedBaseFeeStroops,
           onPrepared,
+          beforeSign,
         }),
         (result) => result,
-      ));
+        undefined,
+        beforeSign,
+      ), beforeSign);
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
+    [activeAccount, captureSigningContext, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const claimAirdrop = useCallback(
@@ -2607,8 +2635,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const mergeAccount = useCallback(
     async (destination: string) => {
       if (!activeAccount) throw new Error("No active account");
+      const beforeSign = captureSigningContext();
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
+      if (hw) hw.assertSessionActive = beforeSign;
       return withAuthorizedSigningSecret("Merge account", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Account merge",
         { kind: "reconcile_account_merge" },
@@ -2619,18 +2649,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           destination,
           feeStroops: recommendedBaseFeeStroops,
           onPrepared,
+          beforeSign,
         }),
         (result) => result,
-      ));
+        undefined,
+        beforeSign,
+      ), beforeSign);
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
+    [activeAccount, captureSigningContext, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const trustAsset = useCallback(
     async (params: { code: string; issuer: string; add: boolean }) => {
       if (!activeAccount) throw new Error("No active account");
+      const beforeSign = captureSigningContext();
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
+      if (hw) hw.assertSessionActive = beforeSign;
       return withAuthorizedSigningSecret(params.add ? "Add asset trustline" : "Remove asset trustline", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         params.add ? "Trustline" : "Trustline removal",
         undefined,
@@ -2641,18 +2676,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           ...params,
           feeStroops: recommendedBaseFeeStroops,
           onPrepared,
+          beforeSign,
         }),
         (result) => result,
-      ));
+        undefined,
+        beforeSign,
+      ), beforeSign);
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
+    [activeAccount, captureSigningContext, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const trustAssets = useCallback(
     async (assets: Array<{ code: string; issuer: string }>) => {
       if (!activeAccount) throw new Error("No active account");
+      const beforeSign = captureSigningContext();
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
+      if (hw) hw.assertSessionActive = beforeSign;
       const result = await withAuthorizedSigningSecret("Add asset trustlines", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         `${assets.length} trustlines`,
         undefined,
@@ -2663,12 +2703,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           assets,
           feeStroops: recommendedBaseFeeStroops,
           onPrepared,
+          beforeSign,
         }),
         (outcome) => outcome,
-      ));
+        undefined,
+        beforeSign,
+      ), beforeSign);
       return result;
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
+    [activeAccount, captureSigningContext, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const swap = useCallback(
@@ -2756,8 +2799,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (activeAccount.watchOnly) {
         throw new Error("Watch-only accounts cannot sign transactions.");
       }
+      const beforeSign = captureSigningContext();
       const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
+      if (hw) hw.assertSessionActive = beforeSign;
       const result = await withAuthorizedSigningSecret("Update multi-signature settings", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Multi-sig update",
         undefined,
@@ -2769,15 +2814,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           hardwareSigner: hw,
           feeStroops: recommendedBaseFeeStroops,
           onPrepared,
+          beforeSign,
         }),
         (outcome) => outcome.submission,
-      ));
+        undefined,
+        beforeSign,
+      ), beforeSign);
       if (!result.submission) {
         toast("Configuration signed — additional approval required", "info");
       }
       return result;
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, toast, withAuthorizedSigningSecret],
+    [activeAccount, captureSigningContext, network, recommendedBaseFeeStroops, runTrackedBroadcast, toast, withAuthorizedSigningSecret],
   );
 
   const disableMultisig = useCallback(async (expectedAuthorityFingerprint: string) => {
@@ -2785,8 +2833,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (activeAccount.watchOnly) {
       throw new Error("Watch-only accounts cannot sign transactions.");
     }
+    const beforeSign = captureSigningContext();
     const msig = await loadMultisigApi();
     const hw = hardwareSignerFor(activeAccount);
+    if (hw) hw.assertSessionActive = beforeSign;
     const result = await withAuthorizedSigningSecret("Disable multi-signature settings", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
       "Multi-sig disabled",
       undefined,
@@ -2798,14 +2848,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         expectedAuthorityFingerprint,
         feeStroops: recommendedBaseFeeStroops,
         onPrepared,
+        beforeSign,
       }),
       (outcome) => outcome.submission,
-    ));
+      undefined,
+      beforeSign,
+    ), beforeSign);
     if (!result.submission) {
       toast("Disable request signed — additional approval required", "info");
     }
     return result;
-  }, [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, toast, withAuthorizedSigningSecret]);
+  }, [activeAccount, captureSigningContext, network, recommendedBaseFeeStroops, runTrackedBroadcast, toast, withAuthorizedSigningSecret]);
 
   const prepareCosignPayment = useCallback(
     async (params: {
@@ -2839,8 +2892,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const cosignTransaction = useCallback(
     async (xdr: string, confirmedNetwork: NetworkKey | null) => {
       if (!activeAccount) throw new Error("No active account");
+      const beforeSign = captureSigningContext();
       const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
+      if (hw) hw.assertSessionActive = beforeSign;
       return withAuthorizedSigningSecret("Co-sign transaction", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Co-signed transaction",
         undefined,
@@ -2852,11 +2907,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           softwareSigner,
           hardwareSigner: hw,
           onPrepared,
+          beforeSign,
         }),
         (outcome) => outcome.submission,
-      ));
+        undefined,
+        beforeSign,
+      ), beforeSign);
     },
-    [activeAccount, network, runTrackedBroadcast, withAuthorizedSigningSecret],
+    [activeAccount, captureSigningContext, network, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const resolvePrivateBalanceFeePayer = useCallback((accountId?: string) => {

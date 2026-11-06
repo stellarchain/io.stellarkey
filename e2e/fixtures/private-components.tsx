@@ -12,6 +12,7 @@ import { PrivateActionReview } from '@/features/private-balance/components/Priva
 import type { PrivateOutgoingHistoryMode } from '@/features/private-balance/runtime/outgoing-history';
 import type { PrivateChainedSendApproval } from '@/features/private-balance/runtime/chained-send';
 import { disclosePrivateProof, PrivateProofConsent, type PrivateProofDisclosure } from '@/features/private-balance/runtime/proof-disclosure';
+import { WalletErasureFixture } from '../../../e2e/fixtures/wallet-erasure-panel';
 import { UxPrimitivesFixture } from '../../../e2e/fixtures/ux-primitives';
 import { QrFreshnessFixture } from '../../../e2e/fixtures/qr-freshness';
 import { DirectPrivateFixture } from '../../../e2e/fixtures/private-direct-panel';
@@ -611,6 +612,7 @@ function ProofPanel() {
 }
 
 function Fixture() {
+  const [erasureRecovery, setErasureRecovery] = useState(false);
   const [swap, setSwap] = useState(false);
   const [privateRecovery, setPrivateRecovery] = useState(false);
   const [signingContext, setSigningContext] = useState(false);
@@ -628,6 +630,7 @@ function Fixture() {
   const [writes, setWrites] = useState(0);
   const completion = useRef<(() => void) | null>(null);
   const rejection = useRef<(() => void) | null>(null);
+  if (erasureRecovery) return <WalletErasureFixture />;
   if (swap) return <SwapFixture />;
   if (privateRecovery) return <PrivateRecoveryFixture />;
   if (signingContext) return <SigningContextFixture />;
@@ -641,6 +644,7 @@ function Fixture() {
     } }}>
       <main id="app-content" data-app-surface className="min-h-screen p-6">
         <h1 className="text-xl text-white">Synthetic privacy interaction checks</h1>
+        <Button onClick={() => setErasureRecovery(true)}>Test erasure recovery</Button>
         <Button onClick={() => setSwap(true)}>Test swap</Button>
         <Button onClick={() => setPrivateRecovery(true)}>Test private recovery</Button>
         <Button onClick={() => setSigningContext(true)}>Test signing context</Button>

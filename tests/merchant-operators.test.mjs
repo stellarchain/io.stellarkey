@@ -256,7 +256,7 @@ test("operator lock choices expose selection state and mobile-size targets", () 
   assert.match(ui, /role="group"/);
   assert.match(ui, /aria-pressed=\{active\}/);
   assert.match(ui, /min-h-11/);
-  assert.match(ui, /if \(!panel\?\.isConnected \|\| !isTopModal\(backdrop\) \|\| panel\.contains\(document\.activeElement\)\) return;/);
+  assert.match(ui, /if \(!panel\?\.isConnected \|\| !isTopModal\(backdrop\) \|\| backdrop\?\.contains\(document\.activeElement\)\) return;/);
   assert.match(staffPage, /ariaLabel="Operator lock timing"/);
   assert.match(staffPage, /ariaLabel="Operator inactivity timeout"/);
   // The PIN field is the one entry point in the operator sheets: it takes focus on

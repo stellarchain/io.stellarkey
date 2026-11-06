@@ -825,7 +825,8 @@ export function Modal({
     // Focus lands on the dialog itself so assistive technology announces its
     // name before any control; a sheet whose purpose is entry opts into a field.
     const frame = window.requestAnimationFrame(() => {
-      if (!panel?.isConnected || !isTopModal(backdrop) || panel.contains(document.activeElement)) return;
+      // The backdrop also owns Select/menu portals beside the panel.
+      if (!panel?.isConnected || !isTopModal(backdrop) || backdrop?.contains(document.activeElement)) return;
       const requested = initialFocusRef.current;
       const target = typeof requested === "function" ? requested() : requested?.current ?? null;
       const first = target && panel.contains(target) && !target.matches(":disabled, [aria-disabled='true']")

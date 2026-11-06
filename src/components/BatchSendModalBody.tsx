@@ -70,7 +70,7 @@ export function BatchSendModalBody({
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
   const { contacts } = useWalletContacts();
   const { submissionStatus } = useWalletSubmission();
-  const { sendBatch, refresh } = useWalletTransactions();
+  const { sendBatch } = useWalletTransactions();
   const { toast } = useToast();
   const [assetKey, setAssetKey] = useState("native");
   const memoInputId = useId();
@@ -296,7 +296,6 @@ export function BatchSendModalBody({
       });
       setSubmission(result);
       triggerHaptic(result.status === "status_unknown" ? "warning" : "success");
-      window.setTimeout(() => void refresh(), 4000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Batch transaction failed.");
       triggerHaptic("error");

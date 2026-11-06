@@ -248,3 +248,41 @@ test('artifacts: content-addressed cache serves verified copies and dedupes load
     globalThis.fetch = originalFetch;
   }
 });
+
+test('artifacts: rejects a stalled response body instead of waiting forever', { timeout: 5000 }, async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-length': '4' }),
+    body: {
+      getReader() {
+        return {
+          read: () => new Promise(() => {}),
+          cancel: async () => {},
+        };
+      },
+    },
+  });
+  try {
+    await assert.rejects(
+      () => fetchAndVerifyArtifact('/stalled-body', '00'.repeat(32), undefined, 1024, 20),
+      /timed out/i,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('artifacts: rejects a stalled fetch instead of waiting forever', { timeout: 5000 }, async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => new Promise(() => {});
+  try {
+    await assert.rejects(
+      () => fetchAndVerifyArtifact('/stalled-fetch', '00'.repeat(32), undefined, 1024, 20),
+      /timed out/i,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

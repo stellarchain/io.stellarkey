@@ -195,6 +195,7 @@ export async function submitPreparedStealthPayment(input: {
   softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   onPrepared?: SubmissionPreparedCallback;
+  beforeSign?: () => void;
 }): Promise<SubmissionResult> {
   const transaction = validatePreparedStealthPayment(
     input.review,
@@ -215,5 +216,6 @@ export async function submitPreparedStealthPayment(input: {
     kp,
     input.hardwareSigner,
     input.onPrepared,
+    input.beforeSign,
   );
 }

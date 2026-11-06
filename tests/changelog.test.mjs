@@ -43,9 +43,47 @@ test('Unreleased accepts empty or categorized entries without changing the publi
 test('the changelog starts at the approved 1.0.0 baseline', () => {
   const source = read('CHANGELOG.md');
   const document = parseChangelog(source);
-  assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.1.0', '1.0.5', '1.0.4', '1.0.3', '1.0.2', '1.0.1', '1.0.0']);
-  assert.deepEqual(document.releases[0], { version: 'Unreleased', date: null, categories: [] });
+  assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.1.1', '1.1.0', '1.0.5', '1.0.4', '1.0.3', '1.0.2', '1.0.1', '1.0.0']);
+  assert.deepEqual(document.releases[0], {
+  "version": "Unreleased",
+  "date": null,
+  "categories": []
+});
   assert.deepEqual(document.releases[1], {
+  "version": "1.1.1",
+  "date": "2026-11-06",
+  "categories": [
+    {
+      "name": "Changed",
+      "entries": [
+        "Replace the unpublished 1.1.0 candidate after release verification exposed a dialog focus race; synchronize application versions and the whitepaper at 1.1.1.",
+        "Update Next.js and its lint configuration to 16.4.5, Stellar SDK to 17.4.0 for the app and installed Trezor adapter, and Tailwind CSS to 4.3.4; refresh current artifact provenance without changing cryptographic artifacts or historical deployment bindings.",
+        "Animate only the changing properties on onboarding and address-book controls.",
+        "Run the complete hosted browser gates on standard macOS Intel runners after ARM capacity failures, retaining canonical artifact reproduction on macOS ARM64."
+      ]
+    },
+    {
+      "name": "Fixed",
+      "entries": [
+        "Preserve focus in Select and menu portals when a dialog’s delayed initial focus runs after keyboard interaction.",
+        "Announce incomplete erasure and initialize focus on its recovery heading when no newer control owns focus.",
+        "Label zero-limit trustline operations as removals in wallet activity.",
+        "Keep signing disabled and show an explicit retry screen when wallet erasure leaves storage, merchant records, private records, service workers, or caches uncleared.",
+        "Revalidate the reviewed wallet account, network, and session across batch payments, claims, merges, trustlines, multisig changes, co-signing, and reusable private payments before signing and submission.",
+        "Keep refresh callbacks bound to the visible account, network, and endpoint, remove redundant delayed refreshes, and release failed transaction-status polls for retry.",
+        "Bound Friendbot requests and error bodies, and time out stalled verified Private Payments artifact downloads without rejecting slow transfers that keep making progress.",
+        "Pin and verify the official Intel macOS Stellar CLI 27.0.0 archive used by hosted browser verification."
+      ]
+    },
+    {
+      "name": "Security",
+      "entries": [
+        "Retain the maintainer-approved manual-check deferral and exact RUSTSEC-2026-0387 exception for the replacement candidate; the checks remain unperformed or unconfirmed and the advisory remains unresolved."
+      ]
+    }
+  ]
+});
+  assert.deepEqual(document.releases[2], {
   "version": "1.1.0",
   "date": "2026-11-06",
   "categories": [
@@ -82,7 +120,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
     }
   ]
 });
-  assert.deepEqual(document.releases[2], {
+  assert.deepEqual(document.releases[3], {
     version: '1.0.5', date: '2026-09-22',
     categories: [
       { name: 'Changed', entries: [
@@ -105,7 +143,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
       ] },
     ],
   });
-  assert.deepEqual(document.releases[3], {
+  assert.deepEqual(document.releases[4], {
     version: '1.0.4',
     date: '2026-09-16',
     categories: [{
@@ -136,11 +174,11 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
       ],
     }],
   });
-  assert.equal(document.releases[4].date, '2026-09-14');
   assert.equal(document.releases[5].date, '2026-09-14');
-  assert.equal(document.releases[6].date, '2026-09-13');
+  assert.equal(document.releases[6].date, '2026-09-14');
   assert.equal(document.releases[7].date, '2026-09-13');
-  const notes = document.releases[7].categories.flatMap(({ entries }) => entries).join(' ');
+  assert.equal(document.releases[8].date, '2026-09-13');
+  const notes = document.releases[8].categories.flatMap(({ entries }) => entries).join(' ');
   assert.match(notes, /stable starting application baseline/);
   assert.match(notes, /unaudited.*Testnet-only/);
   assert.match(notes, /GitHub Actions/);
@@ -149,21 +187,21 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   assert.match(source, /semver\.org/);
 });
 
-test('all authoritative release markers agree on version 1.1.0', () => {
+test('all authoritative release markers agree on version 1.1.1', () => {
   const packageJson = JSON.parse(read('package.json'));
   const packageLock = JSON.parse(read('package-lock.json'));
   const brand = read('src/lib/brand.ts');
   const security = read('SECURITY.md');
   const readme = read('README.md');
 
-  assert.equal(packageJson.version, '1.1.0');
-  assert.equal(packageLock.version, '1.1.0');
-  assert.equal(packageLock.packages[''].version, '1.1.0');
-  assert.match(brand, /APPLICATION_VERSION = "1\.1\.0"/);
+  assert.equal(packageJson.version, '1.1.1');
+  assert.equal(packageLock.version, '1.1.1');
+  assert.equal(packageLock.packages[''].version, '1.1.1');
+  assert.match(brand, /APPLICATION_VERSION = "1\.1\.1"/);
   assert.match(security, /latest `1\.1\.x` release/i);
-  assert.match(security, /current release is `1\.1\.0`/i);
+  assert.match(security, /current release is `1\.1\.1`/i);
   assert.match(security, /`1\.1\.x` release/);
-  assert.match(readme, /current release is `1\.1\.0`/i);
+  assert.match(readme, /current release is `1\.1\.1`/i);
   assert.match(readme, /\[changelog\]\(CHANGELOG\.md\)/i);
 });
 

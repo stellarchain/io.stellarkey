@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-06
+
+### Changed
+
+- Replace the unpublished 1.1.0 candidate after release verification exposed a dialog focus race; synchronize application versions and the whitepaper at 1.1.1.
+- Update Next.js and its lint configuration to 16.4.5, Stellar SDK to 17.4.0 for the app and installed Trezor adapter, and Tailwind CSS to 4.3.4; refresh current artifact provenance without changing cryptographic artifacts or historical deployment bindings.
+- Animate only the changing properties on onboarding and address-book controls.
+- Run the complete hosted browser gates on standard macOS Intel runners after ARM capacity failures, retaining canonical artifact reproduction on macOS ARM64.
+
+### Fixed
+
+- Preserve focus in Select and menu portals when a dialog’s delayed initial focus runs after keyboard interaction.
+- Announce incomplete erasure and initialize focus on its recovery heading when no newer control owns focus.
+- Label zero-limit trustline operations as removals in wallet activity.
+- Keep signing disabled and show an explicit retry screen when wallet erasure leaves storage, merchant records, private records, service workers, or caches uncleared.
+- Revalidate the reviewed wallet account, network, and session across batch payments, claims, merges, trustlines, multisig changes, co-signing, and reusable private payments before signing and submission.
+- Keep refresh callbacks bound to the visible account, network, and endpoint, remove redundant delayed refreshes, and release failed transaction-status polls for retry.
+- Bound Friendbot requests and error bodies, and time out stalled verified Private Payments artifact downloads without rejecting slow transfers that keep making progress.
+- Pin and verify the official Intel macOS Stellar CLI 27.0.0 archive used by hosted browser verification.
+
+### Security
+
+- Retain the maintainer-approved manual-check deferral and exact RUSTSEC-2026-0387 exception for the replacement candidate; the checks remain unperformed or unconfirmed and the advisory remains unresolved.
+
 ## [1.1.0] - 2026-11-06
 
 ### Changed

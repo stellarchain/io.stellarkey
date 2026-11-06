@@ -1,5 +1,46 @@
 # Dependency security evidence
 
+## 2026-11-06 — hosted browser runner capacity
+
+On source 5348f32, GitHub cancelled both queued browser jobs and canonical
+reproduction after about fifteen minutes: their annotations reported failure
+to acquire a hosted runner and macOS ARM capacity constraints. Rust security,
+Linux circuit analysis and CodeQL passed; Gate A correctly remained failed.
+Application and private-UI jobs now use standard `macos-15-intel` runners,
+including in the release workflow, with the same full browser matrix and native
+animation assertions. Canonical reproduction remains on `macos-15` ARM64;
+exact runner-policy tests enforce both choices. This is a capacity adjustment,
+not a waived check or a replacement for ARM64 canonical reproduction.
+
+## 2026-11-06 — audit curation for the replacement candidate
+
+The subsequent audit curation advances Next.js/eslint-config-next to 16.4.5,
+Stellar SDK to 17.4.0 for the app and scoped Trezor reference adapter, and
+Tailwind to 4.3.4. This supersedes the earlier replacement snapshot's statement
+that only release-version fields change in the root lockfile. The nested npm
+and Cargo locks remain unchanged. Installed-parent and real adapter/schema
+checks passed (48 focused tests). Current provenance is regenerated from the
+1.1.1 root lock; historical deployment identity and cryptographic artifact
+hashes must remain unchanged. Full verification binds the final committed tree.
+See [audit review](release-checklist.md#111-audit-curation) for the selected
+signing, refresh, erasure and deadline fixes and remaining findings.
+
+## 2026-11-06 — replacement candidate 1.1.1
+
+The unpublished 1.1.0 release run failed Chromium Select focus verification.
+A controlled regression reproduced a delayed Modal initializer overwriting focus
+in its owning portalled Select on both supported browser engines. The fix checks
+the owning backdrop, which contains the panel and its portals. Expanded Select
+and Dropdown regression checks cover normal/reduced motion and detect transient
+focus loss. No test assertion or release gate was weakened.
+
+Application versions and current whitepaper links advance to 1.1.1; protocol,
+circuit and contract sources are unchanged. Only root release-version fields
+change in the npm lock. Current local provenance and cascading manifest/catalogue
+pins are regenerated with the strict historical HPKE baseline unchanged.
+The existing maintainer instructions on manual checks and RUSTSEC-2026-0387
+continue for this same release task; no additional advisory ID is ignored.
+
 ## 2026-11-06 — Linux WebKit verification toolchain
 
 Playwright 1.65.0 supersedes the 1.64.1 update proposed in PR #32. Its

@@ -15,6 +15,7 @@ async function installer() {
 test('CLI archives pin supported hosts, exact release digests and source revision', async () => {
   const { stellarCliAsset, assertStellarCliVersion } = await installer();
   const expected = [
+    ['darwin', 'x64', 'x86_64-apple-darwin', '126de54c034d2fd2e902c61a9e87704bc38c20f916b1727eaa787b6988f09296'],
     ['darwin', 'arm64', 'aarch64-apple-darwin', '70a259d10534259656b63fe7073116ec3bda0ce83839c9c72364750614beeae6'],
     ['linux', 'x64', 'x86_64-unknown-linux-gnu', '357bf712f6353c28cd33c794402a3c87231757a5b305e6ef1604365af4fdd556'],
     ['linux', 'arm64', 'aarch64-unknown-linux-gnu', 'a341adcc152e1865ea61d6c332e75b3d82b1f2f32108198fac97c50878b17034'],

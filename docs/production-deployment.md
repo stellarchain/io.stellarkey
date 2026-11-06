@@ -78,7 +78,7 @@ preserves the local `verify:application` coverage and two-worker component limit
 per runner, without cancelling the other browser when one fails. Publication
 requires the whole matrix to succeed, not just one browser.
 
-Application and private-UI jobs use macOS 15 for native WebKit rendering.
+Application and private-UI jobs use macOS 15 Intel (`macos-15-intel`) for native WebKit rendering after ARM runner-capacity acquisition failures. Canonical artifact reproduction stays on macOS ARM64 (`macos-15`).
 Linux WebKit's upstream backdrop-filter regression can starve animation frames;
 this platform choice preserves the full Chromium/iPhone/iPad matrix and native
 animation assertions. Rust security and circuit analysis retain Linux runners.

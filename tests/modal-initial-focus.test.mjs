@@ -237,6 +237,17 @@ test('Modal never moves focus that a child already placed inside the panel', () 
   assert.equal(view.document.activeElement, view.panel);
 });
 
+test('Modal initializer preserves newer focus in a portal owned by its backdrop', () => {
+  const view = opening({ initialFocus: 'first' });
+  view.runEffects('useLayoutEffect');
+  view.runEffects('useEffect');
+  const option = view.element('portalled-option', view.panel.parentElement);
+  option.focus();
+  assert.equal(view.panel.contains(option), false);
+  view.frame();
+  assert.equal(view.document.activeElement, option);
+});
+
 test('the shell never focuses the header close control by default', () => {
   const focusEffect = effects.find(effect => effect.callback.includes('const first ='));
   assert.ok(focusEffect);
