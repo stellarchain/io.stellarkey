@@ -144,7 +144,8 @@ test('private fee payer actual provider: Max preserves the owner reserve and sel
   await expect(page.getByTestId('recovery-provider-ledger-ready')).toHaveText('true');
   const max = dialog.getByRole('button', { name: /^Max: / });
   await max.click();
-  await expect(dialog.getByLabel('Amount', { exact: true })).toHaveValue('995.99999');
+  // 1000 XLM minus 1 reserve, 2 selling liabilities, 2 resource-fee cap and 100 stroops.
+  await expect(dialog.getByLabel('Amount', { exact: true })).toHaveValue('994.99999');
   const select = await chooseTreasury(page);
   await max.click();
   await expect(dialog.getByLabel('Amount', { exact: true })).toHaveValue('997');

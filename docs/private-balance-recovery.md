@@ -16,6 +16,31 @@ An encrypted backup preserves local activity metadata, the outgoing-recovery
 preference, and possibly exposed proof reservations. Store it separately from
 the password, verify it in a fresh browser profile, and never send it to support.
 
+## Upgrading from 1.0.4 (Protocol V2)
+
+Application 1.0.5 uses Private Payments Protocol V2.1. The application version,
+private protocol version, and encrypted backup envelope version are independent:
+the full-wallet backup envelope remains version 2, and Protocol V2.1 retains
+encoded protocol identifier 3 for its key derivation and deployment bindings. Public-only backups from
+1.0.4 remain compatible, but encrypted Protocol V2 private records cannot be
+imported into V2.1. A mixed archive containing both versions is also rejected as
+a whole; the restore does not silently discard incompatible private records.
+
+Before upgrading, keep the original encrypted backup and password and preserve
+the existing browser profile. Do not reset the wallet, clear site storage, or
+replace the only backup after a failed import. The archive does not identify its
+private-protocol version, so an authentication failure can also mean damage;
+the error is not proof of a wrong password or an old format.
+
+For V2 recovery, retain a verified copy of the matching 1.0.4 application and its
+artifact checksums. Use a separate browser profile and a copy of the original
+backup for any recovery attempt, preserving the original profile. Verify the
+release source and checksums before entering recovery material. This is a
+preservation path, not an automatic V2-to-V2.1 migration or a guarantee that the
+old Testnet pool is still available. Seed-only recovery in the V2.1 application
+does not recover V2 deployment-bound notes. Do not send a backup, seed, private
+address, or note to support; report only the application version and fixed error.
+
 ## Seed-only network recovery
 
 The wallet seed can derive the same deployment-bound viewing key. Seed-only

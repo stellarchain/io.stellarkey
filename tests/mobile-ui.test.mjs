@@ -151,6 +151,7 @@ test("five-tab mobile bar is viewport-safe at every supported iPhone width", () 
 test("dashboard balances and controls adapt to the narrowest supported iPhone", () => {
   const css = read("src/app/globals.css");
   const dashboard = read("src/components/Dashboard.tsx");
+  const shellChrome = read("src/components/dashboard/ShellChrome.tsx");
 
   assert.match(css, /\.balance-display\s*\{[\s\S]*?max-width:\s*100%;/);
   assert.match(css, /\.balance-display-value\s*\{[\s\S]*?font-size:\s*clamp\(/);
@@ -165,11 +166,11 @@ test("dashboard balances and controls adapt to the narrowest supported iPhone", 
     /privateWithdrawEntry[\s\S]*\? "max-w-\[420px\] grid-cols-5"[\s\S]*: "max-w-\[360px\] grid-cols-4"/,
   );
   assert.match(
-    dashboard,
+    shellChrome,
     /className="group flex w-full min-w-0 flex-col items-center gap-2/,
   );
   assert.match(
-    dashboard,
+    shellChrome,
     /aria-label=\{`Open account menu for \$\{activeAccount\.label\}`\}[\s\S]*?className="flex min-h-11 min-w-0 flex-1/,
   );
   assert.match(dashboard, /data-mobile-asset-toolbar/);
@@ -254,9 +255,9 @@ test("open popovers track and clean up visual viewport changes", () => {
 });
 
 test("network switch modal uses the shared mobile padding", () => {
-  const dashboard = read("src/components/Dashboard.tsx");
+  const shellChrome = read("src/components/dashboard/ShellChrome.tsx");
   assert.match(
-    dashboard,
+    shellChrome,
     /title="Switch Network"[\s\S]*?<ModalBody>/,
   );
 });

@@ -331,7 +331,7 @@ export function LandingBody() {
             <p className="mono-label">act three<span className="sep">{"//"}</span>the same wallet, in private</p>
             <h2 className="display-sm">Then it goes quiet.</h2>
             <p className="lede"><strong>Private Payments is the same wallet with a second pocket.</strong> Move XLM or USDC into one private pool and send internally while the asset, amount, recipient, and memo stay encrypted. The proof is built on this device; a contract on the public Stellar ledger verifies the public proof without receiving its private witness.</p>
-            <p className="lede">Protocol V2 ships as an unaudited, Testnet-only feature. Money moving in or out of the private balance is public by design. The submitting account, fee payer and timing remain public. Privacy grows with more independent activity — it is context, not a guarantee.</p>
+            <p className="lede">Protocol V2.1 ships as an unaudited, Testnet-only feature. Money moving in or out of the private balance is public by design. The submitting account, fee payer and timing remain public. Privacy grows with more independent activity — it is context, not a guarantee.</p>
           </div>
           <div className="rv"><PanelDeal /></div>
         </div>
@@ -360,7 +360,7 @@ export function LandingBody() {
             <div className="step" data-step="1">
               <div className="sub" style={{ marginBottom: ".7rem" }}>PROVE · ON THIS DEVICE</div>
               <div className="rows">
-                <div><span>circuit</span><b>40,594 constraints</b></div>
+                <div><span>circuit</span><b>40,647 constraints</b></div>
                 <div><span>built in</span><b>an isolated worker</b></div>
                 <div><span>private witness</span><b className="g">stays on this device</b></div>
               </div>

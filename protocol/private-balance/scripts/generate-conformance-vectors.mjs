@@ -2,7 +2,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  ActionKind,
   appendCommitments,
   computeActionField,
   computeAssetField,
@@ -43,11 +42,11 @@ const assetId = fill(0x55, 32);
 const asset = { kind: 1, payload: assetId };
 const assetField = computeAssetField(asset);
 const accountPublicKey = fill(0x66, 32);
-const contextHash = computeContextHash(2, networkId, realmId, poolId);
+const contextHash = computeContextHash(3, networkId, realmId, poolId);
 const contextField = computeContextField(contextHash);
 const sessionRoot = derivePrivacySessionRoot(
   rawSeed,
-  2,
+  3,
   networkId,
   realmId,
   poolId,
@@ -55,7 +54,7 @@ const sessionRoot = derivePrivacySessionRoot(
 );
 const keys = await deriveKeysFromSeed(
   rawSeed,
-  2,
+  3,
   networkId,
   realmId,
   poolId,
@@ -118,7 +117,7 @@ rho[31] = 0x99;
 const memo = new Uint8Array(32);
 memo.set([0x70, 0x61, 0x79, 0x31]);
 const note = {
-  protocolVersion: 2,
+  protocolVersion: 3,
   flags: 0,
   value: 5_000_000n,
   diversifier,
@@ -157,7 +156,7 @@ const deploymentBindingHashForOutgoing = fill(0x77, 32);
 const ephemeralPublicKey = fill(0x78, 32);
 const outgoingNonce = fill(0x79, 12);
 const outgoingPlaintext = encodeOutgoingPlaintext({
-  protocolVersion: 2,
+  protocolVersion: 3,
   flags: 0,
   value: note.value,
   diversifier,
@@ -197,7 +196,7 @@ write('encryption-v1.json', {
     outgoingNonce: hex(outgoingNonce),
   },
   expected: {
-    info: hex(deriveHpkeInfo(2, contextHash)),
+    info: hex(deriveHpkeInfo(3, contextHash)),
     aad: hex(deriveHpkeAad(contextHash, commitment, actionNonce, 0)),
     recipientEnvelopeBytes: 181,
     outputPackageBytes: 370,
@@ -225,8 +224,7 @@ const zero32 = new Uint8Array(32);
 const firstDummyNullifier = fill(0x01, 32);
 const secondDummyNullifier = fill(0x02, 32);
 const action = {
-  protocolVersion: 2,
-  kind: ActionKind.Deposit,
+  protocolVersion: 3,
   assetIndex: 0,
   asset,
   actionNonce,
@@ -249,7 +247,9 @@ const action = {
       outgoingEnvelope: fill(0xc2, 157),
     },
   ],
-  publicValue: 5_000_000n,
+  publicInflow: 5_000_000n,
+  publicOutflow: 0n,
+  appends: true,
   depositSource: { kind: 0, payload: accountPublicKey },
 };
 const actionBytes = serializeCanonicalActionBytes(action, networkId, realmId, poolId);
@@ -266,7 +266,9 @@ write('actions-v1.json', {
   input: {
     kind: 'deposit',
     assetIndex: action.assetIndex,
-    publicValue: action.publicValue.toString(),
+    publicInflow: action.publicInflow.toString(),
+    publicOutflow: action.publicOutflow.toString(),
+    appends: action.appends,
     actionNonce: hex(actionNonce),
     assetId: hex(assetId),
     output0Commitment: hex(commitment),
@@ -293,7 +295,7 @@ const archiveRecord = {
   actionIndex: 0n,
   ledgerSequence: 100,
   startingLeafIndex: 0n,
-  actionKind: 1,
+  appends: true,
   assetIndex: 0,
   asset: { kind: 1, payload: fill(0x88, 32) },
   actionNonce: fill(0x11, 32),
@@ -305,18 +307,19 @@ const archiveRecord = {
     { cm: fill(0x06, 32), recipientEnvelope: fill(0x07, 181), outgoingEnvelope: fill(0x08, 157) },
     { cm: fill(0x09, 32), recipientEnvelope: fill(0x0a, 181), outgoingEnvelope: fill(0x0b, 157) },
   ],
-  publicValue: 1_000n,
+  publicInflow: 1_000n,
+  publicOutflow: 0n,
   depositSource: { kind: 0, payload: fill(0xaa, 32) },
   publicRecipient: undefined,
 };
 write('archive-v1.json', {
   schemaVersion: 1,
   record: {
-    protocolVersion: 2,
+    protocolVersion: 3,
     actionIndex: archiveRecord.actionIndex,
     ledgerSequence: archiveRecord.ledgerSequence,
     startingLeafIndex: archiveRecord.startingLeafIndex,
-    actionKind: archiveRecord.actionKind,
+    appends: archiveRecord.appends,
     assetIndex: archiveRecord.assetIndex,
     assetKind: archiveRecord.asset.kind,
     assetPayloadFill: 0x88,
@@ -334,12 +337,13 @@ write('archive-v1.json', {
     output2CommitmentFill: 0x09,
     output2RecipientEnvelopeFill: 0x0a,
     output2OutgoingEnvelopeFill: 0x0b,
-    publicValue: Number(archiveRecord.publicValue),
+    publicInflow: Number(archiveRecord.publicInflow),
+    publicOutflow: Number(archiveRecord.publicOutflow),
     depositSourceKind: archiveRecord.depositSource.kind,
     depositSourcePayloadFill: 0xaa,
     priorRecordHashFill: 0x55,
   },
-  expectedRecordHash: hex(computeRecordHash(archiveRecord, 2, fill(0x55, 32))),
+  expectedRecordHash: hex(computeRecordHash(archiveRecord, 3, fill(0x55, 32))),
 });
 
 sessionRoot.fill(0);

@@ -6,9 +6,10 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dashboard = readFileSync(path.join(root, "src/components/Dashboard.tsx"), "utf8");
+const ledger = readFileSync(path.join(root, "src/components/dashboard/ActivityLedger.tsx"), "utf8");
 
 test("home recent activity uses the Activity page ledger row", () => {
-  assert.match(dashboard, /function ActivityLedgerRow/);
+  assert.match(ledger, /function ActivityLedgerRow/);
   assert.equal(
     dashboard.match(/<ActivityLedgerRow/g)?.length,
     2,
@@ -16,10 +17,10 @@ test("home recent activity uses the Activity page ledger row", () => {
   );
   assert.match(dashboard, /mergedActivity\.slice\(0, 5\)\.map/);
   assert.match(
-    dashboard,
+    ledger,
     /className={`row-hover flex min-w-0 w-full overflow-hidden items-center gap-3\.5 px-4 py-3\.5 text-left/,
   );
-  assert.match(dashboard, /className="flex h-9 w-9 items-center justify-center rounded-full"/);
+  assert.match(ledger, /className="flex h-9 w-9 items-center justify-center rounded-full"/);
 });
 
 test("recent activity follows the Your Assets section-header pattern", () => {
@@ -39,9 +40,9 @@ test("recent activity follows the Your Assets section-header pattern", () => {
 });
 
 test("activity rows bound and deduplicate long Stellar identifiers", () => {
-  const start = dashboard.indexOf("function ActivityLedgerRow");
-  const end = dashboard.indexOf("function ActivityAmountDisplay", start);
-  const row = dashboard.slice(start, end);
+  const start = ledger.indexOf("function ActivityLedgerRow");
+  const end = ledger.indexOf("function ActivityAmountDisplay", start);
+  const row = ledger.slice(start, end);
 
   assert.notEqual(start, -1, "the shared activity row must exist");
   assert.match(
@@ -60,9 +61,9 @@ test("activity rows bound and deduplicate long Stellar identifiers", () => {
 });
 
 test("activity amounts stay inside a bounded trailing column", () => {
-  const start = dashboard.indexOf("function ActivityAmountDisplay");
-  const end = dashboard.indexOf("function Chevron", start);
-  const amount = dashboard.slice(start, end);
+  const start = ledger.indexOf("function ActivityAmountDisplay");
+  const end = ledger.indexOf("function Chevron", start);
+  const amount = ledger.slice(start, end);
 
   assert.notEqual(start, -1, "the shared amount display must exist");
   assert.match(amount, /max-w-\[42%\][^"\n]*overflow-hidden/);
@@ -74,10 +75,10 @@ test("home rows use tighter exact values while the full Activity page stays unch
   const activityStart = dashboard.indexOf('view === "activity"', homeStart);
   const home = dashboard.slice(homeStart, activityStart);
   const activity = dashboard.slice(activityStart, dashboard.indexOf("view ===", activityStart + 20));
-  const rowStart = dashboard.indexOf("function ActivityLedgerRow");
-  const amountStart = dashboard.indexOf("function ActivityAmountDisplay", rowStart);
-  const row = dashboard.slice(rowStart, amountStart);
-  const amount = dashboard.slice(amountStart, dashboard.indexOf("function Chevron", amountStart));
+  const rowStart = ledger.indexOf("function ActivityLedgerRow");
+  const amountStart = ledger.indexOf("function ActivityAmountDisplay", rowStart);
+  const row = ledger.slice(rowStart, amountStart);
+  const amount = ledger.slice(amountStart, ledger.indexOf("function Chevron", amountStart));
 
   assert.match(home, /<ActivityLedgerRow[\s\S]*?\n\s+compact\n/);
   assert.doesNotMatch(activity, /<ActivityLedgerRow[\s\S]*?\n\s+compact\n/);

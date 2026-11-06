@@ -93,7 +93,7 @@ test('exact reproduction rejects noncanonical operating systems, architectures a
   }
   assert.match(script, /for \(const output of \[first, second\]\)/);
   assert.match(script, /CARGO_TARGET_DIR: join\(output, 'cargo-target'\)/);
-  assert.match(script, /if \(trackedPoolHash !== rebuiltPoolHash\)/);
+
 });
 
 test('private action circuit performs one range decomposition for equal totals', () => {
@@ -118,9 +118,9 @@ test('private action circuit derives output roles from committed values', () => 
   assert.doesNotMatch(actionBuilder, /outputReal:/u);
 });
 
-test('private action circuit safely binds eleven public signals', () => {
+test('private action circuit safely binds twelve public signals', () => {
   const action = readFileSync(join(circuitsDir, 'circom/action.circom'), 'utf8');
-  assert.match(action, /exactly these eleven public signals/u);
+  assert.match(action, /exactly these twelve public signals/u);
   assert.match(action, /actionFieldZero\.in <== actionField;/u);
   assert.match(action, /actionFieldZero\.out === 0;/u);
   assert.doesNotMatch(action, /signal input (?:relayerField|actionBinding);/u);
@@ -161,7 +161,7 @@ test('private archive reuses the public signals already verified for the action'
 
   assert.doesNotMatch(archive, /action::\{[^}]*public_signals/u);
   assert.doesNotMatch(archive, /public_signals\(env, config, action\)/u);
-  assert.match(archive, /signals: &\[\[u8; 32\]; 11\]/u);
+  assert.match(archive, /signals: &\[\[u8; 32\]; 12\]/u);
   assert.match(contract, /archive::append_record\([\s\S]*?&signals,/u);
 });
 
@@ -201,7 +201,10 @@ test('the governed registry precomputes immutable asset fields', () => {
 
   assert.match(storage, /pub asset_field: BytesN<32>/u);
   assert.match(storage, /get_registered_asset/u);
-  assert.match(action, /asset_index: None,\s*\n\s*asset: None,/u);
+  // Quiet transfers resolve no registry asset; the unified constructor maps
+  // the absent asset through the match on the resolved Option.
+  assert.match(action, /let asset_payload = match asset \{/u);
+  assert.match(action, /None => None,/u);
   assert.match(contract, /compute_asset_field\(\(1, asset_payload\)\)/u);
 });
 

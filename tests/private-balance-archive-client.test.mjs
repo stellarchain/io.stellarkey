@@ -16,7 +16,7 @@ const poolContractId = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4
 const assetContractId = 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF';
 const deploymentBindingHash = '03'.repeat(32);
 const contextHash = computeContextHash(
-  2,
+  3,
   Buffer.from(networkId, 'hex'),
   Buffer.from(realmId, 'hex'),
   StrKey.decodeContract(poolContractId),
@@ -71,7 +71,7 @@ test('live contract reads reuse one loaded contract client per contract and netw
 });
 
 const manifest = {
-  protocolVersion: 2,
+  protocolVersion: 3,
   networkPassphrase: 'Test SDF Network ; September 2015',
   networkId,
   realmId,
@@ -90,7 +90,7 @@ const recordNative = {
     action_index: 0n,
     ledger_sequence: 123,
     starting_leaf_index: 0n,
-    action_kind: 1,
+    appends: true,
     asset_index: 0,
     asset: assetContractId,
     action_nonce: bytes(4),
@@ -113,7 +113,8 @@ const recordNative = {
       recipient_envelope: bytes(14, 181),
       outgoing_envelope: bytes(15, 157),
     },
-    public_value: 5_000_000n,
+    public_inflow: 5_000_000n,
+    public_outflow: 0n,
     deposit_source: account,
     public_recipient: null,
 };
@@ -131,7 +132,7 @@ const outputScVal = output => mapScVal({
 });
 const recordScVal = record => mapScVal({
   action_index: nativeToScVal(record.action_index, { type: 'u128' }),
-  action_kind: xdr.ScVal.scvU32(record.action_kind),
+  appends: nativeToScVal(record.appends),
   asset_index: xdr.ScVal.scvU32(record.asset_index),
   asset: Address.fromString(record.asset).toScVal(),
   action_nonce: nativeToScVal(record.action_nonce),
@@ -144,7 +145,8 @@ const recordScVal = record => mapScVal({
   output_1: outputScVal(record.output_1),
   output_2: outputScVal(record.output_2),
   public_recipient: xdr.ScVal.scvVoid(),
-  public_value: xdr.ScVal.scvU64(record.public_value),
+  public_inflow: xdr.ScVal.scvU64(record.public_inflow),
+  public_outflow: xdr.ScVal.scvU64(record.public_outflow),
   starting_leaf_index: nativeToScVal(record.starting_leaf_index, { type: 'u128' }),
   tree_root_after: nativeToScVal(record.tree_root_after),
 });
@@ -317,7 +319,7 @@ test('archive client reads manifest-bound state and canonical record storage key
       };
       const results = {
         config: {
-          protocol_version: 2,
+          protocol_version: 3,
           network_id: Buffer.from(networkId, 'hex'),
           realm_id: Buffer.from(realmId, 'hex'),
           guardian: account,
@@ -414,7 +416,9 @@ test('archive client reads manifest-bound state and canonical record storage key
 
   const records = await client.readRecords(0n, 1);
   assert.equal(records[0].actionIndex, 0n);
-  assert.equal(records[0].publicValue, 5_000_000n);
+  assert.equal(records[0].publicInflow, 5_000_000n);
+  assert.equal(records[0].publicOutflow, 0n);
+  assert.equal(records[0].appends, true);
   assert.equal(records[0].outputs.length, 3);
   assert.deepEqual(records[0].outputs.map(output => output.cm), [
     recordNative.output_0.commitment,

@@ -1,12 +1,12 @@
-# Threat Model and Security Invariants (V2)
+# Threat Model and Security Invariants (V2.1)
 
 ## 1. Assets and security objectives
 
 - Conservation of value: private inputs plus a public deposit equal three private outputs plus a
   public withdrawal, using exact bounded integers. The application constructs recipient,
   change and dummy outputs, without private peer fees.
-- Double-spend and replay prevention: accepted real nullifiers are persistent and unique; a deposit
-  retains one durable dummy nullifier so the same proof cannot be replayed.
+- Double-spend and replay prevention: both nullifiers are persistent and unique for every
+  accepted action, including both dummy slots on a deposit.
 - Spend authorization: only a valid note witness and the required spending/nullifier secrets can
   satisfy the proof.
 - Transcript integrity: commitments, archive records, action count, frontier, and Merkle root must
@@ -25,7 +25,10 @@ transaction source are public. Deposits and withdrawals additionally reveal the 
 amount, and public endpoint. Internal transfers publish no asset contract or registry index; the
 asset remains private only if ciphertext and behavioral correlation do not reveal it. Fixed
 two-input/three-output actions and matched envelope diversifiers hide lane roles; they do not hide
-the public action kind or guarantee anonymity. Reusing one private receive address still links
+the public settlement legs or guarantee anonymity. A non-appending outflow
+reveals that the selected inputs leave no private change, not the wallet's other
+notes. The wallet selects this mode only at verified capacity exhaustion; the
+contract permits it earlier. Reusing one private receive address still links
 whole actions through its clear four-byte diversifier.
 
 Direct submission uses the user's Stellar account as the transaction source and links the action

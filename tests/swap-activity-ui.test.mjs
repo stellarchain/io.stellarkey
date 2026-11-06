@@ -9,14 +9,15 @@ const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8
 
 test("swap activity renders one bank-style debit and credit pair", () => {
   const dashboard = read("src/components/Dashboard.tsx");
+  const ledger = read("src/components/dashboard/ActivityLedger.tsx");
   const detail = read("src/components/TxDetailModalBody.tsx");
 
-  assert.match(dashboard, /function ActivityAmountDisplay\(/);
-  assert.match(dashboard, /activityAmountLines\(item\)/);
-  assert.match(dashboard, /lines\.map\(\(line\)/);
-  assert.match(dashboard, /line\.direction === "out"\s*\?\s*"text-\[#FF453A\]"\s*:\s*"text-\[#30D158\]"/);
+  assert.match(ledger, /function ActivityAmountDisplay\(/);
+  assert.match(ledger, /activityAmountLines\(item\)/);
+  assert.match(ledger, /lines\.map\(\(line\)/);
+  assert.match(ledger, /line\.direction === "out"\s*\?\s*"text-\[#FF453A\]"\s*:\s*"text-\[#30D158\]"/);
   assert.match(dashboard, /activityFilter === "swap" && !a\.swap/);
-  assert.match(dashboard, /neutral\s*\?\s*\(\s*<IconSwap size=\{\d+\}/);
+  assert.match(ledger, /neutral\s*\?\s*\(\s*<IconSwap size=\{\d+\}/);
   assert.match(detail, /const amountLines = activityAmountLines\(item\)/);
   assert.match(detail, /amountLines\.map\(\(line\)/);
   assert.doesNotMatch(detail, /item\.swap[\s\S]*?direction:\s*"neutral"/);

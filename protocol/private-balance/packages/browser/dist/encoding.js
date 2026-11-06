@@ -129,7 +129,7 @@ export function deriveHpkeAad(contextHash, cm, actionNonce, outputIndex) {
     return Uint8Array.from(buf);
 }
 function validateOutgoingPlaintext(plaintext) {
-    if (plaintext.protocolVersion !== 2)
+    if (plaintext.protocolVersion !== 3)
         throw new Error('Unsupported outgoing plaintext version');
     if (plaintext.flags !== 0 && plaintext.flags !== OUTGOING_DUMMY_FLAG) {
         throw new Error('Unsupported outgoing plaintext flags');

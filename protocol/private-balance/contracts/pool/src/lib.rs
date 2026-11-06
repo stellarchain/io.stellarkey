@@ -14,7 +14,7 @@ pub mod nullifier;
 pub mod storage;
 pub mod token;
 
-pub use action::{DepositAction, OutputPackage, TransferAction, WithdrawAction};
+pub use action::{OutputPackage, ShieldedAction};
 pub use archive::{ArchiveMeta, ArchiveRecord};
 pub use contract::{PrivateBalancePool, PrivateBalancePoolClient};
 pub use errors::PoolError;

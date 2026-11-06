@@ -16,7 +16,7 @@ class MemoryStorage {
 }
 
 const context = {
-  protocolVersion: 2,
+  protocolVersion: 3,
   networkId: 'cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472',
   realmId: '0202020202020202020202020202020202020202020202020202020202020202',
   poolContractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4',

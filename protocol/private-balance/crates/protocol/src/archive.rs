@@ -12,7 +12,7 @@ pub struct ArchiveRecord {
     pub action_index: u128,
     pub ledger_sequence: u32,
     pub starting_leaf_index: u128,
-    pub action_kind: u8,
+    pub appends: bool,
     pub asset_index: Option<u32>,
     pub asset: Option<(u8, [u8; 32])>,
     pub action_nonce: [u8; 32],
@@ -20,7 +20,8 @@ pub struct ArchiveRecord {
     pub tree_root_after: [u8; 32],
     pub nullifiers: [[u8; 32]; 2],
     pub outputs: [OutputPackage; 3],
-    pub public_value: u64,
+    pub public_inflow: u64,
+    pub public_outflow: u64,
     pub deposit_source: Option<(u8, [u8; 32])>,
     pub public_recipient: Option<(u8, [u8; 32])>,
 }
@@ -37,7 +38,7 @@ impl ArchiveRecord {
         encode_u128_be(self.action_index, &mut buf);
         encode_u32_be(self.ledger_sequence, &mut buf);
         encode_u128_be(self.starting_leaf_index, &mut buf);
-        buf.push(self.action_kind);
+        buf.push(u8::from(self.appends));
         encode_optional_address(self.asset, &mut buf).unwrap();
         encode_u32_be(self.asset_index.unwrap_or(0), &mut buf);
         buf.extend_from_slice(&self.action_nonce);
@@ -48,7 +49,8 @@ impl ArchiveRecord {
         buf.extend_from_slice(&self.outputs[0].serialize());
         buf.extend_from_slice(&self.outputs[1].serialize());
         buf.extend_from_slice(&self.outputs[2].serialize());
-        encode_u64_be(self.public_value, &mut buf);
+        encode_u64_be(self.public_inflow, &mut buf);
+        encode_u64_be(self.public_outflow, &mut buf);
         encode_optional_address(self.deposit_source, &mut buf).unwrap();
         encode_optional_address(self.public_recipient, &mut buf).unwrap();
         buf.extend_from_slice(prior_record_hash);

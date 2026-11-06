@@ -1,7 +1,6 @@
 import { equalBytes } from '@noble/ciphers/utils.js';
 import { isPrivateIndex } from './indices';
 import {
-  ActionKind,
   appendFrontier,
   computeActionField,
   computeAssetField,
@@ -99,14 +98,15 @@ function cloneNote(note: ShieldedNoteRecord): ShieldedNoteRecord {
 function actionFromRecord(record: ArchiveRecordModel, protocolVersion: number): ActionModel {
   return {
     protocolVersion,
-    kind: record.actionKind as ActionKind,
     assetIndex: record.assetIndex,
     asset: record.asset,
     actionNonce: record.actionNonce,
     anchorRoot: record.anchorRoot,
     nullifiers: record.nullifiers,
     outputs: record.outputs,
-    publicValue: record.publicValue,
+    publicInflow: record.publicInflow,
+    publicOutflow: record.publicOutflow,
+    appends: record.appends,
     depositSource: record.depositSource,
     publicRecipient: record.publicRecipient,
   };
@@ -126,8 +126,9 @@ function classifyActivity(
   recoveredOutgoingValue: bigint,
   context: ArchiveScanContext,
 ): Pick<ShieldedActivityRecord, 'actionKind' | 'amount' | 'direction'> | null {
+  const isQuietAction = record.publicInflow === 0n && record.publicOutflow === 0n;
   if (ownedInputValue === 0n && ownedOutputValue === 0n) {
-    return record.actionKind === ActionKind.PrivateTransfer && recoveredOutgoingValue > 0n
+    return isQuietAction && recoveredOutgoingValue > 0n
       ? { actionKind: 'transfer', amount: recoveredOutgoingValue.toString(), direction: 'outflow' }
       : null;
   }
@@ -146,10 +147,10 @@ function classifyActivity(
   }
 
   let actionKind: ShieldedActivityRecord['actionKind'];
-  if (record.actionKind === ActionKind.Withdraw || record.actionKind === ActionKind.FullInputExit) {
+  if (record.publicOutflow > 0n) {
     actionKind = 'withdraw';
   } else if (
-    record.actionKind === ActionKind.Deposit &&
+    record.publicInflow > 0n &&
     addressMatches(record.depositSource, context.accountAddress)
   ) {
     actionKind = 'deposit';
@@ -257,7 +258,8 @@ export async function scanArchiveRecords(
     );
 
     let candidates = registry;
-    if (record.actionKind !== ActionKind.PrivateTransfer) {
+    const boundaryLeg = record.publicInflow > 0n || record.publicOutflow > 0n;
+    if (boundaryLeg) {
       const boundaryAsset = registry.find(asset => asset.index === record.assetIndex);
       if (
         !boundaryAsset
@@ -276,7 +278,7 @@ export async function scanArchiveRecords(
       record.outputs,
       SCAN_ENVELOPE_BATCH_SIZE,
       async (output, outputIndex) => {
-        if (record.actionKind === ActionKind.FullInputExit) return { note: null, outgoingBytes: null, asset: null };
+        if (!record.appends) return { note: null, outgoingBytes: null, asset: null };
         for (const candidate of candidates) {
           const note = await openRecipientEnvelope(
             input.viewingKey.hpkePrivateKey,
@@ -420,7 +422,7 @@ export async function scanArchiveRecords(
       }
     }
 
-    if (record.actionKind !== ActionKind.FullInputExit) {
+    if (record.appends) {
       for (const output of record.outputs) await appendFrontier(tree, output.cm);
     }
     expectedFinalTreeRoot = record.treeRootAfter;

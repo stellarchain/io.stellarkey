@@ -103,13 +103,32 @@ try {
     if (left !== right) throw new Error(`${label} is not reproducible: ${left} != ${right}`);
     console.log(`✓ ${label}: ${left}`);
   }
-  const trackedPoolHash = sha256(join(root, 'public/protocol/private-balance/v1/pool.wasm'));
-  const rebuiltPoolHash = sha256(join(
-    first,
-    'pool/private_balance_pool.wasm',
+  const manifest = JSON.parse(readFileSync(
+    join(root, 'public/protocol/private-balance/v1/manifest.json'), 'utf8',
   ));
-  if (trackedPoolHash !== rebuiltPoolHash) {
-    throw new Error(`Shipped pool Wasm is stale: ${trackedPoolHash} != ${rebuiltPoolHash}`);
+  const shipped = [
+    ['circuit R1CS', 'circuit/action.r1cs', [
+      'protocol/private-balance/circuits/build/action.r1cs',
+    ], manifest.artifacts?.r1csSha256],
+    ['circuit witness Wasm', 'circuit/action_js/action.wasm', [
+      'protocol/private-balance/circuits/build/action_js/action.wasm',
+      'public/protocol/private-balance/v1/circuit.wasm',
+    ], manifest.artifacts?.wasmSha256],
+    ['pool Wasm', 'pool/private_balance_pool.wasm', [
+      'public/protocol/private-balance/v1/pool.wasm',
+    ], manifest.release?.contractWasmSha256],
+  ];
+  for (const [label, rebuiltPath, shippedPaths, manifestHash] of shipped) {
+    const rebuiltHash = sha256(join(first, rebuiltPath));
+    for (const path of shippedPaths) {
+      const shippedHash = sha256(join(root, path));
+      if (shippedHash !== rebuiltHash) {
+        throw new Error(`Shipped ${label} is stale (${path}): ${shippedHash} != ${rebuiltHash}`);
+      }
+    }
+    if (manifestHash !== rebuiltHash) {
+      throw new Error(`Manifest ${label} hash mismatch: ${manifestHash} != ${rebuiltHash}`);
+    }
   }
   console.log('✓ Deterministic Private Balance artifacts rebuild byte-identically.');
 } finally {

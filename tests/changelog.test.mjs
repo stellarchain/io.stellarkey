@@ -44,7 +44,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   const source = read('CHANGELOG.md');
   const document = parseChangelog(source);
   assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.0.4', '1.0.3', '1.0.2', '1.0.1', '1.0.0']);
-  assert.deepEqual(document.releases[0], { version: 'Unreleased', date: null, categories: [] });
+  assert.deepEqual(document.releases[0], {"version": "Unreleased", "date": null, "categories": [{"name": "Changed", "entries": ["Introduce Private Payments Protocol V2.1 with uniform action records, deployment-bound recovery and integrated private-asset controls."]}, {"name": "Security", "entries": ["Reject incompatible V2 private records and verify all twelve public signals in the V2.1 verifier suite."]}]});
   assert.deepEqual(document.releases[1], {
     version: '1.0.4',
     date: '2026-09-16',

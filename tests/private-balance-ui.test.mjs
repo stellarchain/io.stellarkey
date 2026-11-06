@@ -350,7 +350,8 @@ test('private assets coexist with wallet home and open one focused detail modal'
   const row = read('src/features/private-balance/components/PrivateBalanceAssetRow.tsx');
   const details = read('src/features/private-balance/components/PrivateAssetDetailModalBody.tsx');
 
-  const viewUnion = dashboard.slice(dashboard.indexOf('type View ='), dashboard.indexOf('const MERCHANT_VIEWS'));
+  const shell = read('src/components/dashboard/view-model.ts');
+  const viewUnion = shell.slice(shell.indexOf('type View ='), shell.indexOf('const MERCHANT_VIEWS'));
   assert.doesNotMatch(viewUnion, /\| "private"/);
   assert.doesNotMatch(dashboard, /PrivatePaymentsPage/);
   assert.match(dashboard, /PrivateBalanceAssetRow/);
@@ -424,14 +425,15 @@ test('the account total includes configured private asset value in active and al
 
 test('the XLM balance and every sidebar account include cached private XLM', () => {
   const dashboard = read('src/components/Dashboard.tsx');
+  const sidebar = read('src/components/dashboard/Sidebar.tsx');
 
   assert.match(dashboard, /portfolioXlmWithPrivateAssets/);
   assert.match(dashboard, /const activeAccountXlm = portfolioXlmWithPrivateAssets/);
   assert.match(dashboard, /const allAccountsXlm = allPrivateBalances === null \? null : portfolioXlmWithPrivateAssets/);
-  assert.match(dashboard, /const accountXlm = accountTotals\[acct.publicKey\]\?\.xlm/);
-  assert.match(dashboard, /const accountUsd = accountTotals\[acct.publicKey\]\?\.usd/);
+  assert.match(sidebar, /const accountXlm = accountTotals\[acct\.publicKey\]\?\.xlm/);
+  assert.match(sidebar, /const accountUsd = accountTotals\[acct\.publicKey\]\?\.usd/);
   assert.doesNotMatch(dashboard, /isActive\s*\? activeAccount(?:Xlm|TotalUsd)/);
-  assert.match(dashboard, /fmtFiat\(accountUsd, fiatCurrency, fiatRates\)/);
+  assert.match(sidebar, /fmtFiat\(accountUsd, fiatCurrency, fiatRates\)/);
   assert.match(dashboard, />\s*Balance\s*</);
   assert.doesNotMatch(dashboard, /Public XLM balance|Public XLM across all accounts/);
 });
@@ -521,16 +523,17 @@ test('asset section headers contain no add-asset links and private details ident
 
 test('wallet activity merges cached private actions and labels their provenance', () => {
   const dashboard = read('src/components/Dashboard.tsx');
+  const ledger = read('src/components/dashboard/ActivityLedger.tsx');
   const details = read('src/components/TxDetailModalBody.tsx');
   const notch = read('src/components/PrivateShieldNotch.tsx');
   assert.match(dashboard, /privatePortfolioActivityItems/);
   assert.match(dashboard, /mergedActivity/);
-  assert.match(dashboard, /item\.private/);
+  assert.match(ledger, /item\.private/);
   // Provenance is marked by the shield notch on the leading direction circle
   // (with a "Private payment" tooltip), not a text pill.
-  assert.match(dashboard, /item\.private && <PrivateShieldNotch/);
-  assert.doesNotMatch(dashboard, /title=\{item\.private \? "Private payment" : undefined\}/);
-  assert.doesNotMatch(dashboard, /group\/private(?:\s|"|:)/);
+  assert.match(ledger, /item\.private && <PrivateShieldNotch/);
+  assert.doesNotMatch(ledger, /title=\{item\.private \? "Private payment" : undefined\}/);
+  assert.doesNotMatch(ledger, /group\/private(?:\s|"|:)/);
   assert.doesNotMatch(dashboard, />\s*Private\s*</);
   assert.match(notch, /role="tooltip"/);
   assert.match(notch, /group\/private-notch/);

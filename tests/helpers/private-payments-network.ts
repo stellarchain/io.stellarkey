@@ -89,10 +89,10 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
   manifest.artifacts.wasmSha256 = await computeSha256(artifacts.get('circuit.wasm')!.slice().buffer);
   manifest.artifacts.zkeySha256 = await computeSha256(artifacts.get('circuit.zkey')!.slice().buffer);
   manifest.artifacts.vkJsonSha256 = await computeSha256(artifacts.get('verification-key.json')!.slice().buffer);
-  const base = { protocolVersion: 2, networkId: decode(manifest.networkId), realmId: decode(manifest.realmId),
+  const base = { protocolVersion: 3, networkId: decode(manifest.networkId), realmId: decode(manifest.realmId),
     poolId: new Uint8Array(StrKey.decodeContract(manifest.poolContractId)), deploymentBindingHash: decode(manifest.deploymentBindingHash),
     addressPrefix: 'tskpay_' as const, assets: manifest.assets.map(({ index, contractId }) => ({ index, contractId })) };
-  const contextHash = computeContextHash(2, base.networkId, base.realmId, base.poolId);
+  const contextHash = computeContextHash(3, base.networkId, base.realmId, base.poolId);
   const contextField = computeContextField(contextHash);
   const assetContractId = manifest.assets[0].contractId;
   const initialPublic = parsePrivateAmount(options.publicBalance ?? '1000', 7);
@@ -101,7 +101,7 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
     const signer = Keypair.fromRawEd25519Seed(bytes(61 + index));
     const accountPublicKey = new Uint8Array(signer.rawPublicKey());
     const keyContext = { ...base, accountPublicKey, contextField };
-    const esk = await deriveExpandedSpendingKey(new Uint8Array(64).fill(71 + index), 2, base.networkId, base.realmId, base.poolId, accountPublicKey, contextField);
+    const esk = await deriveExpandedSpendingKey(new Uint8Array(64).fill(71 + index), 3, base.networkId, base.realmId, base.poolId, accountPublicKey, contextField);
     const diversifier = Uint8Array.of(0, 0, 0, index + 1);
     const identity = await deriveDiversifiedAddressKeys(esk.baseOwnerCommitment, esk.hpkePrivateKey, diversifier);
     const address = encodePrivateAddress({ deploymentTag: derivePrivateAddressDeploymentTag(base.deploymentBindingHash), diversifier,
@@ -128,15 +128,15 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
   const append = async (action: ActionModel) => {
     const actionIndex = BigInt(records.length);
     const startingLeafIndex = tree.nextIndex;
-    const record = { ...action, actionKind: action.kind, actionIndex, ledgerSequence: 100 + records.length,
-      startingLeafIndex, treeRootAfter: (action.kind === 4 ? tree.currentRoot : await appendCommitments(tree, action.outputs.map(output => output.cm))).slice() };
-    transcriptHead = computeRecordHash(record, 2, transcriptHead);
+    const record = { ...action, appends: action.appends, actionIndex, ledgerSequence: 100 + records.length,
+      startingLeafIndex, treeRootAfter: (!action.appends ? tree.currentRoot : await appendCommitments(tree, action.outputs.map(output => output.cm))).slice() };
+    transcriptHead = computeRecordHash(record, 3, transcriptHead);
     records.push(record);
     closeTimes.set(record.ledgerSequence, seconds(Date.now()));
     return actionIndex;
   };
   const head = (): ArchiveHeadState => ({ latestLedger: 100 + records.length,
-    config: { protocolVersion: 2, networkId: base.networkId, realmId: base.realmId, guardian: manifest.guardianAddress,
+    config: { protocolVersion: 3, networkId: base.networkId, realmId: base.realmId, guardian: manifest.guardianAddress,
       initialAssetAdmin: manifest.assetAdminAddress, poseidon2ParameterHash: bytes(1), circuitHash: bytes(2), verificationKeyHash: bytes(3),
       treeDepth: manifest.constants.treeDepth, rootWindowLedgers: manifest.constants.rootWindowLedgers,
       deploymentBindingHash: base.deploymentBindingHash, contextHash, contextField },
@@ -183,11 +183,14 @@ export async function createPrivatePaymentsNetwork(development: PrivateBalanceMa
     const body = envelope.value.tx.operations[0]?.body;
     if (!body || body.type !== 'invokeHostFunction' || body.invokeHostFunctionOp.hostFunction.type !== 'hostFunctionTypeInvokeContract') return [];
     const invocation = body.invokeHostFunctionOp.hostFunction.invokeContract;
-    if (invocation.functionName.toString() !== 'deposit') return [];
-    const fields = scValToNative(invocation.args[0]) as { deposit_source: string; public_value: bigint; asset_index: number };
+    if (invocation.functionName.toString() !== 'action') return [];
+    const fields = scValToNative(invocation.args[0]) as { deposit_source: string; public_inflow: bigint; asset_index: number };
+    // Only deposits carry a source-account authorization leg; transfers and
+    // withdrawals settle with the pool's own authorization.
+    if (!(Number(fields.public_inflow) > 0) || fields.asset_index === undefined) return [];
     const transferCall = new Contract(manifest.assets[fields.asset_index].contractId).call('transfer',
       Address.fromString(fields.deposit_source).toScVal(), Address.fromString(manifest.poolContractId).toScVal(),
-      nativeToScVal(fields.public_value, { type: 'i128' })).body;
+      nativeToScVal(fields.public_inflow, { type: 'i128' })).body;
     if (transferCall.type !== 'invokeHostFunction' || transferCall.invokeHostFunctionOp.hostFunction.type !== 'hostFunctionTypeInvokeContract') throw new Error('Synthetic transfer call is malformed');
     const transfer = transferCall.invokeHostFunctionOp.hostFunction.invokeContract;
     const authorized = (contractFn: xdr.InvokeContractArgs, subInvocations: xdr.SorobanAuthorizedInvocation[] = []) =>

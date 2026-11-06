@@ -1,7 +1,5 @@
 use private_balance_protocol::{
-    action::{Action, ActionKind},
-    constants::PROTOCOL_VERSION,
-    encryption::OutputPackage,
+    action::Action, constants::PROTOCOL_VERSION, encryption::OutputPackage,
 };
 use private_balance_test_support::{
     model::{ModelContext, PoolModel},
@@ -40,25 +38,29 @@ fn one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption() {
     let tree_hash_context = NativeTreeHashContext::new();
     let mut model = PoolModel::new_with_tree_hash_context(context(), &tree_hash_context);
     let mut rng = StdRng::seed_from_u64(0x5354_454c_4c41_524b);
-    let mut action_counts = [0u32; 3];
+    let mut deposit_count = 0u32;
+    let mut transfer_count = 0u32;
+    let mut settle_count = 0u32;
 
     for index in 0..100_000u32 {
         let choice = rng.gen_range(0..100u32);
-        let kind = if model.total_public_balance == 0 || choice < 20 {
-            ActionKind::Deposit
-        } else if choice < 85 {
-            ActionKind::PrivateTransfer
+        let settles = model.total_public_balance > 0 && choice >= 85;
+        let is_deposit = model.total_public_balance == 0 || choice < 20;
+        let (public_inflow, public_outflow) = if is_deposit {
+            (rng.gen_range(1..=100u64), 0)
+        } else if settles {
+            (0, rng.gen_range(1..=model.total_public_balance.min(100)))
         } else {
-            ActionKind::Withdraw
+            (0, 0)
         };
-        let public_value = match kind {
-            ActionKind::Deposit => rng.gen_range(1..=100u64),
-            ActionKind::PrivateTransfer => 0,
-            ActionKind::Withdraw | ActionKind::FullInputExit => {
-                rng.gen_range(1..=model.total_public_balance.min(100))
-            }
-        };
-        action_counts[kind as usize - 1] += 1;
+        let asset_is_public = is_deposit || settles;
+        if is_deposit {
+            deposit_count += 1;
+        } else if settles {
+            settle_count += 1;
+        } else {
+            transfer_count += 1;
+        }
         let repeated_commitment = index > 0 && index % 997 == 0;
         let first_commitment = if repeated_commitment {
             42
@@ -67,24 +69,21 @@ fn one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption() {
         };
         let action = Action {
             protocol_version: PROTOCOL_VERSION,
-            kind,
-            asset_index: (kind != ActionKind::PrivateTransfer).then_some(0),
-            asset: (kind != ActionKind::PrivateTransfer).then_some((1, [4; 32])),
+            asset_index: asset_is_public.then_some(0),
+            asset: asset_is_public.then_some((1, [4; 32])),
             action_nonce: field(index + 1),
-            anchor_root: if kind == ActionKind::Deposit {
-                [0; 32]
-            } else {
-                model.tree.root
-            },
+            anchor_root: if is_deposit { [0; 32] } else { model.tree.root },
             nullifiers: [field(index + 1_000_001), field(index + 2_000_001)],
             outputs: [
                 output(first_commitment, 0xa1),
                 output(rng.gen_range(1..=2_000_000_000u32), 0xb2),
                 output(rng.gen_range(1..=2_000_000_000u32), 0xc3),
             ],
-            public_value,
-            deposit_source: (kind == ActionKind::Deposit).then_some((0, [7; 32])),
-            public_recipient: (kind == ActionKind::Withdraw).then_some((0, [8; 32])),
+            public_inflow,
+            public_outflow,
+            appends: true,
+            deposit_source: is_deposit.then_some((0, [7; 32])),
+            public_recipient: settles.then_some((0, [8; 32])),
         };
 
         model
@@ -99,17 +98,18 @@ fn one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption() {
     )
     .expect("canonical transcript must recover");
     assert_eq!(recovered.action_count, 100_000);
-    assert!(action_counts.iter().all(|count| *count > 0));
+    assert!(deposit_count > 0 && transfer_count > 0 && settle_count > 0);
     assert_eq!(recovered.tree, model.tree);
     assert_eq!(recovered.nullifiers, model.nullifiers);
     assert_eq!(recovered.total_public_balance, model.total_public_balance);
     assert_eq!(recovered.activities.len(), model.records.len());
     for (activity, record) in recovered.activities.iter().zip(&model.records) {
         assert_eq!(activity.action_index, record.action_index);
-        assert_eq!(activity.action_kind as u8, record.action_kind);
+        assert_eq!(activity.appends, record.appends);
         assert_eq!(activity.asset_index, record.asset_index);
         assert_eq!(activity.asset, record.asset);
-        assert_eq!(activity.public_value, record.public_value);
+        assert_eq!(activity.public_inflow, record.public_inflow);
+        assert_eq!(activity.public_outflow, record.public_outflow);
     }
     assert_eq!(recovered.transcript_head, model.transcript_head);
 

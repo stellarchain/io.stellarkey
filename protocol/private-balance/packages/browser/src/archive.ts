@@ -10,7 +10,7 @@ export interface ArchiveRecordModel {
   actionIndex: bigint;
   ledgerSequence: number;
   startingLeafIndex: bigint;
-  actionKind: number;
+  appends: boolean;
   assetIndex?: number;
   asset?: { kind: number; payload: Uint8Array };
   actionNonce: Uint8Array;
@@ -18,7 +18,8 @@ export interface ArchiveRecordModel {
   treeRootAfter: Uint8Array;
   nullifiers: [Uint8Array, Uint8Array];
   outputs: [OutputPackageModel, OutputPackageModel, OutputPackageModel];
-  publicValue: bigint;
+  publicInflow: bigint;
+  publicOutflow: bigint;
   depositSource?: { kind: number; payload: Uint8Array };
   publicRecipient?: { kind: number; payload: Uint8Array };
 }
@@ -43,8 +44,14 @@ function requireLength(name: string, bytes: Uint8Array, length: number): void {
 }
 
 function requireRecordWidths(record: ArchiveRecordModel): void {
-  if (![1, 2, 3, 4].includes(record.actionKind)) throw new Error('Invalid archive action kind');
-  const boundary = record.actionKind === 1 || record.actionKind === 3 || record.actionKind === 4;
+  if (typeof record.appends !== 'boolean') throw new Error('Invalid archive appends flag');
+  if (record.publicInflow < 0n || record.publicOutflow < 0n) {
+    throw new Error('Archive settlement legs must be nonnegative');
+  }
+  if (record.publicInflow > 0n && record.publicOutflow > 0n) {
+    throw new Error('At most one settlement leg may carry value');
+  }
+  const boundary = record.publicInflow > 0n || record.publicOutflow > 0n;
   if (boundary !== (record.asset !== undefined && record.assetIndex !== undefined)) {
     throw new Error('Archive boundary asset shape is invalid');
   }
@@ -91,7 +98,7 @@ export function computeRecordHash(
   encodeU128Be(record.actionIndex, bytes);
   encodeU32Be(record.ledgerSequence, bytes);
   encodeU128Be(record.startingLeafIndex, bytes);
-  bytes.push(record.actionKind);
+  bytes.push(record.appends ? 1 : 0);
   encodeOptionalAddress(record.asset, bytes);
   encodeU32Be(record.assetIndex ?? 0, bytes);
   bytes.push(...record.actionNonce, ...record.anchorRoot, ...record.treeRootAfter);
@@ -108,7 +115,8 @@ export function computeRecordHash(
       ...record.outputs[index].outgoingEnvelope,
     );
   }
-  encodeU64Be(record.publicValue, bytes);
+  encodeU64Be(record.publicInflow, bytes);
+  encodeU64Be(record.publicOutflow, bytes);
   encodeOptionalAddress(record.depositSource, bytes);
   encodeOptionalAddress(record.publicRecipient, bytes);
   bytes.push(...priorRecordHash);
@@ -138,10 +146,10 @@ export async function applyArchiveRecord(
     frontier: tree.frontier.map(node => node.slice()),
     currentRoot: tree.currentRoot.slice(),
   };
-  if (record.actionKind !== 4) {
+  if (record.appends) {
     for (const output of record.outputs) await appendFrontier(nextTree, output.cm);
   }
-  const root = record.actionKind === 4 ? nextTree.currentRoot.slice() : await refreshTreeRoot(nextTree);
+  const root = record.appends ? await refreshTreeRoot(nextTree) : nextTree.currentRoot.slice();
   if (!equalBytes(root, record.treeRootAfter)) throw new Error('Archive tree root mismatch');
   tree.nextIndex = nextTree.nextIndex;
   tree.frontier = nextTree.frontier;

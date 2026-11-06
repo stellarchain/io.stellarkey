@@ -168,7 +168,7 @@ test('constructor arguments bind the public testnet and exact deployment hash', 
   assert.equal(TESTNET_PASSPHRASE, 'Test SDF Network ; September 2015');
   assert.deepEqual(argumentsList.slice(0, 4), [
     '--protocol_version',
-    '2',
+    '3',
     '--network_id',
     TESTNET_NETWORK_ID,
   ]);

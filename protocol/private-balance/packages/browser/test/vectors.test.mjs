@@ -22,7 +22,6 @@ import {
   MerkleNodeStore,
   computeRecordHash,
   verifyProofLocally,
-  ActionKind,
   computeActionField,
   computeAssetField,
   deriveHpkeAad,
@@ -53,7 +52,7 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
     ([name, value]) => [name, fromHex(value)],
   ));
   const contextHash = computeContextHash(
-    2,
+    3,
     keyInput.networkId,
     keyInput.realmId,
     keyInput.poolId,
@@ -61,7 +60,7 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
   const contextField = computeContextField(contextHash);
   const sessionRoot = derivePrivacySessionRoot(
     keyInput.rawSeed,
-    2,
+    3,
     keyInput.networkId,
     keyInput.realmId,
     keyInput.poolId,
@@ -69,7 +68,7 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
   );
   const keys = await deriveKeysFromSeed(
     keyInput.rawSeed,
-    2,
+    3,
     keyInput.networkId,
     keyInput.realmId,
     keyInput.poolId,
@@ -108,7 +107,7 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
   const memo = new Uint8Array(32);
   memo.set(fromHex(noteInput.memo));
   const noteBytes = encodeNotePlaintext({
-    protocolVersion: 2,
+    protocolVersion: 3,
     flags: 0,
     value: BigInt(noteInput.value),
     diversifier: fromHex(noteInput.diversifier),
@@ -138,7 +137,7 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
 
   const encryptionVector = load('encryption');
   assert.equal(
-    toHex(deriveHpkeInfo(2, fromHex(encryptionVector.input.contextHash))),
+    toHex(deriveHpkeInfo(3, fromHex(encryptionVector.input.contextHash))),
     encryptionVector.expected.info,
   );
   assert.equal(toHex(deriveHpkeAad(
@@ -148,7 +147,7 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
     encryptionVector.input.outputIndex,
   )), encryptionVector.expected.aad);
   const outgoingPlaintext = encodeOutgoingPlaintext({
-    protocolVersion: 2,
+    protocolVersion: 3,
     flags: 0,
     value: BigInt(noteInput.value),
     diversifier: fromHex(noteInput.diversifier),
@@ -188,8 +187,7 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
   const actionVector = load('actions');
   const zero = new Uint8Array(32);
   const action = {
-    protocolVersion: 2,
-    kind: ActionKind.Deposit,
+    protocolVersion: 3,
     assetIndex: actionVector.input.assetIndex,
     asset,
     actionNonce: fromHex(actionVector.input.actionNonce),
@@ -212,8 +210,11 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
         outgoingEnvelope: fromHex(actionVector.input.output2OutgoingEnvelope),
       },
     ],
-    publicValue: BigInt(actionVector.input.publicValue),
+    publicInflow: BigInt(actionVector.input.publicInflow),
+    publicOutflow: BigInt(actionVector.input.publicOutflow),
+    appends: actionVector.input.appends,
     depositSource: { kind: 0, payload: fromHex(actionVector.input.depositSource) },
+    publicRecipient: undefined,
   };
   assert.equal(toHex(serializeCanonicalActionBytes(
     action,
@@ -240,12 +241,12 @@ test('outgoing viewing key recovers fixed real and dummy envelopes and binds all
   const fill = (value, length = 32) => new Uint8Array(length).fill(value);
   const keys = await deriveKeysFromSeed(
     fill(0x11),
-    2,
+    3,
     fill(0x22),
     fill(0x33),
     fill(0x44),
     fill(0x66),
-    computeContextField(computeContextHash(2, fill(0x22), fill(0x33), fill(0x44))),
+    computeContextField(computeContextHash(3, fill(0x22), fill(0x33), fill(0x44))),
   );
   assert.notDeepEqual(keys.outgoingViewingKey, keys.ask);
   assert.notDeepEqual(keys.outgoingViewingKey, keys.nk);
@@ -254,7 +255,7 @@ test('outgoing viewing key recovers fixed real and dummy envelopes and binds all
   const memo = new Uint8Array(32);
   memo.set(new TextEncoder().encode('rent'));
   const real = {
-    protocolVersion: 2,
+    protocolVersion: 3,
     flags: 0,
     value: 25n,
     diversifier: Uint8Array.of(1, 2, 3, 4),
@@ -374,7 +375,7 @@ test('outgoing viewing key recovers fixed real and dummy envelopes and binds all
   const recipientRho = Uint8Array.from([...new Uint8Array(31), 15]);
   const recipientContextField = computeContextField(context);
   const recipientNote = encodeNotePlaintext({
-    protocolVersion: 2,
+    protocolVersion: 3,
     flags: 0,
     value: 25n,
     diversifier: new Uint8Array(4),
@@ -460,7 +461,9 @@ test('archive: Rust and TypeScript record hashes match', () => {
         outgoingEnvelope: fill(vector.record.output2OutgoingEnvelopeFill, 157),
       },
     ],
-    publicValue: BigInt(vector.record.publicValue),
+    publicInflow: BigInt(vector.record.publicInflow),
+    publicOutflow: BigInt(vector.record.publicOutflow),
+    appends: vector.record.appends,
     depositSource: {
       kind: vector.record.depositSourceKind,
       payload: fill(vector.record.depositSourcePayloadFill, 32),
@@ -522,7 +525,7 @@ test('address: encode and decode roundtrip', async () => {
 
 test('note: encode and decode plaintext', () => {
   const note = {
-    protocolVersion: 2,
+    protocolVersion: 3,
     flags: 0,
     value: 5000000n,
     diversifier: Uint8Array.of(4, 3, 2, 1),

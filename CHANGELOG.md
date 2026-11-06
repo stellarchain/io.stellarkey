@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Introduce Private Payments Protocol V2.1 with uniform action records, deployment-bound recovery and integrated private-asset controls.
+
+### Security
+
+- Reject incompatible V2 private records and verify all twelve public signals in the V2.1 verifier suite.
+
 ## [1.0.4] - 2026-09-16
 
 ### Fixed

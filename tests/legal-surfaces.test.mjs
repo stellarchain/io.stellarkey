@@ -174,21 +174,21 @@ test("public and locked surfaces share accessible legal navigation", () => {
 });
 
 test("the expanded wallet sidebar shows copyright and exact build identity after Lock Wallet", () => {
-  const dashboard = read("src/components/Dashboard.tsx");
+  const sidebar = read("src/components/dashboard/Sidebar.tsx");
   const identity = read("src/components/BuildIdentity.tsx");
-  assert.match(dashboard, /COPYRIGHT_YEAR/);
-  assert.match(dashboard, /COPYRIGHT_OWNER/);
-  assert.match(dashboard, /<BuildIdentity/);
+  assert.match(sidebar, /COPYRIGHT_YEAR/);
+  assert.match(sidebar, /COPYRIGHT_OWNER/);
+  assert.match(sidebar, /<BuildIdentity/);
   assert.match(identity, /APPLICATION_VERSION/);
   assert.match(identity, /BUILD_COMMIT/);
-  assert.match(dashboard, /aria-label="Build information"/);
+  assert.match(sidebar, /aria-label="Build information"/);
   assert.match(
-    dashboard,
+    sidebar,
     /<p className="whitespace-nowrap">[\s\S]*© \{COPYRIGHT_YEAR\} \{COPYRIGHT_OWNER\}[\s\S]*<BuildIdentity/,
   );
 
-  const lockWallet = dashboard.indexOf("<span>Lock Wallet</span>");
-  const buildInformation = dashboard.indexOf('aria-label="Build information"');
+  const lockWallet = sidebar.indexOf("<span>Lock Wallet</span>");
+  const buildInformation = sidebar.indexOf('aria-label="Build information"');
   assert.notEqual(lockWallet, -1);
   assert.ok(buildInformation > lockWallet, "build information must follow the sidebar Lock Wallet action");
 });

@@ -12,7 +12,7 @@ import { PrivateBalanceWorkerClient } from '../src/features/private-balance/work
 
 const manifest = {
     schemaVersion: 1,
-    protocolVersion: 2,
+    protocolVersion: 3,
     artifactVersion: '1.0.0-dev',
     status: 'development',
     minimumStellarProtocol: 25,
@@ -51,7 +51,7 @@ const manifest = {
       treeDepth: 64,
       treeArity: 3,
       rootWindowLedgers: 1440,
-      publicInputs: 11,
+      publicInputs: 12,
       notePlaintextBytes: 128,
       recipientEnvelopeBytes: 181,
       outgoingEnvelopeBytes: 157,
@@ -153,7 +153,7 @@ test('worker client: transfers the exact standalone root with public derivation 
     StrKey.decodeEd25519PublicKey(account.publicKey()),
   );
   const contextHash = computeContextHash(
-    2,
+    3,
     message.keyContext.networkId,
     message.keyContext.realmId,
     message.keyContext.poolId,
@@ -327,7 +327,7 @@ test('worker client proves an opaque prepared action without exposing witness in
           reservationId: message.reservationId,
           preparedActionId,
           action: {
-            protocolVersion: 2,
+            protocolVersion: 3,
             kind: 1,
             actionNonce: zero,
             anchorRoot: zero,

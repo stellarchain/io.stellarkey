@@ -13,6 +13,7 @@ import {
   usePrivateBalanceRuntime,
   usePrivateBalanceRuntimeData,
 } from '@/hooks/usePrivateBalanceRuntime';
+import { formatPrivateProtocolVersion } from '../copy';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { PrivateAssetRegistryAdmin } from './PrivateAssetRegistryAdmin';
 import { PrivateOutgoingHistorySettings } from './PrivateOutgoingHistorySettings';
@@ -274,7 +275,7 @@ export function PrivateProtocolSettingsContent({
             <dl id="private-technical-details" className="border-t border-white/[0.07] bg-black/10">
               <SettingsRow label="Last checkpoint" value={lastCheckpoint} />
               <SettingsRow label="Unspent notes" value={noteCount.toLocaleString()} />
-              <SettingsRow label="Protocol version" value={`V${protocolVersion}`} />
+              <SettingsRow label="Protocol version" value={`V${formatPrivateProtocolVersion(protocolVersion)}`} />
               <SettingsRow label="Artifact version" value={deployment.artifactVersion ?? 'Not recorded'} />
               <SettingsRow label="Realm" value={fingerprint(deployment.realmId)} mono />
               <SettingsRow label="Selected asset contract" value={fingerprint(asset?.contractId ?? null)} mono />

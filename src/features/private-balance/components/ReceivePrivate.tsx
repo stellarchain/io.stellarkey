@@ -23,6 +23,7 @@ import {
   type PrivateAddressPrefix,
   type StealthAddressPrefix,
 } from '../runtime/receive';
+import { formatPrivateProtocolVersion } from '../copy';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { usePrivateReceiveRequest, type PrivateReceiveRequest } from './usePrivateReceiveRequest';
 
@@ -364,7 +365,7 @@ export function PrivateReceiveContent({
                 ['Asset', asset?.code ?? 'Unavailable'],
                 ['Address type', reusable ? 'Reusable one-time accounts' : 'Shielded pool'],
                 ['Privacy', reusable ? 'Recipient identity' : 'Amount and recipient'],
-                ['Protocol', reusable ? 'Stealth receive V1' : `Protocol V${protocolVersion}`],
+                ['Protocol', reusable ? 'Stealth receive V1' : `Protocol V${formatPrivateProtocolVersion(protocolVersion)}`],
               ].map(([label, value]) => (
                 <div key={label} className="flex items-center justify-between gap-4">
                   <dt className="text-neutral-400">{label}</dt>

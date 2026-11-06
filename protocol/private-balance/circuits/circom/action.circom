@@ -32,14 +32,24 @@ template CheckBits(BITS) {
 template ActionCircuit(INNER, OUTER) {
     var DEPTH = INNER + OUTER;
     assert(INNER > 0 && OUTER > 0 && DEPTH <= 64);
-    // The verifier receives exactly these eleven public signals, in this order.
+    // The verifier receives exactly these twelve public signals, in this order.
     signal input contextField;
     // Public only at transparent deposit and withdrawal boundaries. Internal
     // transfers use the zero sentinel.
     signal input assetField;
-    signal input actionKindField;
+    // The two public settlement legs replace the published action kind. At
+    // most one leg carries value; a quiet action moves no public value and is
+    // an internal transfer. Whether an action settled inward or outward is
+    // already visible from the ledger token movement, so these fields add no
+    // information beyond it, while the former kind label did.
+    signal input publicInflowField;
+    signal input publicOutflowField;
+    // One when the three commitments enter the tree. Wallet policy keeps this
+    // one in normal operation; zero is reserved for full-input exits and is
+    // only forced when the tree is saturated, so a settled spend cannot be
+    // told apart from an ordinary withdrawal by its append behaviour.
+    signal input appendsField;
     signal input anchorRoot;
-    signal input publicValueField;
     signal input actionField;
     signal input nullifier[2];
     signal input outputCommitment[3];
@@ -78,39 +88,30 @@ template ActionCircuit(INNER, OUTER) {
     actionAssetZero.in <== actionAssetField;
     actionAssetZero.out === 0;
 
-    // Proof-bound mode: Deposit (1), Transfer (2), Withdraw (3), FullInputExit (4).
-    signal kindMinusOne;
-    signal kindMinusTwo;
-    signal kindMinusThree;
-    signal kindProduct;
-    signal kindTriple;
-    kindMinusOne <== actionKindField - 1;
-    kindMinusTwo <== actionKindField - 2;
-    kindMinusThree <== actionKindField - 3;
-    kindProduct <== kindMinusOne * kindMinusTwo;
-    kindTriple <== kindProduct * kindMinusThree;
-    kindTriple * (actionKindField - 4) === 0;
+    // The settlement legs classify the action. At most one leg may carry
+    // value, and the appends flag is a single bit that must be set whenever
+    // the action has no settlement leg, because deposits and transfers exist
+    // only through their appended commitments.
+    component inflowZero = IsZero();
+    component outflowZero = IsZero();
+    inflowZero.in <== publicInflowField;
+    outflowZero.in <== publicOutflowField;
+    signal isInflow;
+    signal isOutflow;
+    signal isQuiet;
+    isInflow <== 1 - inflowZero.out;
+    isOutflow <== 1 - outflowZero.out;
+    isQuiet <== inflowZero.out * outflowZero.out;
+    isInflow * isOutflow === 0;
 
-    component depositKind = IsZero();
-    component transferKind = IsZero();
-    component withdrawKind = IsZero();
-    component exitKind = IsZero();
-    depositKind.in <== kindMinusOne;
-    transferKind.in <== kindMinusTwo;
-    withdrawKind.in <== kindMinusThree;
-    exitKind.in <== actionKindField - 4;
-    signal isDeposit;
-    signal isTransfer;
-    signal isWithdraw;
-    isDeposit <== depositKind.out;
-    isTransfer <== transferKind.out;
-    isWithdraw <== withdrawKind.out + exitKind.out;
-    isDeposit + isTransfer + isWithdraw === 1;
+    component appendsRange = CheckBits(1);
+    appendsRange.in <== appendsField;
+    (1 - isOutflow) * (1 - appendsField) === 0;
 
-    component publicValueRange = CheckBits(63);
-    component publicValueZero = IsZero();
-    publicValueRange.in <== publicValueField;
-    publicValueZero.in <== publicValueField;
+    component publicInflowRange = CheckBits(63);
+    component publicOutflowRange = CheckBits(63);
+    publicInflowRange.in <== publicInflowField;
+    publicOutflowRange.in <== publicOutflowField;
     // Shared owner authorization is computed once and selected by every real input.
     component actionOwner = OwnerCommitment();
     actionOwner.contextField <== contextField;
@@ -237,9 +238,10 @@ template ActionCircuit(INNER, OUTER) {
     signal outputDummy[3];
 
     for (var j = 0; j < 3; j++) {
-        // An exit cannot destroy hidden change while skipping the append. Three
-        // nonzero dummy commitments remain proof-bound but are never inserted.
-        exitKind.out * outputValue[j] === 0;
+        // A non-appending action cannot destroy hidden change while skipping
+        // the append. Three nonzero dummy commitments remain proof-bound but
+        // are never inserted.
+        (1 - appendsField) * outputValue[j] === 0;
         outputValueRange[j] = CheckBits(63);
         outputValueRange[j].in <== outputValue[j];
         outputValueZero[j] = IsZero();
@@ -285,14 +287,13 @@ template ActionCircuit(INNER, OUTER) {
     duplicateOutput[2].in <== outputCommitment[1] - outputCommitment[2];
     duplicateOutput[2].out === 0;
 
-    signal depositValue;
-    signal withdrawValue;
+    // The balance equation is kind-free: the settlement legs are just public
+    // terms on the same line. Deposit, transfer, withdrawal and full-input
+    // exit are the four zero-patterns of (isInflow, isOutflow, appends).
     signal totalInput;
     signal totalOutput;
-    depositValue <== isDeposit * publicValueField;
-    withdrawValue <== isWithdraw * publicValueField;
-    totalInput <== inputValue[0] + inputValue[1] + depositValue;
-    totalOutput <== outputValue[0] + outputValue[1] + outputValue[2] + withdrawValue;
+    totalInput <== inputValue[0] + inputValue[1] + publicInflowField;
+    totalOutput <== outputValue[0] + outputValue[1] + outputValue[2] + publicOutflowField;
     totalInput === totalOutput;
 
     component totalInputRange = CheckBits(63);
@@ -301,25 +302,23 @@ template ActionCircuit(INNER, OUTER) {
     component anchorZero = IsZero();
     anchorZero.in <== anchorRoot;
 
-    // Deposit: zero anchor/real inputs, positive public value, and at least one real output.
-    isDeposit * anchorRoot === 0;
-    isDeposit * hasRealInput === 0;
-    isDeposit * (1 - hasRealOutput) === 0;
-    isDeposit * publicValueZero.out === 0;
-    isDeposit * (assetField - actionAssetField) === 0;
+    // Deposit leg: fresh start from the street. Zero anchor, no real inputs,
+    // at least one real output, and the private asset matches the registry.
+    isInflow * anchorRoot === 0;
+    isInflow * hasRealInput === 0;
+    isInflow * (1 - hasRealOutput) === 0;
+    isInflow * (assetField - actionAssetField) === 0;
 
-    // Transfer: nonzero anchor, at least one real input/output, and no public value.
-    isTransfer * anchorZero.out === 0;
-    isTransfer * (1 - hasRealInput) === 0;
-    isTransfer * (1 - hasRealOutput) === 0;
-    isTransfer * publicValueField === 0;
-    isTransfer * assetField === 0;
+    // Settlement leg: a spend against a known root with public settlement.
+    isOutflow * anchorZero.out === 0;
+    isOutflow * (1 - hasRealInput) === 0;
+    isOutflow * (assetField - actionAssetField) === 0;
 
-    // Withdraw: nonzero anchor/real input and a positive public withdrawal amount.
-    isWithdraw * anchorZero.out === 0;
-    isWithdraw * (1 - hasRealInput) === 0;
-    isWithdraw * publicValueZero.out === 0;
-    isWithdraw * (assetField - actionAssetField) === 0;
+    // Quiet action: a pure internal transfer against a known root.
+    isQuiet * anchorZero.out === 0;
+    isQuiet * (1 - hasRealInput) === 0;
+    isQuiet * (1 - hasRealOutput) === 0;
+    isQuiet * assetField === 0;
 }
 
-component main {public [contextField, assetField, actionKindField, anchorRoot, publicValueField, actionField, nullifier, outputCommitment]} = ActionCircuit(17, 47);
+component main {public [contextField, assetField, publicInflowField, publicOutflowField, appendsField, anchorRoot, actionField, nullifier, outputCommitment]} = ActionCircuit(17, 47);

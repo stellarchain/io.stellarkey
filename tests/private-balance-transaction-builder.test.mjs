@@ -33,19 +33,22 @@ function invocation(operation) {
   return operation.body.invokeHostFunctionOp.hostFunction.invokeContract;
 }
 
-test('private transaction builder matches the fixed deposit/transfer/withdraw ABI', () => {
+test('private transaction builder matches the unified settlement-leg ABI', () => {
   const builder = new PrivateBalanceTransactionBuilder(manifest);
   const common = {
     actionNonce: bytes(32, 4),
     anchorRoot: bytes(32, 5),
     nullifiers: [bytes(32, 6), bytes(32, 7)],
     outputs: [output(8), output(9), output(10)],
-    publicValue: 10n,
+    publicInflow: 0n,
+    publicOutflow: 0n,
+    appends: true,
   };
 
-  const deposit = invocation(builder.buildDepositOperation({
+  const deposit = invocation(builder.buildActionOperation({
     action: {
       ...common,
+      publicInflow: 10n,
       anchorRoot: bytes(32, 0),
       nullifiers: [bytes(32, 10), bytes(32, 11)],
       assetIndex: 0,
@@ -53,11 +56,12 @@ test('private transaction builder matches the fixed deposit/transfer/withdraw AB
     },
     proof,
   }));
-  assert.equal(deposit.functionName.toString(), 'deposit');
+  assert.equal(deposit.functionName.toString(), 'action');
   assert.equal(deposit.args.length, 2);
   assert.deepEqual(Object.keys(scValToNative(deposit.args[0])), [
     'action_nonce',
     'anchor_root',
+    'appends',
     'asset_index',
     'deposit_source',
     'nullifier_0',
@@ -65,25 +69,28 @@ test('private transaction builder matches the fixed deposit/transfer/withdraw AB
     'output_0',
     'output_1',
     'output_2',
-    'public_value',
+    'public_inflow',
+    'public_outflow',
+    'public_recipient',
   ]);
 
-  const transfer = invocation(builder.buildTransferOperation({
+  const transfer = invocation(builder.buildActionOperation({
     action: common,
     proof,
   }));
-  assert.equal(transfer.functionName.toString(), 'transfer');
+  assert.equal(transfer.functionName.toString(), 'action');
   assert.equal(transfer.args.length, 2);
 
-  const withdraw = invocation(builder.buildWithdrawOperation({
+  const withdraw = invocation(builder.buildActionOperation({
     action: {
       ...common,
+      publicOutflow: 10n,
       assetIndex: 0,
       publicRecipient: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
     },
     proof,
   }));
-  assert.equal(withdraw.functionName.toString(), 'withdraw');
+  assert.equal(withdraw.functionName.toString(), 'action');
   assert.equal(withdraw.args.length, 2);
 
   const touchRoot = invocation(builder.buildTouchRootOperation());
@@ -98,9 +105,11 @@ test('private actions contain no public relayer identity or fee fields', () => {
     anchorRoot: bytes(32, 5),
     nullifiers: [bytes(32, 6), bytes(32, 7)],
     outputs: [output(8), output(9), output(10)],
-    publicValue: 0n,
+    publicInflow: 0n,
+    publicOutflow: 0n,
+    appends: true,
   };
-  const action = scValToNative(invocation(builder.buildTransferOperation({ action: common, proof })).args[0]);
+  const action = scValToNative(invocation(builder.buildActionOperation({ action: common, proof })).args[0]);
   assert.equal('relayer' in action, false);
   assert.equal('relayer_fee' in action, false);
 });
@@ -108,13 +117,15 @@ test('private actions contain no public relayer identity or fee fields', () => {
 test('private transaction builder rejects malformed fixed proof widths', () => {
   const builder = new PrivateBalanceTransactionBuilder(manifest);
   assert.throws(
-    () => builder.buildTransferOperation({
+    () => builder.buildActionOperation({
       action: {
         actionNonce: bytes(32, 1),
         anchorRoot: bytes(32, 2),
         nullifiers: [bytes(32, 3), bytes(32, 6)],
         outputs: [output(4), output(5), output(6)],
-        publicValue: 0n,
+        publicInflow: 0n,
+        publicOutflow: 0n,
+        appends: true,
       },
       proof: { ...proof, a: bytes(63, 1) },
     }),
@@ -124,13 +135,15 @@ test('private transaction builder rejects malformed fixed proof widths', () => {
 
 test('private transaction reviewer approves only the exact prepared envelope', () => {
   const source = Keypair.random().publicKey();
-  const operation = new PrivateBalanceTransactionBuilder(manifest).buildTransferOperation({
+  const operation = new PrivateBalanceTransactionBuilder(manifest).buildActionOperation({
     action: {
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 2),
       nullifiers: [bytes(32, 3), bytes(32, 4)],
       outputs: [output(5), output(6), output(7)],
-      publicValue: 0n,
+      publicInflow: 0n,
+      publicOutflow: 0n,
+      appends: true,
     },
     proof,
   });
@@ -191,13 +204,15 @@ test('private transaction reviewer approves only the exact prepared envelope', (
 
 test('private transaction preparation binds simulation, fees, source, and time bounds', async () => {
   const source = Keypair.random().publicKey();
-  const operation = new PrivateBalanceTransactionBuilder(manifest).buildTransferOperation({
+  const operation = new PrivateBalanceTransactionBuilder(manifest).buildActionOperation({
     action: {
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 2),
       nullifiers: [bytes(32, 3), bytes(32, 4)],
       outputs: [output(5), output(6), output(7)],
-      publicValue: 0n,
+      publicInflow: 0n,
+      publicOutflow: 0n,
+      appends: true,
     },
     proof,
   });
@@ -241,14 +256,16 @@ test('private transaction preparation binds simulation, fees, source, and time b
 
 test('private deposit review accepts only its exact source-account SAC transfer authorization', () => {
   const source = Keypair.random().publicKey();
-  const operation = new PrivateBalanceTransactionBuilder(manifest).buildDepositOperation({
+  const operation = new PrivateBalanceTransactionBuilder(manifest).buildActionOperation({
     action: {
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 0),
       nullifiers: [bytes(32, 7), bytes(32, 8)],
       outputs: [output(5), output(6), output(7)],
+      publicInflow: 10n,
+      publicOutflow: 0n,
+      appends: true,
       assetIndex: 0,
-      publicValue: 10n,
       depositSource: source,
     },
     proof,

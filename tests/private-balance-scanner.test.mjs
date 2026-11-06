@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  ActionKind,
   appendCommitments,
   computeCommitment,
   computeAssetField,
@@ -65,11 +64,11 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
   const assetField = computeAssetField(asset);
   const accountPublicKey = bytes(5);
   const deploymentBindingHash = bytes(6);
-  const contextHash = computeContextHash(2, networkId, realmId, poolId);
+  const contextHash = computeContextHash(3, networkId, realmId, poolId);
   const contextField = computeContextField(contextHash);
   const keys = await deriveKeysFromSeed(
     bytes(7),
-    2,
+    3,
     networkId,
     realmId,
     poolId,
@@ -85,7 +84,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     diversifier,
   );
   const note = {
-    protocolVersion: 2,
+    protocolVersion: 3,
     flags: 0,
     value: 50_000_000n,
     diversifier,
@@ -177,15 +176,16 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
   const anchorRoot = zero(32);
   const treeRootAfter = await appendCommitments(tree, outputs.map(output => output.cm));
   const action = {
-    protocolVersion: 2,
-    kind: ActionKind.Deposit,
+    protocolVersion: 3,
     assetIndex: 0,
     asset,
     actionNonce,
     anchorRoot,
     nullifiers: [bytes(13), bytes(14)],
     outputs,
-    publicValue: note.value,
+    publicInflow: note.value,
+    publicOutflow: 0n,
+    appends: true,
     depositSource: { kind: 0, payload: accountPublicKey },
   };
   const priorRecordHash = computeGenesisRecordHash(contextHash, deploymentBindingHash);
@@ -193,7 +193,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     actionIndex: 0n,
     ledgerSequence: 123,
     startingLeafIndex: 0n,
-    actionKind: ActionKind.Deposit,
+    appends: true,
     assetIndex: 0,
     asset,
     actionNonce,
@@ -201,16 +201,17 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     treeRootAfter,
     nullifiers: action.nullifiers,
     outputs,
-    publicValue: note.value,
+    publicInflow: note.value,
+    publicOutflow: 0n,
     depositSource: action.depositSource,
   };
-  const recordHash = computeRecordHash(record, 2, priorRecordHash);
+  const recordHash = computeRecordHash(record, 3, priorRecordHash);
 
   const result = await scanArchiveRecords({
     records: [record],
     viewingKey: toViewingKey(keys),
     context: {
-      protocolVersion: 2,
+      protocolVersion: 3,
       networkId,
       realmId,
       poolId,
@@ -251,7 +252,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
 
   const recipientKeys = await deriveKeysFromSeed(
     bytes(17),
-    2,
+    3,
     networkId,
     realmId,
     poolId,
@@ -352,7 +353,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     const outgoingNote = [recipientNote, changeNote, transferDummy][outputIndex];
     const recipientPublicKey = outputIndex === 0 ? recipientKeys.hpkePublicKey : keys.hpkePublicKey;
     const outgoingPlaintext = encodeOutgoingPlaintext({
-      protocolVersion: 2,
+      protocolVersion: 3,
       flags: outgoingNote.value === 0n ? 1 : 0,
       value: outgoingNote.value,
       diversifier: outgoingNote.diversifier,
@@ -390,32 +391,34 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     transferOutputs.map(output => output.cm),
   );
   const transferAction = {
-    protocolVersion: 2,
-    kind: ActionKind.PrivateTransfer,
+    protocolVersion: 3,
     actionNonce: transferNonce,
     anchorRoot: treeRootAfter,
     nullifiers: [transferNullifier, bytes(26)],
     outputs: transferOutputs,
-    publicValue: 0n,
+    publicInflow: 0n,
+    publicOutflow: 0n,
+    appends: true,
   };
   const transferRecord = {
     actionIndex: 1n,
     ledgerSequence: 124,
     startingLeafIndex: 3n,
-    actionKind: ActionKind.PrivateTransfer,
+    appends: true,
     actionNonce: transferNonce,
     anchorRoot: treeRootAfter,
     treeRootAfter: transferRootAfter,
     nullifiers: transferAction.nullifiers,
     outputs: transferOutputs,
-    publicValue: 0n,
+    publicInflow: 0n,
+    publicOutflow: 0n,
   };
-  const transferRecordHash = computeRecordHash(transferRecord, 2, recordHash);
+  const transferRecordHash = computeRecordHash(transferRecord, 3, recordHash);
   const transferResult = await scanArchiveRecords({
     records: [record, transferRecord],
     viewingKey: toViewingKey(keys),
     context: {
-      protocolVersion: 2,
+      protocolVersion: 3,
       networkId,
       realmId,
       poolId,
@@ -463,7 +466,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     records: [record, transferRecord],
     viewingKey: toViewingKey(recipientKeys),
     context: {
-      protocolVersion: 2,
+      protocolVersion: 3,
       networkId,
       realmId,
       poolId,
@@ -530,7 +533,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
     records: [record, duplicateRecord],
     viewingKey: toViewingKey(keys),
     context: {
-      protocolVersion: 2,
+      protocolVersion: 3,
       networkId,
       realmId,
       poolId,
@@ -554,7 +557,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
   assert.equal(duplicateResult.tree.nextIndex, 6n, 'every on-chain output still advances the tree');
 
   const scanContext = {
-    protocolVersion: 2,
+    protocolVersion: 3,
     networkId,
     realmId,
     poolId,
@@ -630,8 +633,8 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
         ...transferRecord,
         outputs: await resealTransferMetadata(recipientIndexes),
       };
-      const mixedRecordHash = computeRecordHash(mixedRecord, 2, recordHash);
-      const laterRecordHash = computeRecordHash(laterRecord, 2, mixedRecordHash);
+      const mixedRecordHash = computeRecordHash(mixedRecord, 3, recordHash);
+      const laterRecordHash = computeRecordHash(laterRecord, 3, mixedRecordHash);
       for (const [owner, ownerKeys] of [['sender', keys], ['recipient', recipientKeys]]) {
         const input = { ...scanInput, viewingKey: toViewingKey(ownerKeys) };
         const full = await scanArchiveRecords({
@@ -755,7 +758,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
       records: [{ ...record, actionIndex: 1n }],
       viewingKey: toViewingKey(keys),
       context: {
-        protocolVersion: 2,
+        protocolVersion: 3,
         networkId,
         realmId,
         poolId,
@@ -774,7 +777,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async (t) 
       records: [{ ...record, treeRootAfter: bytes(10) }],
       viewingKey: toViewingKey(keys),
       context: {
-        protocolVersion: 2,
+        protocolVersion: 3,
         networkId,
         realmId,
         poolId,

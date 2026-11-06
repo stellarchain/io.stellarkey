@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { TREE_CAPACITY } from '@stellarkey/private-balance';
 import { planPrivateWithdrawal } from '../src/features/private-balance/runtime/coin-selection.ts';
 const note = (id, value, status = 'unspent') => ({ id: id.toString(16).padStart(64, '0'), commitment: id.toString(16).padStart(64, '0'), value: String(value), leafIndex: BigInt(id), status });
 
@@ -34,35 +35,38 @@ test('exit groups stay in the circuit amount range and exclude held notes', () =
   assert.throws(() => planPrivateWithdrawal([note(1, 3)], 0n), /target/);
 });
 
-test('the withdrawal driver waits for canonical confirmation between exits', async () => {
-  const { runPrivateChainedSend } = await import('../src/features/private-balance/runtime/chained-send.ts');
-  const steps = planPrivateWithdrawal([note(1, 3), note(2, 4), note(3, 5)], 12n);
-  const calls = [];
-  let index = 0;
-  const result = await runPrivateChainedSend({
-    approval: { id: 'synthetic-exits', steps: steps.length, withdrawalSteps: steps, perStepMaxFeeStroops: '100', cumulativeMaxFeeStroops: '200', expiresAtSeconds: 500 },
-    draft: { kind: 'withdraw', amount: '12', publicRecipient: 'SYNTHETIC-NONUSABLE-RECIPIENT' },
-    ownFingerprint: '', assetDecimals: 0, now: () => 1000,
-    prepare: async draft => {
-      calls.push('prepare');
-      const step = steps[index++];
-      assert.equal(draft.kind, 'withdraw');
-      assert.equal(draft.requireFullInputExit, true);
-      assert.deepEqual(draft.selectedNoteIds, step.noteIds);
-      return { id: String(index), kind: 'withdraw', publicRecipient: draft.publicRecipient,
-        selectedNoteIds: [...step.noteIds], amountStroops: step.amountStroops, inputValueStroops: step.inputValueStroops, changeValueStroops: '0',
-        transaction: { method: 'full_input_exit', classicFeeStroops: 1n, resourceFeeStroops: 1n } };
-    },
-    submit: async () => { calls.push('submit'); return { status: 'broadcast', transactionHash: '00'.repeat(32) }; },
-    advanceApprovedFee: async () => { calls.push('fee'); },
-    awaitConfirmation: async () => { calls.push('confirmed'); return true; },
-    cancel: async () => { throw new Error('unexpected cancellation'); },
+for (const [nextIndex, method] of [[0n, 'withdraw'], [TREE_CAPACITY - 3n, 'withdraw'], [TREE_CAPACITY, 'full_input_exit']]) {
+  test(`the withdrawal driver binds append policy to verified capacity at ${nextIndex}`, async () => {
+    const { runPrivateChainedSend } = await import('../src/features/private-balance/runtime/chained-send.ts');
+    const steps = planPrivateWithdrawal([note(1, 3), note(2, 4), note(3, 5)], 12n);
+    const calls = [];
+    let index = 0;
+    const result = await runPrivateChainedSend({
+      approval: { id: 'synthetic-exits', steps: steps.length, withdrawalSteps: steps, perStepMaxFeeStroops: '100', cumulativeMaxFeeStroops: '200', expiresAtSeconds: 500 },
+      draft: { kind: 'withdraw', amount: '12', publicRecipient: 'SYNTHETIC-NONUSABLE-RECIPIENT' },
+      ownFingerprint: '', assetDecimals: 0, now: () => 1000,
+      prepare: async draft => {
+        calls.push('prepare');
+        const step = steps[index++];
+        assert.equal(draft.kind, 'withdraw');
+        assert.equal(draft.requireFullInputExit, true);
+        assert.deepEqual(draft.selectedNoteIds, step.noteIds);
+        return { id: String(index), kind: 'withdraw', publicRecipient: draft.publicRecipient,
+          selectedNoteIds: [...step.noteIds], amountStroops: step.amountStroops, inputValueStroops: step.inputValueStroops, changeValueStroops: '0',
+          withdrawalTreeNextIndex: nextIndex, transaction: { method, classicFeeStroops: 1n, resourceFeeStroops: 1n } };
+      },
+      submit: async () => { calls.push('submit'); return { status: 'broadcast', transactionHash: '00'.repeat(32) }; },
+      advanceApprovedFee: async () => { calls.push('fee'); },
+      awaitConfirmation: async () => { calls.push('confirmed'); return true; },
+      cancel: async () => { throw new Error('unexpected cancellation'); },
+    });
+    assert.deepEqual(calls, ['prepare', 'fee', 'submit', 'confirmed', 'prepare', 'fee', 'submit']);
+    assert.equal(result.status, 'broadcast');
   });
-  assert.deepEqual(calls, ['prepare', 'fee', 'submit', 'confirmed', 'prepare', 'fee', 'submit']);
-  assert.equal(result.status, 'broadcast');
-});
 
-for (const mutation of ['recipient', 'amount', 'entrypoint', 'duplicate-input', 'fee', 'uncertain', 'unconfirmed']) {
+}
+
+for (const mutation of ['recipient', 'amount', 'entrypoint', 'missing-capacity', 'invalid-capacity', 'duplicate-input', 'fee', 'uncertain', 'unconfirmed']) {
   test(`withdrawal chain stops before another step after ${mutation}`, async () => {
     const { runPrivateChainedSend } = await import('../src/features/private-balance/runtime/chained-send.ts');
     const steps = planPrivateWithdrawal([note(1, 3), note(2, 4), note(3, 5)], 12n);
@@ -80,7 +84,8 @@ for (const mutation of ['recipient', 'amount', 'entrypoint', 'duplicate-input', 
           selectedNoteIds: mutation === 'duplicate-input' ? [step.noteIds[0], step.noteIds[0]] : [...step.noteIds],
           amountStroops: mutation === 'amount' ? '1' : step.amountStroops,
           inputValueStroops: step.inputValueStroops, changeValueStroops: '0',
-          transaction: { method: mutation === 'entrypoint' ? 'withdraw' : 'full_input_exit',
+          withdrawalTreeNextIndex: mutation === 'missing-capacity' ? undefined : mutation === 'invalid-capacity' ? TREE_CAPACITY + 1n : 0n,
+          transaction: { method: mutation === 'entrypoint' ? 'full_input_exit' : 'withdraw',
             classicFeeStroops: 1n, resourceFeeStroops: mutation === 'fee' ? 100n : 1n } };
       },
       submit: async () => { submitted++; return { status: mutation === 'uncertain' ? 'ambiguous' : 'broadcast' }; },

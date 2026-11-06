@@ -9,9 +9,10 @@ const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8
 
 test("the dashboard uses Add Account as its only account-onboarding entry", () => {
   const dashboard = read("src/components/Dashboard.tsx");
-  const accountSidebar = dashboard.slice(
-    dashboard.indexOf("Accounts ({accounts.length})"),
-    dashboard.indexOf("{accounts.map", dashboard.indexOf("Accounts ({accounts.length})")),
+  const sidebar = read("src/components/dashboard/Sidebar.tsx");
+  const accountSidebar = sidebar.slice(
+    sidebar.indexOf("Accounts ({accounts.length})"),
+    sidebar.indexOf("{accounts.map", sidebar.indexOf("Accounts ({accounts.length})")),
   );
 
   assert.doesNotMatch(dashboard, /TrezorModal|trezorModalOpen|setTrezorModalOpen/);
@@ -22,8 +23,9 @@ test("the dashboard uses Add Account as its only account-onboarding entry", () =
     dashboard,
     /id: "add-account", label: "Add Account", run: \(\) => setAddAccountOpen\(true\)/,
   );
-  assert.match(dashboard, /function AccountMenu\(\{[\s\S]*?onAddAccount/);
-  assert.match(dashboard, /onAddAccount\(\)[\s\S]*?<span>Add Account<\/span>/);
+  const shellChrome = read("src/components/dashboard/ShellChrome.tsx");
+  assert.match(shellChrome, /function AccountMenu\(\{[\s\S]*?onAddAccount/);
+  assert.match(shellChrome, /onAddAccount\(\)[\s\S]*?<span>Add Account<\/span>/);
   assert.equal(existsSync(path.join(root, "src/components/TrezorModal.tsx")), false);
 });
 

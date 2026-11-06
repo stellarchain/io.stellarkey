@@ -8,6 +8,11 @@ import type { PrivateActionProgressStage } from './runtime/action-flow';
  * this module is what people read.
  */
 
+/** Protocol release names are separate from their encoded compatibility identifiers. */
+export function formatPrivateProtocolVersion(wireVersion: number): string {
+  return wireVersion === 3 ? '2.1' : String(wireVersion);
+}
+
 export interface HumanizedPrivateError {
   /** Short, plain-words statement of what happened. */
   title: string;
@@ -300,7 +305,7 @@ export const WHAT_STAYS_PUBLIC = {
   deposit:
     'This deposit publicly shows its amount, source account, and timing on Stellar. The private balance it creates stays encrypted.',
   withdraw:
-    'This withdrawal publicly shows its amount, recipient, and timing on Stellar, like any public payment.',
+    'This withdrawal publicly shows its amount, recipient, and timing on Stellar, like any public payment. If the private pool is full, an exact-input exit also reveals that the selected inputs left no private change; it does not reveal your remaining wallet balance.',
 } as const;
 
 /** Ambient status line copy, keyed by what the wallet is doing. */

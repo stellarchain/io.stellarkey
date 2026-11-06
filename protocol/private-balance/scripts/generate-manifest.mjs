@@ -16,6 +16,7 @@ import * as snarkjs from 'snarkjs';
 import { encodePointCompressedZkey } from './zkey-point-transport.mjs';
 import { POWERS_OF_TAU_SHA256 } from '../circuits/scripts/powers-of-tau.mjs';
 import { verifyProvingKey } from '../circuits/scripts/verify-proving-key.mjs';
+import { verifyHpkeLockMaintenance } from './hpke-lock-provenance.mjs';
 
 function sha256(buf) {
   return createHash('sha256').update(buf).digest('hex');
@@ -209,8 +210,8 @@ const contractWasmSource = existsSync(contractWasmPath)
 if (!existsSync(contractWasmSource)) {
   throw new Error('Private Balance pool Wasm is missing. Run private:generate first.');
 }
-if (r1csInfo.nPubInputs !== 11) {
-  throw new Error(`Expected 11 public inputs, got ${r1csInfo.nPubInputs}`);
+if (r1csInfo.nPubInputs !== 12) {
+  throw new Error(`Expected 12 public inputs, got ${r1csInfo.nPubInputs}`);
 }
 const r1csConstraints = r1csInfo.nConstraints;
 if (typeof r1csInfo.curve.terminate === 'function') await r1csInfo.curve.terminate();
@@ -227,7 +228,7 @@ chmodSync(publicContractWasmPath, 0o644);
 
 const baseManifest = {
   schemaVersion: 1,
-  protocolVersion: 2,
+  protocolVersion: 3,
   artifactVersion: '2.0.0-dev',
   status: 'development',
   minimumStellarProtocol: 25,
@@ -291,7 +292,7 @@ const baseManifest = {
     treeDepth: 64,
     treeArity: 3,
     rootWindowLedgers: 1440,
-    publicInputs: 11,
+    publicInputs: 12,
     notePlaintextBytes: 128,
     recipientEnvelopeBytes: 181,
     outgoingEnvelopeBytes: 157,
@@ -319,13 +320,20 @@ const baseManifest = {
       join(process.cwd(), 'protocol/private-balance/parameters/poseidon2-bn254-t4-v1.json'),
     )),
     hpkePackageVersion: '@hpke/core@1.9.0+@hpke/dhkem-x25519@1.8.0',
-    hpkeDependencyIntegritySha256: sha256(readFileSync(
-      join(process.cwd(), 'protocol/private-balance/packages/browser/package-lock.json'),
-    )),
+    hpkeDependencyIntegritySha256: verifyHpkeLockMaintenance({
+      baselineBytes: readFileSync('protocol/private-balance/parameters/hpke-deployment-lock.json'),
+      currentBytes: readFileSync('protocol/private-balance/packages/browser/package-lock.json'),
+      applicationLock: JSON.parse(readFileSync('package-lock.json')),
+      browserPackage: JSON.parse(readFileSync('protocol/private-balance/packages/browser/package.json')),
+    }),
     toolchainLockSha256: sha256Files([
       join(process.cwd(), 'package-lock.json'),
       join(process.cwd(), 'protocol/private-balance/Cargo.lock'),
       join(process.cwd(), 'protocol/private-balance/circuits/package-lock.json'),
+      join(process.cwd(), 'protocol/private-balance/packages/browser/package.json'),
+      join(process.cwd(), 'protocol/private-balance/packages/browser/package-lock.json'),
+      join(process.cwd(), 'protocol/private-balance/parameters/hpke-deployment-lock.json'),
+      join(process.cwd(), 'protocol/private-balance/scripts/hpke-lock-provenance.mjs'),
       join(process.cwd(), 'protocol/private-balance/rust-toolchain.toml'),
       join(process.cwd(), 'protocol/private-balance/parameters/generator.lock'),
       join(process.cwd(), 'protocol/private-balance/scripts/build-private-balance-artifacts.mjs'),
