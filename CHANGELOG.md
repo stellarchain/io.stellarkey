@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Pin and verify the official Intel macOS Stellar CLI 27.0.0 archive used by hosted browser verification.
+
 ## [1.1.1] - 2026-11-06
 
 ### Changed

@@ -53,6 +53,16 @@ analysis and CodeQL. Three queued ARM macOS jobs failed to acquire runners after
 about fifteen minutes, so Gate A remained red. Browser jobs now use standard
 macOS Intel runners; canonical reproduction retains its mandatory ARM64 host.
 
+The 81ed3b2 local attempt again passed core and required private UI checks.
+It was deliberately interrupted during components when hosted Intel setup
+exposed the missing `darwin-x64` Stellar CLI archive pin. The owned fixture was
+byte-checked and removed after its process group exited; cleanup verification
+passed. This interrupted attempt is not a full pass. The official 27.0.0 Intel
+archive was independently downloaded and matched its published SHA-256 and
+19,666,612-byte length; its archive contains only `stellar`. The installer keeps
+the same exact version/source-revision check and rejects unsupported hosts.
+All five installer tests pass with the additional supported-host expectation.
+
 Earlier full application results below retain their original source identities.
 The corrected candidate requires a new clean-tree release verification, required
 CI and release-workflow gates; those earlier runs do not validate it.

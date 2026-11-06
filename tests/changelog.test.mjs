@@ -47,7 +47,14 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   assert.deepEqual(document.releases[0], {
   "version": "Unreleased",
   "date": null,
-  "categories": []
+  "categories": [
+    {
+      "name": "Fixed",
+      "entries": [
+        "Pin and verify the official Intel macOS Stellar CLI 27.0.0 archive used by hosted browser verification."
+      ]
+    }
+  ]
 });
   assert.deepEqual(document.releases[1], {
   "version": "1.1.1",
