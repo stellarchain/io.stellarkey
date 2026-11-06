@@ -14,19 +14,19 @@ import {
 } from "@stellar/stellar-sdk";
 
 const require = createRequire(import.meta.url);
-const trezorPackage = require("@trezor/connect-web");
-const trezorConnect = trezorPackage.default;
+const { default: trezorConnect } = await import("@trezor/connect-web");
 
-const nestedSdkOwners = ['@trezor/blockchain-link', '@trezor/blockchain-link-utils'];
+// Test the published Suite-core reference implementation without bundling it in the wallet.
+const nestedSdkOwners = ['@trezor/network-stellar'];
 
 for (const owner of nestedSdkOwners) {
-  const ownerRequire = createRequire(require.resolve(`${owner}/package.json`));
+  const ownerRequire = createRequire(require.resolve(owner));
   const sdkRequire = createRequire(ownerRequire.resolve('@stellar/stellar-sdk'));
   const { Resolver } = sdkRequire('./stellartoml');
-  const { httpClient } = sdkRequire('./http-client');
+  const { fetchClient } = sdkRequire('./http-client/fetch-client.js');
 
   test(`${owner} resolves ordinary Stellar metadata through its installed parser`, async t => {
-    t.mock.method(httpClient, 'get', async (url, options) => {
+    t.mock.method(fetchClient, 'get', async (url, options) => {
       assert.ok(url === 'https://metadata.invalid/.well-known/stellar.toml', 'resolver uses the synthetic HTTPS boundary');
       assert.equal(options.maxRedirects, 0);
       assert.equal(options.maxContentLength, 100 * 1024);
@@ -41,16 +41,16 @@ for (const owner of nestedSdkOwners) {
   });
 
   test(`${owner} rejects malformed metadata through the real resolver`, async t => {
-    t.mock.method(httpClient, 'get', async () => ({ data: 'bad = [' }));
+    t.mock.method(fetchClient, 'get', async () => ({ data: 'bad = [' }));
     const invalid = await Resolver.resolve('metadata.invalid', { timeout: 0 }).then(() => false, error =>
       error instanceof Error && error.message.startsWith('stellar.toml is invalid - Parsing error'));
     assert.equal(invalid, true, 'malformed metadata remains a resolver rejection');
   });
 
   test(`${owner} bounds recursive metadata before stack exhaustion`, async t => {
-    t.mock.method(httpClient, 'get', async () => ({ data: `value=${'['.repeat(600)}0${']'.repeat(600)}` }));
+    t.mock.method(fetchClient, 'get', async () => ({ data: `value=${'['.repeat(1100)}0${']'.repeat(1100)}` }));
     const bounded = await Resolver.resolve('metadata.invalid', { timeout: 0 }).then(() => false, error =>
-      /Maximum nesting depth of 500 exceeded/.test(error.message));
+      /excessively nested structures/.test(error.message));
     assert.equal(bounded, true, 'deep metadata must fail with the parser nesting bound');
   });
 
@@ -61,7 +61,7 @@ for (const owner of nestedSdkOwners) {
       const { createRequire } = require('node:module');
       const sdkRequire = createRequire(${JSON.stringify(ownerRequire.resolve('@stellar/stellar-sdk'))});
       const { Resolver } = sdkRequire('./stellartoml');
-      const { httpClient } = sdkRequire('./http-client');
+      const { fetchClient } = sdkRequire('./http-client/fetch-client.js');
       const payloads = [
         '[a.b]\\ny = 1\\n[a.b.y.__proto__.__proto__]\\nparserWitness = true',
         'aa = 1\\n[[a]]\\n[aa.__proto__.__proto__]\\nparserWitness = true'
@@ -69,7 +69,7 @@ for (const owner of nestedSdkOwners) {
       (async () => {
         let rejected = true;
         for (const data of payloads) {
-          httpClient.get = async () => ({ data });
+          fetchClient.get = async () => ({ data });
           rejected = await Resolver.resolve('metadata.invalid', { timeout: 0 }).then(() => false, () => true) && rejected;
         }
         process.stdout.write(JSON.stringify({ rejected, clean: !Object.hasOwn(Object.prototype, 'parserWitness') }));
@@ -81,9 +81,7 @@ for (const owner of nestedSdkOwners) {
 }
 
 function mockTrezorMethod(name, implementation) {
-  // Node exposes this CommonJS package through a nested default export while
-  // Next.js unwraps it. Patch both shapes so the test exercises our adapter.
-  trezorPackage[name] = implementation;
+  // Connect 10 exposes a mutable public API from its ESM default export.
   trezorConnect[name] = implementation;
 }
 
@@ -110,12 +108,11 @@ const { signAndSubmit } = await import('../src/lib/api.ts');
 const { captureSigningContextAuthorization } = await import('../src/lib/signing-authorization.ts');
 
 async function testInstalledAdapterConversion(t) {
-  const { AssertWeak } = require('@trezor/schema-utils');
-  const { StellarSignTransaction } = require('@trezor/connect/lib/types/api/stellar');
-  const { stellarSignTx } = require('@trezor/connect/lib/api/stellar/stellarSignTx');
-  const { validatePath } = require('@trezor/connect/lib/utils/pathUtils');
-  // AssertWeak can warn and continue for invalid parameters. Make that a fixed,
-  // payload-free failure so compatibility cannot pass on weak validation alone.
+  const { Assert } = require('@trezor/schema-utils');
+  const { StellarSignTransaction } = require('@trezor/connect-common');
+  const { stellarSignTx } = require('@trezor/connect-core/lib/api/stellar/stellarSignTx.js');
+  const { validatePath } = require('@trezor/connect-core/lib/utils/pathUtils.js');
+  // Keep schema diagnostics payload-free, including any unexpected warning.
   t.mock.method(console, 'warn', () => { throw new Error('Installed Trezor schema rejected synthetic input.'); });
   const source = Keypair.random();
   const destination = Keypair.random().publicKey();
@@ -129,11 +126,12 @@ async function testInstalledAdapterConversion(t) {
         .addOperation(Operation.payment({ source: operationSource, destination, asset: Asset.native(), amount: '922337203685.4775807' }))
         .addOperation(Operation.manageSellOffer({ selling: asset, buying: Asset.native(), amount: '1.0000001', price: { n: 2, d: 3 }, offerId: '17' }))
         .addOperation(Operation.changeTrust({ asset, limit: '12.3456789' }))
+        .addOperation(Operation.allowTrust({ trustor: destination, assetCode: 'TEST', authorize: true }))
         .addMemo(memo).setTimebounds(0, 2_000_000_000).build();
       const calls = [];
       mockTrezorMethod('stellarSignTransaction', async request => {
         try {
-          AssertWeak(StellarSignTransaction, request);
+          Assert(StellarSignTransaction, request);
         } catch {
           throw new Error('Installed Trezor schema rejected synthetic input.');
         }
@@ -148,7 +146,7 @@ async function testInstalledAdapterConversion(t) {
         return { success: true, payload: { publicKey: signed.public_key, signature: signed.signature } };
       });
       await hardware.signHardwareTx(tx, { device: 'trezor', publicKey: source.publicKey(), path: "m/44'/148'/0'" });
-      assert.equal(calls.length, 4);
+      assert.equal(calls.length, 5);
       const header = calls[0].message;
       assert.equal(calls[0].type, 'StellarSignTx');
       assert.deepEqual(header.address_n, [0x8000002c, 0x80000094, 0x80000000]);
@@ -156,7 +154,7 @@ async function testInstalledAdapterConversion(t) {
       assert.ok(header.network_passphrase === networkPassphrase, 'network survives conversion');
       assert.ok(header.fee === Number(tx.fee) && header.sequence_number === tx.sequence, 'fee and sequence survive conversion');
       assert.equal(header.timebounds_end, 2_000_000_000);
-      assert.equal(header.num_operations, 3);
+      assert.equal(header.num_operations, 4);
       assert.equal(header.memo_type, memo.type === 'text' ? 1 : 4);
       assert.ok(memo.type === 'text' ? header.memo_text === 'Synthetic' : Buffer.from(header.memo_hash).toString('hex') === memoBytes, 'memo survives conversion');
       assert.equal(calls[1].type, 'StellarPaymentOp');
@@ -169,15 +167,18 @@ async function testInstalledAdapterConversion(t) {
       assert.ok(calls[2].message.selling_asset.code === asset.code && calls[2].message.selling_asset.issuer === asset.issuer, 'issued asset survives conversion');
       assert.equal(calls[3].type, 'StellarChangeTrustOp');
       assert.ok(calls[3].message.limit === '123456789', 'trustline limit survives conversion');
-      assert.equal(calls[3].responseType, 'StellarSignedTx');
+      assert.equal(calls[4].type, 'StellarAllowTrustOp');
+      assert.equal(calls[4].message.is_authorized, true);
+      assert.equal(calls[4].responseType, 'StellarSignedTx');
       assert.equal(tx.signatures.length, 1);
       assert.ok(source.verify(tx.hash(), tx.signatures[0].signature), 'returned signature verifies against the original transaction');
     }
   }
 }
 
-test('installed Trezor Stellar utility builders remain interoperable with the application SDK', () => {
-  const utils = require('@trezor/blockchain-link-utils/lib/stellar');
+test('installed Trezor 10 Stellar utility builders remain interoperable with the application SDK', async () => {
+  const { default: loadStellar } = await import('@trezor/network-stellar/runtime');
+  const utils = await loadStellar();
   const descriptor = Keypair.random().publicKey();
   const destination = Keypair.random().publicKey();
   const asset = { code: 'TEST', issuer: Keypair.random().publicKey() };
@@ -193,9 +194,10 @@ test('installed Trezor Stellar utility builders remain interoperable with the ap
   assert.ok(sent.operations[0].amount === '1.0000001', 'send builder preserves precision');
   assert.equal(added.operations[0].type, 'changeTrust');
   assert.ok(removed.operations[0].limit === '0.0000000', 'removal retains a zero limit');
-  const transformed = utils.transformTransaction({ envelope_xdr: sent.toXDR(), hash: 'synthetic', fee_charged: 100, created_at: '2026-01-01T00:00:00Z', ledger_attr: 1, source_account: descriptor, successful: true }, descriptor, {});
-  assert.equal(transformed.type, 'sent');
-  assert.ok(transformed.tokens[0].amount === '10000001', 'transaction transformation preserves exact token precision');
+  const transformed = utils.transformTransaction(sent);
+  assert.equal(transformed.operations[0].type, 'payment');
+  assert.ok(transformed.operations[0].amount === '10000001', 'transaction transformation preserves exact token precision');
+  assert.equal(transformed.source, descriptor);
 });
 
 test('hardware initialization cannot continue a revoked originating operation', async () => {
@@ -230,6 +232,26 @@ test('hardware initialization cannot continue a revoked originating operation', 
 });
 
 test('adapter payloads pass the installed Trezor schema and device protocol conversion', testInstalledAdapterConversion);
+
+test('Trezor 10 serialized failures reject discovery, verification and signing without adding a signature', async t => {
+  const previousAddress = trezorConnect.stellarGetAddress;
+  const previousSigning = trezorConnect.stellarSignTransaction;
+  t.after(() => {
+    mockTrezorMethod('stellarGetAddress', previousAddress);
+    mockTrezorMethod('stellarSignTransaction', previousSigning);
+  });
+  const failure = { success: false, error: { code: 'Failure_ActionCancelled', message: 'Synthetic hardware request cancelled.' } };
+  mockTrezorMethod('stellarGetAddress', async () => failure);
+  mockTrezorMethod('stellarSignTransaction', async () => failure);
+  const signer = Keypair.random();
+  await assert.rejects(hardware.connectTrezorDevice(0), /Synthetic hardware request cancelled/);
+  await assert.rejects(hardware.verifyTrezorAddress("m/44'/148'/0'", signer.publicKey()), /Synthetic hardware request cancelled/);
+  const tx = new TransactionBuilder(new Account(signer.publicKey(), '0'), { fee: '100', networkPassphrase: Networks.TESTNET })
+    .addOperation(Operation.payment({ destination: Keypair.random().publicKey(), asset: Asset.native(), amount: '1' }))
+    .setTimeout(180).build();
+  await assert.rejects(hardware.signHardwareTx(tx, { device: 'trezor', publicKey: signer.publicKey(), path: "m/44'/148'/0'" }), /Synthetic hardware request cancelled/);
+  assert.equal(tx.signatures.length, 0);
+});
 
 for (const revoke of [true, false]) test(`public payment ${revoke ? 'rejects revoked' : 'retains unchanged'} context after deferred hardware approval`, async t => {
   const signer = Keypair.random();
@@ -319,11 +341,13 @@ test("rejects Ledger connection instead of creating a simulated account", async 
   }
 });
 
-test("initializes Trezor Connect in popup mode so WebUSB is not trapped in an iframe", async () => {
+test("initializes Trezor Connect through Suite Web without the removed legacy popup settings", async () => {
   await hardware.connectTrezorDevice(0);
 
-  assert.equal(initSettings.coreMode, "popup");
-  assert.notEqual(initSettings.popup, false);
+  assert.equal(initSettings.coreMode, "suite-web");
+  assert.equal(initSettings.popup, undefined);
+  assert.equal(initSettings.interactionTimeout, undefined);
+  assert.equal(typeof initSettings.manifest.appName, 'string');
   assert.equal(initSettings.transports, undefined);
 });
 
@@ -764,7 +788,7 @@ test("maps classic offer and allow-trust operations accepted by cosigning", asyn
       trustor,
       assetCode: "USD",
       assetType: 1,
-      authorize: true,
+      authorize: 1,
     },
     {
       type: "inflation",

@@ -5,6 +5,14 @@ import { PUBLIC_DOCUMENT_PATHS } from "../scripts/generate-service-worker.mjs";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
+test('the wallet permits the Suite Web bootstrap frame while retaining popup opener isolation', () => {
+  const policy = read('scripts/static-document-csp.txt');
+  const frameSources = policy.split(';').find(directive => directive.trim().startsWith('frame-src '));
+  assert.match(frameSources, /https:\/\/suite\.trezor\.io(?:\s|$)/);
+  assert.doesNotMatch(frameSources, /https:\/\/connect\.trezor\.io|\*/);
+  assert.match(read('public/_headers'), /Cross-Origin-Opener-Policy: same-origin-allow-popups/);
+});
+
 test("production is deployable as immutable static files without an application server", () => {
   assert.equal(existsSync(new URL("../scripts/generate-static-headers.mjs", import.meta.url)), true);
   assert.equal(existsSync(new URL("../scripts/generate-service-worker.mjs", import.meta.url)), true);

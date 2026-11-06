@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Introduce Private Payments Protocol V2.1 with uniform action records, deployment-bound recovery and integrated private-asset controls.
+- Refresh application and CI dependencies and migrate optional hardware signing to Trezor Connect 10.0.1 and Suite Web.
 
 ### Fixed
 
@@ -18,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Reject incompatible V2 private records and verify all twelve public signals in the V2.1 verifier suite.
+- Update ctutils to 0.4.4 and preserve bounded parser and credential-header protections.
 
 ## [1.0.4] - 2026-09-16
 
