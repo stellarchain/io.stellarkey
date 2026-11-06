@@ -11,25 +11,50 @@ test.beforeEach(async ({ context }) => {
 });
 
 test("modal makes the wallet inert, contains focus, and restores its trigger", async ({ page }) => {
-  await importTestWallet(page);
+  await test.step("Import synthetic wallet", async () => { await importTestWallet(page); });
 
   const trigger = page.getByRole("main").getByRole("button", { name: "Send", exact: true }).first();
-  await trigger.focus();
-  await trigger.click();
+  await test.step("Focus and activate opener", async () => { await trigger.focus(); await trigger.click(); });
 
   const dialog = page.getByRole("dialog", { name: "Send Payment", exact: true });
   const appSurface = page.locator("[data-app-surface]");
-  await expect(dialog).toBeVisible();
-  await expect(appSurface).toHaveCount(1);
-  await expect.poll(() => appSurface.evaluate((node) => (node as HTMLElement).inert)).toBe(true);
-  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("hidden");
-  await expect.poll(() => dialog.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+  await test.step("Check overlay contract", async () => { await expect(dialog).toBeVisible(); });
+  await test.step("Check overlay contract", async () => { await expect(appSurface).toHaveCount(1); });
+  await test.step("Check overlay contract", async () => { await expect.poll(() => appSurface.evaluate((node) => (node as HTMLElement).inert)).toBe(true); });
+  await test.step("Check overlay contract", async () => { await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("hidden"); });
+  await test.step("Check overlay contract", async () => { await expect.poll(() => dialog.evaluate((node) => node.contains(document.activeElement))).toBe(true); });
 
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(dialog).toBeHidden();
-  await expect.poll(() => appSurface.evaluate((node) => (node as HTMLElement).inert)).toBe(false);
-  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("");
-  await expect(trigger).toBeFocused();
+  await test.step("Check overlay contract", async () => { await dialog.getByRole("button", { name: "Close", exact: true }).click(); });
+  await test.step("Check overlay contract", async () => { await expect(dialog).toBeHidden(); });
+  await test.step("Check overlay contract", async () => { await expect.poll(() => appSurface.evaluate((node) => (node as HTMLElement).inert)).toBe(false); });
+  await test.step("Check overlay contract", async () => { await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe(""); });
+  await test.step("Check overlay contract", async () => { await expect(trigger).toBeFocused(); });
+});
+
+test("synthetic wallet import waits for cold client bootstrap", async ({ page }) => {
+  let releaseScriptsAt = 0;
+  let heldScripts = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) releaseScriptsAt = Date.now() + 12_000;
+  });
+  // DOMContentLoaded does not wait for Next's async client chunks. Keep this
+  // synthetic bootstrap slower than the ordinary ten-second action deadline.
+  await page.route(/\/_next\/static\/chunks\/.*\.js(?:\?.*)?$/, async (route) => {
+    if (new URL(route.request().url()).origin !== new URL(page.url()).origin) {
+      await route.continue();
+      return;
+    }
+    const remaining = releaseScriptsAt - Date.now();
+    if (remaining > 0) {
+      heldScripts += 1;
+      await new Promise((resolve) => setTimeout(resolve, remaining));
+    }
+    // The initial navigation is intentionally superseded by fixture reload.
+    await route.continue().catch(() => {});
+  });
+  await importTestWallet(page);
+  expect(heldScripts).toBeGreaterThan(0);
+  await expect(page.getByRole("main").getByRole("button", { name: "Send", exact: true }).first()).toBeVisible();
 });
 
 test("nested private setup keeps only the top dialog interactive", async ({ page }) => {

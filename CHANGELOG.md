@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-11-06
+
+### Changed
+
+- Prepare application release 1.1.2 as the replacement for unpublished 1.1.1; synchronize version markers and the whitepaper.
+
+### Fixed
+
+- Wait for synthetic wallet bootstrap and owned fixture readiness before browser checks, with a 30-second bootstrap bound and unchanged modal assertions, retries, and capture restrictions.
+
+### Security
+
+- Continue the maintainer-approved manual-check deferral and exact RUSTSEC-2026-0387 exception for this replacement; the checks remain unperformed or unconfirmed and the advisory remains unresolved.
+
 ## [1.1.1] - 2026-11-06
 
 ### Changed

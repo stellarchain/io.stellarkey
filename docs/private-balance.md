@@ -4,9 +4,9 @@
 - **Contact:** support@stellarkey.io
 - **Protocol:** V2.1 uniform settlement legs with capacity-independent full-input exits
 - **Wire compatibility identifier:** `3` (u16 `0x0003`); V2.1 is the release name, not the serialized value
-- **Application version:** StellarKey 1.1.1
+- **Application version:** StellarKey 1.1.2
 - **Application baseline:** Stable 1.0.0; only current-format state is supported
-- **Implementation baseline:** `v1.1.1` (planned release tag; this working-tree candidate is not yet published; artifact identities in §16)
+- **Implementation baseline:** `v1.1.2` (planned release tag; this working-tree candidate is not yet published; artifact identities in §16)
 - **Implementation status:** Live Testnet development deployment; validation scope and dates in §17; not for real value
 - **Document revision:** 2026-11-06
 
@@ -1220,7 +1220,7 @@ remain normative in the repository sources listed below.
 
 Repository paths identify the normative source files at the implementation
 revision. Current artifact hashes identify the compiled V2.1 artifacts. Source links target
-the planned v1.1.1 release tag and become immutable references only after that tag
+the planned v1.1.2 release tag and become immutable references only after that tag
 is published. This manuscript currently describes the working-tree candidate;
 the version marker alone does not establish a clean release or publication.
 Circuit and contract behavior determine what the deployment permits.
