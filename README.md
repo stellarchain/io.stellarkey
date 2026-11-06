@@ -133,7 +133,7 @@ offline behavior, recovery, and security boundaries.
 
 ## Verify a deployed release
 
-The current release is `1.1.0`, using Private Payments Protocol V2.1. Application and protocol versions are independent. V2 private records are incompatible; preserve existing backups and follow the [upgrade recovery guidance](docs/private-balance-recovery.md#upgrading-from-104-protocol-v2). This version marker does not attest publication or release-gate completion. Every build embeds the full 40-character Git
+The current release is `1.1.1`, using Private Payments Protocol V2.1. Application and protocol versions are independent. V2 private records are incompatible; preserve existing backups and follow the [upgrade recovery guidance](docs/private-balance-recovery.md#upgrading-from-104-protocol-v2). This version marker does not attest publication or release-gate completion. Every build embeds the full 40-character Git
 commit SHA in the interface and in
 [`/release.json`](https://stellarkey.io/release.json). Compare it with the
 commit attached to the corresponding source release or run:

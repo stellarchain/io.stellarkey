@@ -1,5 +1,21 @@
 # Dependency security evidence
 
+## 2026-11-06 — replacement candidate 1.1.1
+
+The unpublished 1.1.0 release run failed Chromium Select focus verification.
+A controlled regression reproduced a delayed Modal initializer overwriting focus
+in its owning portalled Select on both supported browser engines. The fix checks
+the owning backdrop, which contains the panel and its portals. Expanded Select
+and Dropdown regression checks cover normal/reduced motion and detect transient
+focus loss. No test assertion or release gate was weakened.
+
+Application versions and current whitepaper links advance to 1.1.1; protocol,
+circuit and contract sources are unchanged. Only root release-version fields
+change in the npm lock. Current local provenance and cascading manifest/catalogue
+pins are regenerated with the strict historical HPKE baseline unchanged.
+The existing maintainer instructions on manual checks and RUSTSEC-2026-0387
+continue for this same release task; no additional advisory ID is ignored.
+
 ## 2026-11-06 — Linux WebKit verification toolchain
 
 Playwright 1.65.0 supersedes the 1.64.1 update proposed in PR #32. Its

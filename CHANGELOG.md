@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-06
+
+### Changed
+
+- Replace the unpublished 1.1.0 candidate after release verification exposed a dialog focus race; synchronize application versions and the whitepaper at 1.1.1.
+
 ### Fixed
 
 - Preserve focus in Select and menu portals when a dialog’s delayed initial focus runs after keyboard interaction.
+
+### Security
+
+- Retain the maintainer-approved manual-check deferral and exact RUSTSEC-2026-0387 exception for the replacement candidate; the checks remain unperformed or unconfirmed and the advisory remains unresolved.
 
 ## [1.1.0] - 2026-11-06
 

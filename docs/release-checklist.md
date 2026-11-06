@@ -2,6 +2,35 @@
 
 This wallet ships as static files and talks directly to user-selected Stellar services. It has no application backend, remote custody service, background worker, or server-side database.
 
+## 1.1.1 replacement release preparation
+
+The 1.1.0 tag was created after clean local verification, PR CI and post-merge
+CI passed. Its release run [42221483313](https://github.com/stellarchain/io.stellarkey/actions/runs/42221483313)
+then failed Chromium Select focus checks. Publication and deployment remained
+blocked; the remaining jobs were cancelled after reproducing the underlying
+race in both Chromium and iPhone WebKit. The immutable tag is retained.
+
+A paused-initializer regression failed on the original code: newer focus in a
+Select portal was overwritten because the initializer checked only the dialog
+panel. The owning backdrop also contains its Select/menu portals. Checking that
+owner preserves newer focus. The first fix run passed 30 focused cases; expanded
+Select/Dropdown coverage under normal and reduced motion passed 48 cases without
+retries, and 17 modal-focus unit tests passed. The initial expanded Dropdown
+setup waited for its deferred focus while the clock was paused; the corrected
+fixture places explicit newer focus and verifies zero transient focus losses.
+One additional fixture setup attempt failed before its test assertions in that
+initial expanded run; its cause remains unconfirmed. The corrected final
+48-case run completed without failed attempts or retries.
+
+The replacement application version is 1.1.1; Private Payments remains V2.1.
+Full clean-source application verification and required CI remain mandatory.
+The maintainer’s manual-check deferral and exact Rust advisory exception apply
+to this same ongoing release task; no completed release exception is inherited.
+The separately approved production deployment still targets Cloudflare Pages
+project `stellarkey` and https://stellarkey.io. No network contract deployment or
+real-value use is authorized. Historical evidence below retains its original
+source, version and observation time.
+
 ## 1.1.0 release preparation
 
 Application version 1.1.0 uses Private Payments Protocol V2.1; the numbers identify
@@ -170,6 +199,16 @@ VoiceOver/NVDA, passkey and Trezor checks for 1.1.0, including Trezor redistribu
 and registered-origin sign-off. These checks remain unperformed or unconfirmed,
 not passed. This release-specific exception grants no third-party license rights,
 does not waive automated gates, and does not approve real-value Private Payments.
+
+### v1.1.1 release exception — replacement candidate
+
+The maintainer’s 2026-11-06 instruction to defer physical iPhone/iPad,
+VoiceOver/NVDA, passkey and Trezor checks continues for the replacement candidate
+in this same release task, including redistribution and registered-origin
+sign-off. These checks remain unperformed or unconfirmed, not passed. No new
+physical or human evidence is claimed. This grants no third-party license
+rights, waives no automated gate and does not approve real-value Private Payments.
+The exact RUSTSEC-2026-0387 exception continues; no other advisory ID was added.
 
 ### Required checks
 
