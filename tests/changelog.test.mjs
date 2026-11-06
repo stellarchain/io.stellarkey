@@ -51,6 +51,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
     {
       "name": "Fixed",
       "entries": [
+        "Revalidate the reviewed wallet account, network, and session across batch payments, claims, merges, trustlines, multisig changes, co-signing, and reusable private payments before signing and submission.",
         "Keep refresh callbacks bound to the visible account, network, and endpoint, remove redundant delayed refreshes, and release failed transaction-status polls for retry.",
         "Bound Friendbot requests and error bodies, and time out stalled verified Private Payments artifact downloads without rejecting slow transfers that keep making progress."
       ]

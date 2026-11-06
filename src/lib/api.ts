@@ -245,6 +245,7 @@ export async function claimClaimableBalances(params: {
   balanceIds: string[];
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
+  beforeSign?: () => void;
 }): Promise<SubmissionResult> {
   const { network, secretKey } = params;
   if (params.balanceIds.length === 0) {
@@ -283,7 +284,7 @@ export async function claimClaimableBalances(params: {
   const tx = builder.setTimeout(180).build();
 
   try {
-    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared, params.beforeSign);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -297,6 +298,7 @@ export async function mergeAccount(params: {
   destination: string;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
+  beforeSign?: () => void;
 }): Promise<SubmissionResult> {
   const { network, secretKey, destination } = params;
   if (!isValidPublicAddress(destination)) {
@@ -324,7 +326,7 @@ export async function mergeAccount(params: {
     .build();
 
   try {
-    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared, params.beforeSign);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -1153,6 +1155,7 @@ export async function sendBatchPayments(params: {
   memo?: StellarMemoInput;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
+  beforeSign?: () => void;
 }): Promise<SubmissionResult> {
   const { network, secretKey, payments } = params;
   const memo = buildStellarMemo(params.memo);
@@ -1252,7 +1255,7 @@ export async function sendBatchPayments(params: {
   const tx = builder.setTimeout(180).build();
 
   try {
-    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared, params.beforeSign);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -1268,6 +1271,7 @@ export async function changeTrust(params: {
   add: boolean;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
+  beforeSign?: () => void;
 }): Promise<SubmissionResult> {
   const { network, secretKey, code, issuer, add } = params;
   const horizonUrl = getHorizonUrl(network);
@@ -1300,7 +1304,7 @@ export async function changeTrust(params: {
     .build();
 
   try {
-    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared, params.beforeSign);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -1319,6 +1323,7 @@ export async function changeTrustBatch(params: {
   assets: Array<{ code: string; issuer: string }>;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
+  beforeSign?: () => void;
 }): Promise<SubmissionResult & { added: number }> {
   const { network, secretKey, assets } = params;
   const horizonUrl = getHorizonUrl(network);
@@ -1371,6 +1376,7 @@ export async function changeTrustBatch(params: {
       kp,
       params.hardwareSigner,
       params.onPrepared,
+      params.beforeSign,
     );
     return { ...result, added: assets.length };
   } catch (err) {

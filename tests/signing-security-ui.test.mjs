@@ -3,11 +3,12 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
-import { Account, Keypair, Networks, Operation, TransactionBuilder } from "@stellar/stellar-sdk";
+import { Account, Asset, Keypair, Networks, Operation, TransactionBuilder } from "@stellar/stellar-sdk";
 import * as vault from "../src/lib/vault.ts";
 import * as signing from "../src/lib/signing-authorization.ts";
 import * as walletApi from "../src/lib/api.ts";
 import * as multisig from "../src/lib/multisig.ts";
+import * as stealth from '../src/features/private-balance/runtime/stealth-payment.ts';
 import { runPreparedBroadcast } from "../src/lib/submission.ts";
 import * as privateSigning from '../src/lib/private-balance-signing.ts';
 import { resolvePrivateFeePayer, assertSamePrivateFeePayer } from '../src/features/private-balance/runtime/fee-policy.ts';
@@ -42,7 +43,7 @@ function deferred() {
 
 async function signingHarness(t, gap) {
   const values = new Map();
-  globalThis.window = { localStorage: {
+  globalThis.window = { location: { origin: 'https://wallet.invalid' }, localStorage: {
     get length() { return values.size; }, key: index => [...values.keys()][index] ?? null,
     getItem: key => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, String(value)), removeItem: key => values.delete(key),
@@ -50,8 +51,27 @@ async function signingHarness(t, gap) {
   vault.lockVault();
   t.after(() => { vault.lockVault(); delete globalThis.window; });
   const password = 'synthetic signing correct horse battery staple';
-  const { account } = await vault.initializeVault(password, { secret: Keypair.random().secret() });
+  const sourceSigner = Keypair.random();
+  const { account } = await vault.initializeVault(password, { secret: sourceSigner.secret() });
   const pause = deferred();
+  const signerInfo = { thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+    signers: [{ key: account.publicKey, weight: 1, type: 'ed25519_public_key' }] };
+  const fingerprint = multisig.multisigAuthorityFingerprint(signerInfo);
+  const destination = Keypair.random().publicKey();
+  const envelope = new TransactionBuilder(new Account(account.publicKey, '1'), { fee: '100', networkPassphrase: Networks.TESTNET })
+    .addOperation(Operation.payment({ destination, asset: Asset.native(), amount: '1' })).setTimeout(300).build();
+  const balanceId = '00000000' + 'ab'.repeat(32);
+  const args = {
+    sendBatch: [{ payments: [{ destination, amount: '1', assetCode: 'XLM' }] }],
+    claimAirdrops: [[balanceId]], mergeAccount: [destination],
+    trustAsset: [{ code: 'TEST', issuer: destination, add: true }],
+    trustAssets: [[{ code: 'TEST', issuer: destination }]],
+    applyMultisigConfig: [{ signers: [{ key: account.publicKey, weight: 1 }], low: 0, medium: 0, high: 0,
+      authority: { expectedFingerprint: fingerprint, confirmedNewSignerKeys: [] } }],
+    disableMultisig: [fingerprint], cosignTransaction: [envelope.toXdr(), 'testnet'],
+    submitStealthPayment: [{ envelopeXdr: envelope.toXdr(), transactionHash: Buffer.from(envelope.hash()).toString('hex'),
+      sourcePublicKey: account.publicKey, network: 'testnet', expiresAt: Number(envelope.timeBounds.maxTime) }],
+  };
   const stats = { signs: 0, posts: 0, prepared: 0, discarded: 0, tracked: 0, externalChecks: 0, apiLoads: 0 };
   const originalSign = Keypair.prototype.sign;
   t.mock.method(Keypair.prototype, 'sign', function (...args) { stats.signs++; return originalSign.apply(this, args); });
@@ -66,7 +86,7 @@ async function signingHarness(t, gap) {
     }
     if (/^\/accounts\/[^/]+$/.test(url.pathname)) {
       if (gap === 'preparation' && !held) { held = true; await pause.run(); }
-      return json({ sequence: '1' });
+      return json({ sequence: '1', ...signerInfo });
     }
     return json({}, 503);
   });
@@ -79,9 +99,9 @@ async function signingHarness(t, gap) {
     activeAccount: account, network: 'testnet', signingContext: origin, signingContextRef: current,
     NETWORKS: { testnet: { networkPassphrase: Networks.TESTNET } },
     recommendedBaseFeeStroops: 100,
-    hardwareSignerFor: () => undefined,
+    hardwareSignerFor: () => gap === 'hardware' ? { device: 'trezor', publicKey: account.publicKey, path: "m/44'/148'/0'" } : undefined,
     requestSigningAuthorization: async () => { if (gap === 'approval') await pause.run(); },
-    withSigningSecret: (account, _hardware, operation) => vault.withSigningKeypair(account.id, operation),
+    withSigningSecret: (account, hardware, operation) => hardware ? operation(undefined) : vault.withSigningKeypair(account.id, operation),
     runPreparedBroadcast,
     trackingTaskGeneration: { current: 0 },
     prepareSubmissionTracking: () => { stats.prepared++; },
@@ -90,26 +110,99 @@ async function signingHarness(t, gap) {
     transactionTrackingRef: { current: { pending: [] } },
     loadWalletApi: async () => { stats.apiLoads++; if (gap === 'api') await pause.run(); return walletApi; },
     loadMultisigApi: async () => { stats.apiLoads++; if (gap === 'api') await pause.run(); return multisig; },
+    loadStealthPaymentApi: async () => { stats.apiLoads++; if (gap === 'api') await pause.run(); return stealth; },
     loadPrivateBalanceSigningApi: async () => { stats.apiLoads++; if (gap === 'api') await pause.run(); return privateSigning; },
   };
+  if (gap === 'hardware') {
+    const { default: connect } = await import('@trezor/connect-web');
+    t.mock.method(connect, 'init', async () => {});
+    let transaction = envelope;
+    const build = TransactionBuilder.prototype.build;
+    t.mock.method(TransactionBuilder.prototype, 'build', function (...args) { transaction = build.apply(this, args); return transaction; });
+    t.mock.method(connect, 'stellarSignTransaction', async () => {
+      await pause.run();
+      return { success: true, payload: { publicKey: Buffer.from(sourceSigner.rawPublicKey()).toString('hex'),
+        signature: Buffer.from(sourceSigner.sign(transaction.hash())).toString('hex') } };
+    });
+  }
   context.captureSigningContext = () => walletCallback('captureSigningContext', context)();
   context.withAuthorizedSigningSecret = walletCallback('withAuthorizedSigningSecret', context);
   context.runTrackedBroadcast = walletCallback('runTrackedBroadcast', context);
   return {
-    stats, pause, current, origin,
+    stats, pause, current, origin, context,
     runPrivate: () => {
       const transaction = new TransactionBuilder(new Account(account.publicKey, '1'), { fee: '100', networkPassphrase: Networks.TESTNET })
         .addOperation(Operation.bumpSequence({ bumpTo: '2' })).setTimeout(300).build();
       return walletCallback('signPrivateBalanceEnvelope', context)({ envelopeXdr: transaction.toXdr(),
         expectedTransactionHash: Buffer.from(transaction.hash()).toString('hex'), networkPassphrase: Networks.TESTNET });
     },
-    run: (operation, extra = {}) => walletCallback(operation, context)({
+    run: (operation, extra = {}) => args[operation] ? walletCallback(operation, context)(...args[operation]) : walletCallback(operation, context)({
       destination: Keypair.random().publicKey(), amount: '1', assetCode: 'XLM',
       authorizeBeforeSigning: () => { stats.externalChecks++; },
       ...extra,
     }),
     replaceSession: async () => { vault.lockVault(); await vault.unlockVault(password); },
   };
+}
+
+const addedFlows = ['sendBatch', 'claimAirdrops', 'mergeAccount', 'trustAsset', 'trustAssets',
+  'applyMultisigConfig', 'disableMultisig', 'cosignTransaction', 'submitStealthPayment'];
+
+for (const operation of addedFlows) {
+  for (const change of ['account', 'network', 'account-aba', 'network-aba', 'unmount', 'session']) {
+    test(`${operation} rejects stale entry after ${change} before API loading`, async t => {
+      const h = await signingHarness(t);
+      if (change === 'session') await h.replaceSession();
+      else h.current.current = change === 'unmount' ? null : { ...h.origin,
+        ...(!change.endsWith('aba') ? { [change === 'account' ? 'accountId' : 'network']: 'changed' } : {}) };
+      await assert.rejects(h.run(operation));
+      assert.equal(h.stats.apiLoads, 0);
+      assert.equal(h.stats.signs, 0);
+      assert.equal(h.stats.posts, 0);
+    });
+  }
+  for (const gap of operation === 'submitStealthPayment' ? ['api', 'approval'] : ['api', 'approval', 'preparation']) {
+    for (const change of ['account', 'network', 'account-aba', 'network-aba', 'unmount', 'session', 'unchanged']) {
+      test(`${operation} ${change === 'unchanged' ? 'retains' : 'rejects'} ${change} context during ${gap}`, async t => {
+        const h = await signingHarness(t, gap);
+        const outcome = h.run(operation).then(() => 'continued', () => 'rejected');
+        await h.pause.waiting;
+        if (change === 'session') await h.replaceSession();
+        else if (change !== 'unchanged') h.current.current = change === 'unmount' ? null : { ...h.origin,
+          ...(!change.endsWith('aba') ? { [change === 'account' ? 'accountId' : 'network']: 'changed' } : {}) };
+        h.pause.release();
+        assert.equal(await outcome, change === 'unchanged' ? 'continued' : 'rejected');
+        assert.equal(h.stats.signs, change === 'unchanged' ? 1 : 0);
+        assert.equal(h.stats.posts, change === 'unchanged' ? 1 : 0);
+      });
+    }
+  }
+}
+
+for (const operation of addedFlows) {
+  for (const change of ['account', 'network', 'unmount', 'unchanged']) {
+    test(`${operation} revalidates ${change} context after synthetic Trezor approval`, async t => {
+      const h = await signingHarness(t, 'hardware');
+      const outcome = h.run(operation).then(() => 'continued', () => 'rejected');
+      await Promise.race([h.pause.waiting, outcome.then(() => { throw new Error('Synthetic hardware action completed before approval boundary'); })]);
+      if (change !== 'unchanged') h.current.current = change === 'unmount' ? null : { ...h.origin, [change === 'account' ? 'accountId' : 'network']: 'changed' };
+      h.pause.release();
+      assert.equal(await outcome, change === 'unchanged' ? 'continued' : 'rejected');
+      assert.equal(h.stats.posts, change === 'unchanged' ? 1 : 0);
+    });
+  }
+  for (const revoke of [false, true]) test(`${operation} guards queued pre-POST work (${revoke ? 'revoked' : 'current'})`, async t => {
+    const h = await signingHarness(t);
+    h.context.prepareSubmissionTracking = () => {
+      h.stats.prepared++;
+      if (revoke) queueMicrotask(() => { h.current.current = { ...h.origin, accountId: 'changed' }; });
+    };
+    const outcome = await h.run(operation).then(() => 'continued', () => 'rejected');
+    assert.equal(outcome, revoke ? 'rejected' : 'continued');
+    assert.equal(h.stats.posts, revoke ? 0 : 1);
+    assert.equal(h.stats.discarded, revoke ? 1 : 0);
+    assert.equal(h.stats.tracked, revoke ? 0 : 1);
+  });
 }
 
 for (const gap of ['api', 'approval']) {
