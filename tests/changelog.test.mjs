@@ -47,14 +47,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   assert.deepEqual(document.releases[0], {
   "version": "Unreleased",
   "date": null,
-  "categories": [
-    {
-      "name": "Fixed",
-      "entries": [
-        "Pin and verify the official Intel macOS Stellar CLI 27.0.0 archive used by hosted browser verification."
-      ]
-    }
-  ]
+  "categories": []
 });
   assert.deepEqual(document.releases[1], {
   "version": "1.1.1",
@@ -78,7 +71,8 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
         "Keep signing disabled and show an explicit retry screen when wallet erasure leaves storage, merchant records, private records, service workers, or caches uncleared.",
         "Revalidate the reviewed wallet account, network, and session across batch payments, claims, merges, trustlines, multisig changes, co-signing, and reusable private payments before signing and submission.",
         "Keep refresh callbacks bound to the visible account, network, and endpoint, remove redundant delayed refreshes, and release failed transaction-status polls for retry.",
-        "Bound Friendbot requests and error bodies, and time out stalled verified Private Payments artifact downloads without rejecting slow transfers that keep making progress."
+        "Bound Friendbot requests and error bodies, and time out stalled verified Private Payments artifact downloads without rejecting slow transfers that keep making progress.",
+        "Pin and verify the official Intel macOS Stellar CLI 27.0.0 archive used by hosted browser verification."
       ]
     },
     {
