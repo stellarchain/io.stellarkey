@@ -1,5 +1,19 @@
 # Test strategy
 
+## Synthetic browser startup readiness
+
+The wallet fixture waits up to 30 seconds for onboarding and unlocked-wallet
+readiness so cold async development chunks do not consume an interaction's
+10-second deadline. A twelve-second delayed-client regression exercises this
+boundary in Chromium and iPhone WebKit. Overlay assertions and retry limits are
+unchanged.
+
+The isolated component runner waits for its exclusively created
+`/private-component-fixture` route to respond before browser navigation, with a
+120-second compilation deadline. The route contains only non-usable synthetic
+data and is removed after the run. Real private panels still require explicit
+intent; captures and usable-wallet tests remain blocked by the shared policy.
+
 `npm run release:verify` requires a clean worktree and runs `verify:application`, the complete application verification suite. CI and tagged releases also require separate Rust security, circuit analysis and canonical-artifact jobs; the application command does not run those checks. Their local counterparts are `verify:private-rust`, `verify:private-circuits` and `verify:private-artifacts`. Normal browser tests own their production static server, install bounded synthetic network fixtures, and fail on unexpected page or console errors. Required private UI and component tests own an isolated development server. None of these automated gates uses a developer-owned browser session or a funded public-testnet account.
 
 Application verification has three shared stages:

@@ -1,5 +1,14 @@
 # Dependency security evidence
 
+## 2026-11-06 — 1.1.2 verification-readiness replacement
+
+The replacement changes synthetic browser readiness and application version
+metadata. It introduces no dependency upgrades or advisory-ignore IDs. The root
+lockfile changes only its two application-version fields; current provenance is
+refreshed for that lock digest. Cryptographic artifact identities and historical
+deployment bindings remain unchanged. The exact RUSTSEC-2026-0387 exception and
+maintainer-deferred manual evidence continue for this release task.
+
 ## 2026-11-06 — hosted browser runner capacity
 
 On source 5348f32, GitHub cancelled both queued browser jobs and canonical

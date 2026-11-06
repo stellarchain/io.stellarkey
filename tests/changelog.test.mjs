@@ -43,16 +43,33 @@ test('Unreleased accepts empty or categorized entries without changing the publi
 test('the changelog starts at the approved 1.0.0 baseline', () => {
   const source = read('CHANGELOG.md');
   const document = parseChangelog(source);
-  assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.1.1', '1.1.0', '1.0.5', '1.0.4', '1.0.3', '1.0.2', '1.0.1', '1.0.0']);
-  assert.deepEqual(document.releases[0], {
-  "version": "Unreleased",
-  "date": null,
-  "categories": [{
-    "name": "Fixed",
-    "entries": ["Wait for synthetic wallet bootstrap and owned fixture readiness before browser checks, with a 30-second bootstrap bound and unchanged modal assertions, retries, and capture restrictions."]
-  }]
-});
+  assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.1.2', '1.1.1', '1.1.0', '1.0.5', '1.0.4', '1.0.3', '1.0.2', '1.0.1', '1.0.0']);
+  assert.deepEqual(document.releases[0], { version: "Unreleased", date: null, categories: [] });
   assert.deepEqual(document.releases[1], {
+  "version": "1.1.2",
+  "date": "2026-11-06",
+  "categories": [
+    {
+      "name": "Changed",
+      "entries": [
+        "Prepare application release 1.1.2 as the replacement for unpublished 1.1.1; synchronize version markers and the whitepaper."
+      ]
+    },
+    {
+      "name": "Fixed",
+      "entries": [
+        "Wait for synthetic wallet bootstrap and owned fixture readiness before browser checks, with a 30-second bootstrap bound and unchanged modal assertions, retries, and capture restrictions."
+      ]
+    },
+    {
+      "name": "Security",
+      "entries": [
+        "Continue the maintainer-approved manual-check deferral and exact RUSTSEC-2026-0387 exception for this replacement; the checks remain unperformed or unconfirmed and the advisory remains unresolved."
+      ]
+    }
+  ]
+});
+  assert.deepEqual(document.releases[2], {
   "version": "1.1.1",
   "date": "2026-11-06",
   "categories": [
@@ -86,7 +103,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
     }
   ]
 });
-  assert.deepEqual(document.releases[2], {
+  assert.deepEqual(document.releases[3], {
   "version": "1.1.0",
   "date": "2026-11-06",
   "categories": [
@@ -123,7 +140,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
     }
   ]
 });
-  assert.deepEqual(document.releases[3], {
+  assert.deepEqual(document.releases[4], {
     version: '1.0.5', date: '2026-09-22',
     categories: [
       { name: 'Changed', entries: [
@@ -146,7 +163,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
       ] },
     ],
   });
-  assert.deepEqual(document.releases[4], {
+  assert.deepEqual(document.releases[5], {
     version: '1.0.4',
     date: '2026-09-16',
     categories: [{
@@ -177,11 +194,11 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
       ],
     }],
   });
-  assert.equal(document.releases[5].date, '2026-09-14');
   assert.equal(document.releases[6].date, '2026-09-14');
-  assert.equal(document.releases[7].date, '2026-09-13');
+  assert.equal(document.releases[7].date, '2026-09-14');
   assert.equal(document.releases[8].date, '2026-09-13');
-  const notes = document.releases[8].categories.flatMap(({ entries }) => entries).join(' ');
+  assert.equal(document.releases[9].date, '2026-09-13');
+  const notes = document.releases[9].categories.flatMap(({ entries }) => entries).join(' ');
   assert.match(notes, /stable starting application baseline/);
   assert.match(notes, /unaudited.*Testnet-only/);
   assert.match(notes, /GitHub Actions/);
@@ -190,21 +207,21 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   assert.match(source, /semver\.org/);
 });
 
-test('all authoritative release markers agree on version 1.1.1', () => {
+test('all authoritative release markers agree on version 1.1.2', () => {
   const packageJson = JSON.parse(read('package.json'));
   const packageLock = JSON.parse(read('package-lock.json'));
   const brand = read('src/lib/brand.ts');
   const security = read('SECURITY.md');
   const readme = read('README.md');
 
-  assert.equal(packageJson.version, '1.1.1');
-  assert.equal(packageLock.version, '1.1.1');
-  assert.equal(packageLock.packages[''].version, '1.1.1');
-  assert.match(brand, /APPLICATION_VERSION = "1\.1\.1"/);
+  assert.equal(packageJson.version, '1.1.2');
+  assert.equal(packageLock.version, '1.1.2');
+  assert.equal(packageLock.packages[''].version, '1.1.2');
+  assert.match(brand, /APPLICATION_VERSION = "1\.1\.2"/);
   assert.match(security, /latest `1\.1\.x` release/i);
-  assert.match(security, /current release is `1\.1\.1`/i);
+  assert.match(security, /current release is `1\.1\.2`/i);
   assert.match(security, /`1\.1\.x` release/);
-  assert.match(readme, /current release is `1\.1\.1`/i);
+  assert.match(readme, /current release is `1\.1\.2`/i);
   assert.match(readme, /\[changelog\]\(CHANGELOG\.md\)/i);
 });
 

@@ -1,5 +1,42 @@
 # Backend-free wallet release checklist
 
+## 1.1.2 verification-readiness replacement
+
+The v1.1.1 tag remains at `01330f95bc9576a8d888dc743f79ee0cad370177`.
+Its clean local application gate and pre-merge CI passed, but its tagged Release
+workflow failed the first Chromium overlay check in both browser jobs, including
+both configured attempts. No GitHub release assets or production deployment were
+published. The failed release's remaining work was cancelled; the immutable tag
+is retained.
+
+The diagnostic follow-up `e07d41c` preserves every assertion and identifies its
+initial CI failure at the synthetic wallet import phase, before overlay checks.
+Its existing retry passed. This is consistent with cold bootstrap timing; the
+older v1.1.1 logs did not retain the failing phase, so their exact location remains
+unknown. A controlled twelve-second delay in async client chunks fails the old
+fixture helper and passes bounded readiness in Chromium and iPhone WebKit.
+The updated required UI suite passed all 18 checks without retries locally.
+
+The fixture helper now waits up to 30 seconds for onboarding and unlocked-wallet
+readiness. Actual interactions and overlay assertions keep their existing
+deadlines. Component-server readiness targets only the exclusively created,
+non-usable synthetic route, with a separate 120-second cold-compilation bound.
+The two affected component suites passed 174 checks without retries, with fixture
+cleanup verified. No private production panel is prefetched by this setup.
+
+These are focused observations on the repair, not a complete 1.1.2 release pass.
+Fresh clean-source application verification, required CI, canonical ARM artifact
+reproduction, circuit analysis and the tagged release gates remain mandatory.
+
+### v1.1.2 release exception — verification-readiness replacement
+
+The maintainer's 2026-11-06 manual-check deferral and exact advisory exception
+continue for this replacement in the same release task. Physical iPhone/iPad,
+VoiceOver/NVDA, passkeys, Trezor and redistribution/origin sign-off remain
+unperformed or unconfirmed, not passed. RUSTSEC-2026-0387 remains unresolved.
+This continuation does not waive automated gates.
+It does not approve real-value Private Payments. No third-party license rights are granted.
+
 This wallet ships as static files and talks directly to user-selected Stellar services. It has no application backend, remote custody service, background worker, or server-side database.
 
 ## 1.1.1 audit curation
