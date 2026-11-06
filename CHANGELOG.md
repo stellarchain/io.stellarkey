@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Reject incompatible V2 private records and verify all twelve public signals in the V2.1 verifier suite.
 - Update ctutils to 0.4.4 and preserve bounded parser and credential-header protections.
+- Record the maintainer-approved 1.1.0 exception for RUSTSEC-2026-0387; the advisory remains unresolved.
 
 ## [1.0.4] - 2026-09-16
 

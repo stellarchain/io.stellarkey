@@ -2,6 +2,7 @@
 ignore = [
     { id = "RUSTSEC-2024-0388", reason = "Transitive arkworks build dependency; no safe upgrade is available." },
     { id = "RUSTSEC-2024-0436", reason = "Transitive Soroban and arkworks dependency; no safe upgrade is available." },
+    { id = "RUSTSEC-2026-0387", reason = "Maintainer-approved exception for the 1.1.0 release on 2026-11-06. crypto-bigint 0.5.5 remains in the Soroban host dependency chain; revisit when a compatible upstream fix is available." },
 ]
 
 [licenses]
