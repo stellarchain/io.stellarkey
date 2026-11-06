@@ -47,7 +47,10 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   assert.deepEqual(document.releases[0], {
   "version": "Unreleased",
   "date": null,
-  "categories": []
+  "categories": [{
+    "name": "Fixed",
+    "entries": ["Wait for synthetic wallet bootstrap and owned fixture readiness before browser checks, with a 30-second bootstrap bound and unchanged modal assertions, retries, and capture restrictions."]
+  }]
 });
   assert.deepEqual(document.releases[1], {
   "version": "1.1.1",

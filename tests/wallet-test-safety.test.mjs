@@ -46,6 +46,9 @@ test('synthetic component parallelism retains the full matrix and one fixture ow
   ]);
   assert.deepEqual(config.projects.map(project => project.name), ['desktop-chromium', 'iphone-webkit']);
   assert.equal(config.metadata.requiredSyntheticComponents, true);
+  assert.equal(new URL(config.webServer.url).pathname, '/private-component-fixture');
+  assert.equal(new URL(config.webServer.url).origin, new URL(base.webServer.url).origin);
+  assert.equal(config.webServer.timeout, 120_000, 'bound compilation readiness separately from interaction deadlines');
   assert.equal(config.globalTeardown, './e2e/fixtures/private-components-teardown.mjs');
   const runner = readFileSync(new URL('scripts/test-private-components.mjs', root), 'utf8');
   assert.equal((runner.match(/\bspawn\(/g) ?? []).length, 1);

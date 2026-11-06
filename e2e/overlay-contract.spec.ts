@@ -31,6 +31,32 @@ test("modal makes the wallet inert, contains focus, and restores its trigger", a
   await test.step("Check overlay contract", async () => { await expect(trigger).toBeFocused(); });
 });
 
+test("synthetic wallet import waits for cold client bootstrap", async ({ page }) => {
+  let releaseScriptsAt = 0;
+  let heldScripts = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) releaseScriptsAt = Date.now() + 12_000;
+  });
+  // DOMContentLoaded does not wait for Next's async client chunks. Keep this
+  // synthetic bootstrap slower than the ordinary ten-second action deadline.
+  await page.route(/\/_next\/static\/chunks\/.*\.js(?:\?.*)?$/, async (route) => {
+    if (new URL(route.request().url()).origin !== new URL(page.url()).origin) {
+      await route.continue();
+      return;
+    }
+    const remaining = releaseScriptsAt - Date.now();
+    if (remaining > 0) {
+      heldScripts += 1;
+      await new Promise((resolve) => setTimeout(resolve, remaining));
+    }
+    // The initial navigation is intentionally superseded by fixture reload.
+    await route.continue().catch(() => {});
+  });
+  await importTestWallet(page);
+  expect(heldScripts).toBeGreaterThan(0);
+  await expect(page.getByRole("main").getByRole("button", { name: "Send", exact: true }).first()).toBeVisible();
+});
+
 test("nested private setup keeps only the top dialog interactive", async ({ page }) => {
   await importTestWallet(page);
 

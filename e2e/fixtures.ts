@@ -222,10 +222,15 @@ export async function importTestWallet(
   page: Page,
   options: { requirePasswordForSigning?: boolean; readyTimeout?: number } = {},
 ): Promise<void> {
+  // The server-rendered loading shell can precede cold async client chunks.
+  // Wait for the two fixture phases explicitly; keep interaction deadlines local.
+  const readyTimeout = options.readyTimeout ?? 30_000;
   await page.goto("/app", { waitUntil: "domcontentloaded" });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Import Existing Wallet" }).click();
+  const importButton = page.getByRole("button", { name: "Import Existing Wallet" });
+  await expect(importButton).toBeVisible({ timeout: readyTimeout });
+  await importButton.click();
   await page.getByPlaceholder("S... or apple banana cherry...").fill(testSecret);
   await page.getByPlaceholder("Enter password").fill(testPassword);
   await page.getByPlaceholder("Repeat password").fill(testPassword);
@@ -235,7 +240,7 @@ export async function importTestWallet(
     }).click();
   }
   await page.getByRole("button", { name: "Unlock & Import" }).click();
-  await expect(page.getByText("Your Assets", { exact: true })).toBeVisible({ timeout: options.readyTimeout });
+  await expect(page.getByText("Your Assets", { exact: true })).toBeVisible({ timeout: readyTimeout });
 }
 
 export function observePageFailures(page: Page): {
