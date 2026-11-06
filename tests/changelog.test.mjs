@@ -51,6 +51,7 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
     {
       "name": "Changed",
       "entries": [
+        "Update Next.js and its lint configuration to 16.4.5, Stellar SDK to 17.4.0 for the app and installed Trezor adapter, and Tailwind CSS to 4.3.4; refresh current artifact provenance without changing cryptographic artifacts or historical deployment bindings.",
         "Animate only the changing properties on onboarding and address-book controls."
       ]
     },
