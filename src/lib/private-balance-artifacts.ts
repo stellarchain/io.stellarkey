@@ -58,7 +58,7 @@ async function defaultArtifactCache(
         for (const candidate of names) {
           const source = candidate === name ? cache : await storage.open(candidate);
           const response = await source.match(url);
-          if (response?.ok) return readArtifactResponse(response, url, limits.get(sha256)!);
+          if (response?.ok) return readArtifactResponse(response, url, limits.get(sha256)!, ARTIFACT_STALL_TIMEOUT_MS);
         }
         return null;
       },
@@ -184,18 +184,48 @@ export async function computeSha256(buffer: ArrayBuffer): Promise<string> {
   }
 }
 
+// Artifacts can be tens of megabytes, so bound stalls (no progress), not the
+// total transfer: a slow connection that keeps delivering bytes still works,
+// while a silent peer fails instead of hanging the loader forever.
+const ARTIFACT_STALL_TIMEOUT_MS = 30_000;
+
+function stallDeadline<T>(
+  work: Promise<T>,
+  stallTimeoutMs: number,
+  url: string,
+  onStall?: () => void,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const stalled = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`Artifact download timed out for ${url}`));
+      try { onStall?.(); } catch { /* Cancellation is best-effort. */ }
+    }, stallTimeoutMs);
+  });
+  // Work that loses the race may settle later; never surface it afterwards.
+  work.catch(() => {});
+  return Promise.race([work, stalled]).finally(() => clearTimeout(timer));
+}
+
 export async function fetchAndVerifyArtifact(
   url: string,
   expectedSha256: string,
   expectedByteLength?: number,
   maximumByteLength = expectedByteLength ?? MAX_VERIFICATION_KEY_BYTES,
+  stallTimeoutMs = ARTIFACT_STALL_TIMEOUT_MS,
 ): Promise<ArrayBuffer> {
-  const res = await fetch(url, { cache: 'reload' });
+  const controller = new AbortController();
+  const res = await stallDeadline(
+    fetch(url, { cache: 'reload', signal: controller.signal }),
+    stallTimeoutMs,
+    url,
+    () => controller.abort(),
+  );
   if (!res.ok) {
     throw new Error(`Failed to fetch artifact from ${url}: HTTP ${res.status}`);
   }
 
-  const buffer = await readArtifactResponse(res, url, maximumByteLength);
+  const buffer = await readArtifactResponse(res, url, maximumByteLength, stallTimeoutMs);
   if (expectedByteLength !== undefined && buffer.byteLength !== expectedByteLength) {
     throw new Error(`Artifact size mismatch for ${url}: expected ${expectedByteLength}, got ${buffer.byteLength}`);
   }
@@ -206,7 +236,12 @@ export async function fetchAndVerifyArtifact(
   return buffer;
 }
 
-async function readArtifactResponse(res: Response, url: string, maximumByteLength: number): Promise<ArrayBuffer> {
+async function readArtifactResponse(
+  res: Response,
+  url: string,
+  maximumByteLength: number,
+  stallTimeoutMs: number,
+): Promise<ArrayBuffer> {
   const declaredLength = res.headers.get('content-length');
   if (declaredLength !== null) {
     const parsedLength = Number(declaredLength);
@@ -217,7 +252,7 @@ async function readArtifactResponse(res: Response, url: string, maximumByteLengt
 
   let buffer: ArrayBuffer;
   if (!res.body) {
-    buffer = await res.arrayBuffer();
+    buffer = await stallDeadline(res.arrayBuffer(), stallTimeoutMs, url);
     if (buffer.byteLength > maximumByteLength) {
       throw new Error(`Artifact size exceeds the ${maximumByteLength}-byte limit for ${url}`);
     }
@@ -226,11 +261,13 @@ async function readArtifactResponse(res: Response, url: string, maximumByteLengt
     const chunks: Uint8Array[] = [];
     let total = 0;
     for (;;) {
-      const { done, value } = await reader.read();
+      const { done, value } = await stallDeadline(reader.read(), stallTimeoutMs, url, () => {
+        void reader.cancel().catch(() => {});
+      });
       if (done) break;
       total += value.byteLength;
       if (total > maximumByteLength) {
-        await reader.cancel();
+        void reader.cancel().catch(() => {});
         throw new Error(`Artifact size exceeds the ${maximumByteLength}-byte limit for ${url}`);
       }
       chunks.push(value);

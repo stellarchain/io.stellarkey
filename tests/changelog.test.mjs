@@ -44,7 +44,18 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   const source = read('CHANGELOG.md');
   const document = parseChangelog(source);
   assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.1.1', '1.1.0', '1.0.5', '1.0.4', '1.0.3', '1.0.2', '1.0.1', '1.0.0']);
-  assert.deepEqual(document.releases[0], { version: 'Unreleased', date: null, categories: [] });
+  assert.deepEqual(document.releases[0], {
+  "version": "Unreleased",
+  "date": null,
+  "categories": [
+    {
+      "name": "Fixed",
+      "entries": [
+        "Bound Friendbot requests and error bodies, and time out stalled verified Private Payments artifact downloads without rejecting slow transfers that keep making progress."
+      ]
+    }
+  ]
+});
   assert.deepEqual(document.releases[1], {
   "version": "1.1.1",
   "date": "2026-11-06",

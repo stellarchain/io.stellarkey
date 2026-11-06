@@ -694,11 +694,28 @@ export async function fundWithFriendbot(
   if (!cfg.friendbotUrl) {
     throw new Error("Friendbot is only available on testnet.");
   }
-  const res = await fetch(`${cfg.friendbotUrl}?addr=${encodeURIComponent(publicKey)}`);
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Friendbot funding failed: ${text || res.statusText}`);
-  }
+  // Bound the whole exchange, including a silent error body. Retain only a
+  // small prefix of remote diagnostics instead of buffering arbitrary input.
+  await withAbortDeadline(async (signal) => {
+    const res = await fetch(`${cfg.friendbotUrl}?addr=${encodeURIComponent(publicKey)}`, { signal });
+    if (res.ok) { void res.body?.cancel().catch(() => {}); return; }
+    const reader = res.body?.getReader();
+    let text = "";
+    if (reader) {
+      const decoder = new TextDecoder();
+      let bytes = 0;
+      try {
+        while (bytes < 1024) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const prefix = value.subarray(0, 1024 - bytes);
+          text += decoder.decode(prefix, { stream: true });
+          bytes += prefix.byteLength;
+        }
+      } finally { void reader.cancel().catch(() => {}); }
+    }
+    throw new Error(`Friendbot funding failed: ${text.trim().slice(0, 300) || res.statusText}`);
+  }, { timeoutMs: 30_000, label: "Friendbot funding" });
 }
 
 export function minimalAccount(publicKey: string, sequence: string) {
