@@ -43,9 +43,64 @@ test('Unreleased accepts empty or categorized entries without changing the publi
 test('the changelog starts at the approved 1.0.0 baseline', () => {
   const source = read('CHANGELOG.md');
   const document = parseChangelog(source);
-  assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.0.4', '1.0.3', '1.0.2', '1.0.1', '1.0.0']);
-  assert.deepEqual(document.releases[0], {"version": "Unreleased", "date": null, "categories": [{"name": "Changed", "entries": ["Introduce Private Payments Protocol V2.1 with uniform action records, deployment-bound recovery and integrated private-asset controls.", "Refresh application and CI dependencies and migrate optional hardware signing to Trezor Connect 10.0.1 and Suite Web."]}, {"name": "Fixed", "entries": ["Reconcile offline release update prompts without clearing wallet data or forcing other tabs to reload.", "Match wallet and merchant control accessible names to their visible labels and values."]}, {"name": "Security", "entries": ["Reject incompatible V2 private records and verify all twelve public signals in the V2.1 verifier suite.", "Update ctutils to 0.4.4 and preserve bounded parser and credential-header protections.", "Record the maintainer-approved 1.1.0 exception for RUSTSEC-2026-0387; the advisory remains unresolved."]}]});
+  assert.deepEqual(document.releases.map(({ version }) => version), ['Unreleased', '1.1.0', '1.0.5', '1.0.4', '1.0.3', '1.0.2', '1.0.1', '1.0.0']);
+  assert.deepEqual(document.releases[0], { version: 'Unreleased', date: null, categories: [] });
   assert.deepEqual(document.releases[1], {
+  "version": "1.1.0",
+  "date": "2026-11-06",
+  "categories": [
+    {
+      "name": "Changed",
+      "entries": [
+        "Update Next.js and its lint configuration to 16.4.2, React to 19.3.1, Stellar SDK to 17.3.0, and the browser test toolchain.",
+        "Migrate optional hardware signing to Trezor Connect 10.0.1 and Suite Web, with the matching bootstrap-frame policy and device-protocol compatibility tests. The Suite core remains hosted by Trezor; its reference implementation is a development-only test dependency.",
+        "Prepare application release 1.1.0 with synchronized version markers and whitepaper; Private Payments remains the V2.1 development protocol.",
+        "Refresh the pinned Node setup and artifact upload/download Actions used by CI and release verification."
+      ]
+    },
+    {
+      "name": "Fixed",
+      "entries": [
+        "Retain custom credential-header protection across JavaScript realms during HTTP redirects and correct IPv6 link-local and cross-family subnet classification in installed dependencies.",
+        "Set the CMake compatibility policy for the pinned circuit analyzer's legacy Z3 build on hosted runners.",
+        "Match wallet and merchant control accessible names to their visible labels and values."
+      ]
+    },
+    {
+      "name": "Security",
+      "entries": [
+        "Preserve the reviewed recursion-depth guard in Next.js lint dependencies and check every public signal in the twelve-signal Rust verifier mutation suite.",
+        "Update Rust constant-time utilities to ctutils 0.4.4 without changing the deployed pool Wasm.",
+        "Record the maintainer-approved 1.1.0 exception for RUSTSEC-2026-0387 in Soroban host dependencies. The crypto-bigint advisory remains unresolved.",
+        "Record the maintainer’s explicit 1.1.0 deferral of physical-device, VoiceOver/NVDA, passkey, Trezor and redistribution/origin sign-off checks. They remain unperformed or unconfirmed, not passed; this grants no third-party license rights or approval for real-value Private Payments."
+      ]
+    }
+  ]
+});
+  assert.deepEqual(document.releases[2], {
+    version: '1.0.5', date: '2026-09-22',
+    categories: [
+      { name: 'Changed', entries: [
+        'Prepare application release 1.0.5 with synchronized version markers and whitepaper; name the Private Payments protocol release V2.1 while retaining encoded protocol identifier 3.',
+        'Private Payments Protocol V2.1 uses one entrypoint and archive-record shape with proof-bound public inflow, outflow, and append fields. Ordinary withdrawals append three commitments even when no private change remains. At verified tree saturation, exact-input withdrawals can skip appending; these capacity exits remain publicly distinguishable. Boundary deposits and withdrawals remain public, and every action persists both nullifiers.',
+        'Raise the maximum reviewed private-action resource fee from 1 XLM to 2 XLM for the V2.1 development pool; the separate classic inclusion fee and explicit approval remain in force.',
+      ] },
+      { name: 'Security', entries: [
+        'Remove published action-kind labels and the normal-wallet append distinction between exact-input and change-producing withdrawals. Match the fresh capacity counter to the authenticated checkpoint before choosing exit mode, and reject a worker or withdrawal-chain review that changes the expected append policy.',
+      ] },
+      { name: 'Removed', entries: [
+        'Removed the published action kind from proofs, the pool contract entrypoints, and the authenticated archive records. Current clients support only the replacement V2.1 development pool; V2 deployment-bound notes, addresses, proofs, and encrypted backups are rejected rather than migrated.',
+      ] },
+      { name: 'Fixed', entries: [
+        'Verify that independently rebuilt R1CS, witness Wasm, and pool Wasm match the checked-in artifacts and published manifest hashes.',
+        'Explain incompatible or damaged Private Payments backup records without exposing their contents, and preserve the existing wallet when validation fails. Public-only backups remain compatible.',
+        'Derive V2.1 backup storage keys correctly during import. Encrypt new V2.1 recipient envelopes with the V2.1 HPKE context while retaining authenticated recovery of early V2.1 development envelopes written with the V2 HPKE context. Obsolete V2 note plaintexts remain rejected.',
+        'Validate V2.1 proof-vector metadata and restore the security-constraint mutation checks after the circuit migration.',
+        'Stop offering an already-loaded release after a refresh, reconcile stale offline-worker update banners, and make stalled activation retryable without clearing wallet data or forcing other open tabs to reload.',
+      ] },
+    ],
+  });
+  assert.deepEqual(document.releases[3], {
     version: '1.0.4',
     date: '2026-09-16',
     categories: [{
@@ -76,11 +131,11 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
       ],
     }],
   });
-  assert.equal(document.releases[2].date, '2026-09-14');
-  assert.equal(document.releases[3].date, '2026-09-14');
-  assert.equal(document.releases[4].date, '2026-09-13');
-  assert.equal(document.releases[5].date, '2026-09-13');
-  const notes = document.releases[5].categories.flatMap(({ entries }) => entries).join(' ');
+  assert.equal(document.releases[4].date, '2026-09-14');
+  assert.equal(document.releases[5].date, '2026-09-14');
+  assert.equal(document.releases[6].date, '2026-09-13');
+  assert.equal(document.releases[7].date, '2026-09-13');
+  const notes = document.releases[7].categories.flatMap(({ entries }) => entries).join(' ');
   assert.match(notes, /stable starting application baseline/);
   assert.match(notes, /unaudited.*Testnet-only/);
   assert.match(notes, /GitHub Actions/);
@@ -89,20 +144,21 @@ test('the changelog starts at the approved 1.0.0 baseline', () => {
   assert.match(source, /semver\.org/);
 });
 
-test('all authoritative release markers agree on version 1.0.4', () => {
+test('all authoritative release markers agree on version 1.1.0', () => {
   const packageJson = JSON.parse(read('package.json'));
   const packageLock = JSON.parse(read('package-lock.json'));
   const brand = read('src/lib/brand.ts');
   const security = read('SECURITY.md');
   const readme = read('README.md');
 
-  assert.equal(packageJson.version, '1.0.4');
-  assert.equal(packageLock.version, '1.0.4');
-  assert.equal(packageLock.packages[''].version, '1.0.4');
-  assert.match(brand, /APPLICATION_VERSION = "1\.0\.4"/);
-  assert.match(security, /latest `1\.0\.x` release/i);
-  assert.match(security, /current supported release is `1\.0\.4`/i);
-  assert.match(readme, /current release is `1\.0\.4`/i);
+  assert.equal(packageJson.version, '1.1.0');
+  assert.equal(packageLock.version, '1.1.0');
+  assert.equal(packageLock.packages[''].version, '1.1.0');
+  assert.match(brand, /APPLICATION_VERSION = "1\.1\.0"/);
+  assert.match(security, /latest `1\.1\.x` release/i);
+  assert.match(security, /current release is `1\.1\.0`/i);
+  assert.match(security, /`1\.1\.x` release/);
+  assert.match(readme, /current release is `1\.1\.0`/i);
   assert.match(readme, /\[changelog\]\(CHANGELOG\.md\)/i);
 });
 

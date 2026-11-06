@@ -3,10 +3,11 @@
 [PDF](private-payments.pdf) · [Standalone LaTeX](private-payments.tex) · [arXiv source archive](arxiv-source.zip) · [Maintained Markdown](../private-balance.md)
 
 Author: **StellarKey**. Contact: **support@stellarkey.io**. No affiliation is asserted.
-The September 16, 2026 whitepaper describes application release **1.0.4**,
-continuing the stable **1.0.0** application baseline and Protocol **V2**,
-with implementation pinned to the immutable release tag `v1.0.4`. Only current-format application state
-is supported. Nothing has been submitted to arXiv.
+The November 6, 2026 whitepaper describes application **1.1.0** release
+preparation and Private Payments Protocol **V2.1**. Source links target the planned
+`v1.1.0` tag; the candidate is not yet an immutable published release. Artifact
+hashes identify the protocol described here. Only current-format private state
+is supported; V2 records are not migrated. Nothing has been submitted to arXiv.
 
 The manuscript includes a threat model, conditional state-transition arguments,
 current artifact identities, raw browser measurements, primary-source related

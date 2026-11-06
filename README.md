@@ -133,7 +133,7 @@ offline behavior, recovery, and security boundaries.
 
 ## Verify a deployed release
 
-The current release is `1.0.4`, continuing the stable `1.0.0` application baseline and Protocol V2. Every build embeds the full 40-character Git
+The current release is `1.1.0`, using Private Payments Protocol V2.1. Application and protocol versions are independent. V2 private records are incompatible; preserve existing backups and follow the [upgrade recovery guidance](docs/private-balance-recovery.md#upgrading-from-104-protocol-v2). This version marker does not attest publication or release-gate completion. Every build embeds the full 40-character Git
 commit SHA in the interface and in
 [`/release.json`](https://stellarkey.io/release.json). Compare it with the
 commit attached to the corresponding source release or run:
@@ -214,14 +214,7 @@ hash-bound CSP; the host headers add response-only protections including
 `frame-ancestors 'none'`. Do not rebuild the source on the hosting platform or
 mix files from different releases.
 
-As checked on 2026-09-07, the installed production graph has ten low-severity
-vulnerable packages associated with one `elliptic` advisory through Trezor's
-dependency graph, and no high or critical findings. Trezor is a regular production
-dependency whose UI is optional. A reviewed, SDK-14.2.0-scoped TOML override removes
-the installed parser's high-severity findings; it does not patch upstream browser
-prebundles or Trezor's remotely hosted popup core. See the [dependency evidence and
-remaining limits](docs/dependency-security.md). High and critical production
-advisories remain release-blocking.
+As checked on 2026-11-05, the installed production graph reports zero vulnerable packages and zero advisories. The full graph reports eight moderate-severity vulnerable packages associated with one minimatch advisory and no high or critical findings. Trezor Connect 10.0.1 is an optional, lazy-loaded MIT-licensed client using Suite Web; its hosted core remains a separate service boundary. The matching core package is installed only for development compatibility tests. See the [dependency evidence and remaining limits](docs/dependency-security.md). Audit results do not establish physical-device compatibility or complete release readiness.
 
 Read the [production deployment runbook](docs/production-deployment.md) and
 [release checklist](docs/release-checklist.md) before publishing. Viewport metadata

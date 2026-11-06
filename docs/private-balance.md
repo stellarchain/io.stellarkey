@@ -2,12 +2,13 @@
 
 - **Author:** StellarKey
 - **Contact:** support@stellarkey.io
-- **Protocol:** V2 capacity-independent full-input exits
-- **Application version:** StellarKey 1.0.4
+- **Protocol:** V2.1 uniform settlement legs with capacity-independent full-input exits
+- **Wire compatibility identifier:** `3` (u16 `0x0003`); V2.1 is the release name, not the serialized value
+- **Application version:** StellarKey 1.1.0
 - **Application baseline:** Stable 1.0.0; only current-format state is supported
-- **Implementation baseline:** `v1.0.4` (immutable release tag; artifact identities in §16)
+- **Implementation baseline:** `v1.1.0` (planned release tag; this working-tree candidate is not yet published; artifact identities in §16)
 - **Implementation status:** Live Testnet development deployment; validation scope and dates in §17; not for real value
-- **Document revision:** 2026-09-16
+- **Document revision:** 2026-11-06
 
 ## Abstract
 
@@ -18,11 +19,17 @@ a browser-proved multi-asset note pool on Stellar, and an implemented separation
 between commitment growth and full-input withdrawal. Protocol V2 composes private
 17-level and 47-level ternary paths under one global root, binds nullifiers to
 exact global positions, and adds a proof-bound exit that consumes one or two
-inputs in full without appending commitments. Internal transfers authorize value
-movement without publishing the selected notes, recipient, amount or asset;
-deposits and withdrawals retain their public endpoints and amounts.
+inputs in full without appending commitments. Protocol V2.1 removes the published
+action kind: every action is one uniform shape whose public settlement legs
+(public inflow, public outflow, and a proof-bound appends flag) classify it,
+so no separate kind label is published. Ordinary wallet withdrawals append
+commitments even when no private change remains. Non-appending capacity exits
+still reveal that the selected inputs left no change; this does not reveal
+whether the wallet owns other notes. Internal transfers authorize
+value movement without publishing the selected notes, recipient, amount or
+asset; deposits and withdrawals retain their public endpoints and amounts.
 
-The Circom 2.2.3 implementation has 40,594 optimized constraints and 11 public
+The Circom 2.2.3 implementation has 40,647 optimized constraints and 12 public
 signals. A fresh development Testnet deployment supports XLM and USDC. Regression
 checks exercise saturation, positions beyond 64 bits, shared replay protection,
 transaction rollback, independent archive and leaf cursors, and balanced but
@@ -36,6 +43,12 @@ and ledger availability remain explicit limitations. The implementation is not
 approved for real value or Mainnet.
 
 ## 1. Design goals and non-goals
+
+Protocol V2.1 is the release name. Its encoded compatibility identifier remains
+`3` (u16 `0x0003`) in manifests, key derivation, note/context encodings, and HPKE
+info. The name is not a decimal value to serialize; naming it V2.1 does not
+change the existing keys, proofs, or deployed contract. Application releases
+use a separate version sequence.
 
 The implementation targets five properties:
 
@@ -57,7 +70,9 @@ The implementation targets five properties:
    one index.
 
 The design does not hide network metadata, the pool, action timing, the
-transaction source, deposits, withdrawals, or the public action kind. Deposits
+transaction source, deposits, or withdrawals. Protocol V2.1 no longer publishes
+an action kind; boundary actions remain identifiable through their public token
+movements, which the kind label only duplicated. Deposits
 and withdrawals reveal their asset; an internal transfer does not publish it.
 Direct mode self-submits from the user's public Stellar account and is now the
 only supported submission path. It
@@ -220,7 +235,12 @@ off-chain.
 
 ## 4. Cryptographic suite
 
-The implemented V2 suite is:
+New recipient envelopes use the V2.1 HPKE info context. Recovery also reads early
+V2.1 development envelopes that used HPKE info version 2, subject to authenticated
+V2.1 plaintext, the deployment context and full commitment. Obsolete V2 note
+plaintexts remain rejected; this is not migration from the retired V2 pool.
+
+The implemented V2.1 suite is:
 
 | Purpose | Construction |
 | --- | --- |
@@ -284,56 +304,72 @@ and encryption envelopes.
 
 ## 6. Fixed-shape actions
 
-Every Deposit, Transfer, Withdraw, and FullInputExit has two input lanes and three output lanes.
+Every action has two input lanes and three output lanes.
 Real inputs carry a note witness and a depth-64 membership path. Dummy inputs
 carry a fresh secret that produces a non-zero public dummy nullifier, while
 their unused membership data has one canonical private zero form. The public
 slots do not disclose the private `inputReal` selectors.
 
-| Action | Public information | Private statement |
-| --- | --- | --- |
-| Deposit | Kind, source, amount, pool, registry index, asset, three commitments, nullifiers, timing and fee payer | Both inputs are dummy; at least one output is real, and private outputs sum to the deposited value. |
-| Transfer | Kind, pool, anchor root, three commitments, nullifiers, timing and transaction source | At least one owned input and one real output; asset, recipient, amount, note count and output roles remain private. |
-| Withdraw | Kind, public recipient and amount, pool, registry index, asset, anchor root, three commitments, nullifiers, timing and transaction source | At least one owned input; any remainder occupies private outputs. |
-| FullInputExit | The same boundary information as Withdraw, with distinct public kind 4 | Selected real inputs equal the public withdrawal; all three output values are zero, and their bound dummy commitments are not inserted. |
+Protocol V2.1 publishes no action kind. Two proof-bound settlement legs classify
+every action, and they add nothing the ledger does not already show: a
+settlement inward is a deposit, a settlement outward is a withdrawal, and an
+action with both legs quiet is an internal transfer. A proof-bound `appends`
+flag selects whether the three commitments enter the tree; the circuit requires
+it to be one unless the outflow leg is active, and a non-appending action proves
+all three outputs dummy. Wallet policy sets it to one in normal operation,
+including exact-input withdrawals. Only a fresh tree count matched to the
+authenticated checkpoint can select a non-appending capacity exit, when fewer
+than three commitment slots remain. Such an exit remains publicly distinguishable
+through the flag and unchanged tree. The contract permits non-appending exact-input
+withdrawals before saturation too; this restriction is wallet policy, not a
+consensus privacy guarantee.
 
-For all actions the circuit enforces:
+| Settlement | Public information | Private statement |
+| --- | --- | --- |
+| Inflow only (deposit) | Source, amount, pool, registry index, asset, three commitments, nullifiers, timing and fee payer | Both inputs are dummy; at least one output is real, and private outputs sum to the deposited value. |
+| Both legs quiet (transfer) | Pool, anchor root, three commitments, nullifiers, timing and transaction source | At least one owned input and one real output; asset, recipient, amount, note count and output roles remain private. |
+| Outflow only (withdraw) | Public recipient and amount, pool, registry index, asset, anchor root, three commitments, nullifiers, timing and transaction source | At least one owned input; any remainder occupies private outputs. |
+| Outflow with `appends = 0` (full-input exit) | Ordinary withdrawal boundary information plus the public absence of private change from the selected inputs | Selected real inputs equal the public withdrawal; all three output values are zero, and their bound dummy commitments are not inserted. |
+
+For all actions the circuit enforces the same kind-free balance equation:
 
 ```text
-sum(private inputs) + public deposit
-  = sum(private outputs) + public withdrawal
+sum(private inputs) + public inflow
+  = sum(private outputs) + public outflow
 ```
 
 Each individual value and one post-equality total receive a 63-bit range check.
-The public action kind selects which public term is active.
 
 ## 7. Groth16 statement
 
-The production-shaped development circuit has 40,594 constraints, 11 public
+The production-shaped development circuit has 40,647 constraints, 12 public
 inputs, and 410 private inputs when compiled with Circom 2.2.3 and `--O2`.
 Its setup uses the pinned power-17 Phase 1 transcript. The R1CS domain selected
 by the setup is 65,536; the transcript has sufficient degree for that domain.
 
-The 11 public inputs, in verifier order, are:
+The 12 public inputs, in verifier order, are:
 
 1. deployment context field;
 2. boundary asset field (zero for an internal transfer);
-3. action kind;
-4. anchor root;
-5. public deposit or withdrawal value;
-6. canonical action field;
-7. first nullifier;
-8. second nullifier;
-9. first output commitment;
-10. second output commitment; and
-11. third output commitment.
+3. public settlement inflow;
+4. public settlement outflow;
+5. appends flag;
+6. anchor root;
+7. canonical action field;
+8. first nullifier;
+9. second nullifier;
+10. first output commitment;
+11. second output commitment; and
+12. third output commitment.
 
 The private witness includes the full action asset field and proves owner
 authorization, real-input membership, correct real or dummy nullifier
 derivation, distinct spent leaves, three output commitments, fixed action shape,
-and conservation of value. Deposits and withdrawals prove that the private full
-asset field equals the public registered boundary asset; transfers require the
-public boundary field to be zero. The canonical action field hashes the network,
+and conservation of value. The conservation equation is kind-free: at most one
+settlement leg carries value, and both legs quiet is an internal transfer.
+Deposits and withdrawals prove that the private full asset field equals the
+public registered boundary asset; quiet transfers require the public boundary
+field to be zero. The canonical action field hashes the network,
 realm, pool, optional boundary asset/index, nonce, anchor root, complete outputs,
 and public endpoints. It contains no relayer metadata. A non-zero circuit constraint gives this public
 field a non-zero Groth16 input coefficient; a proof-mutation regression confirms
@@ -355,12 +391,14 @@ public anchor. It exposes no source-subtree selector. The position is
 $\ell = \ell_{\mathrm{inner}} + 3^{17}\ell_{\mathrm{outer}}$, with each path
 position constrained to a ternary digit; hence $0 \leq \ell < 3^{64}$.
 
-Normal deposit, transfer and withdrawal actions append three commitments.
-FullInputExit appends none, independently of the remaining slots. Its public
-kind is bound by the proof and all output values must be zero. At saturation,
-normal actions still return `TreeFull`, but a valid full-input exit can consume
-existing notes against the current root. There is no reset, wraparound, public
-subtree rollover or reuse of commitment positions. The earlier 43,046,721-action
+Actions with the appends flag set append three commitments. A non-appending
+action — the proof-bound full-input exit — appends none, independently of the
+remaining slots, and its proof proves all output values zero. Because the flag
+is one for every ordinary action, a settled spend cannot be told apart from a
+change-producing withdrawal by its append behaviour; the zero append appears
+only at tree saturation, where normal actions still return `TreeFull` but a
+valid exit can consume existing notes against the current root. There is no
+reset, wraparound, public subtree rollover or reuse of commitment positions. The earlier 43,046,721-action
 lifetime cliff is removed; the enlarged tree does not make ordinary growth
 infinite or guarantee an arbitrary partial withdrawal at saturation.
 
@@ -406,10 +444,10 @@ action index $A$, transcript head $h$, and immutable-index asset registry $G$.
 Ledger timestamps, TTL metadata and token custody are additional execution
 state. A successful action changes the progress counters as follows:
 
-| Accepted kind | Counter and tree update |
+| Accepted action | Counter and tree update |
 | --- | --- |
-| Deposit, Transfer, Withdraw | $A'=A+1$, $n'=n+3$; append all three commitments, requiring $n+3 \leq 3^{64}$. |
-| FullInputExit | $A'=A+1$, $n'=n$ and $T'=T$; no commitment capacity guard. |
+| Appends = 1 (deposits, transfers, withdrawals with change) | $A'=A+1$, $n'=n+3$; append all three commitments, requiring $n+3 \leq 3^{64}$. |
+| Appends = 0 (full-input exit) | $A'=A+1$, $n'=n$ and $T'=T$; no commitment capacity guard. |
 
 For every accepted record $r_A$, the record's starting leaf index is the
 pre-transition $n$, and $h'=\operatorname{SHA256}(\operatorname{Encode}(r_A,h))$.
@@ -448,9 +486,11 @@ bound. No consolidation that creates leaves is required for a full-balance exit.
 
 The pool constructor rejects any network or artifact configuration that differs
 from the compiled constants and recomputed deployment binding. The implemented
-contract exposes Deposit, Transfer, Withdraw, FullInputExit, read-only configuration/head
-methods, permissionless current-root refresh, guardian-authorized deposit
-pause, and an administrator-authorized append-only asset registry.
+contract exposes one uniform shielded-action entrypoint whose settlement legs
+classify deposits, transfers, withdrawals and full-input exits, read-only
+configuration/head methods, permissionless current-root refresh,
+guardian-authorized deposit pause, and an administrator-authorized append-only
+asset registry.
 
 Registry indices are permanent and contiguous. The asset administrator can add
 a contract address, switch it between `Active` and `ExitOnly`, and hand
@@ -484,24 +524,25 @@ Testnet assets have suffered them.
 
 For an action, the contract atomically:
 
-1. resolves and checks the public registered asset for a deposit/withdrawal, or
-   requires no public asset for a transfer, and checks canonical encoding;
-2. enforces the deposit pause or verifies a recent anchor root;
+1. resolves and checks the public registered asset when a settlement leg
+   carries value, or requires no public asset for a quiet transfer, and checks
+   canonical encoding;
+2. enforces the deposit pause for settlement inflows or verifies a recent
+   anchor root;
 3. rejects already-spent durable nullifiers;
-4. checks remaining tree capacity unless the action is FullInputExit;
-5. reconstructs the 11 public signals and verifies the Groth16 proof;
+4. checks remaining tree capacity when the proof-bound appends flag is set;
+5. reconstructs the 12 public signals and verifies the Groth16 proof;
 6. persists replay protection;
-7. appends all three commitments and updates the root/frontier for normal actions,
-   or preserves them for FullInputExit;
+7. appends all three commitments and updates the root/frontier when appends is
+   set, or preserves them for a non-appending full-input exit;
 8. appends the authenticated archive record and transcript head;
-9. moves the registered asset only for a deposit or withdrawal; and
+9. moves the registered asset only along the active settlement leg; and
 10. emits the shielded-action event.
 
 Any failure, including token movement or budget failure, rolls back the whole
-invocation. Transfers and withdrawals persist both nullifiers. Deposits have no
-real inputs and their public kind reveals that fact, so the contract stores only
-the first dummy nullifier as an exact-proof replay key. Storing zero would allow
-proof replay; storing the second adds no replay protection.
+invocation. Every action persists both public nullifiers. Dummy lanes derive
+fresh non-zero values, so deposit, transfer and withdrawal replay protection is
+identical and nothing is distinguishable by its replay treatment.
 
 The guardian can pause all new deposits but cannot rewrite history or bypass
 proof verification. The separate asset administrator controls admission and
@@ -725,7 +766,7 @@ authorization entries. The review window is five minutes. An expired deposit
 review can be rebuilt for another explicit confirmation; refreshing the review
 does not submit it automatically.
 
-The current private-action resource-fee cap is 10,000,000 stroops (1 XLM),
+The current private-action resource-fee cap is 20,000,000 stroops (2 XLM),
 separate from the reviewed classic inclusion fee. A simulated or assembled
 resource fee above that cap is rejected before signing; the wallet does not
 silently raise it. Restoration charges can make an otherwise small payment
@@ -829,7 +870,7 @@ can defeat every browser-level privacy control.
 | Hidden for an internal transfer | Public or observable |
 | --- | --- |
 | Private transfer amount and asset | Pool contract and action timing |
-| Recipient private address | Public action kind |
+| Recipient private address | Settlement flows: deposit and withdrawal token movements |
 | Which note lanes are real | Anchor root, two nullifiers and three commitments |
 | Whether a real output is recipient or change | Three fixed-size encrypted output packages |
 | Memo plaintext | User's public submitting account and Stellar fee |
@@ -838,7 +879,10 @@ can defeat every browser-level privacy control.
 Deposits reveal their public source, asset, and amount. Withdrawals reveal their
 public recipient, asset, and amount. Internal transfers publish neither the
 asset contract nor registry index, and all registered assets share one action
-set. Fixed two-input/three-output arity, randomized lanes, and one matched clear
+set. Protocol V2.1 publishes no action kind. Ordinary exact-input and
+change-producing wallet withdrawals share the same append behavior. Capacity
+exits remain distinguishable through their public append flag and unchanged tree;
+removing a kind label does not hide that exception. Fixed two-input/three-output arity, randomized lanes, and one matched clear
 diversifier per action obscure output roles, but they cannot create a large
 privacy set when the pool is small or activity is uniquely timed. Reusing a
 private receive address still links whole actions through the clear diversifier.
@@ -929,11 +973,11 @@ cache publication is atomic and overlap-checked. Corroborated RPC state remains
 a trust assumption, so this is not a light-client proof of Stellar consensus.
 
 **Confidentiality boundary.** Groth16 zero knowledge concerns the private witness
-given the eleven public signals. It does not itself imply transaction-level
+given the twelve public signals. It does not itself imply transaction-level
 unlinkability. The canonical action hash commits to public ciphertext bytes and
 endpoints; hiding amounts or recipients further depends on randomized note
 commitments, HPKE and client behavior. Public source accounts, common clear
-diversifiers, action kind, boundary amounts, timing and selected asset candidates
+diversifiers, public settlement legs, boundary amounts, timing and selected asset candidates
 are part of the leakage model. We do not prove a compositional anonymity game
 for the browser, network, user behavior and ledger together. HPKE base mode is
 not sender authentication and does not give forward secrecy after recipient-key
@@ -948,27 +992,26 @@ agree on exact encodings, and what the integrated artifacts cost. A passing
 check answers its tested question only. Unless explicitly described as public
 Testnet readback, the workloads below are synthetic and contain no user funds.
 
-| Metric | Integrated V2 result |
+| Metric | Integrated V2.1 artifact |
 | --- | --- |
-| Constraints | 40,594, compiled with Circom 2.2.3 `--O2` |
-| Public / private inputs | 11 / 410 |
-| R1CS | 19,342,928 bytes |
-| Witness Wasm | 261,555 bytes |
-| Development proving key | 26,308,892 bytes |
-| Point-compressed proving-key transport | 17,722,398 bytes |
-| Compressed transport size recorded in manifest | 7,368,646 bytes |
+| Constraints | 40,647, compiled with Circom 2.2.3 `--O2` |
+| Public / private inputs | 12 / 410 |
+| R1CS | 19,356,640 bytes |
+| Witness Wasm | 261,959 bytes |
+| Development proving key | 26,342,728 bytes |
+| Point-compressed proving-key transport | 17,747,434 bytes |
+| Compressed transport size recorded in manifest | 7,372,402 bytes |
 | Canonical BN254 proof | 256 bytes |
-| Pool Wasm, deployed unoptimized build | 76,581 bytes |
-| Verifier-only host test budget | 29,287,953 instructions for deposit/transfer; 29,288,761 for withdrawal/exit |
+| Pool Wasm, deployed unoptimized build | 71,877 bytes |
+| Verifier-only host test budget | 29,623,260 instructions for deposit/transfer; 29,624,068 for withdrawal/exit |
 
-The last row measures the verifier crate under Soroban SDK 27.0.6 and Rust
+The last row, remeasured on September 22, 2026, measures the verifier crate under Soroban SDK 27.0.6 and Rust
 1.97.1, with an unlimited test budget reset before each vector. Four real
-Groth16 vectors verify, one for every action kind. These are native host-test
+Groth16 vectors verify, covering inflow, quiet transfer, appending outflow, and non-appending outflow. These are native host-test
 instructions, not complete Wasm pool simulations, transaction fees or ledger
 throughput. The entrypoint, archive writes, token calls and dynamic ledger
-resource pricing add costs. The larger circuit retains eleven public signals,
-which explains why verifier work remains nearly constant; it does not imply
-constant browser proving work.
+resource pricing add costs. V2.1 has twelve public signals. Verifier host cost does not establish browser
+proving performance or complete transaction resource use.
 
 ### Validation method
 
@@ -981,12 +1024,15 @@ Eight mutation tests deliberately remove security constraints and require their
 corresponding adversarial witnesses to stop being rejected. One mutation removes
 the exit's zero-output binding. Circomspect 0.9.0 and pinned CIVER commit
 `af7d4ed0325e6f7743d8a1ac0e415d0c69b8aae8` both detect their negative control.
-CIVER reports 20 verified components and 189,994 verified analysis constraints,
-zero failures and zero timeouts. That analyzer count is not the optimized R1CS
-count and its modular weak-safety result is not a complete protocol proof.
+The September 22, 2026 V2.1 run in an isolated Linux container, with the clean pinned
+source checkout verified before execution, reports 21 verified components and
+190,043 verified analysis constraints, zero failures and zero timeouts. The
+analyzer count is not the optimized R1CS count, and modular weak safety is not
+a complete protocol proof.
 
-The full Rust workspace passes with fresh controlled Stellar Core archival
-results. The archive probe exercises the persistent `has`, reject and set
+The full Rust workspace passes. Separately retained controlled Stellar Core
+archival results exercise the storage pattern described below; those results
+are not a fresh V2.1 deployment test. The archive probe exercises the persistent `has`, reject and set
 pattern at low TTL, restoration as spent and rejection of a duplicate after
 restoration. It is a test-only contract mirroring the storage pattern; it is
 not a full pool payment. The actual pool saturation test seeds a valid proof
@@ -996,7 +1042,7 @@ protection. It does not populate the full tree or claim a reachable high-index
 Testnet history. Separate tree tests check the final carry and bounds, so the
 conditional saturation argument in §15 does not rely on that seeded state alone.
 
-All 61 browser protocol tests pass, including 1,000 Rust/TypeScript key/address
+The browser protocol tests cover the primitives and recovery paths, including 1,000 Rust/TypeScript key/address
 differential cases. Exact-position tests cover boundaries beyond 32, 53, 64 and
 100 bits, u128 archive encodings, full capacity, and unchanged-root exit
 checkpoint advancement. Wallet regression tests exercise durable holds, canonical
@@ -1098,16 +1144,18 @@ subsequent manuscript commits record documentation updates.
 This is a Live Testnet development deployment. The authenticated deployment
 catalogue advertises one live XLM/USDC development pool on Testnet:
 
-`CAYCV26VCDNUEM6HHKQYHKDJ3O43CK5DCBT3TMMHFVEXE7CIFVWRY4R7`.
+`CBDJJPNO7SP7ZC3KXXSVL3B2V5B6WBX2WFRH4KJF2AMLX66KQ2LU33OD`.
 
-XLM is registry index 0 and USDC index 1. The September 13
+XLM is registry index 0 and USDC index 1. The September 19
 pool was deployed from a fresh synthetic Testnet account, with deployment
-checkpoint ledger 4,647,256 and post-registry ledger
-4,647,258. Configuration, registered assets, unpaused
+checkpoint ledger 4,749,176 and post-registry ledger
+4,749,178. Configuration, registered assets, unpaused
 deposits, empty archive and empty tree were read back after the deployment and
 registrations completed. The ephemeral deployment key was removed. Notes,
 addresses, proofs and encrypted state are accepted only in this deployment's
-current format and context.
+current format and context. The retired September 13 protocol V2 pool
+`CAYCV26VCDNUEM6HHKQYHKDJ3O43CK5DCBT3TMMHFVEXE7CIFVWRY4R7` remains on-chain but
+is not in the authenticated catalogue, and current clients refuse it.
 
 The deployment fixture records the locally selected Wasm hash and canonical
 ledger checkpoints. It does not contain a deployment transaction hash; a local
@@ -1118,17 +1166,19 @@ Pool Wasm hash in §16; see
 This read establishes an observed executable match, not a locally verified
 consensus proof.
 
-A separate isolated XLM lifecycle on September 13 confirmed a deposit at ledger
-4,647,770, a self-transfer at 4,647,776, and FullInputExit at 4,647,785. All three
+A separate isolated XLM lifecycle on September 19 confirmed a deposit at ledger
+4,750,820, a self-transfer at 4,750,823, and a full-input exit at 4,750,826. All three
 used the deployed Wasm and locally verified Groth16 proofs. After each confirmation,
 the real archive reader and scanner rebuilt the canonical transcript from genesis.
 The exit advanced the action index by one and left the root and leaf count
 unchanged; the final full-history scan found no unspent test note. Keys and proof
 inputs remained in the test process; this was a command-line synthetic test, not
-a browser-wallet or USDC test, and it did not saturate the live tree.
+a browser-wallet or USDC test, and it did not saturate the live tree. It
+explicitly exercised the contract exit branch before saturation; it does not
+validate the current wallet append policy.
 
-The pre-submission minimum resource-fee estimates were 7,592,212, 7,862,967 and
-7,959,352 stroops respectively. Each was below the application's 10,000,000-stroop
+The pre-submission minimum resource-fee estimates were 13,623,445, 13,045,043 and
+13,292,204 stroops respectively. Each was below the application's 20,000,000-stroop
 cap. These are dated Testnet estimates excluding the separate classic inclusion
 fee, not realized net charges, fixed tariffs or throughput measurements. Evidence
 and the bounded runner are
@@ -1169,10 +1219,13 @@ This whitepaper explains the implemented design. Consensus and byte-level rules
 remain normative in the repository sources listed below.
 
 Repository paths identify the normative source files at the implementation
-revision. Current artifact hashes identify the compiled V2 artifacts.
+revision. Current artifact hashes identify the compiled V2.1 artifacts. Source links target
+the planned v1.1.0 release tag and become immutable references only after that tag
+is published. This manuscript currently describes the working-tree candidate;
+the version marker alone does not establish a clean release or publication.
 Circuit and contract behavior determine what the deployment permits.
 
-- [Protocol V2 specification](../protocol/private-balance/docs/protocol-v1.md)
+- [Protocol V2.1 specification](../protocol/private-balance/docs/protocol-v1.md)
 - [Threat model](../protocol/private-balance/docs/threat-model.md)
 - [Canonical encoding](../protocol/private-balance/docs/encoding.md)
 - [Action circuit](../protocol/private-balance/circuits/circom/action.circom), [witness construction](../src/features/private-balance/worker/action-builder.ts), and [authenticated deployment manifest](../public/protocol/private-balance/v1/manifest.json)
