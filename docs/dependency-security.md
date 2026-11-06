@@ -10,7 +10,7 @@ and Cargo locks remain unchanged. Installed-parent and real adapter/schema
 checks passed (48 focused tests). Current provenance is regenerated from the
 1.1.1 root lock; historical deployment identity and cryptographic artifact
 hashes must remain unchanged. Full verification binds the final committed tree.
-See [audit disposition](release-audit-review-2026-11-06.md) for the selected
+See [audit review](release-checklist.md#111-audit-curation) for the selected
 signing, refresh, erasure and deadline fixes and remaining findings.
 
 ## 2026-11-06 — replacement candidate 1.1.1

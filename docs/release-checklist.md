@@ -4,12 +4,42 @@ This wallet ships as static files and talks directly to user-selected Stellar se
 
 ## 1.1.1 audit curation
 
-The maintainer subsequently requested review of both November 6 audit reports
-and inclusion of useful fixes in PR #40. The [audit disposition](release-audit-review-2026-11-06.md)
-records the selected fixes, their focused evidence, corrections to report
-claims, and remaining pagination/performance work. All prior complete
-application results below keep their original source identities; the final
-curated source requires a new clean-tree release verification and required CI.
+The maintainer requested review of both November 6 audits and useful fixes in
+PR #40. Their original reports and uncommitted source work remain preserved in
+the authoritative audit checkout; full internal audit evidence stays outside
+the public release documentation set.
+
+Included fixes bind refresh publication and all transaction-signing flows to
+the reviewed wallet context, release failed status-poll ownership for retry,
+report partial erasure with a provider-owned recovery screen, bound Friendbot
+error-body and artifact waits, label trustline removals, narrow six transitions,
+and update reviewed application dependencies. Cryptographic artifacts and
+historical deployment bindings remain unchanged.
+
+Focused red/green evidence includes 335 signing/adapter tests, 54 delayed
+synthetic-hardware/queued-POST cases, 43 erasure/storage/changelog checks,
+both Chromium/iPhone erasure-recovery accessibility cases, and 48 installed
+dependency/hardware checks. Counts overlap and are not unique coverage totals.
+The Friendbot audit patch was tightened to include error-body consumption;
+CSV already used the neutral Trustline label, so no export change was needed.
+The report's claim that no other lockfiles exist was incorrect: nested npm
+and Cargo locks remain distinct verification inputs.
+
+Claim discovery beyond the first 20 balances and the unprofiled provider
+subscription refactor remain follow-ups. One abandoned-backup-read failure in
+the audit has an unconfirmed cause; its unchanged full production check remains
+required. No isolated repetition replaces that failed attempt.
+
+The first curated clean-source attempt at 272e7d2 ran all 2,402 root tests:
+2,400 passed and two policy assertions failed. One needed the new mandatory
+erasure spec added to its explicit expected suite; the other correctly rejected
+internal audit reports in the public documentation directory. The reports were
+preserved outside that directory and their release disposition retained here.
+Neither policy nor the privacy restrictions is relaxed.
+
+Earlier full application results below retain their original source identities.
+The corrected candidate requires a new clean-tree release verification, required
+CI and release-workflow gates; those earlier runs do not validate it.
 
 ## 1.1.1 replacement release preparation
 

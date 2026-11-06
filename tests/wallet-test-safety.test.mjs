@@ -40,7 +40,7 @@ test('synthetic component parallelism retains the full matrix and one fixture ow
   assert.equal(config.fullyParallel, false, 'keep per-file ordering and independent browser contexts');
   assert.equal(base.workers, 1, 'do not broaden parallelism into public or live-protocol runners');
   assert.deepEqual(config.testMatch, [
-    'private-components.spec.ts', 'private-direct.spec.ts', 'ux-primitives.spec.ts',
+    'wallet-erasure.spec.ts', 'private-components.spec.ts', 'private-direct.spec.ts', 'ux-primitives.spec.ts',
     'qr-freshness.spec.ts', 'modal-ownership.spec.ts', 'merchant-feedback.spec.ts', 'private-recovery.spec.ts',
     'swap-trustline.spec.ts', 'private-privacy-hygiene.spec.ts',
   ]);
